@@ -1,7 +1,6 @@
 package eu.kanade.domain.source.service
 
 import eu.kanade.domain.source.interactor.SetMigrateSorting
-import eu.kanade.tachiyomi.util.system.LocaleHelper
 import mihon.domain.migration.models.MigrationFlag
 import tachiyomi.core.common.preference.Preference
 import tachiyomi.core.common.preference.PreferenceStore
@@ -22,7 +21,7 @@ class SourcePreferences(
 
     val enabledLanguages: Preference<Set<String>> = preferenceStore.getStringSet(
         "source_languages",
-        LocaleHelper.getDefaultEnabledLanguages(),
+        setOf("ar", "all"),
     )
 
     val disabledSources: Preference<Set<String>> = preferenceStore.getStringSet("hidden_catalogues", emptySet())

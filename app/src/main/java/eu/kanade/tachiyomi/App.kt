@@ -10,6 +10,8 @@ import android.content.IntentFilter
 import android.os.Build
 import android.webkit.WebView
 import androidx.core.content.ContextCompat
+import androidx.core.os.LocaleListCompat
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
@@ -37,6 +39,7 @@ import eu.kanade.tachiyomi.data.coil.TachiyomiImageDecoder
 import eu.kanade.tachiyomi.data.notification.Notifications
 import eu.kanade.tachiyomi.di.AppModule
 import eu.kanade.tachiyomi.di.PreferenceModule
+import eu.kanade.tachiyomi.extension.ManhwaRepoBootstrap
 import eu.kanade.tachiyomi.network.NetworkHelper
 import eu.kanade.tachiyomi.network.NetworkPreferences
 import eu.kanade.tachiyomi.ui.base.delegate.SecureActivityDelegate
@@ -49,6 +52,7 @@ import eu.kanade.tachiyomi.util.system.notify
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.launch
 import logcat.AndroidLogcatLogger
 import logcat.LogPriority
 import logcat.LogcatLogger
@@ -98,6 +102,13 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
         Injekt.importModule(PreferenceModule(this))
         Injekt.importModule(AppModule(this))
         Injekt.importModule(DomainModule())
+
+        // Arabic is the first-launch default; users can change language later.
+        val manhwaPrefs = getSharedPreferences("manhwa_ar_bootstrap", MODE_PRIVATE)
+        if (!manhwaPrefs.getBoolean("arabic_language_initialized", false)) {
+            AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags("ar"))
+            manhwaPrefs.edit().putBoolean("arabic_language_initialized", true).apply()
+        }
 
         setupNotificationChannels()
 
@@ -168,6 +179,11 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
         }
 
         initializeMigrator()
+        scope.launch(Dispatchers.IO) {
+            // Wait for database migrations before registering the default store.
+            Migrator.await()
+            ManhwaRepoBootstrap.install(this@App)
+        }
     }
 
     private fun initializeMigrator() {
@@ -204,7 +220,7 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
 
             memoryCache(
                 MemoryCache.Builder()
-                    .maxSizePercent(context)
+                    .maxSizePercent(context, percent = 0.15) // Reduced from default 0.25 to 0.15 for lower RAM footprint
                     .build(),
             )
 
