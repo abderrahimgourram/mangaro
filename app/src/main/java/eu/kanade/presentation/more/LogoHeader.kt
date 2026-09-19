@@ -24,10 +24,9 @@ fun LogoHeader(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Icon(
-            painter
-                ManhwaAR_Android HEAD  ? ❯  = painterResource(R.drawable.ic_splash_logo),
+            painter = painterResource(R.drawable.ic_splash_logo),
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurface,
+            tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier
                 .padding(iconPadding)
                 .size(64.dp),
