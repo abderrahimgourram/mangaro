@@ -38,7 +38,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -153,7 +152,7 @@ object HomeTab : Tab {
 
                 // Section 2: Quick Access Shortcuts
                 item {
-                    Spacer(modifier = Modifier.height(18.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
                     SectionHeader(title = "وصول سريع", icon = Icons.Outlined.AutoAwesome)
                 }
 
@@ -172,7 +171,7 @@ object HomeTab : Tab {
                 // Section 3: Recent Library Updates
                 if (state.recentUpdates.isNotEmpty()) {
                     item {
-                        Spacer(modifier = Modifier.height(18.dp))
+                        Spacer(modifier = Modifier.height(16.dp))
                         SectionHeader(
                             title = "أحدث التحديثات",
                             icon = Icons.Outlined.Book,
@@ -199,7 +198,7 @@ object HomeTab : Tab {
                 // Section 4: Your Collection
                 if (state.libraryManga.isNotEmpty()) {
                     item {
-                        Spacer(modifier = Modifier.height(18.dp))
+                        Spacer(modifier = Modifier.height(16.dp))
                         SectionHeader(
                             title = "مجموعتك",
                             icon = Icons.Outlined.Explore,
@@ -219,7 +218,7 @@ object HomeTab : Tab {
                 }
 
                 item {
-                    Spacer(modifier = Modifier.height(32.dp))
+                    Spacer(modifier = Modifier.height(24.dp))
                 }
             }
         }
@@ -235,27 +234,27 @@ object HomeTab : Tab {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 10.dp),
+                .padding(horizontal = 16.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.weight(1f, fill = false),
             ) {
                 Box(
                     modifier = Modifier
-                        .size(44.dp)
+                        .size(40.dp)
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.primaryContainer)
-                        .padding(4.dp),
+                        .padding(2.dp),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
                         painter = painterResource(R.drawable.ic_splash_logo),
                         contentDescription = "Manhwa AR Logo",
-                        modifier = Modifier.size(36.dp),
+                        modifier = Modifier.size(32.dp),
                         tint = MaterialTheme.colorScheme.primary,
                     )
                 }
@@ -265,8 +264,8 @@ object HomeTab : Tab {
                         text = "Manhwa AR",
                         style = MaterialTheme.typography.titleLarge.copy(
                             fontWeight = FontWeight.Bold,
-                            fontSize = 21.sp,
-                            letterSpacing = 0.5.sp,
+                            fontSize = 19.sp,
+                            letterSpacing = 0.3.sp,
                         ),
                         color = MaterialTheme.colorScheme.onBackground,
                         maxLines = 1,
@@ -274,7 +273,7 @@ object HomeTab : Tab {
                     )
                     Text(
                         text = "عالمك الخاص للقراءة",
-                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -283,7 +282,7 @@ object HomeTab : Tab {
             }
 
             Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(
@@ -291,12 +290,12 @@ object HomeTab : Tab {
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.surfaceContainerHigh),
                 ) {
-                    IconButton(onClick = onSearchClick, modifier = Modifier.size(40.dp)) {
+                    IconButton(onClick = onSearchClick, modifier = Modifier.size(38.dp)) {
                         Icon(
                             imageVector = Icons.Outlined.Search,
                             contentDescription = "Search",
                             tint = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.size(20.dp),
+                            modifier = Modifier.size(19.dp),
                         )
                     }
                 }
@@ -307,7 +306,7 @@ object HomeTab : Tab {
                             .clip(CircleShape)
                             .background(MaterialTheme.colorScheme.surfaceContainerHigh),
                     ) {
-                        IconButton(onClick = onDownloadsClick, modifier = Modifier.size(40.dp)) {
+                        IconButton(onClick = onDownloadsClick, modifier = Modifier.size(38.dp)) {
                             BadgedBox(
                                 badge = {
                                     Badge(containerColor = MaterialTheme.colorScheme.secondary) {
@@ -322,7 +321,7 @@ object HomeTab : Tab {
                                     imageVector = Icons.Outlined.Download,
                                     contentDescription = "Downloads",
                                     tint = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.size(20.dp),
+                                    modifier = Modifier.size(19.dp),
                                 )
                             }
                         }
@@ -334,12 +333,12 @@ object HomeTab : Tab {
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.surfaceContainerHigh),
                 ) {
-                    IconButton(onClick = onSettingsClick, modifier = Modifier.size(40.dp)) {
+                    IconButton(onClick = onSettingsClick, modifier = Modifier.size(38.dp)) {
                         Icon(
                             imageVector = Icons.Outlined.Settings,
                             contentDescription = "Settings",
                             tint = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.size(20.dp),
+                            modifier = Modifier.size(19.dp),
                         )
                     }
                 }
@@ -357,7 +356,7 @@ object HomeTab : Tab {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 6.dp),
+                .padding(horizontal = 16.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -368,8 +367,8 @@ object HomeTab : Tab {
             ) {
                 Box(
                     modifier = Modifier
-                        .size(28.dp)
-                        .clip(RoundedCornerShape(8.dp))
+                        .size(26.dp)
+                        .clip(RoundedCornerShape(6.dp))
                         .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -377,14 +376,14 @@ object HomeTab : Tab {
                         imageVector = icon,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(16.dp),
+                        modifier = Modifier.size(15.dp),
                     )
                 }
                 Text(
                     text = title,
                     style = MaterialTheme.typography.titleMedium.copy(
                         fontWeight = FontWeight.Bold,
-                        fontSize = 17.sp,
+                        fontSize = 16.sp,
                     ),
                     color = MaterialTheme.colorScheme.onBackground,
                     maxLines = 1,
@@ -395,7 +394,7 @@ object HomeTab : Tab {
             if (actionText != null && onActionClick != null) {
                 TextButton(
                     onClick = onActionClick,
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
                 ) {
                     Text(
                         text = actionText,
@@ -416,19 +415,19 @@ object HomeTab : Tab {
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 4.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
-            shape = RoundedCornerShape(18.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f)),
+            shape = RoundedCornerShape(16.dp),
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(20.dp),
+                    .padding(18.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Box(
                     modifier = Modifier
-                        .size(56.dp)
+                        .size(48.dp)
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.primaryContainer),
                     contentAlignment = Alignment.Center,
@@ -437,7 +436,7 @@ object HomeTab : Tab {
                         imageVector = Icons.Outlined.Book,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(28.dp),
+                        modifier = Modifier.size(24.dp),
                     )
                 }
 
@@ -445,7 +444,7 @@ object HomeTab : Tab {
                     text = "مكتبتك تنتظر أول قصة",
                     style = MaterialTheme.typography.titleMedium.copy(
                         fontWeight = FontWeight.Bold,
-                        fontSize = 17.sp,
+                        fontSize = 16.sp,
                     ),
                     color = MaterialTheme.colorScheme.onSurface,
                     textAlign = TextAlign.Center,
@@ -459,8 +458,8 @@ object HomeTab : Tab {
                 Button(
                     onClick = onExploreClick,
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                    shape = RoundedCornerShape(12.dp),
-                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    contentPadding = PaddingValues(horizontal = 18.dp, vertical = 6.dp),
                 ) {
                     Text(
                         text = "استكشف المصادر",
@@ -485,7 +484,7 @@ object HomeTab : Tab {
                 .clickable(onClick = onMangaClick),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)),
-            shape = RoundedCornerShape(18.dp),
+            shape = RoundedCornerShape(16.dp),
             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         ) {
             Row(
@@ -515,10 +514,10 @@ object HomeTab : Tab {
                         text = history.title,
                         style = MaterialTheme.typography.titleMedium.copy(
                             fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp,
+                            fontSize = 15.5.sp,
                         ),
                         color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
 
@@ -533,7 +532,7 @@ object HomeTab : Tab {
                                 .padding(horizontal = 8.dp, vertical = 2.dp),
                         ) {
                             Text(
-                                text = "الفصل ${history.chapterNumber}",
+                                text = if (history.chapterNumber > 0) "الفصل ${history.chapterNumber}" else "الفصل الأخير",
                                 style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                                 color = MaterialTheme.colorScheme.secondary,
                             )
@@ -541,18 +540,6 @@ object HomeTab : Tab {
                     }
 
                     Spacer(modifier = Modifier.height(2.dp))
-
-                    LinearProgressIndicator(
-                        progress = { 0.75f },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(4.dp)
-                            .clip(CircleShape),
-                        color = MaterialTheme.colorScheme.primary,
-                        trackColor = MaterialTheme.colorScheme.surfaceVariant,
-                    )
-
-                    Spacer(modifier = Modifier.height(4.dp))
 
                     Button(
                         onClick = onResumeClick,
@@ -635,22 +622,22 @@ object HomeTab : Tab {
     ) {
         Card(
             modifier = modifier
-                .height(82.dp)
+                .height(72.dp)
                 .clickable(onClick = onClick),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f)),
-            shape = RoundedCornerShape(14.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)),
+            shape = RoundedCornerShape(12.dp),
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(6.dp),
+                    .padding(4.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
                 Box(
                     modifier = Modifier
-                        .size(32.dp)
+                        .size(28.dp)
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)),
                     contentAlignment = Alignment.Center,
@@ -659,10 +646,10 @@ object HomeTab : Tab {
                         imageVector = icon,
                         contentDescription = title,
                         tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(18.dp),
+                        modifier = Modifier.size(16.dp),
                     )
                 }
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(3.dp))
                 Text(
                     text = title,
                     style = MaterialTheme.typography.labelMedium.copy(
@@ -684,22 +671,22 @@ object HomeTab : Tab {
     ) {
         LazyRow(
             contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             items(updates, key = { "${it.mangaId}_${it.chapterId}" }) { update ->
                 Card(
                     modifier = Modifier
-                        .width(118.dp)
+                        .width(115.dp)
                         .clickable { onUpdateClick(update) },
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-                    shape = RoundedCornerShape(14.dp),
+                    shape = RoundedCornerShape(12.dp),
                     elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
                 ) {
                     Column(modifier = Modifier.padding(6.dp)) {
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(10.dp)),
+                                .clip(RoundedCornerShape(8.dp)),
                         ) {
                             MangaCoverComposable.Book(
                                 data = update.coverData,
@@ -737,22 +724,22 @@ object HomeTab : Tab {
     ) {
         LazyRow(
             contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             items(libraryMangaList, key = { it.id }) { item ->
                 Card(
                     modifier = Modifier
-                        .width(118.dp)
+                        .width(115.dp)
                         .clickable { onMangaClick(item.id) },
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-                    shape = RoundedCornerShape(14.dp),
+                    shape = RoundedCornerShape(12.dp),
                     elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
                 ) {
                     Column(modifier = Modifier.padding(6.dp)) {
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(10.dp)),
+                                .clip(RoundedCornerShape(8.dp)),
                         ) {
                             MangaCoverComposable.Book(
                                 data = item.manga.asMangaCover(),
