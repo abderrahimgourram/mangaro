@@ -35,6 +35,11 @@ class SourcePreferences(
         -1,
     )
 
+    val featuredMangaId: Preference<Long> = preferenceStore.getLong(
+        Preference.appStateKey("last_featured_manga_id"),
+        -1L,
+    )
+
     val showNsfwSource: Preference<Boolean> = preferenceStore.getBoolean("show_nsfw_source", true)
 
     val migrationSortingMode: Preference<SetMigrateSorting.Mode> = preferenceStore.getEnum(

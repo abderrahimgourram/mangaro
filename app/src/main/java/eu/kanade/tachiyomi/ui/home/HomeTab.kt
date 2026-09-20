@@ -57,7 +57,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -142,6 +141,7 @@ object HomeTab : Tab {
                         state.discoveryFeatured != null -> {
                             FeaturedMangaCard(
                                 item = state.discoveryFeatured!!,
+                                canRotate = state.discoveryLatest.isNotEmpty(),
                                 onOpenManga = { mangaId ->
                                     navigator.push(MangaScreen(mangaId, true))
                                 },
@@ -458,13 +458,14 @@ object HomeTab : Tab {
     @Composable
     private fun FeaturedMangaCard(
         item: HomeDiscoveryItem,
+        canRotate: Boolean,
         onOpenManga: (Long) -> Unit,
         onNextStory: () -> Unit,
     ) {
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(200.dp)
+                .height(190.dp)
                 .padding(horizontal = 16.dp, vertical = 4.dp)
                 .clickable { onOpenManga(item.mangaId) },
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
@@ -473,22 +474,31 @@ object HomeTab : Tab {
             elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
-                // Background Cover Artwork
+                // Background Cover Artwork Spanning Full Card
                 MangaCoverComposable.Book(
                     data = item.coverData,
                     contentDescription = item.title,
                 )
 
-                // Vertical Dark Gradient Scrim Overlay
+                // Smooth Blended Dark Scrim Overlay
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
+                        .background(
+                            Brush.horizontalGradient(
+                                colors = listOf(
+                                    Color.Black.copy(alpha = 0.96f),
+                                    Color.Black.copy(alpha = 0.85f),
+                                    Color.Black.copy(alpha = 0.40f),
+                                ),
+                            ),
+                        )
                         .background(
                             Brush.verticalGradient(
                                 colors = listOf(
                                     Color.Transparent,
                                     Color.Black.copy(alpha = 0.70f),
-                                    Color.Black.copy(alpha = 0.95f),
+                                    Color.Black.copy(alpha = 0.98f),
                                 ),
                             ),
                         ),
@@ -514,7 +524,7 @@ object HomeTab : Tab {
                                 .padding(horizontal = 8.dp, vertical = 3.dp),
                         ) {
                             Text(
-                                text = "قصة مميزة",
+                                text = "اكتشف قصة",
                                 style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                                 color = Color.White,
                             )
@@ -540,8 +550,8 @@ object HomeTab : Tab {
                             text = item.title,
                             style = MaterialTheme.typography.titleMedium.copy(
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 17.sp,
-                                lineHeight = 21.sp,
+                                fontSize = 16.5.sp,
+                                lineHeight = 20.sp,
                             ),
                             color = Color.White,
                             maxLines = 2,
@@ -558,9 +568,9 @@ object HomeTab : Tab {
                             Button(
                                 onClick = { onOpenManga(item.mangaId) },
                                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
                                 shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier.height(36.dp),
                             ) {
                                 Text(
                                     text = "عرض التفاصيل",
@@ -569,28 +579,31 @@ object HomeTab : Tab {
                                 )
                             }
 
-                            OutlinedButton(
-                                onClick = onNextStory,
-                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.5f)),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                                shape = RoundedCornerShape(10.dp),
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            if (canRotate) {
+                                OutlinedButton(
+                                    onClick = onNextStory,
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.5f)),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.height(36.dp),
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Outlined.Refresh,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(14.dp),
-                                        tint = Color.White,
-                                    )
-                                    Text(
-                                        text = "قصة أخرى",
-                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                        color = Color.White,
-                                    )
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.Refresh,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(14.dp),
+                                            tint = Color.White,
+                                        )
+                                        Text(
+                                            text = "عمل قد يعجبك",
+                                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                            color = Color.White,
+                                        )
+                                    }
                                 }
                             }
                         }

@@ -3,6 +3,7 @@ package eu.kanade.tachiyomi.ui.home
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import eu.kanade.domain.source.interactor.GetEnabledSources
+import eu.kanade.domain.source.service.SourcePreferences
 import eu.kanade.tachiyomi.data.download.DownloadManager
 import eu.kanade.tachiyomi.source.CatalogueSource
 import eu.kanade.tachiyomi.source.online.HttpSource
@@ -37,6 +38,7 @@ class HomeViewModel(
     private val getEnabledSources: GetEnabledSources = Injekt.get(),
     private val sourceManager: SourceManager = Injekt.get(),
     private val networkToLocalManga: NetworkToLocalManga = Injekt.get(),
+    private val sourcePreferences: SourcePreferences = Injekt.get(),
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(HomeState())
@@ -149,7 +151,15 @@ class HomeViewModel(
 
             allDiscoveryItems = discoveryItems.distinctBy { item -> "${item.sourceId}_${item.mangaId}" }
             if (allDiscoveryItems.isNotEmpty()) {
+                val savedMangaId = sourcePreferences.featuredMangaId.get()
+                if (savedMangaId != -1L) {
+                    val foundIndex = allDiscoveryItems.indexOfFirst { it.mangaId == savedMangaId }
+                    if (foundIndex != -1) {
+                        featuredIndex = foundIndex
+                    }
+                }
                 val featured = allDiscoveryItems[featuredIndex % allDiscoveryItems.size]
+                sourcePreferences.featuredMangaId.set(featured.mangaId)
                 val latest = allDiscoveryItems.filterIndexed { index, _ -> index != (featuredIndex % allDiscoveryItems.size) }
                 _state.update {
                     it.copy(
@@ -174,6 +184,7 @@ class HomeViewModel(
         if (allDiscoveryItems.size > 1) {
             featuredIndex = (featuredIndex + 1) % allDiscoveryItems.size
             val featured = allDiscoveryItems[featuredIndex]
+            sourcePreferences.featuredMangaId.set(featured.mangaId)
             val latest = allDiscoveryItems.filterIndexed { index, _ -> index != featuredIndex }
             _state.update {
                 it.copy(
