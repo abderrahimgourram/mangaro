@@ -42,6 +42,9 @@ class HomeViewModel(
     private val _state = MutableStateFlow(HomeState())
     val state: StateFlow<HomeState> = _state.asStateFlow()
 
+    private var featuredIndex = 0
+    private var allDiscoveryItems = listOf<HomeDiscoveryItem>()
+
     init {
         // Collect history
         viewModelScope.launch {
@@ -122,7 +125,7 @@ class HomeViewModel(
                             source.getPopularManga(1)
                         }
 
-                        val domainMangas = mangasPage.mangas.take(5).map { sManga ->
+                        val domainMangas = mangasPage.mangas.take(6).map { sManga ->
                             sManga.toDomainManga(source.id)
                         }
                         val localMangas = networkToLocalManga(domainMangas)
@@ -144,12 +147,38 @@ class HomeViewModel(
                 }
             }
 
-            val uniqueDiscoveryItems = discoveryItems.distinctBy { item -> "${item.sourceId}_${item.mangaId}" }
+            allDiscoveryItems = discoveryItems.distinctBy { item -> "${item.sourceId}_${item.mangaId}" }
+            if (allDiscoveryItems.isNotEmpty()) {
+                val featured = allDiscoveryItems[featuredIndex % allDiscoveryItems.size]
+                val latest = allDiscoveryItems.filterIndexed { index, _ -> index != (featuredIndex % allDiscoveryItems.size) }
+                _state.update {
+                    it.copy(
+                        discoveryFeatured = featured,
+                        discoveryLatest = latest,
+                        isDiscoveryLoading = false,
+                    )
+                }
+            } else {
+                _state.update {
+                    it.copy(
+                        discoveryFeatured = null,
+                        discoveryLatest = emptyList(),
+                        isDiscoveryLoading = false,
+                    )
+                }
+            }
+        }
+    }
+
+    fun nextFeaturedStory() {
+        if (allDiscoveryItems.size > 1) {
+            featuredIndex = (featuredIndex + 1) % allDiscoveryItems.size
+            val featured = allDiscoveryItems[featuredIndex]
+            val latest = allDiscoveryItems.filterIndexed { index, _ -> index != featuredIndex }
             _state.update {
                 it.copy(
-                    discoveryFeatured = uniqueDiscoveryItems.firstOrNull(),
-                    discoveryLatest = uniqueDiscoveryItems.drop(1),
-                    isDiscoveryLoading = false,
+                    discoveryFeatured = featured,
+                    discoveryLatest = latest,
                 )
             }
         }
