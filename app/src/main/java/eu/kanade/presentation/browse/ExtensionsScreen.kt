@@ -10,9 +10,11 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.GetApp
@@ -22,6 +24,8 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.VerifiedUser
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -278,55 +282,64 @@ private fun ExtensionItem(
     modifier: Modifier = Modifier,
 ) {
     val (extension, installStep) = item
-    BaseBrowseItem(
+    Card(
         modifier = modifier
-            .combinedClickable(
-                onClick = { onClickItem(extension) },
-                onLongClick = { onLongClickItem(extension) },
-            ),
-        onClickItem = { onClickItem(extension) },
-        onLongClickItem = { onLongClickItem(extension) },
-        icon = {
-            Box(
-                modifier = Modifier
-                    .size(40.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                val idle = installStep.isCompleted()
-                if (!idle) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(40.dp),
-                        strokeWidth = 2.dp,
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ),
+        shape = RoundedCornerShape(14.dp),
+    ) {
+        BaseBrowseItem(
+            modifier = Modifier
+                .combinedClickable(
+                    onClick = { onClickItem(extension) },
+                    onLongClick = { onLongClickItem(extension) },
+                ),
+            onClickItem = { onClickItem(extension) },
+            onLongClickItem = { onLongClickItem(extension) },
+            icon = {
+                Box(
+                    modifier = Modifier.size(44.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    val idle = installStep.isCompleted()
+                    if (!idle) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(44.dp),
+                            strokeWidth = 2.dp,
+                        )
+                    }
+
+                    val padding by animateDpAsState(
+                        targetValue = if (idle) 0.dp else 6.dp,
+                        label = "iconPadding",
+                    )
+                    ExtensionIcon(
+                        extension = extension,
+                        modifier = Modifier
+                            .matchParentSize()
+                            .padding(padding),
                     )
                 }
-
-                val padding by animateDpAsState(
-                    targetValue = if (idle) 0.dp else 8.dp,
-                    label = "iconPadding",
-                )
-                ExtensionIcon(
+            },
+            action = {
+                ExtensionItemActions(
                     extension = extension,
-                    modifier = Modifier
-                        .matchParentSize()
-                        .padding(padding),
+                    installStep = installStep,
+                    onClickItemCancel = onClickItemCancel,
+                    onClickItemAction = onClickItemAction,
+                    onClickItemSecondaryAction = onClickItemSecondaryAction,
                 )
-            }
-        },
-        action = {
-            ExtensionItemActions(
+            },
+        ) {
+            ExtensionItemContent(
                 extension = extension,
                 installStep = installStep,
-                onClickItemCancel = onClickItemCancel,
-                onClickItemAction = onClickItemAction,
-                onClickItemSecondaryAction = onClickItemSecondaryAction,
+                modifier = Modifier.weight(1f),
             )
-        },
-    ) {
-        ExtensionItemContent(
-            extension = extension,
-            installStep = installStep,
-            modifier = Modifier.weight(1f),
-        )
+        }
     }
 }
 
