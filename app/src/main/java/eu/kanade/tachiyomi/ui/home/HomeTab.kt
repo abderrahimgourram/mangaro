@@ -20,7 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -39,6 +39,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -69,6 +70,7 @@ import eu.kanade.presentation.manga.components.MangaCover as MangaCoverComposabl
 import eu.kanade.presentation.util.Tab
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.ui.browse.BrowseTab
+import eu.kanade.tachiyomi.ui.browse.source.browse.BrowseSourceScreen
 import eu.kanade.tachiyomi.ui.browse.source.globalsearch.GlobalSearchScreen
 import eu.kanade.tachiyomi.ui.library.LibraryTab
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
@@ -122,20 +124,60 @@ object HomeTab : Tab {
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = paddingValues,
             ) {
-                // Section 1: Continue Reading
+                // Section 1: Featured Extension Discovery
                 item {
                     SectionHeader(
-                        title = "متابعة القراءة",
-                        icon = Icons.Outlined.PlayArrow,
+                        title = "اكتشف قصة",
+                        icon = Icons.Outlined.AutoAwesome,
                     )
                 }
 
                 item {
-                    if (state.recentHistory.isEmpty()) {
-                        EmptyContinueReadingCard(
-                            onExploreClick = { tabNavigator.current = BrowseTab },
+                    when {
+                        state.discoveryFeatured != null -> {
+                            FeaturedMangaCard(
+                                item = state.discoveryFeatured!!,
+                                onOpenManga = { mangaId ->
+                                    navigator.push(MangaScreen(mangaId, true))
+                                },
+                            )
+                        }
+                        state.isDiscoveryLoading -> {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 24.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(32.dp),
+                                    strokeWidth = 3.dp,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                        }
+                        state.installedSources.isEmpty() -> {
+                            EmptyDiscoveryCard(
+                                onExploreExtensionsClick = {
+                                    BrowseTab.showExtension()
+                                    tabNavigator.current = BrowseTab
+                                },
+                            )
+                        }
+                    }
+                }
+
+                // Section 2: Continue Reading (if history exists)
+                if (state.recentHistory.isNotEmpty()) {
+                    item {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        SectionHeader(
+                            title = "متابعة القراءة",
+                            icon = Icons.Outlined.PlayArrow,
                         )
-                    } else {
+                    }
+
+                    item {
                         val lastHistory = state.recentHistory.first()
                         ContinueReadingCard(
                             history = lastHistory,
@@ -154,10 +196,54 @@ object HomeTab : Tab {
                     }
                 }
 
-                // Section 2: Quick Access Shortcuts
+                // Section 3: Latest Manga from Installed Sources
+                if (state.discoveryLatest.isNotEmpty()) {
+                    item {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        SectionHeader(
+                            title = "أحدث الأعمال من مصادرك",
+                            icon = Icons.Outlined.Book,
+                            actionText = "استكشاف المصادر",
+                            onActionClick = { tabNavigator.current = BrowseTab },
+                        )
+                    }
+
+                    item {
+                        DiscoveryMangaRow(
+                            mangaList = state.discoveryLatest,
+                            onMangaClick = { mangaId ->
+                                navigator.push(MangaScreen(mangaId, true))
+                            },
+                        )
+                    }
+                }
+
+                // Section 4: Explore Installed Sources
+                if (state.installedSources.isNotEmpty()) {
+                    item {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        SectionHeader(
+                            title = "من مصادرك",
+                            icon = Icons.Outlined.Explore,
+                            actionText = "عرض الكل",
+                            onActionClick = { tabNavigator.current = BrowseTab },
+                        )
+                    }
+
+                    item {
+                        InstalledSourcesRow(
+                            sources = state.installedSources,
+                            onSourceClick = { sourceId ->
+                                navigator.push(BrowseSourceScreen(sourceId, null))
+                            },
+                        )
+                    }
+                }
+
+                // Section 5: Quick Access Shortcuts
                 item {
                     Spacer(modifier = Modifier.height(16.dp))
-                    SectionHeader(title = "وصول سريع", icon = Icons.Outlined.AutoAwesome)
+                    SectionHeader(title = "وصول سريع", icon = Icons.Outlined.Extension)
                 }
 
                 item {
@@ -172,57 +258,8 @@ object HomeTab : Tab {
                     )
                 }
 
-                // Section 3: Recent Library Updates
-                if (state.recentUpdates.isNotEmpty()) {
-                    item {
-                        Spacer(modifier = Modifier.height(16.dp))
-                        SectionHeader(
-                            title = "أحدث التحديثات",
-                            icon = Icons.Outlined.Book,
-                            actionText = "عرض الكل",
-                            onActionClick = { tabNavigator.current = LibraryTab },
-                        )
-                    }
-
-                    item {
-                        RecentUpdatesRow(
-                            updates = state.recentUpdates,
-                            onUpdateClick = { update ->
-                                val intent = ReaderActivity.newIntent(
-                                    context,
-                                    update.mangaId,
-                                    update.chapterId,
-                                )
-                                context.startActivity(intent)
-                            },
-                        )
-                    }
-                }
-
-                // Section 4: Your Collection
-                if (state.libraryManga.isNotEmpty()) {
-                    item {
-                        Spacer(modifier = Modifier.height(16.dp))
-                        SectionHeader(
-                            title = "مجموعتك",
-                            icon = Icons.Outlined.Explore,
-                            actionText = "المكتبة",
-                            onActionClick = { tabNavigator.current = LibraryTab },
-                        )
-                    }
-
-                    item {
-                        CollectionRow(
-                            libraryMangaList = state.libraryManga,
-                            onMangaClick = { mangaId ->
-                                navigator.push(MangaScreen(mangaId))
-                            },
-                        )
-                    }
-                }
-
                 item {
-                    Spacer(modifier = Modifier.height(24.dp))
+                    Spacer(modifier = Modifier.height(28.dp))
                 }
             }
         }
@@ -410,8 +447,89 @@ object HomeTab : Tab {
     }
 
     @Composable
-    private fun EmptyContinueReadingCard(
-        onExploreClick: () -> Unit,
+    private fun FeaturedMangaCard(
+        item: HomeDiscoveryItem,
+        onOpenManga: (Long) -> Unit,
+    ) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 4.dp)
+                .clickable { onOpenManga(item.mangaId) },
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)),
+            shape = RoundedCornerShape(16.dp),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .width(84.dp)
+                        .clip(RoundedCornerShape(10.dp)),
+                ) {
+                    MangaCoverComposable.Book(
+                        data = item.coverData,
+                        contentDescription = item.title,
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(14.dp))
+
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        text = item.title,
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp,
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.18f))
+                            .padding(horizontal = 8.dp, vertical = 2.dp),
+                    ) {
+                        Text(
+                            text = item.sourceName,
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.secondary,
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Button(
+                        onClick = { onOpenManga(item.mangaId) },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+                        shape = RoundedCornerShape(10.dp),
+                    ) {
+                        Text(
+                            text = "عرض التفاصيل",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onPrimary,
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    @Composable
+    private fun EmptyDiscoveryCard(
+        onExploreExtensionsClick: () -> Unit,
     ) {
         Card(
             modifier = Modifier
@@ -424,7 +542,7 @@ object HomeTab : Tab {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(18.dp),
+                    .padding(20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
@@ -436,7 +554,7 @@ object HomeTab : Tab {
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        imageVector = Icons.Outlined.Book,
+                        imageVector = Icons.Outlined.Extension,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(24.dp),
@@ -444,7 +562,7 @@ object HomeTab : Tab {
                 }
 
                 Text(
-                    text = "مكتبتك تنتظر أول قصة",
+                    text = "ابدأ عالمك مع المانهوا",
                     style = MaterialTheme.typography.titleMedium.copy(
                         fontWeight = FontWeight.Bold,
                         fontSize = 16.sp,
@@ -453,19 +571,19 @@ object HomeTab : Tab {
                     textAlign = TextAlign.Center,
                 )
                 Text(
-                    text = "ابدأ باستكشاف المصادر والإضافات لإضافة المانوا المفضلة لديك",
+                    text = "ثبّت مصدرًا من قسم الإضافات لعرض المانهوا المتاحة مباشرة هنا.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
                 )
                 Button(
-                    onClick = onExploreClick,
+                    onClick = onExploreExtensionsClick,
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                     shape = RoundedCornerShape(10.dp),
                     contentPadding = PaddingValues(horizontal = 18.dp, vertical = 6.dp),
                 ) {
                     Text(
-                        text = "استكشف المصادر",
+                        text = "استكشاف الإضافات",
                         color = MaterialTheme.colorScheme.onPrimary,
                         fontWeight = FontWeight.Bold,
                     )
@@ -573,6 +691,102 @@ object HomeTab : Tab {
     }
 
     @Composable
+    private fun DiscoveryMangaRow(
+        mangaList: List<HomeDiscoveryItem>,
+        onMangaClick: (Long) -> Unit,
+    ) {
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            itemsIndexed(mangaList, key = { index, item -> "${item.sourceId}_${item.mangaId}_$index" }) { _, item ->
+                Card(
+                    modifier = Modifier
+                        .width(118.dp)
+                        .clickable { onMangaClick(item.mangaId) },
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+                    shape = RoundedCornerShape(12.dp),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                ) {
+                    Column(modifier = Modifier.padding(6.dp)) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp)),
+                        ) {
+                            MangaCoverComposable.Book(
+                                data = item.coverData,
+                                contentDescription = item.title,
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = item.title,
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                            ),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = item.sourceName,
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                            color = MaterialTheme.colorScheme.secondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    @Composable
+    private fun InstalledSourcesRow(
+        sources: List<HomeSourceItem>,
+        onSourceClick: (Long) -> Unit,
+    ) {
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            itemsIndexed(sources, key = { index, source -> "${source.id}_$index" }) { _, source ->
+                Card(
+                    modifier = Modifier
+                        .width(135.dp)
+                        .clickable { onSourceClick(source.id) },
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)),
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text(
+                            text = source.name,
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.5.sp,
+                            ),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = if (source.lang == "ar") "العربية" else source.lang.uppercase(),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.secondary,
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    @Composable
     private fun QuickAccessRow(
         onBrowseClick: () -> Unit,
         onExtensionsClick: () -> Unit,
@@ -663,126 +877,6 @@ object HomeTab : Tab {
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-            }
-        }
-    }
-
-    @Composable
-    private fun RecentUpdatesRow(
-        updates: List<UpdatesWithRelations>,
-        onUpdateClick: (UpdatesWithRelations) -> Unit,
-    ) {
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            items(updates, key = { "${it.mangaId}_${it.chapterId}" }) { update ->
-                Card(
-                    modifier = Modifier
-                        .width(115.dp)
-                        .clickable { onUpdateClick(update) },
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-                    shape = RoundedCornerShape(12.dp),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                ) {
-                    Column(modifier = Modifier.padding(6.dp)) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp)),
-                        ) {
-                            MangaCoverComposable.Book(
-                                data = update.coverData,
-                                contentDescription = update.mangaTitle,
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = update.mangaTitle,
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp,
-                            ),
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            text = update.chapterName,
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
-                            color = MaterialTheme.colorScheme.secondary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-            }
-        }
-    }
-
-    @Composable
-    private fun CollectionRow(
-        libraryMangaList: List<LibraryManga>,
-        onMangaClick: (Long) -> Unit,
-    ) {
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            items(libraryMangaList, key = { it.id }) { item ->
-                Card(
-                    modifier = Modifier
-                        .width(115.dp)
-                        .clickable { onMangaClick(item.id) },
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-                    shape = RoundedCornerShape(12.dp),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                ) {
-                    Column(modifier = Modifier.padding(6.dp)) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp)),
-                        ) {
-                            MangaCoverComposable.Book(
-                                data = item.manga.asMangaCover(),
-                                contentDescription = item.manga.title,
-                            )
-                            if (item.unreadCount > 0) {
-                                Box(
-                                    modifier = Modifier
-                                        .align(Alignment.TopEnd)
-                                        .padding(4.dp)
-                                        .background(
-                                            color = MaterialTheme.colorScheme.secondary,
-                                            shape = CircleShape,
-                                        )
-                                        .padding(horizontal = 6.dp, vertical = 2.dp),
-                                ) {
-                                    Text(
-                                        text = item.unreadCount.toString(),
-                                        style = MaterialTheme.typography.labelSmall.copy(
-                                            fontSize = 10.sp,
-                                            fontWeight = FontWeight.Bold,
-                                        ),
-                                        color = MaterialTheme.colorScheme.onSecondary,
-                                    )
-                                }
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = item.manga.title,
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp,
-                            ),
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
             }
         }
     }
