@@ -1,6 +1,7 @@
 package eu.kanade.presentation.more
 
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Label
 import androidx.compose.material.icons.outlined.CloudOff
@@ -11,9 +12,11 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.unit.dp
+import eu.kanade.presentation.more.settings.widget.PreferenceGroupHeader
 import eu.kanade.presentation.more.settings.widget.SwitchPreferenceWidget
 import eu.kanade.presentation.more.settings.widget.TextPreferenceWidget
 import eu.kanade.tachiyomi.R
@@ -42,9 +45,14 @@ fun MoreScreen(
         ScrollbarLazyColumn(contentPadding = contentPadding) {
             item {
                 LogoHeader(
-                    iconPadding = PaddingValues(vertical = 32.dp),
+                    iconPadding = PaddingValues(vertical = 24.dp),
                 )
             }
+
+            item {
+                PreferenceGroupHeader(title = "وضع القراءة والتصفح")
+            }
+
             item {
                 SwitchPreferenceWidget(
                     title = stringResource(MR.strings.label_downloaded_only),
@@ -54,6 +62,7 @@ fun MoreScreen(
                     onCheckedChanged = onDownloadedOnlyChange,
                 )
             }
+
             item {
                 SwitchPreferenceWidget(
                     title = stringResource(MR.strings.pref_incognito_mode),
@@ -64,7 +73,33 @@ fun MoreScreen(
                 )
             }
 
-            item { HorizontalDivider() }
+            item { HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp)) }
+
+            item {
+                PreferenceGroupHeader(title = "القراءة والمكتبة")
+            }
+
+            item {
+                TextPreferenceWidget(
+                    title = stringResource(MR.strings.categories),
+                    icon = Icons.AutoMirrored.Outlined.Label,
+                    onPreferenceClick = onClickCategories,
+                )
+            }
+
+            item {
+                TextPreferenceWidget(
+                    title = stringResource(MR.strings.label_stats),
+                    icon = Icons.Outlined.QueryStats,
+                    onPreferenceClick = onClickStats,
+                )
+            }
+
+            item { HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp)) }
+
+            item {
+                PreferenceGroupHeader(title = "التنزيلات والتخزين")
+            }
 
             item {
                 val downloadQueueState = downloadQueueStateProvider()
@@ -95,20 +130,7 @@ fun MoreScreen(
                     onPreferenceClick = onClickDownloadQueue,
                 )
             }
-            item {
-                TextPreferenceWidget(
-                    title = stringResource(MR.strings.categories),
-                    icon = Icons.AutoMirrored.Outlined.Label,
-                    onPreferenceClick = onClickCategories,
-                )
-            }
-            item {
-                TextPreferenceWidget(
-                    title = stringResource(MR.strings.label_stats),
-                    icon = Icons.Outlined.QueryStats,
-                    onPreferenceClick = onClickStats,
-                )
-            }
+
             item {
                 TextPreferenceWidget(
                     title = stringResource(MR.strings.label_data_storage),
@@ -117,7 +139,11 @@ fun MoreScreen(
                 )
             }
 
-            item { HorizontalDivider() }
+            item { HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp)) }
+
+            item {
+                PreferenceGroupHeader(title = "الإعدادات وحول التطبيق")
+            }
 
             item {
                 TextPreferenceWidget(
@@ -126,6 +152,7 @@ fun MoreScreen(
                     onPreferenceClick = onClickSettings,
                 )
             }
+
             item {
                 TextPreferenceWidget(
                     title = stringResource(MR.strings.pref_category_about),

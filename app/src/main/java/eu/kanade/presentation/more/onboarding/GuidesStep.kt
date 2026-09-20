@@ -10,13 +10,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalUriHandler
-import androidx.compose.ui.tooling.preview.PreviewLightDark
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import eu.kanade.presentation.theme.TachiyomiPreviewTheme
-import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.padding
-import tachiyomi.presentation.core.i18n.stringResource
 
 internal class GuidesStep(
     private val onRestoreBackup: () -> Unit,
@@ -26,44 +22,41 @@ internal class GuidesStep(
 
     @Composable
     override fun Content() {
-        val handler = LocalUriHandler.current
-
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(MaterialTheme.padding.small),
         ) {
-            Text(stringResource(MR.strings.onboarding_guides_new_user, stringResource(MR.strings.app_name)))
-            Button(
-                modifier = Modifier.fillMaxWidth(),
-                onClick = { handler.openUri(GETTING_STARTED_URL) },
-            ) {
-                Text(stringResource(MR.strings.getting_started_guide))
-            }
+            Text(
+                text = "اكتمل الإعداد بنجاح!",
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+
+            Text(
+                text = "أنت الآن جاهز لبدء تصفح وقراءة قصص المانوا المفضلة لديك عبر Manhwa AR.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
 
             HorizontalDivider(
                 modifier = Modifier.padding(vertical = 8.dp),
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
             )
 
-            Text(stringResource(MR.strings.onboarding_guides_returning_user, stringResource(MR.strings.app_name)))
+            Text(
+                text = "هل لديك نسخة احتياطية سابقة من بياناتك؟",
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+
             Button(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = onRestoreBackup,
             ) {
-                Text(stringResource(MR.strings.pref_restore_backup))
+                Text("استعادة نسخة احتياطية")
             }
         }
     }
 }
 
 const val GETTING_STARTED_URL = "https://mihon.app/docs/guides/getting-started"
-
-@PreviewLightDark
-@Composable
-private fun GuidesStepPreview() {
-    TachiyomiPreviewTheme {
-        GuidesStep(
-            onRestoreBackup = {},
-        ).Content()
-    }
-}

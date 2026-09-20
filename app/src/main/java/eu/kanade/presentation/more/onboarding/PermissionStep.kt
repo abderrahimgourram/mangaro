@@ -29,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.getSystemService
 import androidx.core.net.toUri
@@ -36,18 +37,10 @@ import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import eu.kanade.presentation.util.rememberRequestPackageInstallsPermissionState
-import eu.kanade.tachiyomi.core.security.PrivacyPreferences
 import eu.kanade.tachiyomi.util.system.launchRequestPackageInstallsPermission
-import eu.kanade.tachiyomi.util.system.telemetryIncluded
-import tachiyomi.i18n.MR
-import tachiyomi.presentation.core.i18n.stringResource
-import tachiyomi.presentation.core.util.collectAsState
 import tachiyomi.presentation.core.util.secondaryItemAlpha
-import uy.kohesive.injekt.injectLazy
 
 internal class PermissionStep : OnboardingStep {
-
-    private val privacyPreferences: PrivacyPreferences by injectLazy()
 
     private var notificationGranted by mutableStateOf(false)
     private var batteryGranted by mutableStateOf(false)
@@ -80,10 +73,17 @@ internal class PermissionStep : OnboardingStep {
             }
         }
 
-        Column {
+        Column(modifier = Modifier.padding(vertical = 8.dp)) {
+            Text(
+                text = "الصلاحيات والإذونات للتطبيق",
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+
             PermissionCheckbox(
-                title = stringResource(MR.strings.onboarding_permission_install_apps),
-                subtitle = stringResource(MR.strings.onboarding_permission_install_apps_description),
+                title = "إذن تثبيت الإضافات (مطلوب)",
+                subtitle = "يتيح إمكانية تثبيت مصادر المانوا والإضافات البرمجية الجاهزة.",
                 granted = installGranted,
                 onButtonClick = {
                     context.launchRequestPackageInstallsPermission()
@@ -93,21 +93,19 @@ internal class PermissionStep : OnboardingStep {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 val permissionRequester = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.RequestPermission(),
-                    onResult = {
-                        // no-op. resulting checks is being done on resume
-                    },
+                    onResult = {},
                 )
                 PermissionCheckbox(
-                    title = stringResource(MR.strings.onboarding_permission_notifications),
-                    subtitle = stringResource(MR.strings.onboarding_permission_notifications_description),
+                    title = "إذن الإشعارات (اختياري)",
+                    subtitle = "لتنبيهك بفصول المانوا الجديدة وإكمال التنزيلات.",
                     granted = notificationGranted,
                     onButtonClick = { permissionRequester.launch(Manifest.permission.POST_NOTIFICATIONS) },
                 )
             }
 
             PermissionCheckbox(
-                title = stringResource(MR.strings.onboarding_permission_ignore_battery_opts),
-                subtitle = stringResource(MR.strings.onboarding_permission_ignore_battery_opts_description),
+                title = "إلغاء تحسين البطارية (اختياري)",
+                subtitle = "لتجنب توقف التحديثات والتنزيلات عند عمل التطبيق في الخلفية.",
                 granted = batteryGranted,
                 onButtonClick = {
                     @SuppressLint("BatteryLife")
@@ -118,45 +116,8 @@ internal class PermissionStep : OnboardingStep {
                 },
             )
 
-            if (!telemetryIncluded) return@Column
-
-            HorizontalDivider(
-                modifier = Modifier.padding(vertical = 8.dp, horizontal = 16.dp),
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-            )
-
-            val crashlyticsPref = privacyPreferences.crashlytics
-            val crashlytics by crashlyticsPref.collectAsState()
-            PermissionSwitch(
-                title = stringResource(MR.strings.onboarding_permission_crashlytics),
-                subtitle = stringResource(MR.strings.onboarding_permission_crashlytics_description),
-                granted = crashlytics,
-                onToggleChange = crashlyticsPref::set,
-            )
-
-            val analyticsPref = privacyPreferences.analytics
-            val analytics by analyticsPref.collectAsState()
-            PermissionSwitch(
-                title = stringResource(MR.strings.onboarding_permission_analytics),
-                subtitle = stringResource(MR.strings.onboarding_permission_analytics_description),
-                granted = analytics,
-                onToggleChange = analyticsPref::set,
-            )
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
         }
-    }
-
-    @Composable
-    private fun SectionHeader(
-        text: String,
-        modifier: Modifier = Modifier,
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.titleLarge,
-            modifier = modifier
-                .padding(horizontal = 16.dp)
-                .secondaryItemAlpha(),
-        )
     }
 
     @Composable
@@ -164,52 +125,31 @@ internal class PermissionStep : OnboardingStep {
         title: String,
         subtitle: String,
         granted: Boolean,
-        modifier: Modifier = Modifier,
         onButtonClick: () -> Unit,
     ) {
         ListItem(
-            modifier = modifier,
+            headlineContent = { Text(title) },
+            supportingContent = {
+                Text(
+                    subtitle,
+                    modifier = Modifier.secondaryItemAlpha(),
+                )
+            },
             trailingContent = {
-                OutlinedButton(
-                    enabled = !granted,
-                    onClick = onButtonClick,
-                ) {
-                    if (granted) {
-                        Icon(
-                            imageVector = Icons.Default.Check,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                    } else {
-                        Text(stringResource(MR.strings.onboarding_permission_action_grant))
+
+                if (granted) {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                } else {
+                    OutlinedButton(onClick = onButtonClick) {
+                        Text("منح")
                     }
                 }
             },
-            supportingContent = { Text(text = subtitle) },
             colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-            content = { Text(text = title) },
-        )
-    }
-
-    @Composable
-    private fun PermissionSwitch(
-        title: String,
-        subtitle: String,
-        granted: Boolean,
-        modifier: Modifier = Modifier,
-        onToggleChange: (Boolean) -> Unit,
-    ) {
-        ListItem(
-            modifier = modifier,
-            trailingContent = {
-                Switch(
-                    checked = granted,
-                    onCheckedChange = onToggleChange,
-                )
-            },
-            supportingContent = { Text(text = subtitle) },
-            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-            content = { Text(text = title) },
         )
     }
 }
