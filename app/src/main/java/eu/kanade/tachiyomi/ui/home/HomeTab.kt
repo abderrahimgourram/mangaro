@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -239,6 +240,7 @@ object HomeTab : Tab {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.weight(1f, fill = false),
             ) {
                 Icon(
                     painter = painterResource(R.drawable.ic_splash_logo),
@@ -256,16 +258,20 @@ object HomeTab : Tab {
                             fontSize = 20.sp,
                         ),
                         color = MaterialTheme.colorScheme.onBackground,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                     Text(
                         text = "عالمك الخاص للقراءة",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 IconButton(onClick = onSearchClick) {
                     Icon(
                         imageVector = Icons.Outlined.Search,
@@ -323,6 +329,7 @@ object HomeTab : Tab {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.weight(1f, fill = false),
             ) {
                 Icon(
                     imageVector = icon,
@@ -334,11 +341,16 @@ object HomeTab : Tab {
                     text = title,
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                     color = MaterialTheme.colorScheme.onBackground,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
 
             if (actionText != null && onActionClick != null) {
-                TextButton(onClick = onActionClick) {
+                TextButton(
+                    onClick = onActionClick,
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                ) {
                     Text(
                         text = actionText,
                         style = MaterialTheme.typography.labelMedium,
@@ -363,15 +375,15 @@ object HomeTab : Tab {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(24.dp),
+                    .padding(20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Icon(
                     imageVector = Icons.Outlined.Book,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(48.dp),
+                    modifier = Modifier.size(44.dp),
                 )
                 Text(
                     text = "مكتبتك تنتظر أول قصة",
@@ -422,7 +434,7 @@ object HomeTab : Tab {
             ) {
                 Box(
                     modifier = Modifier
-                        .width(72.dp)
+                        .width(68.dp)
                         .clip(RoundedCornerShape(8.dp)),
                 ) {
                     MangaCoverComposable.Book(
@@ -431,7 +443,7 @@ object HomeTab : Tab {
                     )
                 }
 
-                Spacer(modifier = Modifier.width(16.dp))
+                Spacer(modifier = Modifier.width(14.dp))
 
                 Column(
                     modifier = Modifier.weight(1f),
@@ -456,7 +468,7 @@ object HomeTab : Tab {
                     Button(
                         onClick = onResumeClick,
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
                         shape = RoundedCornerShape(10.dp),
                     ) {
                         Row(
@@ -488,36 +500,40 @@ object HomeTab : Tab {
         onSearchClick: () -> Unit,
         onDownloadsClick: () -> Unit,
     ) {
-        Row(
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            QuickShortcutCard(
-                title = "المصادر",
-                icon = Icons.Outlined.Explore,
-                modifier = Modifier.weight(1f),
-                onClick = onBrowseClick,
-            )
-            QuickShortcutCard(
-                title = "الإضافات",
-                icon = Icons.Outlined.Extension,
-                modifier = Modifier.weight(1f),
-                onClick = onExtensionsClick,
-            )
-            QuickShortcutCard(
-                title = "البحث",
-                icon = Icons.Outlined.Search,
-                modifier = Modifier.weight(1f),
-                onClick = onSearchClick,
-            )
-            QuickShortcutCard(
-                title = "التحميلات",
-                icon = Icons.Outlined.Download,
-                modifier = Modifier.weight(1f),
-                onClick = onDownloadsClick,
-            )
+            val isSmallScreen = maxWidth < 360.dp
+            if (isSmallScreen) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        QuickShortcutCard("المصادر", Icons.Outlined.Explore, Modifier.weight(1f), onBrowseClick)
+                        QuickShortcutCard("الإضافات", Icons.Outlined.Extension, Modifier.weight(1f), onExtensionsClick)
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        QuickShortcutCard("البحث", Icons.Outlined.Search, Modifier.weight(1f), onSearchClick)
+                        QuickShortcutCard("التنزيلات", Icons.Outlined.Download, Modifier.weight(1f), onDownloadsClick)
+                    }
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    QuickShortcutCard("المصادر", Icons.Outlined.Explore, Modifier.weight(1f), onBrowseClick)
+                    QuickShortcutCard("الإضافات", Icons.Outlined.Extension, Modifier.weight(1f), onExtensionsClick)
+                    QuickShortcutCard("البحث", Icons.Outlined.Search, Modifier.weight(1f), onSearchClick)
+                    QuickShortcutCard("التنزيلات", Icons.Outlined.Download, Modifier.weight(1f), onDownloadsClick)
+                }
+            }
         }
     }
 
@@ -530,7 +546,7 @@ object HomeTab : Tab {
     ) {
         Card(
             modifier = modifier
-                .height(84.dp)
+                .height(78.dp)
                 .clickable(onClick = onClick),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
             shape = RoundedCornerShape(14.dp),
@@ -538,7 +554,7 @@ object HomeTab : Tab {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(8.dp),
+                    .padding(6.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
@@ -546,12 +562,15 @@ object HomeTab : Tab {
                     imageVector = icon,
                     contentDescription = title,
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(24.dp),
+                    modifier = Modifier.size(22.dp),
                 )
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = title,
-                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp,
+                    ),
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -567,12 +586,12 @@ object HomeTab : Tab {
     ) {
         LazyRow(
             contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             items(updates, key = { "${it.mangaId}_${it.chapterId}" }) { update ->
                 Card(
                     modifier = Modifier
-                        .width(110.dp)
+                        .width(112.dp)
                         .clickable { onUpdateClick(update) },
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
                     shape = RoundedCornerShape(12.dp),
@@ -616,12 +635,12 @@ object HomeTab : Tab {
     ) {
         LazyRow(
             contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             items(libraryMangaList, key = { it.id }) { item ->
                 Card(
                     modifier = Modifier
-                        .width(110.dp)
+                        .width(112.dp)
                         .clickable { onMangaClick(item.id) },
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
                     shape = RoundedCornerShape(12.dp),

@@ -1,6 +1,5 @@
 package eu.kanade.presentation.more.settings.screen.about
 
-import android.content.Context
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
@@ -52,7 +51,7 @@ object AboutScreen : Screen() {
             ) {
                 item {
                     LogoHeader(
-                        iconPadding = PaddingValues(vertical = 56.dp),
+                        iconPadding = PaddingValues(vertical = 40.dp),
                     )
                 }
 
@@ -62,30 +61,30 @@ object AboutScreen : Screen() {
                         subtitle = getVersionName(withBuildDate = true),
                         onPreferenceClick = {
                             val deviceInfo = CrashLogUtil(context).getDebugInfo()
-                            context.copyToClipboard("Debug information", deviceInfo)
+                            context.copyToClipboard("معلومات التصحيح", deviceInfo)
                         },
                     )
                 }
 
                 item {
                     TextPreferenceWidget(
-                        title = "About Manhwa AR",
-                        subtitle = "A modern, lightweight, Arabic-first manhwa reading application.",
+                        title = "حول تطبيق Manhwa AR",
+                        subtitle = "تطبيق حديث وخفيف وقارئ مانوا يدعم اللغة العربية بشكل كامل.",
                     )
                 }
 
                 item {
                     TextPreferenceWidget(
-                        title = "Attribution",
-                        subtitle = "Manhwa AR is based on Mihon, an open-source manga reader. We extend our gratitude to the original developers and contributors of Mihon and Tachiyomi.",
+                        title = "إسناد وشكر",
+                        subtitle = "تم بناء Manhwa AR استنادًا إلى مشروع Mihon مفتوح المصدر. نتقدم بالشكر الجزيل للمطورين الأصليين والمساهمين في Mihon وTachiyomi.",
                         onPreferenceClick = { uriHandler.openUri("https://github.com/mihonapp/mihon") },
                     )
                 }
 
                 item {
                     TextPreferenceWidget(
-                        title = "Extension Safety",
-                        subtitle = "Extensions are developed by third parties. Manhwa AR does not host or verify their content. Use extensions at your own risk and ensure compliance with their respective terms of service.",
+                        title = "أمان الإضافات",
+                        subtitle = "يتم تطوير الإضافات بواسطة أطراف خارجية. لا يستضيف التطبيق أو يتحقق من محتواها. استخدامك للإضافات يكون على مسؤوليتك الخاصة.",
                     )
                 }
 
@@ -102,7 +101,7 @@ object AboutScreen : Screen() {
     fun getVersionName(withBuildDate: Boolean): String {
         return when {
             BuildConfig.DEBUG -> {
-                "Debug ${BuildConfig.COMMIT_SHA}".let {
+                "تطوير ${BuildConfig.COMMIT_SHA}".let {
                     if (withBuildDate) {
                         "$it (${getFormattedBuildTime()})"
                     } else {
@@ -111,7 +110,7 @@ object AboutScreen : Screen() {
                 }
             }
             isPreviewBuildType -> {
-                "Beta r${BuildConfig.COMMIT_COUNT}".let {
+                "تجريبي r${BuildConfig.COMMIT_COUNT}".let {
                     if (withBuildDate) {
                         "$it (${BuildConfig.COMMIT_SHA}, ${getFormattedBuildTime()})"
                     } else {
@@ -120,7 +119,7 @@ object AboutScreen : Screen() {
                 }
             }
             else -> {
-                "Stable ${BuildConfig.VERSION_NAME}".let {
+                "مستقر ${BuildConfig.VERSION_NAME}".let {
                     if (withBuildDate) {
                         "$it (${getFormattedBuildTime()})"
                     } else {
