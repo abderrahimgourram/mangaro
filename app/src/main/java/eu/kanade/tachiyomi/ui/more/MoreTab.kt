@@ -41,7 +41,7 @@ data object MoreTab : Tab {
     override val options: TabOptions
         @Composable
         get() {
-            val title = stringResource(MR.strings.label_more)
+            val title = "المزيد"
             val icon = rememberAnimatedVectorPainter(
                 AnimatedImageVector.animatedVectorResource(R.drawable.anim_more_enter),
                 LocalTabNavigator.current.current.key == key,

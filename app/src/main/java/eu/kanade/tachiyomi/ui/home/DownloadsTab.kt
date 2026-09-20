@@ -16,7 +16,7 @@ object DownloadsTab : Tab {
     override val options: TabOptions
         @Composable
         get() {
-            val title = stringResource(MR.strings.label_downloaded)
+            val title = "التنزيلات"
             val icon = rememberVectorPainter(Icons.Outlined.Download)
             return TabOptions(
                 index = 3u,

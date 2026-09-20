@@ -69,8 +69,8 @@ data object LibraryTab : Tab {
             val isSelected = LocalTabNavigator.current.current.key == key
             val image = AnimatedImageVector.animatedVectorResource(R.drawable.anim_library_enter)
             return TabOptions(
-                index = 0u,
-                title = stringResource(MR.strings.label_library),
+                index = 1u,
+                title = "المكتبة",
                 icon = rememberAnimatedVectorPainter(image, isSelected),
             )
         }
