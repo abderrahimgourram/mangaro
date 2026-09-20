@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.ui.home
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -10,11 +11,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -113,6 +116,7 @@ object HomeTab : Tab {
                     onSettingsClick = { tabNavigator.current = MoreTab },
                 )
             },
+            contentWindowInsets = WindowInsets(0),
         ) { paddingValues ->
             ScrollbarLazyColumn(
                 modifier = Modifier.fillMaxSize(),
@@ -234,6 +238,7 @@ object HomeTab : Tab {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .statusBarsPadding()
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
@@ -243,21 +248,13 @@ object HomeTab : Tab {
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.weight(1f, fill = false),
             ) {
-                Box(
+                Image(
+                    painter = painterResource(R.drawable.ic_splash_logo),
+                    contentDescription = "Manhwa AR Logo",
                     modifier = Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primaryContainer)
-                        .padding(2.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_splash_logo),
-                        contentDescription = "Manhwa AR Logo",
-                        modifier = Modifier.size(32.dp),
-                        tint = MaterialTheme.colorScheme.primary,
-                    )
-                }
+                        .size(38.dp)
+                        .clip(CircleShape),
+                )
 
                 Column {
                     Text(
@@ -287,8 +284,10 @@ object HomeTab : Tab {
             ) {
                 Box(
                     modifier = Modifier
+                        .size(38.dp)
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                    contentAlignment = Alignment.Center,
                 ) {
                     IconButton(onClick = onSearchClick, modifier = Modifier.size(38.dp)) {
                         Icon(
@@ -303,8 +302,10 @@ object HomeTab : Tab {
                 if (activeDownloadsCount > 0) {
                     Box(
                         modifier = Modifier
+                            .size(38.dp)
                             .clip(CircleShape)
                             .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                        contentAlignment = Alignment.Center,
                     ) {
                         IconButton(onClick = onDownloadsClick, modifier = Modifier.size(38.dp)) {
                             BadgedBox(
@@ -330,8 +331,10 @@ object HomeTab : Tab {
 
                 Box(
                     modifier = Modifier
+                        .size(38.dp)
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                    contentAlignment = Alignment.Center,
                 ) {
                     IconButton(onClick = onSettingsClick, modifier = Modifier.size(38.dp)) {
                         Icon(
