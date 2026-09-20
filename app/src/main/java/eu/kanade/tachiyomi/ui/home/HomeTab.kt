@@ -72,14 +72,10 @@ import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.ui.browse.BrowseTab
 import eu.kanade.tachiyomi.ui.browse.source.browse.BrowseSourceScreen
 import eu.kanade.tachiyomi.ui.browse.source.globalsearch.GlobalSearchScreen
-import eu.kanade.tachiyomi.ui.library.LibraryTab
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.more.MoreTab
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
 import tachiyomi.domain.history.model.HistoryWithRelations
-import tachiyomi.domain.library.model.LibraryManga
-import tachiyomi.domain.manga.model.asMangaCover
-import tachiyomi.domain.updates.model.UpdatesWithRelations
 import tachiyomi.presentation.core.components.ScrollbarLazyColumn
 import tachiyomi.presentation.core.components.material.Scaffold
 
@@ -110,20 +106,24 @@ object HomeTab : Tab {
         val navigator = LocalNavigator.currentOrThrow
 
         Scaffold(
-            topBar = {
-                HomeTopHeader(
-                    activeDownloadsCount = state.activeDownloadsCount,
-                    onSearchClick = { navigator.push(GlobalSearchScreen()) },
-                    onDownloadsClick = { tabNavigator.current = DownloadsTab },
-                    onSettingsClick = { tabNavigator.current = MoreTab },
-                )
-            },
             contentWindowInsets = WindowInsets(0),
         ) { paddingValues ->
             ScrollbarLazyColumn(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background),
                 contentPadding = paddingValues,
             ) {
+                // Home Header as scrolling top item (no fixed overlapping)
+                item {
+                    HomeTopHeader(
+                        activeDownloadsCount = state.activeDownloadsCount,
+                        onSearchClick = { navigator.push(GlobalSearchScreen()) },
+                        onDownloadsClick = { tabNavigator.current = DownloadsTab },
+                        onSettingsClick = { tabNavigator.current = MoreTab },
+                    )
+                }
+
                 // Section 1: Featured Extension Discovery
                 item {
                     SectionHeader(
@@ -146,12 +146,12 @@ object HomeTab : Tab {
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(vertical = 24.dp),
+                                    .padding(vertical = 20.dp),
                                 contentAlignment = Alignment.Center,
                             ) {
                                 CircularProgressIndicator(
-                                    modifier = Modifier.size(32.dp),
-                                    strokeWidth = 3.dp,
+                                    modifier = Modifier.size(28.dp),
+                                    strokeWidth = 2.5.dp,
                                     color = MaterialTheme.colorScheme.primary,
                                 )
                             }
@@ -170,7 +170,7 @@ object HomeTab : Tab {
                 // Section 2: Continue Reading (if history exists)
                 if (state.recentHistory.isNotEmpty()) {
                     item {
-                        Spacer(modifier = Modifier.height(16.dp))
+                        Spacer(modifier = Modifier.height(14.dp))
                         SectionHeader(
                             title = "متابعة القراءة",
                             icon = Icons.Outlined.PlayArrow,
@@ -199,7 +199,7 @@ object HomeTab : Tab {
                 // Section 3: Latest Manga from Installed Sources
                 if (state.discoveryLatest.isNotEmpty()) {
                     item {
-                        Spacer(modifier = Modifier.height(16.dp))
+                        Spacer(modifier = Modifier.height(14.dp))
                         SectionHeader(
                             title = "أحدث الأعمال من مصادرك",
                             icon = Icons.Outlined.Book,
@@ -221,7 +221,7 @@ object HomeTab : Tab {
                 // Section 4: Explore Installed Sources
                 if (state.installedSources.isNotEmpty()) {
                     item {
-                        Spacer(modifier = Modifier.height(16.dp))
+                        Spacer(modifier = Modifier.height(14.dp))
                         SectionHeader(
                             title = "من مصادرك",
                             icon = Icons.Outlined.Explore,
@@ -242,7 +242,7 @@ object HomeTab : Tab {
 
                 // Section 5: Quick Access Shortcuts
                 item {
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
                     SectionHeader(title = "وصول سريع", icon = Icons.Outlined.Extension)
                 }
 
@@ -275,6 +275,7 @@ object HomeTab : Tab {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.background)
                 .statusBarsPadding()
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -488,11 +489,14 @@ object HomeTab : Tab {
                         text = item.title,
                         style = MaterialTheme.typography.titleMedium.copy(
                             fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp,
+                            fontSize = 15.5.sp,
+                            lineHeight = 20.sp,
                         ),
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Start,
+                        modifier = Modifier.fillMaxWidth(),
                     )
 
                     Box(
@@ -508,7 +512,7 @@ object HomeTab : Tab {
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(2.dp))
 
                     Button(
                         onClick = { onOpenManga(item.mangaId) },
@@ -605,19 +609,19 @@ object HomeTab : Tab {
                 .clickable(onClick = onMangaClick),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)),
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(14.dp),
             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(12.dp),
+                    .padding(10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(
                     modifier = Modifier
-                        .width(76.dp)
-                        .clip(RoundedCornerShape(10.dp)),
+                        .width(72.dp)
+                        .clip(RoundedCornerShape(8.dp)),
                 ) {
                     MangaCoverComposable.Book(
                         data = history.coverData,
@@ -625,7 +629,7 @@ object HomeTab : Tab {
                     )
                 }
 
-                Spacer(modifier = Modifier.width(14.dp))
+                Spacer(modifier = Modifier.width(12.dp))
 
                 Column(
                     modifier = Modifier.weight(1f),
@@ -635,11 +639,14 @@ object HomeTab : Tab {
                         text = history.title,
                         style = MaterialTheme.typography.titleMedium.copy(
                             fontWeight = FontWeight.Bold,
-                            fontSize = 15.5.sp,
+                            fontSize = 15.sp,
+                            lineHeight = 19.sp,
                         ),
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Start,
+                        modifier = Modifier.fillMaxWidth(),
                     )
 
                     Row(
@@ -665,17 +672,17 @@ object HomeTab : Tab {
                     Button(
                         onClick = onResumeClick,
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
-                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
+                        shape = RoundedCornerShape(8.dp),
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
                             Icon(
                                 imageVector = Icons.Outlined.PlayArrow,
                                 contentDescription = null,
-                                modifier = Modifier.size(16.dp),
+                                modifier = Modifier.size(15.dp),
                                 tint = MaterialTheme.colorScheme.onPrimary,
                             )
                             Text(
@@ -702,7 +709,7 @@ object HomeTab : Tab {
             itemsIndexed(mangaList, key = { index, item -> "${item.sourceId}_${item.mangaId}_$index" }) { _, item ->
                 Card(
                     modifier = Modifier
-                        .width(118.dp)
+                        .width(128.dp)
                         .clickable { onMangaClick(item.mangaId) },
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
                     shape = RoundedCornerShape(12.dp),
@@ -724,12 +731,16 @@ object HomeTab : Tab {
                             text = item.title,
                             style = MaterialTheme.typography.bodySmall.copy(
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp,
+                                fontSize = 11.5.sp,
+                                lineHeight = 15.sp,
                             ),
                             color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1,
+                            maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.Start,
+                            modifier = Modifier.fillMaxWidth(),
                         )
+                        Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = item.sourceName,
                             style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
