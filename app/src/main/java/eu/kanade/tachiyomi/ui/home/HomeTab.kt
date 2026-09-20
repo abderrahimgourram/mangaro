@@ -211,7 +211,7 @@ object HomeTab : Tab {
                         SectionHeader(
                             title = "أحدث الأعمال من مصادرك",
                             icon = Icons.Outlined.Book,
-                            actionText = "استكشاف المصادر",
+                            actionText = "عرض الكل",
                             onActionClick = { tabNavigator.current = BrowseTab },
                         )
                     }
@@ -474,13 +474,13 @@ object HomeTab : Tab {
             elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
-                // Background Cover Artwork Spanning Full Card
+                // Background Cover Artwork Spanning Full Card Width & Height
                 MangaCoverComposable.Book(
                     data = item.coverData,
                     contentDescription = item.title,
                 )
 
-                // Smooth Blended Dark Scrim Overlay
+                // Smooth Blended Dark Scrim Gradient Overlay
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -489,7 +489,7 @@ object HomeTab : Tab {
                                 colors = listOf(
                                     Color.Black.copy(alpha = 0.96f),
                                     Color.Black.copy(alpha = 0.85f),
-                                    Color.Black.copy(alpha = 0.40f),
+                                    Color.Black.copy(alpha = 0.45f),
                                 ),
                             ),
                         )
@@ -497,7 +497,7 @@ object HomeTab : Tab {
                             Brush.verticalGradient(
                                 colors = listOf(
                                     Color.Transparent,
-                                    Color.Black.copy(alpha = 0.70f),
+                                    Color.Black.copy(alpha = 0.65f),
                                     Color.Black.copy(alpha = 0.98f),
                                 ),
                             ),

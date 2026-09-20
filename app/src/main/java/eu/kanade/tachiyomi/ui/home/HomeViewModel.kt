@@ -110,14 +110,14 @@ class HomeViewModel(
     private fun loadDiscoveryContent(sources: List<CatalogueSource>) {
         viewModelScope.launch {
             _state.update { it.copy(isDiscoveryLoading = true, discoveryError = null) }
-            val discoveryItems = mutableListOf<HomeDiscoveryItem>()
+            val perSourceLists = mutableListOf<List<HomeDiscoveryItem>>()
 
             withContext(Dispatchers.IO) {
-                // Priority to Arabic sources, limit to first 3 sources for responsive load
+                // Priority to Arabic sources, process up to 5 installed sources
                 val prioritySources = sources
                     .distinctBy { s -> s.id }
                     .sortedByDescending { s -> s.lang == "ar" }
-                    .take(3)
+                    .take(5)
 
                 for (source in prioritySources) {
                     try {
@@ -127,21 +127,22 @@ class HomeViewModel(
                             source.getPopularManga(1)
                         }
 
-                        val domainMangas = mangasPage.mangas.take(6).map { sManga ->
+                        val domainMangas = mangasPage.mangas.take(12).map { sManga ->
                             sManga.toDomainManga(source.id)
                         }
                         val localMangas = networkToLocalManga(domainMangas)
 
-                        localMangas.forEach { manga ->
-                            discoveryItems.add(
-                                HomeDiscoveryItem(
-                                    mangaId = manga.id,
-                                    title = manga.title,
-                                    coverData = manga.asMangaCover(),
-                                    sourceId = source.id,
-                                    sourceName = source.name,
-                                ),
+                        val sourceItems = localMangas.map { manga ->
+                            HomeDiscoveryItem(
+                                mangaId = manga.id,
+                                title = manga.title,
+                                coverData = manga.asMangaCover(),
+                                sourceId = source.id,
+                                sourceName = source.name,
                             )
+                        }
+                        if (sourceItems.isNotEmpty()) {
+                            perSourceLists.add(sourceItems)
                         }
                     } catch (e: Exception) {
                         // Source-specific error handled gracefully without failing other sources
@@ -149,7 +150,10 @@ class HomeViewModel(
                 }
             }
 
-            allDiscoveryItems = discoveryItems.distinctBy { item -> "${item.sourceId}_${item.mangaId}" }
+            // Interleave items across sources to ensure source diversity
+            val interleavedItems = interleaveSources(perSourceLists)
+            allDiscoveryItems = interleavedItems.distinctBy { item -> "${item.sourceId}_${item.mangaId}" }
+
             if (allDiscoveryItems.isNotEmpty()) {
                 val savedMangaId = sourcePreferences.featuredMangaId.get()
                 if (savedMangaId != -1L) {
@@ -178,6 +182,23 @@ class HomeViewModel(
                 }
             }
         }
+    }
+
+    private fun interleaveSources(sourceLists: List<List<HomeDiscoveryItem>>): List<HomeDiscoveryItem> {
+        val result = mutableListOf<HomeDiscoveryItem>()
+        var index = 0
+        while (true) {
+            var added = false
+            for (list in sourceLists) {
+                if (index < list.size) {
+                    result.add(list[index])
+                    added = true
+                }
+            }
+            if (!added) break
+            index++
+        }
+        return result
     }
 
     fun nextFeaturedStory() {
