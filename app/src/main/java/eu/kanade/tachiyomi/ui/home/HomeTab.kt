@@ -70,6 +70,11 @@ import cafe.adriel.voyager.navigator.Navigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cafe.adriel.voyager.navigator.tab.LocalTabNavigator
 import cafe.adriel.voyager.navigator.tab.TabOptions
+import eu.kanade.presentation.home.MangaroContinueReading
+import eu.kanade.presentation.home.MangaroFeaturedBanner
+import eu.kanade.presentation.home.MangaroMangaCard
+import eu.kanade.presentation.home.MangaroSectionHeader
+import eu.kanade.presentation.home.MangaroSourceChip
 import eu.kanade.presentation.manga.components.MangaCover as MangaCoverComposable
 import eu.kanade.presentation.util.Tab
 import eu.kanade.tachiyomi.R
@@ -130,7 +135,7 @@ object HomeTab : Tab {
 
                 // Section 1: Cinematic Featured Discovery
                 item {
-                    SectionHeader(
+                    MangaroSectionHeader(
                         title = "اكتشف قصة",
                         icon = Icons.Outlined.AutoAwesome,
                     )
@@ -139,7 +144,7 @@ object HomeTab : Tab {
                 item {
                     when {
                         state.discoveryFeatured != null -> {
-                            FeaturedMangaCard(
+                            MangaroFeaturedBanner(
                                 item = state.discoveryFeatured!!,
                                 canRotate = state.discoveryLatest.isNotEmpty(),
                                 onOpenManga = { mangaId ->
@@ -179,7 +184,7 @@ object HomeTab : Tab {
                 if (state.recentHistory.isNotEmpty()) {
                     item {
                         Spacer(modifier = Modifier.height(8.dp))
-                        SectionHeader(
+                        MangaroSectionHeader(
                             title = "متابعة القراءة",
                             icon = Icons.Outlined.PlayArrow,
                         )
@@ -187,7 +192,7 @@ object HomeTab : Tab {
 
                     item {
                         val lastHistory = state.recentHistory.first()
-                        ContinueReadingCard(
+                        MangaroContinueReading(
                             history = lastHistory,
                             onResumeClick = {
                                 val intent = ReaderActivity.newIntent(
@@ -208,7 +213,7 @@ object HomeTab : Tab {
                 if (state.discoveryLatest.isNotEmpty()) {
                     item {
                         Spacer(modifier = Modifier.height(8.dp))
-                        SectionHeader(
+                        MangaroSectionHeader(
                             title = "أحدث الأعمال من مصادرك",
                             icon = Icons.Outlined.Book,
                             actionText = "عرض الكل",
@@ -230,7 +235,7 @@ object HomeTab : Tab {
                 if (state.installedSources.isNotEmpty()) {
                     item {
                         Spacer(modifier = Modifier.height(8.dp))
-                        SectionHeader(
+                        MangaroSectionHeader(
                             title = "من مصادرك",
                             icon = Icons.Outlined.Explore,
                             actionText = "عرض الكل",
@@ -774,49 +779,11 @@ object HomeTab : Tab {
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             itemsIndexed(mangaList, key = { index, item -> "${item.sourceId}_${item.mangaId}_$index" }) { _, item ->
-                Card(
-                    modifier = Modifier
-                        .width(104.dp)
-                        .clickable { onMangaClick(item.mangaId) },
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-                    shape = RoundedCornerShape(12.dp),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                ) {
-                    Column(modifier = Modifier.padding(6.dp)) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp)),
-                        ) {
-                            MangaCoverComposable.Book(
-                                data = item.coverData,
-                                contentDescription = item.title,
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = item.title,
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 11.5.sp,
-                                lineHeight = 15.sp,
-                            ),
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                            textAlign = TextAlign.Start,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = item.sourceName,
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
-                            color = MaterialTheme.colorScheme.secondary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
+                MangaroMangaCard(
+                    item = item,
+                    onMangaClick = onMangaClick,
+                    cardWidth = 108.dp,
+                )
             }
         }
     }
@@ -831,35 +798,10 @@ object HomeTab : Tab {
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             itemsIndexed(sources, key = { index, source -> "${source.id}_$index" }) { _, source ->
-                Card(
-                    modifier = Modifier
-                        .width(112.dp)
-                        .clickable { onSourceClick(source.id) },
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)),
-                    shape = RoundedCornerShape(12.dp),
-                ) {
-                    Column(
-                        modifier = Modifier.padding(10.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        Text(
-                            text = source.name,
-                            style = MaterialTheme.typography.bodyMedium.copy(
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp,
-                            ),
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            text = if (source.lang == "ar") "العربية" else source.lang.uppercase(),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.secondary,
-                        )
-                    }
-                }
+                MangaroSourceChip(
+                    source = source,
+                    onSourceClick = onSourceClick,
+                )
             }
         }
     }
