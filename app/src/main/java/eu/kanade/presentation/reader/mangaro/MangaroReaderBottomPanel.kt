@@ -40,6 +40,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -87,6 +88,7 @@ fun MangaroReaderBottomPanel(
     Card(
         modifier = modifier
             .fillMaxWidth()
+            .pointerInput(Unit) {}
             .padding(horizontal = 12.dp, vertical = 8.dp)
             .windowInsetsPadding(WindowInsets.navigationBars),
         colors = CardDefaults.cardColors(containerColor = Color(0xF218121D)),

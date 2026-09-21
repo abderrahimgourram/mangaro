@@ -104,7 +104,7 @@ class WebtoonConfig(
         }
 
     override fun defaultNavigation(): ViewerNavigation {
-        return LNavigation()
+        return DisabledNavigation()
     }
 
     override fun updateNavigation(navigationMode: Int) {
