@@ -26,6 +26,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -64,7 +65,7 @@ fun MangaroMangaCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(gradientBrush)
-                .padding(6.dp),
+                .padding(5.dp),
         ) {
             // Prominent 2:3 Cover Poster
             Box(
@@ -74,7 +75,7 @@ fun MangaroMangaCard(
                     .shadow(4.dp, RoundedCornerShape(10.dp))
                     .clip(RoundedCornerShape(10.dp))
                     .border(
-                        BorderStroke(1.dp, Color(0x33A78BFA)),
+                        BorderStroke(1.dp, Color(0x26A78BFA)),
                         RoundedCornerShape(10.dp),
                     ),
             ) {
@@ -94,17 +95,19 @@ fun MangaroMangaCard(
                 )
             }
 
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(5.dp))
 
-            // Manga Title
+            // Manga Title with Content-Aware TextDirection for English / Mixed / Arabic titles in RTL
             Text(
                 text = item.title,
                 style = MaterialTheme.typography.bodySmall.copy(
                     fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp,
-                    lineHeight = 16.sp,
+                    fontSize = 11.5.sp,
+                    lineHeight = 15.5.sp,
+                    textDirection = TextDirection.Content,
                 ),
                 color = Color.White,
+                minLines = 2,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Start,
@@ -113,14 +116,15 @@ fun MangaroMangaCard(
                     .padding(horizontal = 2.dp),
             )
 
-            Spacer(modifier = Modifier.height(3.dp))
+            Spacer(modifier = Modifier.height(2.dp))
 
             // Source Name (No chapter information displayed)
             Text(
                 text = item.sourceName,
                 style = MaterialTheme.typography.labelSmall.copy(
-                    fontSize = 11.sp,
+                    fontSize = 10.5.sp,
                     fontWeight = FontWeight.SemiBold,
+                    textDirection = TextDirection.Content,
                 ),
                 color = MangaroVisualTokens.GoldAccent,
                 maxLines = 1,
