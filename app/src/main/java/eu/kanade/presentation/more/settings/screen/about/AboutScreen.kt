@@ -68,7 +68,7 @@ object AboutScreen : Screen() {
 
                 item {
                     TextPreferenceWidget(
-                        title = "حول تطبيق Manhwa AR",
+                        title = "حول تطبيق MANGARO",
                         subtitle = "تطبيق حديث وخفيف وقارئ مانوا يدعم اللغة العربية بشكل كامل.",
                     )
                 }
@@ -76,7 +76,7 @@ object AboutScreen : Screen() {
                 item {
                     TextPreferenceWidget(
                         title = "إسناد وشكر",
-                        subtitle = "تم بناء Manhwa AR استنادًا إلى مشروع Mihon مفتوح المصدر. نتقدم بالشكر الجزيل للمطورين الأصليين والمساهمين في Mihon وTachiyomi.",
+                        subtitle = "تم بناء MANGARO استنادًا إلى مشروع Mihon مفتوح المصدر. نتقدم بالشكر الجزيل للمطورين الأصليين والمساهمين في Mihon وTachiyomi.",
                         onPreferenceClick = { uriHandler.openUri("https://github.com/mihonapp/mihon") },
                     )
                 }

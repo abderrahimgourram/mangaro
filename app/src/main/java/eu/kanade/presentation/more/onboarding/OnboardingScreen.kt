@@ -138,14 +138,14 @@ fun OnboardingScreen(
             ) {
                 Image(
                     painter = painterResource(R.drawable.ic_splash_logo),
-                    contentDescription = "Manhwa AR Logo",
+                    contentDescription = "MANGARO Logo",
                     modifier = Modifier
                         .size(52.dp)
                         .clip(CircleShape),
                 )
                 Column {
                     Text(
-                        text = "مرحباً بك في Manhwa AR",
+                        text = "مرحباً بك في MANGARO",
                         style = MaterialTheme.typography.headlineMedium.copy(
                             fontWeight = FontWeight.Bold,
                             fontSize = 22.sp,

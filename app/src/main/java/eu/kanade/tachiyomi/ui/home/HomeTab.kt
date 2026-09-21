@@ -296,7 +296,7 @@ object HomeTab : Tab {
             ) {
                 Image(
                     painter = painterResource(R.drawable.ic_splash_logo),
-                    contentDescription = "Manhwa AR Logo",
+                    contentDescription = "MANGARO Logo",
                     modifier = Modifier
                         .size(38.dp)
                         .clip(CircleShape),
@@ -304,7 +304,7 @@ object HomeTab : Tab {
 
                 Column {
                     Text(
-                        text = "Manhwa AR",
+                        text = "MANGARO",
                         style = MaterialTheme.typography.titleLarge.copy(
                             fontWeight = FontWeight.Bold,
                             fontSize = 19.sp,
