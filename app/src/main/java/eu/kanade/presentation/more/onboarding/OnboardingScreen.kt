@@ -54,7 +54,6 @@ fun OnboardingScreen(
     var currentStep by rememberSaveable { mutableIntStateOf(0) }
     val steps = remember {
         listOf(
-            StorageStep(),
             PermissionStep(),
             GuidesStep(onRestoreBackup = onRestoreBackup),
         )
@@ -76,15 +75,6 @@ fun OnboardingScreen(
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                if (!canAccept && currentStep == 0) {
-                    Text(
-                        text = "يرجى تحديد مجلد التخزين لتتمكن من المتابعة",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(bottom = 4.dp),
-                    )
-                }
-
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),

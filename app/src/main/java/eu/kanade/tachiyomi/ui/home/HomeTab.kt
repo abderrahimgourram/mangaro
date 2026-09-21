@@ -652,7 +652,7 @@ object HomeTab : Tab {
                     textAlign = TextAlign.Center,
                 )
                 Text(
-                    text = "ثبّت مصدرًا من قسم الإضافات لعرض المانهوا المتاحة مباشرة هنا.",
+                    text = "ثبّت المصادر العربية الموصى بها (Azora, Hijala, MangaDar, MangaTime, Team X, مانجا ليك) للبدء بمتابعة المانوا مباشرة.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
