@@ -30,6 +30,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -465,11 +466,25 @@ class ReaderActivity : BaseActivity() {
         val verticalNavigatorOnLeft by readerPreferences.verticalNavigatorOnLeft.collectAsState()
         val verticalNavigatorHeight by readerPreferences.verticalNavigatorHeight.collectAsState()
 
+        val customBrightness by readerPreferences.customBrightness.collectAsState()
+        val customBrightnessValue by readerPreferences.customBrightnessValue.collectAsState()
+
+        LaunchedEffect(customBrightness, customBrightnessValue) {
+            val layoutParams = window.attributes
+            layoutParams.screenBrightness = if (customBrightness) {
+                (customBrightnessValue / 100f).coerceIn(0.01f, 1f)
+            } else {
+                WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+            }
+            window.attributes = layoutParams
+        }
+
         ReaderAppBars(
             visible = state.menuVisible,
 
             mangaTitle = state.manga?.title,
             chapterTitle = state.currentChapter?.chapter?.name,
+            chapterNumber = state.currentChapter?.chapter?.chapter_number ?: 0f,
             navigateUp = onBackPressedDispatcher::onBackPressed,
             onClickTopAppBar = ::openMangaScreen,
             bookmarked = state.bookmarked,
