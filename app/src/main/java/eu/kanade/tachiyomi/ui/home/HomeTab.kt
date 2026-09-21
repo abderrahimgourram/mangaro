@@ -1,7 +1,6 @@
 package eu.kanade.tachiyomi.ui.home
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -72,6 +71,7 @@ import cafe.adriel.voyager.navigator.tab.LocalTabNavigator
 import cafe.adriel.voyager.navigator.tab.TabOptions
 import eu.kanade.presentation.home.MangaroContinueReading
 import eu.kanade.presentation.home.MangaroFeaturedBanner
+import eu.kanade.presentation.home.MangaroHomeHeader
 import eu.kanade.presentation.home.MangaroMangaCard
 import eu.kanade.presentation.home.MangaroSectionHeader
 import eu.kanade.presentation.home.MangaroSourceChip
@@ -132,7 +132,7 @@ object HomeTab : Tab {
                 ) {
                 // Home Header as scrolling top item
                 item {
-                    HomeTopHeader(
+                    MangaroHomeHeader(
                         activeDownloadsCount = state.activeDownloadsCount,
                         onSearchClick = { navigator.push(GlobalSearchScreen()) },
                         onDownloadsClick = { tabNavigator.current = DownloadsTab },
@@ -285,128 +285,6 @@ object HomeTab : Tab {
         }
     }
 }
-
-    @Composable
-    private fun HomeTopHeader(
-        activeDownloadsCount: Int,
-        onSearchClick: () -> Unit,
-        onDownloadsClick: () -> Unit,
-        onSettingsClick: () -> Unit,
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.background)
-                .statusBarsPadding()
-                .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 6.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.weight(1f, fill = false),
-            ) {
-                Image(
-                    painter = painterResource(R.drawable.ic_splash_logo),
-                    contentDescription = "MANGARO Logo",
-                    modifier = Modifier
-                        .size(38.dp)
-                        .clip(CircleShape),
-                )
-
-                Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                    Text(
-                        text = "MANGARO",
-                        style = MaterialTheme.typography.titleLarge.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 18.5.sp,
-                            letterSpacing = 0.5.sp,
-                        ),
-                        color = MaterialTheme.colorScheme.onBackground,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = "عالمك الخاص للقراءة",
-                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(38.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.surfaceContainerHigh),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    IconButton(onClick = onSearchClick, modifier = Modifier.size(38.dp)) {
-                        Icon(
-                            imageVector = Icons.Outlined.Search,
-                            contentDescription = "Search",
-                            tint = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.size(19.dp),
-                        )
-                    }
-                }
-
-                if (activeDownloadsCount > 0) {
-                    Box(
-                        modifier = Modifier
-                            .size(38.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surfaceContainerHigh),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        IconButton(onClick = onDownloadsClick, modifier = Modifier.size(38.dp)) {
-                            BadgedBox(
-                                badge = {
-                                    Badge(containerColor = MaterialTheme.colorScheme.secondary) {
-                                        Text(
-                                            text = activeDownloadsCount.toString(),
-                                            color = MaterialTheme.colorScheme.onSecondary,
-                                        )
-                                    }
-                                },
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Outlined.Download,
-                                    contentDescription = "Downloads",
-                                    tint = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.size(19.dp),
-                                )
-                            }
-                        }
-                    }
-                }
-
-                Box(
-                    modifier = Modifier
-                        .size(38.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.surfaceContainerHigh),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    IconButton(onClick = onSettingsClick, modifier = Modifier.size(38.dp)) {
-                        Icon(
-                            imageVector = Icons.Outlined.Settings,
-                            contentDescription = "Settings",
-                            tint = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.size(19.dp),
-                        )
-                    }
-                }
-            }
-        }
-    }
 
     @Composable
     private fun SectionHeader(
@@ -686,96 +564,7 @@ object HomeTab : Tab {
         }
     }
 
-    @Composable
-    private fun ContinueReadingCard(
-        history: HistoryWithRelations,
-        onResumeClick: () -> Unit,
-        onMangaClick: () -> Unit,
-    ) {
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(76.dp)
-                .padding(horizontal = 16.dp, vertical = 2.dp)
-                .clickable(onClick = onMangaClick),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
-            shape = RoundedCornerShape(12.dp),
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .width(40.dp)
-                            .clip(RoundedCornerShape(6.dp)),
-                    ) {
-                        MangaCoverComposable.Book(
-                            data = history.coverData,
-                            contentDescription = history.title,
-                        )
-                    }
 
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text(
-                            text = history.title,
-                            style = MaterialTheme.typography.bodyMedium.copy(
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp,
-                            ),
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            textAlign = TextAlign.Start,
-                        )
-
-                        Text(
-                            text = formatChapterDisplay(history.chapterNumber),
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.5.sp),
-                            color = MaterialTheme.colorScheme.secondary,
-                            maxLines = 1,
-                        )
-                    }
-                }
-
-                Button(
-                    onClick = onResumeClick,
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
-                    shape = RoundedCornerShape(8.dp),
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.PlayArrow,
-                            contentDescription = null,
-                            modifier = Modifier.size(14.dp),
-                            tint = MaterialTheme.colorScheme.onPrimary,
-                        )
-                        Text(
-                            text = "متابعة",
-                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.onPrimary,
-                        )
-                    }
-                }
-            }
-        }
-    }
 
     @Composable
     private fun DiscoveryMangaRow(

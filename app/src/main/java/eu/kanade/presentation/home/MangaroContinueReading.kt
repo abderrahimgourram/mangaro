@@ -49,7 +49,7 @@ fun MangaroContinueReading(
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .padding(horizontal = 16.dp, vertical = 4.dp)
             .clickable(onClick = onMangaClick),
         colors = CardDefaults.cardColors(containerColor = MangaroVisualTokens.SurfaceHigh),
         border = BorderStroke(1.dp, MangaroVisualTokens.CardBorderColor),
@@ -59,19 +59,19 @@ fun MangaroContinueReading(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
+                .padding(10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.weight(1f),
             ) {
-                // Prominent 2:3 Cover Poster
+                // Prominent 2:3 Cover Artwork
                 Box(
                     modifier = Modifier
-                        .width(56.dp)
+                        .width(54.dp)
                         .aspectRatio(2f / 3f)
                         .shadow(4.dp, RoundedCornerShape(10.dp))
                         .clip(RoundedCornerShape(10.dp))
@@ -87,7 +87,7 @@ fun MangaroContinueReading(
                     )
                 }
 
-                // Middle Text Group: Title & Chapter
+                // Title & Chapter Info
                 Column(
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                     modifier = Modifier.weight(1f),
@@ -108,7 +108,7 @@ fun MangaroContinueReading(
                     Text(
                         text = formatChapterDisplay(history.chapterNumber),
                         style = MaterialTheme.typography.labelSmall.copy(
-                            fontWeight = FontWeight.Medium,
+                            fontWeight = FontWeight.SemiBold,
                             fontSize = 12.sp,
                         ),
                         color = MangaroVisualTokens.GoldAccent,
@@ -117,16 +117,16 @@ fun MangaroContinueReading(
                 }
             }
 
-            // Right Action Button ("متابعة")
+            // Continue Reading CTA ("متابعة")
             Button(
                 onClick = onResumeClick,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MangaroVisualTokens.PurplePrimary,
-                    contentColor = Color.Black,
+                    contentColor = Color(0xFF0F0B13),
                 ),
                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.heightIn(min = 40.dp),
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.heightIn(min = 38.dp),
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -136,7 +136,7 @@ fun MangaroContinueReading(
                         imageVector = Icons.Outlined.PlayArrow,
                         contentDescription = null,
                         modifier = Modifier.size(16.dp),
-                        tint = Color.Black,
+                        tint = Color(0xFF0F0B13),
                     )
                     Text(
                         text = "متابعة",
@@ -144,7 +144,7 @@ fun MangaroContinueReading(
                             fontWeight = FontWeight.Bold,
                             fontSize = 12.5.sp,
                         ),
-                        color = Color.Black,
+                        color = Color(0xFF0F0B13),
                     )
                 }
             }
