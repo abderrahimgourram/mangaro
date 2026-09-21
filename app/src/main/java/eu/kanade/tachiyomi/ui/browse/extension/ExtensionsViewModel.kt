@@ -7,6 +7,7 @@ import dev.icerock.moko.resources.StringResource
 import eu.kanade.domain.base.BasePreferences
 import eu.kanade.domain.extension.interactor.GetExtensionsByType
 import eu.kanade.domain.source.service.SourcePreferences
+import eu.kanade.tachiyomi.extension.DefaultArabicSources
 import eu.kanade.tachiyomi.extension.ExtensionManager
 import eu.kanade.tachiyomi.extension.model.Extension
 import eu.kanade.tachiyomi.extension.model.InstallStep
@@ -72,8 +73,22 @@ class ExtensionsViewModel(
                         put(ExtensionUiModel.Header.Resource(MR.strings.ext_installed), installed + untrusted)
                     }
 
-                    val languagesWithExtensions = _available
-                        .filter(predicate)
+                    val filteredAvailable = _available.filter(predicate)
+                    val recommended = filteredAvailable.filter { ext: Extension.Available ->
+                        DefaultArabicSources.isRecommended(ext.pkgName)
+                    }
+                    val regular = filteredAvailable.filterNot { ext: Extension.Available ->
+                        DefaultArabicSources.isRecommended(ext.pkgName)
+                    }
+
+                    if (recommended.isNotEmpty()) {
+                        put(
+                            ExtensionUiModel.Header.Text("المصادر العربية الموصى بها"),
+                            recommended.map(extensionMapper(downloads)),
+                        )
+                    }
+
+                    val languagesWithExtensions = regular
                         .groupBy { it.lang }
                         .toSortedMap(LocaleHelper.comparator)
                         .map { (lang, exts) ->

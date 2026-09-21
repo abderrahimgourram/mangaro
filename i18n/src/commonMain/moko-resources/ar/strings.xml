@@ -162,7 +162,7 @@
     <string name="unknown_error">خطأ غير معروف</string>
     <string name="updating_category">جار تحديث الفئة</string>
     <string name="no_more_results">لا توجد نتائج أخرى</string>
-    <string name="local_source">مصدر محلِّي</string>
+    <string name="local_source">المصدر المحلي</string>
     <string name="other_source">أخرى</string>
     <string name="action_global_search_hint">البحث الشامل…</string>
     <string name="latest">الأحدث</string>

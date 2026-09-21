@@ -2,6 +2,7 @@ package eu.kanade.domain.extension.interactor
 
 import eu.kanade.domain.extension.model.Extensions
 import eu.kanade.domain.source.service.SourcePreferences
+import eu.kanade.tachiyomi.extension.DefaultArabicSources
 import eu.kanade.tachiyomi.extension.ExtensionManager
 import eu.kanade.tachiyomi.extension.model.Extension
 import kotlinx.coroutines.flow.Flow
@@ -39,7 +40,8 @@ class GetExtensionsByType(
                         (showNsfwSources || !extension.isNsfw)
                 }
                 .flatMap { ext ->
-                    ext.sources.filter { it.lang in enabledLanguages }
+                    val isRecommended = DefaultArabicSources.isRecommended(ext.pkgName)
+                    ext.sources.filter { it.lang in enabledLanguages || it.lang == "ar" || isRecommended }
                         .map {
                             ext.copy(
                                 name = it.name,

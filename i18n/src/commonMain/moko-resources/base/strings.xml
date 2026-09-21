@@ -124,7 +124,7 @@
     <string name="action_display_cover_only_grid">Cover-only grid</string>
     <string name="action_display_download_badge">Downloaded chapters</string>
     <string name="action_display_unread_badge">Unread chapters</string>
-    <string name="action_display_local_badge">Local source</string>
+    <string name="action_display_local_badge">المصدر المحلي</string>
     <string name="action_display_language_badge">Language</string>
     <string name="action_display_show_tabs">Show category tabs</string>
     <string name="action_display_show_number_of_items">Show number of items</string>
@@ -693,14 +693,14 @@
     <!-- missing prompt after Compose rewrite #7901 -->
     <string name="no_more_results">No more results</string>
     <string name="no_results_found">No results found</string>
-    <string name="local_source">Local source</string>
-    <string name="other_source">Other</string>
-    <string name="last_used_source">Last used</string>
-    <string name="pinned_sources">Pinned</string>
-    <string name="action_global_search_hint">Global search…</string>
-    <string name="action_global_search_query">Search for \"%1$s\" globally</string>
-    <string name="latest">Latest</string>
-    <string name="popular">Popular</string>
+    <string name="local_source">المصدر المحلي</string>
+    <string name="other_source">أخرى</string>
+    <string name="last_used_source">آخر استخدام</string>
+    <string name="pinned_sources">المثبتة</string>
+    <string name="action_global_search_hint">بحث شامل…</string>
+    <string name="action_global_search_query">البحث عن \"%1$s\" في جميع المصادر</string>
+    <string name="latest">الأحدث</string>
+    <string name="popular">الشائع</string>
     <string name="browse">الاستكشاف</string>
     <string name="has_results">Has results</string>
     <string name="local_source_help_guide">Local source guide</string>
