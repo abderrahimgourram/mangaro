@@ -652,7 +652,7 @@ object HomeTab : Tab {
                     textAlign = TextAlign.Center,
                 )
                 Text(
-                    text = "ثبّت المصادر العربية الموصى بها (Azora, Hijala, MangaDar, MangaTime, Team X, مانجا ليك) للبدء بمتابعة المانوا مباشرة.",
+                    text = "ثبّت مصادر المانهوا المفضلة لديك لتبدأ الاستكشاف والقراءة.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
@@ -664,7 +664,7 @@ object HomeTab : Tab {
                     contentPadding = PaddingValues(horizontal = 18.dp, vertical = 6.dp),
                 ) {
                     Text(
-                        text = "استكشاف الإضافات",
+                        text = "إضافة المصادر",
                         color = MaterialTheme.colorScheme.onPrimary,
                         fontWeight = FontWeight.Bold,
                     )

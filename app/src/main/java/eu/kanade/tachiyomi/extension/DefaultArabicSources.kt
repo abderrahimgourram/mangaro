@@ -45,8 +45,6 @@ object DefaultArabicSources {
 
     fun isRecommended(pkgName: String): Boolean {
         val basePkg = pkgName.substringBefore("-")
-        return PACKAGE_NAMES.contains(basePkg) || PACKAGE_NAMES.contains(pkgName) || SOURCES.any {
-            pkgName.contains(it.name, ignoreCase = true) || pkgName.contains(it.englishName, ignoreCase = true)
-        }
+        return basePkg in PACKAGE_NAMES || pkgName in PACKAGE_NAMES
     }
 }
