@@ -77,12 +77,31 @@ fun MangaroContinueReading(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                // Left Side (in RTL): Manga Title, Chapter, and Continue Affordance Badge
+                // FIRST CHILD IN ROW (In RTL layout = RIGHT side of screen): Cover Artwork
+                Box(
+                    modifier = Modifier
+                        .width(64.dp)
+                        .aspectRatio(2f / 3f)
+                        .shadow(5.dp, RoundedCornerShape(12.dp))
+                        .clip(RoundedCornerShape(12.dp))
+                        .border(
+                            BorderStroke(1.dp, Color(0x40A78BFA)),
+                            RoundedCornerShape(12.dp),
+                        ),
+                ) {
+                    MangaCover.Book(
+                        data = history.coverData,
+                        contentDescription = history.title,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+
+                // SECOND CHILD IN ROW (In RTL layout = LEFT side of screen): Title, Chapter, and Badge
                 Column(
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(5.dp),
                     modifier = Modifier
                         .weight(1f)
-                        .padding(end = 12.dp),
+                        .padding(start = 12.dp),
                 ) {
                     // Visual Affordance Badge: "متابعة القراءة" + Play Icon
                     Row(
@@ -90,7 +109,7 @@ fun MangaroContinueReading(
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                         modifier = Modifier
                             .clip(RoundedCornerShape(6.dp))
-                            .background(MangaroVisualTokens.PurplePrimary.copy(alpha = 0.18f))
+                            .background(MangaroVisualTokens.PurplePrimary.copy(alpha = 0.16f))
                             .padding(horizontal = 8.dp, vertical = 3.dp),
                     ) {
                         Icon(
@@ -132,25 +151,6 @@ fun MangaroContinueReading(
                         ),
                         color = MangaroVisualTokens.GoldAccent,
                         maxLines = 1,
-                    )
-                }
-
-                // Right Side (in RTL): Prominent Manga Cover Artwork (2:3 aspect ratio)
-                Box(
-                    modifier = Modifier
-                        .width(68.dp)
-                        .aspectRatio(2f / 3f)
-                        .shadow(6.dp, RoundedCornerShape(12.dp))
-                        .clip(RoundedCornerShape(12.dp))
-                        .border(
-                            BorderStroke(1.dp, Color(0x40A78BFA)),
-                            RoundedCornerShape(12.dp),
-                        ),
-                ) {
-                    MangaCover.Book(
-                        data = history.coverData,
-                        contentDescription = history.title,
-                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
             }

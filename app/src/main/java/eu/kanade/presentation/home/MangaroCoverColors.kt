@@ -9,25 +9,35 @@ object MangaroCoverColors {
 
     /**
      * Generates a restrained, cover-inspired atmospheric gradient brush.
-     * Uses deterministic HSL color derivation based on manga metadata,
-     * delivering 100% GPU-accelerated rendering with zero main-thread bitmap cost.
+     * Anchors strongly on Mangaro's signature dark-purple identity while incorporating
+     * a subtle 25% tint variation derived from the manga title/ID.
+     * Prevents warm/bright cover art from turning cards brown or yellow.
      */
     @Composable
     fun rememberAtmosphericGradient(mangaId: Long, title: String): Brush {
         return remember(mangaId, title) {
-            val hash = (title.hashCode() xor (mangaId.hashCode())) and 0x7FFFFFFF
-            val hue = (hash % 360).toFloat()
+            val hash = (title.hashCode() xor mangaId.hashCode()) and 0x7FFFFFFF
+            val rawHue = (hash % 360).toFloat()
 
-            // Subtle dark-saturated tones tailored for Mangaro's premium dark surfaces
-            val accentTone = Color.hsl(hue = hue, saturation = 0.32f, lightness = 0.22f)
-            val midTone = Color.hsl(hue = (hue + 20f) % 360f, saturation = 0.25f, lightness = 0.14f)
-            val darkBase = Color(0xFF120C18)
+            // Anchor 75% on Mangaro's signature dark-violet hue (270 deg)
+            val purpleTargetHue = 270f
+            val blendedHue = (purpleTargetHue * 0.75f + rawHue * 0.25f) % 360f
 
+            val darkPurpleBase = Color(0xFF130D1A)
+            val midPurpleSurface = Color(0xFF1B1325)
+            val subtleAccentTone = Color.hsl(
+                hue = blendedHue,
+                saturation = 0.22f,
+                lightness = 0.16f,
+            )
+
+            // In RTL layout, the gradient flows from deep dark purple on the text side (start/left)
+            // to a subtle cover-accent tone behind the cover artwork (end/right).
             Brush.horizontalGradient(
                 colors = listOf(
-                    darkBase,
-                    midTone,
-                    accentTone,
+                    darkPurpleBase,
+                    midPurpleSurface,
+                    subtleAccentTone,
                 ),
             )
         }
