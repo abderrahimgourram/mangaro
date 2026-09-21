@@ -298,7 +298,7 @@ object HomeTab : Tab {
                 .fillMaxWidth()
                 .background(MaterialTheme.colorScheme.background)
                 .statusBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 6.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -315,13 +315,13 @@ object HomeTab : Tab {
                         .clip(CircleShape),
                 )
 
-                Column {
+                Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
                     Text(
                         text = "MANGARO",
                         style = MaterialTheme.typography.titleLarge.copy(
                             fontWeight = FontWeight.Bold,
-                            fontSize = 19.sp,
-                            letterSpacing = 0.3.sp,
+                            fontSize = 18.5.sp,
+                            letterSpacing = 0.5.sp,
                         ),
                         color = MaterialTheme.colorScheme.onBackground,
                         maxLines = 1,
@@ -329,7 +329,7 @@ object HomeTab : Tab {
                     )
                     Text(
                         text = "عالمك الخاص للقراءة",
-                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp),
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -338,7 +338,7 @@ object HomeTab : Tab {
             }
 
             Row(
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(
