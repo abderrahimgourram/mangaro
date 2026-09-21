@@ -58,6 +58,7 @@ import eu.kanade.presentation.reader.ReaderPageIndicator
 import eu.kanade.presentation.reader.ReadingModeSelectDialog
 import eu.kanade.presentation.reader.appbars.ReaderAppBars
 import eu.kanade.presentation.reader.components.ChapterNavigatorType
+import eu.kanade.presentation.reader.mangaro.MangaroChapterSelectorSheet
 import eu.kanade.presentation.reader.settings.ReaderSettingsDialog
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.data.coil.TachiyomiImageDecoder
@@ -299,6 +300,16 @@ class ReaderActivity : BaseActivity() {
                     viewModel = settingsviewModel,
                 )
             }
+            is ReaderViewModel.Dialog.ChapterList -> {
+                MangaroChapterSelectorSheet(
+                    chapters = viewModel.getMangaChapters(),
+                    currentChapterId = state.currentChapter?.chapter?.id,
+                    onSelectChapter = { chapterId ->
+                        viewModel.loadChapterById(chapterId)
+                    },
+                    onDismissRequest = onDismissRequest,
+                )
+            }
             is ReaderViewModel.Dialog.ReadingModeSelect -> {
                 ReadingModeSelectDialog(
                     onDismissRequest = onDismissRequest,
@@ -536,6 +547,7 @@ class ReaderActivity : BaseActivity() {
                 menuToggleToast = toast(if (enabled) MR.strings.on else MR.strings.off)
             },
             onClickSettings = viewModel::openSettingsDialog,
+            onClickChapterSelector = viewModel::openChapterListDialog,
         )
     }
 

@@ -27,6 +27,7 @@ import androidx.compose.material.icons.outlined.CropFree
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.ScreenRotation
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.WbSunny
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -158,21 +159,24 @@ fun MangaroReaderBottomPanel(
             }
 
             // Row 2: Page Seek Control
-            if (totalPages > 1) {
+            val safeTotalPages = totalPages.coerceAtLeast(1)
+            val safeCurrentPage = currentPage.coerceIn(1, safeTotalPages)
+
+            if (safeTotalPages > 1) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Text(
-                        text = "$currentPage / $totalPages",
+                        text = "$safeCurrentPage / $safeTotalPages",
                         style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                         color = MaterialTheme.colorScheme.primary,
                     )
 
                     Slider(
-                        value = currentPage.coerceIn(1, totalPages).toFloat(),
-                        valueRange = 1f..totalPages.toFloat(),
+                        value = safeCurrentPage.toFloat(),
+                        valueRange = 1f..safeTotalPages.toFloat(),
                         onValueChange = { onPageIndexChange(it.toInt()) },
                         onValueChangeFinished = onPageIndexChangeFinished,
                         modifier = Modifier.weight(1f),
@@ -185,16 +189,17 @@ fun MangaroReaderBottomPanel(
                 }
             }
 
-            // Row 3: Brightness Quick Slider
+            // Row 3: Brightness Quick Slider with Sun Icons
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Text(
-                    text = if (isCustomBrightness) "السطوع $brightnessValue%" else "السطوع (تلقائي)",
-                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                Icon(
+                    imageVector = Icons.Outlined.WbSunny,
+                    contentDescription = "سطوع منخفض",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    modifier = Modifier.size(16.dp),
                 )
 
                 Slider(
@@ -207,6 +212,19 @@ fun MangaroReaderBottomPanel(
                         activeTrackColor = MaterialTheme.colorScheme.secondary,
                         inactiveTrackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                     ),
+                )
+
+                Icon(
+                    imageVector = Icons.Outlined.WbSunny,
+                    contentDescription = "سطوع مرتفع",
+                    tint = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.size(22.dp),
+                )
+
+                Text(
+                    text = if (isCustomBrightness) "$brightnessValue%" else "تلقائي",
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.secondary,
                 )
             }
 

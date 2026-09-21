@@ -784,6 +784,23 @@ class ReaderViewModel @JvmOverloads constructor(
         mutableState.update { it.copy(dialog = Dialog.Settings) }
     }
 
+    fun openChapterListDialog() {
+        mutableState.update { it.copy(dialog = Dialog.ChapterList) }
+    }
+
+    fun getMangaChapters(): List<tachiyomi.domain.chapter.model.Chapter> {
+        val manga = manga ?: return emptyList()
+        return runBlocking { getChaptersByMangaId.await(manga.id) }
+    }
+
+    fun loadChapterById(chapterId: Long) {
+        val chapter = chapterList.find { it.chapter.id == chapterId } ?: return
+        val loader = loader ?: return
+        tachiyomi.core.common.util.lang.launchIO {
+            loadChapter(loader, chapter)
+        }
+    }
+
     fun closeDialog() {
         mutableState.update { it.copy(dialog = null) }
     }
@@ -972,6 +989,7 @@ class ReaderViewModel @JvmOverloads constructor(
     sealed interface Dialog {
         data object Loading : Dialog
         data object Settings : Dialog
+        data object ChapterList : Dialog
         data object ReadingModeSelect : Dialog
         data object OrientationModeSelect : Dialog
         data class PageActions(val page: ReaderPage) : Dialog

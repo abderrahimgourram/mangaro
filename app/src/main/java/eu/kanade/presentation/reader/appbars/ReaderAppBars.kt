@@ -59,6 +59,7 @@ fun ReaderAppBars(
     cropEnabled: Boolean,
     onClickCropBorder: () -> Unit,
     onClickSettings: () -> Unit,
+    onClickChapterSelector: () -> Unit = onClickSettings,
 ) {
     val preferences = Injekt.get<ReaderPreferences>()
     val customBrightness by preferences.customBrightness.collectAsState()
@@ -99,7 +100,7 @@ fun ReaderAppBars(
                 enabledNext = enabledNext,
                 onPreviousChapter = onPreviousChapter,
                 enabledPrevious = enabledPrevious,
-                onClickChapterSelector = onClickSettings,
+                onClickChapterSelector = onClickChapterSelector,
 
                 currentPage = currentPage,
                 totalPages = totalPages,
