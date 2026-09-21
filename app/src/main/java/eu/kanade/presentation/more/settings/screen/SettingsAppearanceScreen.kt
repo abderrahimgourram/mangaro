@@ -10,7 +10,6 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.domain.ui.UiPreferences
 import eu.kanade.domain.ui.model.TabletUiMode
 import eu.kanade.presentation.more.settings.Preference
-import eu.kanade.presentation.more.settings.screen.appearance.AppLanguageScreen
 import eu.kanade.tachiyomi.util.system.toast
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toJavaLocalDateTime
@@ -54,10 +53,6 @@ object SettingsAppearanceScreen : SearchableSettings {
         return Preference.PreferenceGroup(
             title = stringResource(MR.strings.pref_category_display),
             preferenceItems = listOf(
-                Preference.PreferenceItem.TextPreference(
-                    title = stringResource(MR.strings.pref_app_language),
-                    onClick = { navigator.push(AppLanguageScreen()) },
-                ),
                 Preference.PreferenceItem.ListPreference(
                     preference = uiPreferences.tabletUiMode,
                     entries = TabletUiMode.entries

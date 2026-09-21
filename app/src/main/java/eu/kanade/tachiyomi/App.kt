@@ -102,12 +102,8 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
         Injekt.importModule(AppModule(this))
         Injekt.importModule(DomainModule())
 
-        // Arabic is the first-launch default; users can change language later.
-        val manhwaPrefs = getSharedPreferences("manhwa_ar_bootstrap", MODE_PRIVATE)
-        if (!manhwaPrefs.getBoolean("arabic_language_initialized", false)) {
-            AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags("ar"))
-            manhwaPrefs.edit().putBoolean("arabic_language_initialized", true).apply()
-        }
+        // Enforce Arabic as the sole application language
+        AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags("ar"))
 
         setupNotificationChannels()
 
