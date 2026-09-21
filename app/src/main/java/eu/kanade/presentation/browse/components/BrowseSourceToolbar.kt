@@ -110,6 +110,13 @@ fun BrowseSourceToolbar(
                     onDisplayModeChange(LibraryDisplayMode.CompactGrid)
                 }
                 RadioMenuItem(
+                    text = { Text(text = stringResource(MR.strings.action_display_cover_only_grid)) },
+                    isChecked = displayMode == LibraryDisplayMode.CoverOnlyGrid,
+                ) {
+                    selectingDisplayMode = false
+                    onDisplayModeChange(LibraryDisplayMode.CoverOnlyGrid)
+                }
+                RadioMenuItem(
                     text = { Text(text = stringResource(MR.strings.action_display_list)) },
                     isChecked = displayMode == LibraryDisplayMode.List,
                 ) {

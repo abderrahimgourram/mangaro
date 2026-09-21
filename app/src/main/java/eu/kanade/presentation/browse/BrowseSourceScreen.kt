@@ -139,6 +139,7 @@ fun BrowseSourceContent(
                 mangaList = mangaList,
                 columns = columns,
                 contentPadding = contentPadding,
+                displayMode = displayMode,
                 onMangaClick = onMangaClick,
                 onMangaLongClick = onMangaLongClick,
             )

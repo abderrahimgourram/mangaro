@@ -11,11 +11,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.unit.dp
 import androidx.paging.LoadState
 import androidx.paging.compose.LazyPagingItems
-import eu.kanade.presentation.library.components.CommonMangaItemDefaults
-import eu.kanade.presentation.library.components.MangaComfortableGridItem
 import kotlinx.coroutines.flow.StateFlow
 import tachiyomi.domain.manga.model.Manga
-import tachiyomi.domain.manga.model.MangaCover
 import tachiyomi.presentation.core.util.plus
 
 @Composable
@@ -28,9 +25,9 @@ fun BrowseSourceComfortableGrid(
 ) {
     LazyVerticalGrid(
         columns = columns,
-        contentPadding = contentPadding + PaddingValues(8.dp),
-        verticalArrangement = Arrangement.spacedBy(CommonMangaItemDefaults.GridVerticalSpacer),
-        horizontalArrangement = Arrangement.spacedBy(CommonMangaItemDefaults.GridHorizontalSpacer),
+        contentPadding = contentPadding + PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         if (mangaList.loadState.prepend is LoadState.Loading) {
             item(span = { GridItemSpan(maxLineSpan) }) {
@@ -38,9 +35,12 @@ fun BrowseSourceComfortableGrid(
             }
         }
 
-        items(count = mangaList.itemCount) { index ->
+        items(
+            count = mangaList.itemCount,
+            key = { index -> mangaList[index]?.value?.id ?: index },
+        ) { index ->
             val manga by mangaList[index]?.collectAsState() ?: return@items
-            BrowseSourceComfortableGridItem(
+            MangaroCatalogComfortableCard(
                 manga = manga,
                 onClick = { onMangaClick(manga) },
                 onLongClick = { onMangaLongClick(manga) },
@@ -55,26 +55,3 @@ fun BrowseSourceComfortableGrid(
     }
 }
 
-@Composable
-private fun BrowseSourceComfortableGridItem(
-    manga: Manga,
-    onClick: () -> Unit = {},
-    onLongClick: () -> Unit = onClick,
-) {
-    MangaComfortableGridItem(
-        title = manga.title,
-        coverData = MangaCover(
-            mangaId = manga.id,
-            sourceId = manga.source,
-            isMangaFavorite = manga.favorite,
-            url = manga.thumbnailUrl,
-            lastModified = manga.coverLastModified,
-        ),
-        coverAlpha = if (manga.favorite) CommonMangaItemDefaults.BrowseFavoriteCoverAlpha else 1f,
-        coverBadgeStart = {
-            InLibraryBadge(enabled = manga.favorite)
-        },
-        onLongClick = onLongClick,
-        onClick = onClick,
-    )
-}

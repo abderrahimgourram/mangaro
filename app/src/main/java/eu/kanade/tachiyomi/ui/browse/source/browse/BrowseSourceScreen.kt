@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.ui.browse.source.browse
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -8,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Favorite
 import androidx.compose.material.icons.outlined.FilterList
@@ -42,6 +44,7 @@ import eu.kanade.presentation.browse.MissingSourceScreen
 import eu.kanade.presentation.browse.components.BrowseSourceToolbar
 import eu.kanade.presentation.browse.components.RemoveMangaDialog
 import eu.kanade.presentation.category.components.ChangeCategoryDialog
+import eu.kanade.presentation.home.MangaroVisualTokens
 import eu.kanade.presentation.manga.DuplicateMangaDialog
 import eu.kanade.presentation.util.AssistContentScreen
 import eu.kanade.presentation.util.Screen
@@ -132,7 +135,7 @@ data class BrowseSourceScreen(
             topBar = {
                 Column(
                     modifier = Modifier
-                        .background(MaterialTheme.colorScheme.surface)
+                        .background(MangaroVisualTokens.SurfaceDark)
                         .pointerInput(Unit) {},
                 ) {
                     BrowseSourceToolbar(
@@ -151,15 +154,31 @@ data class BrowseSourceScreen(
                     Row(
                         modifier = Modifier
                             .horizontalScroll(rememberScrollState())
-                            .padding(horizontal = MaterialTheme.padding.small),
+                            .padding(horizontal = MaterialTheme.padding.small, vertical = 4.dp),
                         horizontalArrangement = Arrangement.spacedBy(MaterialTheme.padding.small),
                     ) {
+                        val chipColors = FilterChipDefaults.filterChipColors(
+                            containerColor = MangaroVisualTokens.SurfaceHigh,
+                            labelColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
+                            iconColor = MangaroVisualTokens.PurplePrimary,
+                            selectedContainerColor = MangaroVisualTokens.PurplePrimary.copy(alpha = 0.25f),
+                            selectedLabelColor = MangaroVisualTokens.GoldAccent,
+                            selectedLeadingIconColor = MangaroVisualTokens.GoldAccent,
+                        )
+
                         FilterChip(
                             selected = state.listing == Listing.Popular,
                             onClick = {
                                 viewModel.resetFilters()
                                 viewModel.setListing(Listing.Popular)
                             },
+                            colors = chipColors,
+                            border = FilterChipDefaults.filterChipBorder(
+                                enabled = true,
+                                selected = state.listing == Listing.Popular,
+                                borderColor = MangaroVisualTokens.CardBorderColor,
+                                selectedBorderColor = MangaroVisualTokens.GoldAccent,
+                            ),
                             leadingIcon = {
                                 Icon(
                                     imageVector = Icons.Outlined.Favorite,
@@ -179,6 +198,13 @@ data class BrowseSourceScreen(
                                     viewModel.resetFilters()
                                     viewModel.setListing(Listing.Latest)
                                 },
+                                colors = chipColors,
+                                border = FilterChipDefaults.filterChipBorder(
+                                    enabled = true,
+                                    selected = state.listing == Listing.Latest,
+                                    borderColor = MangaroVisualTokens.CardBorderColor,
+                                    selectedBorderColor = MangaroVisualTokens.GoldAccent,
+                                ),
                                 leadingIcon = {
                                     Icon(
                                         imageVector = Icons.Outlined.NewReleases,
@@ -196,6 +222,13 @@ data class BrowseSourceScreen(
                             FilterChip(
                                 selected = state.listing is Listing.Search,
                                 onClick = viewModel::openFilterSheet,
+                                colors = chipColors,
+                                border = FilterChipDefaults.filterChipBorder(
+                                    enabled = true,
+                                    selected = state.listing is Listing.Search,
+                                    borderColor = MangaroVisualTokens.CardBorderColor,
+                                    selectedBorderColor = MangaroVisualTokens.GoldAccent,
+                                ),
                                 leadingIcon = {
                                     Icon(
                                         imageVector = Icons.Outlined.FilterList,
@@ -211,7 +244,7 @@ data class BrowseSourceScreen(
                         }
                     }
 
-                    HorizontalDivider()
+                    HorizontalDivider(color = MangaroVisualTokens.CardBorderColor)
                 }
             },
             snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
