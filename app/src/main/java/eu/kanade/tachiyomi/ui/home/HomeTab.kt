@@ -573,13 +573,13 @@ object HomeTab : Tab {
     ) {
         LazyRow(
             contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             itemsIndexed(mangaList, key = { index, item -> "${item.sourceId}_${item.mangaId}_$index" }) { _, item ->
                 MangaroMangaCard(
                     item = item,
                     onMangaClick = onMangaClick,
-                    cardWidth = 108.dp,
+                    cardWidth = 118.dp,
                 )
             }
         }

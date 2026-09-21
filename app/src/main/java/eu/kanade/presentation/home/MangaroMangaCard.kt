@@ -2,7 +2,7 @@ package eu.kanade.presentation.home
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -20,7 +20,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -35,33 +38,57 @@ fun MangaroMangaCard(
     item: HomeDiscoveryItem,
     onMangaClick: (Long) -> Unit,
     modifier: Modifier = Modifier,
-    cardWidth: Dp = 108.dp,
+    cardWidth: Dp = 118.dp,
 ) {
+    val gradientBrush = MangaroCoverColors.rememberAtmosphericGradient(
+        mangaId = item.mangaId,
+        title = item.title,
+    )
+
+    val accessibilityLabel = "${item.title} من ${item.sourceName}"
+
     Card(
         modifier = modifier
             .width(cardWidth)
-            .clickable { onMangaClick(item.mangaId) },
-        colors = CardDefaults.cardColors(containerColor = MangaroVisualTokens.SurfaceHigh),
+            .mangaroPressAndEntranceMotion(
+                key = item.mangaId,
+                onClick = { onMangaClick(item.mangaId) },
+            )
+            .semantics { contentDescription = accessibilityLabel },
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
         border = BorderStroke(1.dp, MangaroVisualTokens.CardBorderColor),
-        shape = RoundedCornerShape(MangaroVisualTokens.CardCornerRadius),
+        shape = RoundedCornerShape(14.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
     ) {
-        Column(modifier = Modifier.padding(6.dp)) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(gradientBrush)
+                .padding(6.dp),
+        ) {
+            // Prominent 2:3 Cover Poster
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(2f / 3f)
-                    .clip(RoundedCornerShape(10.dp)),
+                    .shadow(4.dp, RoundedCornerShape(10.dp))
+                    .clip(RoundedCornerShape(10.dp))
+                    .border(
+                        BorderStroke(1.dp, Color(0x33A78BFA)),
+                        RoundedCornerShape(10.dp),
+                    ),
             ) {
                 MangaCover.Book(
                     data = item.coverData,
                     contentDescription = item.title,
+                    modifier = Modifier.fillMaxWidth(),
                 )
 
+                // Bottom subtle shadow overlay over cover
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(32.dp)
+                        .height(28.dp)
                         .align(Alignment.BottomCenter)
                         .background(MangaroVisualTokens.CoverCardGradient),
                 )
@@ -69,31 +96,38 @@ fun MangaroMangaCard(
 
             Spacer(modifier = Modifier.height(6.dp))
 
+            // Manga Title
             Text(
                 text = item.title,
                 style = MaterialTheme.typography.bodySmall.copy(
                     fontWeight = FontWeight.Bold,
-                    fontSize = 11.5.sp,
-                    lineHeight = 15.sp,
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp,
                 ),
                 color = Color.White,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Start,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 2.dp),
             )
 
-            Spacer(modifier = Modifier.height(2.dp))
+            Spacer(modifier = Modifier.height(3.dp))
 
+            // Source Name (No chapter information displayed)
             Text(
                 text = item.sourceName,
                 style = MaterialTheme.typography.labelSmall.copy(
-                    fontSize = 10.5.sp,
-                    fontWeight = FontWeight.Medium,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
                 ),
                 color = MangaroVisualTokens.GoldAccent,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 2.dp),
             )
         }
     }
