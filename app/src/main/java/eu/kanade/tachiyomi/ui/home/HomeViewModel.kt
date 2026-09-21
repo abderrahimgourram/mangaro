@@ -9,6 +9,7 @@ import eu.kanade.tachiyomi.source.CatalogueSource
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.online.HttpSource
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -282,6 +283,15 @@ class HomeViewModel(
         }
     }
 
+    fun onHomeSwipeRefresh() {
+        viewModelScope.launch {
+            _state.update { it.copy(isSwipeRefreshing = true) }
+            nextFeaturedStory()
+            delay(250)
+            _state.update { it.copy(isSwipeRefreshing = false) }
+        }
+    }
+
     fun refreshDiscovery() {
         val onlineSources = _state.value.installedSources.mapNotNull {
             sourceManager.get(it.id) as? CatalogueSource
@@ -342,6 +352,7 @@ data class HomeState(
     val discoveryLatest: List<HomeDiscoveryItem> = emptyList(),
     val installedSources: List<HomeSourceItem> = emptyList(),
     val isDiscoveryLoading: Boolean = false,
+    val isSwipeRefreshing: Boolean = false,
     val isPaginationLoading: Boolean = false,
     val discoveryError: String? = null,
 )

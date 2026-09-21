@@ -34,6 +34,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import eu.kanade.presentation.manga.components.MangaCover
+import eu.kanade.presentation.util.formatChapterDisplay
 import tachiyomi.domain.history.model.HistoryWithRelations
 
 @Composable
@@ -94,7 +95,7 @@ fun MangaroContinueReading(
                     )
 
                     Text(
-                        text = if (history.chapterNumber > 0) "الفصل ${history.chapterNumber}" else "الفصل الأخير",
+                        text = formatChapterDisplay(history.chapterNumber),
                         style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp),
                         color = MangaroVisualTokens.GoldAccent,
                         maxLines = 1,

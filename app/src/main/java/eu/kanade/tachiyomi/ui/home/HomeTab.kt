@@ -77,6 +77,7 @@ import eu.kanade.presentation.home.MangaroSectionHeader
 import eu.kanade.presentation.home.MangaroSourceChip
 import eu.kanade.presentation.manga.components.MangaCover as MangaCoverComposable
 import eu.kanade.presentation.util.Tab
+import eu.kanade.presentation.util.formatChapterDisplay
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.ui.browse.BrowseTab
 import eu.kanade.tachiyomi.ui.browse.source.browse.BrowseSourceScreen
@@ -119,12 +120,9 @@ object HomeTab : Tab {
             contentWindowInsets = WindowInsets(0),
         ) { paddingValues ->
             PullRefresh(
-                refreshing = state.isDiscoveryLoading,
+                refreshing = state.isSwipeRefreshing,
                 enabled = true,
-                onRefresh = {
-                    viewModel.nextFeaturedStory()
-                    viewModel.refreshDiscovery()
-                },
+                onRefresh = { viewModel.onHomeSwipeRefresh() },
             ) {
                 ScrollbarLazyColumn(
                     modifier = Modifier
@@ -744,7 +742,7 @@ object HomeTab : Tab {
                         )
 
                         Text(
-                            text = if (history.chapterNumber > 0) "الفصل ${history.chapterNumber}" else "الفصل الأخير",
+                            text = formatChapterDisplay(history.chapterNumber),
                             style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.5.sp),
                             color = MaterialTheme.colorScheme.secondary,
                             maxLines = 1,
