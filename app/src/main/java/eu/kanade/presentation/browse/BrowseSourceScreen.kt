@@ -20,6 +20,8 @@ import eu.kanade.presentation.browse.components.BrowseSourceComfortableGrid
 import eu.kanade.presentation.browse.components.BrowseSourceCompactGrid
 import eu.kanade.presentation.browse.components.BrowseSourceList
 import eu.kanade.presentation.components.AppBar
+import eu.kanade.presentation.components.MangaroEmptyState
+import eu.kanade.presentation.components.MangaroLoadingState
 import eu.kanade.presentation.util.formattedMessage
 import eu.kanade.tachiyomi.source.Source
 import kotlinx.coroutines.flow.StateFlow
@@ -73,12 +75,12 @@ fun BrowseSourceContent(
     }
 
     if (mangaList.itemCount == 0 && mangaList.loadState.refresh is LoadState.Loading) {
-        LoadingScreen(Modifier.padding(contentPadding))
+        MangaroLoadingState(modifier = Modifier.padding(contentPadding))
         return
     }
 
     if (mangaList.itemCount == 0) {
-        EmptyScreen(
+        MangaroEmptyState(
             modifier = Modifier.padding(contentPadding),
             message = when (errorState) {
                 is LoadState.Error -> getErrorMessage(errorState)
