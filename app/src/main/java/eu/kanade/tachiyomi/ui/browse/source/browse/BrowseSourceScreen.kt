@@ -34,6 +34,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.font.FontWeight
 import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.lifecycle.viewmodel.compose.viewModel
 import cafe.adriel.voyager.navigator.LocalNavigator
@@ -46,6 +47,7 @@ import eu.kanade.presentation.browse.components.RemoveMangaDialog
 import eu.kanade.presentation.category.components.ChangeCategoryDialog
 import eu.kanade.presentation.home.MangaroVisualTokens
 import eu.kanade.presentation.manga.DuplicateMangaDialog
+import eu.kanade.presentation.theme.MangaroDesignSystem
 import eu.kanade.presentation.util.AssistContentScreen
 import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.source.online.HttpSource
@@ -135,7 +137,7 @@ data class BrowseSourceScreen(
             topBar = {
                 Column(
                     modifier = Modifier
-                        .background(MangaroVisualTokens.SurfaceDark)
+                        .background(MangaroDesignSystem.SurfaceDark)
                         .pointerInput(Unit) {},
                 ) {
                     BrowseSourceToolbar(
@@ -154,16 +156,16 @@ data class BrowseSourceScreen(
                     Row(
                         modifier = Modifier
                             .horizontalScroll(rememberScrollState())
-                            .padding(horizontal = MaterialTheme.padding.small, vertical = 4.dp),
+                            .padding(horizontal = MaterialTheme.padding.small, vertical = 6.dp),
                         horizontalArrangement = Arrangement.spacedBy(MaterialTheme.padding.small),
                     ) {
                         val chipColors = FilterChipDefaults.filterChipColors(
-                            containerColor = MangaroVisualTokens.SurfaceHigh,
+                            containerColor = MangaroDesignSystem.SurfaceHigh,
                             labelColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
-                            iconColor = MangaroVisualTokens.PurplePrimary,
-                            selectedContainerColor = MangaroVisualTokens.PurplePrimary.copy(alpha = 0.25f),
-                            selectedLabelColor = MangaroVisualTokens.GoldAccent,
-                            selectedLeadingIconColor = MangaroVisualTokens.GoldAccent,
+                            iconColor = MangaroDesignSystem.LavenderPrimary,
+                            selectedContainerColor = MangaroDesignSystem.LavenderPrimary.copy(alpha = 0.22f),
+                            selectedLabelColor = MangaroDesignSystem.GoldPrimary,
+                            selectedLeadingIconColor = MangaroDesignSystem.GoldPrimary,
                         )
 
                         FilterChip(
@@ -176,8 +178,8 @@ data class BrowseSourceScreen(
                             border = FilterChipDefaults.filterChipBorder(
                                 enabled = true,
                                 selected = state.listing == Listing.Popular,
-                                borderColor = MangaroVisualTokens.CardBorderColor,
-                                selectedBorderColor = MangaroVisualTokens.GoldAccent,
+                                borderColor = MangaroDesignSystem.BorderSubtle,
+                                selectedBorderColor = MangaroDesignSystem.GoldPrimary,
                             ),
                             leadingIcon = {
                                 Icon(
@@ -188,7 +190,10 @@ data class BrowseSourceScreen(
                                 )
                             },
                             label = {
-                                Text(text = stringResource(MR.strings.popular))
+                                Text(
+                                    text = stringResource(MR.strings.popular),
+                                    fontWeight = if (state.listing == Listing.Popular) FontWeight.Bold else FontWeight.Medium,
+                                )
                             },
                         )
                         if (viewModel.source.supportsLatest) {
@@ -202,8 +207,8 @@ data class BrowseSourceScreen(
                                 border = FilterChipDefaults.filterChipBorder(
                                     enabled = true,
                                     selected = state.listing == Listing.Latest,
-                                    borderColor = MangaroVisualTokens.CardBorderColor,
-                                    selectedBorderColor = MangaroVisualTokens.GoldAccent,
+                                    borderColor = MangaroDesignSystem.BorderSubtle,
+                                    selectedBorderColor = MangaroDesignSystem.GoldPrimary,
                                 ),
                                 leadingIcon = {
                                     Icon(
@@ -214,7 +219,10 @@ data class BrowseSourceScreen(
                                     )
                                 },
                                 label = {
-                                    Text(text = stringResource(MR.strings.latest))
+                                    Text(
+                                        text = stringResource(MR.strings.latest),
+                                        fontWeight = if (state.listing == Listing.Latest) FontWeight.Bold else FontWeight.Medium,
+                                    )
                                 },
                             )
                         }
@@ -226,8 +234,8 @@ data class BrowseSourceScreen(
                                 border = FilterChipDefaults.filterChipBorder(
                                     enabled = true,
                                     selected = state.listing is Listing.Search,
-                                    borderColor = MangaroVisualTokens.CardBorderColor,
-                                    selectedBorderColor = MangaroVisualTokens.GoldAccent,
+                                    borderColor = MangaroDesignSystem.BorderSubtle,
+                                    selectedBorderColor = MangaroDesignSystem.GoldPrimary,
                                 ),
                                 leadingIcon = {
                                     Icon(
@@ -238,13 +246,16 @@ data class BrowseSourceScreen(
                                     )
                                 },
                                 label = {
-                                    Text(text = stringResource(MR.strings.action_filter))
+                                    Text(
+                                        text = stringResource(MR.strings.action_filter),
+                                        fontWeight = if (state.listing is Listing.Search) FontWeight.Bold else FontWeight.Medium,
+                                    )
                                 },
                             )
                         }
                     }
 
-                    HorizontalDivider(color = MangaroVisualTokens.CardBorderColor)
+                    HorizontalDivider(color = MangaroDesignSystem.BorderSubtle)
                 }
             },
             snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
