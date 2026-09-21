@@ -86,6 +86,7 @@ import eu.kanade.tachiyomi.ui.more.MoreTab
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
 import tachiyomi.domain.history.model.HistoryWithRelations
 import tachiyomi.presentation.core.components.ScrollbarLazyColumn
+import tachiyomi.presentation.core.components.material.PullRefresh
 import tachiyomi.presentation.core.components.material.Scaffold
 
 object HomeTab : Tab {
@@ -117,12 +118,20 @@ object HomeTab : Tab {
         Scaffold(
             contentWindowInsets = WindowInsets(0),
         ) { paddingValues ->
-            ScrollbarLazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.background),
-                contentPadding = paddingValues,
+            PullRefresh(
+                refreshing = state.isDiscoveryLoading,
+                enabled = true,
+                onRefresh = {
+                    viewModel.nextFeaturedStory()
+                    viewModel.refreshDiscovery()
+                },
             ) {
+                ScrollbarLazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.background),
+                    contentPadding = paddingValues,
+                ) {
                 // Home Header as scrolling top item
                 item {
                     HomeTopHeader(
@@ -277,6 +286,7 @@ object HomeTab : Tab {
             }
         }
     }
+}
 
     @Composable
     private fun HomeTopHeader(

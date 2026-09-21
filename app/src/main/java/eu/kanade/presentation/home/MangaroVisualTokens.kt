@@ -19,6 +19,14 @@ object MangaroVisualTokens {
         ),
     )
 
+    val HybridBannerBackground = Brush.linearGradient(
+        colors = listOf(
+            Color(0xFF281C38),
+            Color(0xFF1F172C),
+            Color(0xFF161020),
+        ),
+    )
+
     val CoverCardGradient = Brush.verticalGradient(
         colors = listOf(
             Color.Transparent,

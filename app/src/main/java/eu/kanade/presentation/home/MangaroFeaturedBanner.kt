@@ -2,37 +2,36 @@ package eu.kanade.presentation.home
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import eu.kanade.presentation.manga.components.MangaCover
@@ -49,7 +48,6 @@ fun MangaroFeaturedBanner(
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .height(230.dp)
             .padding(horizontal = 16.dp, vertical = 6.dp)
             .clickable { onOpenManga(item.mangaId) },
         shape = RoundedCornerShape(MangaroVisualTokens.FeaturedBannerRadius),
@@ -57,133 +55,108 @@ fun MangaroFeaturedBanner(
         border = BorderStroke(1.dp, MangaroVisualTokens.CardBorderColor),
         elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
     ) {
-        Box(modifier = Modifier.fillMaxSize()) {
-            // Full Banner Background Artwork
-            MangaCover.Book(
-                data = item.coverData,
-                contentDescription = item.title,
-                modifier = Modifier.fillMaxSize(),
-            )
-
-            // Gradient Scrim Overlay for Contrast
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(MangaroVisualTokens.FeaturedBannerGradient),
-            )
-
-            // Content Column Overlay
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.SpaceBetween,
-            ) {
-                // Top Badge Row
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(MangaroVisualTokens.HybridBannerBackground),
+        ) {
+            // Force RTL layout direction for Arabic interface so Cover is RIGHT and Info is LEFT
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    // Right Side (Start in RTL): Complete Uncropped 2:3 Vertical Manga Cover
                     Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(MangaroVisualTokens.PurplePrimary)
-                            .padding(horizontal = 10.dp, vertical = 4.dp),
-                    ) {
-                        Text(
-                            text = "اكتشف قصة",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 11.sp,
+                            .width(112.dp)
+                            .aspectRatio(2f / 3f)
+                            .shadow(8.dp, RoundedCornerShape(12.dp))
+                            .clip(RoundedCornerShape(12.dp))
+                            .border(
+                                BorderStroke(1.dp, MangaroVisualTokens.CardBorderColor),
+                                RoundedCornerShape(12.dp),
                             ),
-                            color = Color.Black,
+                    ) {
+                        MangaCover.Book(
+                            data = item.coverData,
+                            contentDescription = item.title,
+                            modifier = Modifier.fillMaxWidth(),
                         )
                     }
 
-                    Box(
+                    // Left Side (End in RTL): Information & Primary CTA
+                    Column(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(Color(0xD018121D))
-                            .padding(horizontal = 10.dp, vertical = 4.dp),
+                            .weight(1f)
+                            .heightIn(min = 168.dp),
+                        verticalArrangement = Arrangement.SpaceBetween,
                     ) {
-                        Text(
-                            text = item.sourceName,
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 11.sp,
-                            ),
-                            color = MangaroVisualTokens.GoldAccent,
-                        )
-                    }
-                }
+                        // Top Section: Source Badge & Title
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            // Source Badge Chip
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(Color(0x28A78BFA))
+                                    .border(
+                                        BorderStroke(0.5.dp, MangaroVisualTokens.PurplePrimary.copy(alpha = 0.4f)),
+                                        RoundedCornerShape(6.dp),
+                                    )
+                                    .padding(horizontal = 8.dp, vertical = 3.dp),
+                            ) {
+                                Text(
+                                    text = item.sourceName,
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 11.sp,
+                                    ),
+                                    color = MangaroVisualTokens.GoldAccent,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
 
-                // Bottom Title & Actions
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(
-                        text = item.title,
-                        style = MaterialTheme.typography.titleLarge.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 18.sp,
-                            lineHeight = 22.sp,
-                        ),
-                        color = Color.White,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Button(
-                            onClick = { onOpenManga(item.mangaId) },
-                            colors = ButtonDefaults.buttonColors(containerColor = MangaroVisualTokens.PurplePrimary),
-                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier
-                                .height(38.dp)
-                                .weight(1f),
-                        ) {
+                            // Manga Title
                             Text(
-                                text = "عرض التفاصيل",
-                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                                color = Color.Black,
-                                maxLines = 1,
+                                text = item.title,
+                                style = MaterialTheme.typography.titleLarge.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 17.sp,
+                                    lineHeight = 22.sp,
+                                ),
+                                color = Color.White,
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis,
                             )
                         }
 
-                        if (canRotate) {
-                            OutlinedButton(
-                                onClick = onNextStory,
-                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.5f)),
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier
-                                    .height(38.dp)
-                                    .weight(1f),
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.Center,
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Outlined.Refresh,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(14.dp),
-                                        tint = Color.White,
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = "جرّب عملًا آخر",
-                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                        color = Color.White,
-                                        maxLines = 1,
-                                    )
-                                }
-                            }
+                        // Bottom Section: Single Primary Action Button ("عرض التفاصيل")
+                        Button(
+                            onClick = { onOpenManga(item.mangaId) },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MangaroVisualTokens.PurplePrimary,
+                                contentColor = Color.Black,
+                            ),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 44.dp),
+                        ) {
+                            Text(
+                                text = "عرض التفاصيل",
+                                style = MaterialTheme.typography.labelLarge.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                ),
+                                color = Color.Black,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
                         }
                     }
                 }
