@@ -1,6 +1,7 @@
 package eu.kanade.presentation.home
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -8,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -18,18 +20,27 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.graphics.drawable.toBitmap
 import eu.kanade.presentation.theme.MangaroDesignSystem
+import eu.kanade.tachiyomi.extension.ExtensionManager
 import eu.kanade.tachiyomi.ui.home.HomeSourceItem
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.get
 
 @Composable
 fun MangaroSourceChip(
@@ -38,6 +49,14 @@ fun MangaroSourceChip(
     modifier: Modifier = Modifier,
     chipWidth: Dp = 142.dp,
 ) {
+    val sourceIcon = remember(source.id) {
+        try {
+            Injekt.get<ExtensionManager>().getAppIconForSource(source.id)?.toBitmap()?.asImageBitmap()
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     Surface(
         onClick = { onSourceClick(source.id) },
         shape = RoundedCornerShape(16.dp),
@@ -53,24 +72,11 @@ fun MangaroSourceChip(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Start,
         ) {
-            // Source Avatar Badge
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .clip(CircleShape)
-                    .background(MangaroDesignSystem.LavenderPrimary.copy(alpha = 0.15f))
-                    .border(BorderStroke(1.dp, MangaroDesignSystem.GoldBorder), shape = CircleShape),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = source.name.take(1).uppercase(),
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
-                    ),
-                    color = MangaroDesignSystem.GoldPrimary,
-                )
-            }
+            // Adaptive Source Badge
+            MangaroSourceBadge(
+                sourceName = source.name,
+                sourceIcon = sourceIcon,
+            )
 
             Spacer(modifier = Modifier.width(10.dp))
 
@@ -109,6 +115,78 @@ fun MangaroSourceChip(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun MangaroSourceBadge(
+    sourceName: String,
+    sourceIcon: ImageBitmap?,
+    modifier: Modifier = Modifier,
+) {
+    val (isCircularAsset, iconBitmap) = remember(sourceIcon) {
+        if (sourceIcon == null) {
+            false to null
+        } else {
+            val isCirc = try {
+                val androidBitmap = sourceIcon.asAndroidBitmap()
+                val w = androidBitmap.width
+                val h = androidBitmap.height
+                if (w > 0 && h > 0) {
+                    val tlAlpha = (androidBitmap.getPixel(0, 0) shr 24) and 0xFF
+                    val trAlpha = (androidBitmap.getPixel(w - 1, 0) shr 24) and 0xFF
+                    val blAlpha = (androidBitmap.getPixel(0, h - 1) shr 24) and 0xFF
+                    val brAlpha = (androidBitmap.getPixel(w - 1, h - 1) shr 24) and 0xFF
+                    tlAlpha < 30 && trAlpha < 30 && blAlpha < 30 && brAlpha < 30
+                } else {
+                    false
+                }
+            } catch (_: Exception) {
+                false
+            }
+            isCirc to sourceIcon
+        }
+    }
+
+    val badgeShape = if (sourceIcon == null || isCircularAsset) CircleShape else RoundedCornerShape(10.dp)
+
+    if (iconBitmap != null) {
+        Box(
+            modifier = modifier
+                .size(36.dp)
+                .clip(badgeShape)
+                .background(MangaroDesignSystem.SurfaceHigh)
+                .border(BorderStroke(1.dp, MangaroDesignSystem.GoldBorder), shape = badgeShape)
+                .padding(2.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Image(
+                bitmap = iconBitmap,
+                contentDescription = sourceName,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(badgeShape),
+            )
+        }
+    } else {
+        Box(
+            modifier = modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(MangaroDesignSystem.LavenderPrimary.copy(alpha = 0.15f))
+                .border(BorderStroke(1.dp, MangaroDesignSystem.GoldBorder), shape = CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = sourceName.take(1).uppercase(),
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                ),
+                color = MangaroDesignSystem.GoldPrimary,
+            )
         }
     }
 }
