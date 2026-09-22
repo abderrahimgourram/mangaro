@@ -132,27 +132,25 @@ class HomeViewModel(
                 return@launch
             }
 
-            val perSourceLists = withContext(Dispatchers.IO) {
+            val fetchResults: List<SourceFetchResult> = withContext(Dispatchers.IO) {
                 val semaphore = Semaphore(2)
 
                 eligibleSources.map { source ->
                     async {
                         semaphore.withPermit {
                             try {
-                                sourcePageMap[source.id] = 1
                                 val mangasPage: MangasPage = if (source.supportsLatest) {
                                     source.getLatestUpdates(1)
                                 } else {
                                     source.getPopularManga(1)
                                 }
-                                hasMorePagesMap[source.id] = mangasPage.hasNextPage
 
                                 val domainMangas = mangasPage.mangas.take(12).map { sManga ->
                                     sManga.toDomainManga(source.id)
                                 }
                                 val localMangas = networkToLocalManga(domainMangas)
 
-                                localMangas.map { manga ->
+                                val sourceItems = localMangas.map { manga ->
                                     HomeDiscoveryItem(
                                         mangaId = manga.id,
                                         title = manga.title,
@@ -161,15 +159,32 @@ class HomeViewModel(
                                         sourceName = source.name,
                                     )
                                 }
+
+                                SourceFetchResult(
+                                    sourceId = source.id,
+                                    page = 1,
+                                    hasNextPage = mangasPage.hasNextPage,
+                                    items = sourceItems,
+                                )
                             } catch (e: CancellationException) {
                                 throw e
                             } catch (_: Throwable) {
                                 // Source-specific error handled gracefully without failing other sources
-                                emptyList()
+                                null
                             }
                         }
                     }
-                }.awaitAll().filter { it.isNotEmpty() }
+                }.awaitAll().filterNotNull()
+            }
+
+            // Safely update pagination maps and collect source lists in owning coroutine
+            val perSourceLists = mutableListOf<List<HomeDiscoveryItem>>()
+            for (res in fetchResults) {
+                sourcePageMap[res.sourceId] = res.page
+                hasMorePagesMap[res.sourceId] = res.hasNextPage
+                if (res.items.isNotEmpty()) {
+                    perSourceLists.add(res.items)
+                }
             }
 
             // Interleave items across sources to ensure source diversity
@@ -346,6 +361,13 @@ data class HomeSourceVersion(
     val mangaId: Long,
     val sourceId: Long,
     val sourceName: String,
+)
+
+private data class SourceFetchResult(
+    val sourceId: Long,
+    val page: Int,
+    val hasNextPage: Boolean,
+    val items: List<HomeDiscoveryItem>,
 )
 
 data class HomeDiscoveryItem(
