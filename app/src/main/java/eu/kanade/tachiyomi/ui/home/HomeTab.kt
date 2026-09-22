@@ -2,6 +2,7 @@ package eu.kanade.tachiyomi.ui.home
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -75,6 +76,8 @@ import eu.kanade.presentation.home.MangaroHomeHeader
 import eu.kanade.presentation.home.MangaroMangaCard
 import eu.kanade.presentation.home.MangaroSectionHeader
 import eu.kanade.presentation.home.MangaroSourceChip
+import eu.kanade.presentation.theme.MangaroDesignSystem
+import androidx.compose.material3.Surface
 import eu.kanade.presentation.manga.components.MangaCover as MangaCoverComposable
 import eu.kanade.presentation.util.Tab
 import eu.kanade.presentation.util.formatChapterDisplay
@@ -263,7 +266,7 @@ object HomeTab : Tab {
                 // Section 5: Quick Access Shortcuts
                 item {
                     Spacer(modifier = Modifier.height(8.dp))
-                    SectionHeader(title = "وصول سريع", icon = Icons.Outlined.Extension)
+                    MangaroSectionHeader(title = "وصول سريع", icon = Icons.Outlined.Extension)
                 }
 
                 item {
@@ -654,43 +657,45 @@ object HomeTab : Tab {
         modifier: Modifier = Modifier,
         onClick: () -> Unit,
     ) {
-        Card(
-            modifier = modifier
-                .height(72.dp)
-                .clickable(onClick = onClick),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)),
-            shape = RoundedCornerShape(12.dp),
+        Surface(
+            onClick = onClick,
+            shape = RoundedCornerShape(16.dp),
+            color = MangaroDesignSystem.SurfaceDark,
+            border = BorderStroke(1.dp, MangaroDesignSystem.BorderSubtle),
+            tonalElevation = 4.dp,
+            modifier = modifier.height(76.dp),
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(4.dp),
+                    .background(MangaroDesignSystem.SurfaceCardGradient)
+                    .padding(6.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
                 Box(
                     modifier = Modifier
-                        .size(28.dp)
+                        .size(32.dp)
                         .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)),
+                        .background(MangaroDesignSystem.LavenderPrimary.copy(alpha = 0.15f))
+                        .border(BorderStroke(1.dp, MangaroDesignSystem.LavenderPrimary.copy(alpha = 0.3f)), shape = CircleShape),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
                         imageVector = icon,
                         contentDescription = title,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(16.dp),
+                        tint = MangaroDesignSystem.GoldPrimary,
+                        modifier = Modifier.size(17.dp),
                     )
                 }
-                Spacer(modifier = Modifier.height(3.dp))
+                Spacer(modifier = Modifier.height(5.dp))
                 Text(
                     text = title,
                     style = MaterialTheme.typography.labelMedium.copy(
                         fontWeight = FontWeight.Bold,
                         fontSize = 11.5.sp,
                     ),
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = Color.White,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )

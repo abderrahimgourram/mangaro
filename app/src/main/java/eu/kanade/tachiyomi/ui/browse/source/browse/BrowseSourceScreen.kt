@@ -4,24 +4,35 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Favorite
 import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.material.icons.outlined.NewReleases
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextDirection
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -138,6 +149,7 @@ data class BrowseSourceScreen(
                 Column(
                     modifier = Modifier
                         .background(MangaroDesignSystem.SurfaceDark)
+                        .statusBarsPadding()
                         .pointerInput(Unit) {},
                 ) {
                     BrowseSourceToolbar(
@@ -153,107 +165,20 @@ data class BrowseSourceScreen(
                         onSearch = viewModel::search,
                     )
 
-                    Row(
-                        modifier = Modifier
-                            .horizontalScroll(rememberScrollState())
-                            .padding(horizontal = MaterialTheme.padding.small, vertical = 6.dp),
-                        horizontalArrangement = Arrangement.spacedBy(MaterialTheme.padding.small),
-                    ) {
-                        val chipColors = FilterChipDefaults.filterChipColors(
-                            containerColor = MangaroDesignSystem.SurfaceHigh,
-                            labelColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
-                            iconColor = MangaroDesignSystem.LavenderPrimary,
-                            selectedContainerColor = MangaroDesignSystem.LavenderPrimary.copy(alpha = 0.22f),
-                            selectedLabelColor = MangaroDesignSystem.GoldPrimary,
-                            selectedLeadingIconColor = MangaroDesignSystem.GoldPrimary,
-                        )
-
-                        FilterChip(
-                            selected = state.listing == Listing.Popular,
-                            onClick = {
-                                viewModel.resetFilters()
-                                viewModel.setListing(Listing.Popular)
-                            },
-                            colors = chipColors,
-                            border = FilterChipDefaults.filterChipBorder(
-                                enabled = true,
-                                selected = state.listing == Listing.Popular,
-                                borderColor = MangaroDesignSystem.BorderSubtle,
-                                selectedBorderColor = MangaroDesignSystem.GoldPrimary,
-                            ),
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = Icons.Outlined.Favorite,
-                                    contentDescription = null,
-                                    modifier = Modifier
-                                        .size(FilterChipDefaults.IconSize),
-                                )
-                            },
-                            label = {
-                                Text(
-                                    text = stringResource(MR.strings.popular),
-                                    fontWeight = if (state.listing == Listing.Popular) FontWeight.Bold else FontWeight.Medium,
-                                )
-                            },
-                        )
-                        if (viewModel.source.supportsLatest) {
-                            FilterChip(
-                                selected = state.listing == Listing.Latest,
-                                onClick = {
-                                    viewModel.resetFilters()
-                                    viewModel.setListing(Listing.Latest)
-                                },
-                                colors = chipColors,
-                                border = FilterChipDefaults.filterChipBorder(
-                                    enabled = true,
-                                    selected = state.listing == Listing.Latest,
-                                    borderColor = MangaroDesignSystem.BorderSubtle,
-                                    selectedBorderColor = MangaroDesignSystem.GoldPrimary,
-                                ),
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = Icons.Outlined.NewReleases,
-                                        contentDescription = null,
-                                        modifier = Modifier
-                                            .size(FilterChipDefaults.IconSize),
-                                    )
-                                },
-                                label = {
-                                    Text(
-                                        text = stringResource(MR.strings.latest),
-                                        fontWeight = if (state.listing == Listing.Latest) FontWeight.Bold else FontWeight.Medium,
-                                    )
-                                },
-                            )
-                        }
-                        if (state.filters.isNotEmpty()) {
-                            FilterChip(
-                                selected = state.listing is Listing.Search,
-                                onClick = viewModel::openFilterSheet,
-                                colors = chipColors,
-                                border = FilterChipDefaults.filterChipBorder(
-                                    enabled = true,
-                                    selected = state.listing is Listing.Search,
-                                    borderColor = MangaroDesignSystem.BorderSubtle,
-                                    selectedBorderColor = MangaroDesignSystem.GoldPrimary,
-                                ),
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = Icons.Outlined.FilterList,
-                                        contentDescription = null,
-                                        modifier = Modifier
-                                            .size(FilterChipDefaults.IconSize),
-                                    )
-                                },
-                                label = {
-                                    Text(
-                                        text = stringResource(MR.strings.action_filter),
-                                        fontWeight = if (state.listing is Listing.Search) FontWeight.Bold else FontWeight.Medium,
-                                    )
-                                },
-                            )
-                        }
-                    }
+                    MangaroSourceControlRow(
+                        listing = state.listing,
+                        supportsLatest = viewModel.source.supportsLatest,
+                        hasActiveFilters = state.filters.isNotEmpty(),
+                        onPopularClick = {
+                            viewModel.resetFilters()
+                            viewModel.setListing(Listing.Popular)
+                        },
+                        onLatestClick = {
+                            viewModel.resetFilters()
+                            viewModel.setListing(Listing.Latest)
+                        },
+                        onFilterClick = viewModel::openFilterSheet,
+                    )
 
                     HorizontalDivider(color = MangaroDesignSystem.BorderSubtle)
                 }
@@ -361,5 +286,98 @@ data class BrowseSourceScreen(
     sealed class SearchType(val txt: String) {
         class Text(txt: String) : SearchType(txt)
         class Genre(txt: String) : SearchType(txt)
+    }
+}
+
+@Composable
+private fun MangaroSourceControlRow(
+    listing: BrowseSourceViewModel.Listing,
+    supportsLatest: Boolean,
+    hasActiveFilters: Boolean,
+    onPopularClick: () -> Unit,
+    onLatestClick: () -> Unit,
+    onFilterClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        MangaroControlChip(
+            selected = listing == BrowseSourceViewModel.Listing.Popular,
+            onClick = onPopularClick,
+            icon = Icons.Outlined.Favorite,
+            label = stringResource(MR.strings.popular),
+        )
+
+        if (supportsLatest) {
+            MangaroControlChip(
+                selected = listing == BrowseSourceViewModel.Listing.Latest,
+                onClick = onLatestClick,
+                icon = Icons.Outlined.NewReleases,
+                label = stringResource(MR.strings.latest),
+            )
+        }
+
+        MangaroControlChip(
+            selected = listing is BrowseSourceViewModel.Listing.Search,
+            onClick = onFilterClick,
+            icon = Icons.Outlined.FilterList,
+            label = "تصفية",
+            hasBadge = hasActiveFilters,
+        )
+    }
+}
+
+@Composable
+private fun MangaroControlChip(
+    selected: Boolean,
+    onClick: () -> Unit,
+    icon: ImageVector,
+    label: String,
+    hasBadge: Boolean = false,
+) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(20.dp),
+        color = if (selected) MangaroDesignSystem.GoldPrimary.copy(alpha = 0.15f) else MangaroDesignSystem.SurfaceHigh,
+        border = BorderStroke(
+            width = 1.dp,
+            color = if (selected) MangaroDesignSystem.GoldPrimary else MangaroDesignSystem.BorderSubtle,
+        ),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = if (selected) MangaroDesignSystem.GoldPrimary else MangaroDesignSystem.LavenderPrimary,
+                modifier = Modifier.size(16.dp),
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium.copy(
+                    fontSize = 12.5.sp,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                    textDirection = TextDirection.Content,
+                ),
+                color = if (selected) MangaroDesignSystem.GoldPrimary else Color.White.copy(alpha = 0.85f),
+            )
+            if (hasBadge) {
+                Spacer(modifier = Modifier.width(6.dp))
+                Box(
+                    modifier = Modifier
+                        .size(6.dp)
+                        .clip(CircleShape)
+                        .background(MangaroDesignSystem.GoldPrimary),
+                )
+            }
+        }
     }
 }

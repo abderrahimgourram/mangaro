@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -95,14 +94,14 @@ fun BrowseSourceToolbar(
 
     Surface(
         color = MangaroDesignSystem.SurfaceDark,
-        tonalElevation = 6.dp,
+        tonalElevation = 4.dp,
         border = BorderStroke(1.dp, MangaroDesignSystem.BorderSubtle),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 10.dp),
+                .padding(horizontal = 8.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
@@ -111,12 +110,12 @@ fun BrowseSourceToolbar(
                 Row(
                     modifier = Modifier
                         .weight(1f)
-                        .height(44.dp)
-                        .clip(RoundedCornerShape(22.dp))
+                        .height(40.dp)
+                        .clip(RoundedCornerShape(20.dp))
                         .background(MangaroDesignSystem.SurfaceHigh)
                         .border(
-                            BorderStroke(1.dp, MangaroDesignSystem.BorderHighlight),
-                            shape = RoundedCornerShape(22.dp),
+                            BorderStroke(1.dp, MangaroDesignSystem.GoldBorder),
+                            shape = RoundedCornerShape(20.dp),
                         )
                         .padding(horizontal = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -125,7 +124,7 @@ fun BrowseSourceToolbar(
                         imageVector = Icons.Outlined.Search,
                         contentDescription = null,
                         tint = MangaroDesignSystem.GoldPrimary,
-                        modifier = Modifier.size(20.dp),
+                        modifier = Modifier.size(18.dp),
                     )
 
                     Spacer(modifier = Modifier.width(8.dp))
@@ -135,7 +134,7 @@ fun BrowseSourceToolbar(
                             Text(
                                 text = stringResource(MR.strings.action_search),
                                 style = MaterialTheme.typography.bodyMedium.copy(
-                                    fontSize = 14.sp,
+                                    fontSize = 13.5.sp,
                                     textDirection = TextDirection.Content,
                                 ),
                                 color = Color.White.copy(alpha = 0.45f),
@@ -147,7 +146,7 @@ fun BrowseSourceToolbar(
                             onValueChange = onSearchQueryChange,
                             textStyle = MaterialTheme.typography.bodyMedium.copy(
                                 color = Color.White,
-                                fontSize = 14.sp,
+                                fontSize = 13.5.sp,
                                 textDirection = TextDirection.Content,
                             ),
                             cursorBrush = SolidColor(MangaroDesignSystem.GoldPrimary),
@@ -172,19 +171,19 @@ fun BrowseSourceToolbar(
                     if (!searchQuery.isNullOrEmpty()) {
                         IconButton(
                             onClick = { onSearchQueryChange("") },
-                            modifier = Modifier.size(28.dp),
+                            modifier = Modifier.size(26.dp),
                         ) {
                             Icon(
                                 imageVector = Icons.Outlined.Close,
                                 contentDescription = null,
                                 tint = Color.White.copy(alpha = 0.7f),
-                                modifier = Modifier.size(18.dp),
+                                modifier = Modifier.size(16.dp),
                             )
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(6.dp))
 
                 // Close Search Button
                 IconButton(
@@ -192,13 +191,13 @@ fun BrowseSourceToolbar(
                         isSearchActive = false
                         onSearchQueryChange(null)
                     },
-                    modifier = Modifier.size(38.dp),
+                    modifier = Modifier.size(36.dp),
                 ) {
                     Icon(
                         imageVector = Icons.Outlined.Close,
                         contentDescription = stringResource(MR.strings.action_close),
                         tint = MangaroDesignSystem.GoldPrimary,
-                        modifier = Modifier.size(22.dp),
+                        modifier = Modifier.size(20.dp),
                     )
                 }
 
@@ -213,24 +212,28 @@ fun BrowseSourceToolbar(
                 ) {
                     IconButton(
                         onClick = navigateUp,
-                        modifier = Modifier.size(38.dp),
+                        modifier = Modifier.size(36.dp),
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
                             contentDescription = null,
                             tint = Color.White,
-                            modifier = Modifier.size(22.dp),
+                            modifier = Modifier.size(20.dp),
                         )
                     }
 
-                    Spacer(modifier = Modifier.width(6.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
 
-                    Column {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(end = 4.dp),
+                    ) {
                         Text(
                             text = title,
                             style = MaterialTheme.typography.titleMedium.copy(
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 17.sp,
+                                fontSize = 15.5.sp,
                                 textDirection = TextDirection.Content,
                             ),
                             color = Color.White,
@@ -240,42 +243,39 @@ fun BrowseSourceToolbar(
                         Text(
                             text = if (isLocalSource) stringResource(MR.strings.local_source) else stringResource(MR.strings.label_sources),
                             style = MaterialTheme.typography.labelSmall.copy(
-                                fontSize = 11.sp,
+                                fontSize = 10.5.sp,
                                 textDirection = TextDirection.Content,
                             ),
                             color = MangaroDesignSystem.LavenderPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
 
                 // Action Buttons
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
                     // Open Search Button
                     IconButton(
                         onClick = { isSearchActive = true },
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(MangaroDesignSystem.LavenderPrimary.copy(alpha = 0.12f)),
+                        modifier = Modifier.size(36.dp),
                     ) {
                         Icon(
                             imageVector = Icons.Outlined.Search,
                             contentDescription = stringResource(MR.strings.action_search),
-                            tint = MangaroDesignSystem.GoldPrimary,
+                            tint = Color.White.copy(alpha = 0.9f),
                             modifier = Modifier.size(20.dp),
                         )
                     }
-
-                    Spacer(modifier = Modifier.width(8.dp))
 
                     // Display Mode Selector Button
                     Box {
                         IconButton(
                             onClick = { showDisplayMenu = true },
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(CircleShape)
-                                .background(MangaroDesignSystem.LavenderPrimary.copy(alpha = 0.12f)),
+                            modifier = Modifier.size(36.dp),
                         ) {
                             Icon(
                                 imageVector = when (displayMode) {
@@ -285,7 +285,7 @@ fun BrowseSourceToolbar(
                                     else -> Icons.Outlined.ViewModule
                                 },
                                 contentDescription = stringResource(MR.strings.action_display_mode),
-                                tint = MangaroDesignSystem.GoldPrimary,
+                                tint = Color.White.copy(alpha = 0.9f),
                                 modifier = Modifier.size(20.dp),
                             )
                         }
@@ -335,8 +335,6 @@ fun BrowseSourceToolbar(
                             )
                         }
                     }
-
-                    Spacer(modifier = Modifier.width(6.dp))
 
                     // Overflow Menu
                     Box {
