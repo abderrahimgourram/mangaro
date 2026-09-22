@@ -106,11 +106,6 @@ fun BrowseSourceContent(
                         icon = Icons.Outlined.Public,
                         onClick = onWebViewClick,
                     ),
-                    EmptyScreenAction(
-                        stringRes = MR.strings.label_help,
-                        icon = Icons.AutoMirrored.Outlined.HelpOutline,
-                        onClick = onHelpClick,
-                    ),
                 )
             },
         )
