@@ -16,6 +16,7 @@ import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -25,11 +26,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.util.fastForEach
+import eu.kanade.presentation.home.MangaroNavigationBar
+import eu.kanade.presentation.theme.MangaroDesignSystem
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cafe.adriel.voyager.navigator.tab.LocalTabNavigator
@@ -84,6 +89,7 @@ object HomeScreen : Screen() {
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
+        val scope = rememberCoroutineScope()
         TabNavigator(
             tab = HomeTab,
             key = TabNavigatorKey,
@@ -110,11 +116,12 @@ object HomeScreen : Screen() {
                                 enter = expandVertically(),
                                 exit = shrinkVertically(),
                             ) {
-                                NavigationBar {
-                                    TABS.fastForEach {
-                                        NavigationBarItem(it)
-                                    }
-                                }
+                                MangaroNavigationBar(
+                                    tabs = TABS,
+                                    currentTab = tabNavigator.current as eu.kanade.presentation.util.Tab,
+                                    onTabSelected = { tab -> tabNavigator.current = tab },
+                                    onTabReselected = { tab -> scope.launch { tab.onReselect(navigator) } },
+                                )
                             }
                         }
                     },
@@ -185,6 +192,13 @@ object HomeScreen : Screen() {
         val navigator = LocalNavigator.currentOrThrow
         val scope = rememberCoroutineScope()
         val selected = tabNavigator.current::class == tab::class
+        val itemColors = NavigationBarItemDefaults.colors(
+            selectedIconColor = MangaroDesignSystem.GoldPrimary,
+            selectedTextColor = MangaroDesignSystem.GoldPrimary,
+            indicatorColor = MangaroDesignSystem.LavenderPrimary.copy(alpha = 0.22f),
+            unselectedIconColor = Color.White.copy(alpha = 0.65f),
+            unselectedTextColor = Color.White.copy(alpha = 0.65f),
+        )
         NavigationBarItem(
             selected = selected,
             onClick = {
@@ -194,11 +208,14 @@ object HomeScreen : Screen() {
                     scope.launch { tab.onReselect(navigator) }
                 }
             },
+            colors = itemColors,
             icon = { NavigationIconItem(tab) },
             label = {
                 Text(
                     text = tab.options.title,
-                    style = MaterialTheme.typography.labelLarge,
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                    ),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )

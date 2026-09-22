@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -26,7 +25,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -72,7 +70,7 @@ fun MangaroSourceChip(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Start,
         ) {
-            // Adaptive Source Badge
+            // Rounded-Square Source Badge
             MangaroSourceBadge(
                 sourceName = source.name,
                 sourceIcon = sourceIcon,
@@ -125,44 +123,20 @@ fun MangaroSourceBadge(
     sourceIcon: ImageBitmap?,
     modifier: Modifier = Modifier,
 ) {
-    val (isCircularAsset, iconBitmap) = remember(sourceIcon) {
-        if (sourceIcon == null) {
-            false to null
-        } else {
-            val isCirc = try {
-                val androidBitmap = sourceIcon.asAndroidBitmap()
-                val w = androidBitmap.width
-                val h = androidBitmap.height
-                if (w > 0 && h > 0) {
-                    val tlAlpha = (androidBitmap.getPixel(0, 0) shr 24) and 0xFF
-                    val trAlpha = (androidBitmap.getPixel(w - 1, 0) shr 24) and 0xFF
-                    val blAlpha = (androidBitmap.getPixel(0, h - 1) shr 24) and 0xFF
-                    val brAlpha = (androidBitmap.getPixel(w - 1, h - 1) shr 24) and 0xFF
-                    tlAlpha < 30 && trAlpha < 30 && blAlpha < 30 && brAlpha < 30
-                } else {
-                    false
-                }
-            } catch (_: Exception) {
-                false
-            }
-            isCirc to sourceIcon
-        }
-    }
+    val badgeShape = RoundedCornerShape(12.dp)
 
-    val badgeShape = if (sourceIcon == null || isCircularAsset) CircleShape else RoundedCornerShape(10.dp)
-
-    if (iconBitmap != null) {
+    if (sourceIcon != null) {
         Box(
             modifier = modifier
                 .size(36.dp)
                 .clip(badgeShape)
                 .background(MangaroDesignSystem.SurfaceHigh)
-                .border(BorderStroke(1.dp, MangaroDesignSystem.GoldBorder), shape = badgeShape)
+                .border(BorderStroke(1.dp, MangaroDesignSystem.BorderSubtle), shape = badgeShape)
                 .padding(2.dp),
             contentAlignment = Alignment.Center,
         ) {
             Image(
-                bitmap = iconBitmap,
+                bitmap = sourceIcon,
                 contentDescription = sourceName,
                 contentScale = ContentScale.Fit,
                 modifier = Modifier
@@ -174,9 +148,9 @@ fun MangaroSourceBadge(
         Box(
             modifier = modifier
                 .size(36.dp)
-                .clip(CircleShape)
+                .clip(badgeShape)
                 .background(MangaroDesignSystem.LavenderPrimary.copy(alpha = 0.15f))
-                .border(BorderStroke(1.dp, MangaroDesignSystem.GoldBorder), shape = CircleShape),
+                .border(BorderStroke(1.dp, MangaroDesignSystem.BorderSubtle), shape = badgeShape),
             contentAlignment = Alignment.Center,
         ) {
             Text(

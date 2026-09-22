@@ -1,5 +1,11 @@
 package eu.kanade.presentation.components
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -28,6 +34,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -83,6 +90,48 @@ fun MangaroLoadingState(
                         color = Color.White.copy(alpha = 0.85f),
                         textAlign = TextAlign.Center,
                     )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun MangaroCatalogShimmerLoading(
+    modifier: Modifier = Modifier,
+) {
+    val transition = rememberInfiniteTransition(label = "shimmerTransition")
+    val alpha by transition.animateFloat(
+        initialValue = 0.25f,
+        targetValue = 0.65f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 800, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "shimmerAlpha",
+    )
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(MangaroDesignSystem.BackgroundDark)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        repeat(3) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                repeat(2) {
+                    Surface(
+                        color = MangaroDesignSystem.SurfaceDark.copy(alpha = alpha),
+                        border = BorderStroke(1.dp, MangaroDesignSystem.BorderSubtle),
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(200.dp),
+                    ) {}
                 }
             }
         }
