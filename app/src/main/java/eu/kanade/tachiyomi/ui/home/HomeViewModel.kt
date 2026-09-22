@@ -8,7 +8,10 @@ import eu.kanade.tachiyomi.data.download.DownloadManager
 import eu.kanade.tachiyomi.source.CatalogueSource
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.online.HttpSource
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -16,6 +19,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import mihon.domain.manga.model.toDomainManga
 import tachiyomi.domain.history.interactor.GetHistory
@@ -114,42 +119,57 @@ class HomeViewModel(
     private fun loadDiscoveryContent(sources: List<CatalogueSource>) {
         viewModelScope.launch {
             _state.update { it.copy(isDiscoveryLoading = true, discoveryError = null) }
-            val perSourceLists = mutableListOf<List<HomeDiscoveryItem>>()
 
-            withContext(Dispatchers.IO) {
-                val eligibleSources = sources.distinctBy { s -> s.id }
-
-                for (source in eligibleSources) {
-                    try {
-                        sourcePageMap[source.id] = 1
-                        val mangasPage: MangasPage = if (source.supportsLatest) {
-                            source.getLatestUpdates(1)
-                        } else {
-                            source.getPopularManga(1)
-                        }
-                        hasMorePagesMap[source.id] = mangasPage.hasNextPage
-
-                        val domainMangas = mangasPage.mangas.take(12).map { sManga ->
-                            sManga.toDomainManga(source.id)
-                        }
-                        val localMangas = networkToLocalManga(domainMangas)
-
-                        val sourceItems = localMangas.map { manga ->
-                            HomeDiscoveryItem(
-                                mangaId = manga.id,
-                                title = manga.title,
-                                coverData = manga.asMangaCover(),
-                                sourceId = source.id,
-                                sourceName = source.name,
-                            )
-                        }
-                        if (sourceItems.isNotEmpty()) {
-                            perSourceLists.add(sourceItems)
-                        }
-                    } catch (_: Exception) {
-                        // Source-specific error handled gracefully without failing other sources
-                    }
+            val eligibleSources = sources.distinctBy { s -> s.id }
+            if (eligibleSources.isEmpty()) {
+                _state.update {
+                    it.copy(
+                        discoveryFeatured = null,
+                        discoveryLatest = emptyList(),
+                        isDiscoveryLoading = false,
+                    )
                 }
+                return@launch
+            }
+
+            val perSourceLists = withContext(Dispatchers.IO) {
+                val semaphore = Semaphore(2)
+
+                eligibleSources.map { source ->
+                    async {
+                        semaphore.withPermit {
+                            try {
+                                sourcePageMap[source.id] = 1
+                                val mangasPage: MangasPage = if (source.supportsLatest) {
+                                    source.getLatestUpdates(1)
+                                } else {
+                                    source.getPopularManga(1)
+                                }
+                                hasMorePagesMap[source.id] = mangasPage.hasNextPage
+
+                                val domainMangas = mangasPage.mangas.take(12).map { sManga ->
+                                    sManga.toDomainManga(source.id)
+                                }
+                                val localMangas = networkToLocalManga(domainMangas)
+
+                                localMangas.map { manga ->
+                                    HomeDiscoveryItem(
+                                        mangaId = manga.id,
+                                        title = manga.title,
+                                        coverData = manga.asMangaCover(),
+                                        sourceId = source.id,
+                                        sourceName = source.name,
+                                    )
+                                }
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (_: Throwable) {
+                                // Source-specific error handled gracefully without failing other sources
+                                emptyList()
+                            }
+                        }
+                    }
+                }.awaitAll().filter { it.isNotEmpty() }
             }
 
             // Interleave items across sources to ensure source diversity
