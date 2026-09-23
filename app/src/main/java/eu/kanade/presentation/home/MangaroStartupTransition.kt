@@ -1,8 +1,7 @@
 package eu.kanade.presentation.home
 
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -22,6 +21,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
@@ -33,96 +33,90 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import eu.kanade.presentation.theme.MangaroDesignSystem
 import eu.kanade.tachiyomi.R
-import kotlinx.coroutines.delay
 
 /**
- * Lightweight Branded Startup Transition overlay for MANGARO (Phase 05.5.1-I).
+ * Lightweight Branded Startup Transition overlay for MANGARO (Phase 05.5.1-I.1).
  *
  * Provides a continuous, premium entrance using the official M logo, dark-purple identity,
  * gold branding, Arabic tagline, and subtle ambient glow, fading out as soon as Home is ready.
+ * Completely leaves composition once dismissed, leaving zero touch-blocking or dim layers.
  */
 @Composable
 fun MangaroStartupTransition(
     ready: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    var isVisible by remember { mutableStateOf(true) }
-    var shouldRender by remember { mutableStateOf(true) }
+    // If ready is already true on initial composition, dismiss immediately without rendering
+    var isDismissed by remember { mutableStateOf(ready) }
+    val alphaAnim = remember { Animatable(1f) }
 
     LaunchedEffect(ready) {
         if (ready) {
-            isVisible = false
+            // Animate 180ms smooth fade-out and completely unmount from composition
+            alphaAnim.animateTo(
+                targetValue = 0f,
+                animationSpec = tween(durationMillis = 180),
+            )
+            isDismissed = true
         }
     }
 
-    if (shouldRender) {
-        AnimatedVisibility(
-            visible = isVisible,
-            exit = fadeOut(animationSpec = tween(durationMillis = 280)),
-            modifier = modifier.fillMaxSize(),
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.radialGradient(
-                            colors = listOf(
-                                Color(0x33A78BFA),
-                                Color(0x1AFFB800),
-                                MangaroDesignSystem.BackgroundDark,
-                            ),
-                            radius = 900f,
+    if (!isDismissed) {
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .alpha(alphaAnim.value)
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(
+                            Color(0x33A78BFA),
+                            Color(0x1AFFB800),
+                            MangaroDesignSystem.BackgroundDark,
                         ),
+                        radius = 900f,
                     ),
-                contentAlignment = Alignment.Center,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
             ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
+                Box(
+                    modifier = Modifier
+                        .size(92.dp)
+                        .shadow(16.dp, CircleShape, spotColor = MangaroDesignSystem.LavenderPrimary)
+                        .clip(CircleShape)
+                        .background(MangaroDesignSystem.SurfaceHigh),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(92.dp)
-                            .shadow(16.dp, CircleShape, spotColor = MangaroDesignSystem.LavenderPrimary)
-                            .clip(CircleShape)
-                            .background(MangaroDesignSystem.SurfaceHigh),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Image(
-                            painter = painterResource(R.drawable.ic_splash_logo),
-                            contentDescription = "MANGARO Logo",
-                            modifier = Modifier.size(72.dp),
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(20.dp))
-
-                    Text(
-                        text = "MANGARO",
-                        color = MangaroDesignSystem.GoldPrimary,
-                        fontSize = 26.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 2.sp,
-                        textAlign = TextAlign.Center,
-                    )
-
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    Text(
-                        text = "عالمك الخاص للقراءة",
-                        color = MangaroDesignSystem.LavenderPrimary.copy(alpha = 0.85f),
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium,
-                        textAlign = TextAlign.Center,
+                    Image(
+                        painter = painterResource(R.drawable.ic_splash_logo),
+                        contentDescription = "MANGARO Logo",
+                        modifier = Modifier.size(72.dp),
                     )
                 }
-            }
-        }
 
-        LaunchedEffect(isVisible) {
-            if (!isVisible) {
-                delay(300)
-                shouldRender = false
+                Spacer(modifier = Modifier.height(20.dp))
+
+                Text(
+                    text = "MANGARO",
+                    color = MangaroDesignSystem.GoldPrimary,
+                    fontSize = 26.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 2.sp,
+                    textAlign = TextAlign.Center,
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Text(
+                    text = "عالمك الخاص للقراءة",
+                    color = MangaroDesignSystem.LavenderPrimary.copy(alpha = 0.85f),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    textAlign = TextAlign.Center,
+                )
             }
         }
     }
