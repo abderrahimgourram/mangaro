@@ -74,6 +74,7 @@ import eu.kanade.presentation.components.AppStateBanners
 import eu.kanade.presentation.components.DownloadedOnlyBannerBackgroundColor
 import eu.kanade.presentation.components.IncognitoModeBannerBackgroundColor
 import eu.kanade.presentation.components.IndexingBannerBackgroundColor
+import eu.kanade.presentation.home.MangaroStartupTransition
 import eu.kanade.presentation.more.settings.screen.browse.ExtensionStoresScreen
 import eu.kanade.presentation.more.settings.screen.data.RestoreBackupScreen
 import eu.kanade.presentation.util.AssistContentScreen
@@ -239,6 +240,13 @@ class MainActivity : BaseActivity() {
                                     .windowInsetsBottomHeight(WindowInsets.navigationBars)
                                     .alpha(0.8f)
                                     .background(MaterialTheme.colorScheme.surfaceContainer),
+                            )
+                        }
+
+                        // Branded startup transition overlay
+                        if (isLaunch) {
+                            MangaroStartupTransition(
+                                ready = ready,
                             )
                         }
                     }
