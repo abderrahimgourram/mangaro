@@ -134,129 +134,101 @@ class HomeViewModel(
                 return@launch
             }
 
-            val channel = Channel<SourceFetchResult>(Channel.UNLIMITED)
-            val semaphore = Semaphore(2)
+            // Perform bounded parallel fetching & complete batch aggregation off main thread on Dispatchers.IO
+            val batchResult = withContext(Dispatchers.IO) {
+                val semaphore = Semaphore(2)
 
-            // Launch bounded parallel workers (max 2 concurrent network requests)
-            val jobs = eligibleSources.mapIndexed { index, source ->
-                launch(Dispatchers.IO) {
-                    semaphore.withPermit {
-                        try {
-                            val mangasPage: MangasPage = if (source.supportsLatest) {
-                                source.getLatestUpdates(1)
-                            } else {
-                                source.getPopularManga(1)
-                            }
+                val fetchResults = eligibleSources.map { source ->
+                    async {
+                        semaphore.withPermit {
+                            try {
+                                val mangasPage: MangasPage = if (source.supportsLatest) {
+                                    source.getLatestUpdates(1)
+                                } else {
+                                    source.getPopularManga(1)
+                                }
 
-                            val domainMangas = mangasPage.mangas.take(12).map { sManga ->
-                                sManga.toDomainManga(source.id)
-                            }
-                            val localMangas = networkToLocalManga(domainMangas)
+                                val domainMangas = mangasPage.mangas.take(12).map { sManga ->
+                                    sManga.toDomainManga(source.id)
+                                }
+                                val localMangas = networkToLocalManga(domainMangas)
 
-                            val sourceItems = localMangas.map { manga ->
-                                HomeDiscoveryItem(
-                                    mangaId = manga.id,
-                                    title = manga.title,
-                                    coverData = manga.asMangaCover(),
-                                    sourceId = source.id,
-                                    sourceName = source.name,
-                                )
-                            }
+                                val sourceItems = localMangas.map { manga ->
+                                    HomeDiscoveryItem(
+                                        mangaId = manga.id,
+                                        title = manga.title,
+                                        coverData = manga.asMangaCover(),
+                                        sourceId = source.id,
+                                        sourceName = source.name,
+                                    )
+                                }
 
-                            channel.send(
                                 SourceFetchResult(
-                                    sourceIndex = index,
+                                    sourceIndex = 0,
                                     sourceId = source.id,
                                     page = 1,
                                     hasNextPage = mangasPage.hasNextPage,
                                     items = sourceItems,
-                                ),
-                            )
-                        } catch (e: CancellationException) {
-                            throw e
-                        } catch (_: Throwable) {
-                            // Source-specific error handled gracefully without failing other sources
-                            channel.send(
-                                SourceFetchResult(
-                                    sourceIndex = index,
-                                    sourceId = source.id,
-                                    page = 1,
-                                    hasNextPage = false,
-                                    items = emptyList(),
-                                ),
-                            )
-                        }
-                    }
-                }
-            }
-
-            // Close channel when all workers finish
-            launch(Dispatchers.IO) {
-                jobs.joinAll()
-                channel.close()
-            }
-
-            // Map to store per-source lists indexed by sourceIndex to preserve exact source ordering
-            val sourceMap = mutableMapOf<Int, List<HomeDiscoveryItem>>()
-
-            // Consume completed source results progressively in owning coroutine
-            for (res in channel) {
-                sourcePageMap[res.sourceId] = res.page
-                hasMorePagesMap[res.sourceId] = res.hasNextPage
-
-                if (res.items.isNotEmpty()) {
-                    sourceMap[res.sourceIndex] = res.items
-                }
-
-                // Re-build perSourceLists ordered by original sourceIndex
-                val perSourceLists = sourceMap.entries
-                    .sortedBy { it.key }
-                    .map { it.value }
-
-                val interleavedItems = interleaveSources(perSourceLists)
-                allDiscoveryItems = interleavedItems.toMutableList()
-
-                val deduplicated = deduplicateAndUnify(allDiscoveryItems)
-
-                if (deduplicated.isNotEmpty()) {
-                    val currentFeatured = _state.value.discoveryFeatured
-
-                    if (currentFeatured == null) {
-                        // First batch of valid items: select initial featured banner
-                        val savedMangaId = sourcePreferences.featuredMangaId.get()
-                        if (savedMangaId != -1L) {
-                            val foundIndex = deduplicated.indexOfFirst { it.mangaId == savedMangaId }
-                            if (foundIndex != -1) {
-                                featuredIndex = foundIndex
+                                )
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (_: Throwable) {
+                                // Source-specific error handled gracefully without failing other sources
+                                null
                             }
                         }
-                        val featured = deduplicated[featuredIndex % deduplicated.size]
-                        sourcePreferences.featuredMangaId.set(featured.mangaId)
-                        val latest = deduplicated.filter { it.mangaId != featured.mangaId }
+                    }
+                }.awaitAll().filterNotNull()
 
-                        _state.update {
-                            it.copy(
-                                discoveryFeatured = featured,
-                                discoveryLatest = latest,
-                                isDiscoveryLoading = false,
-                            )
-                        }
-                    } else {
-                        // Banner ALREADY visible: keep discoveryFeatured completely stable!
-                        val latest = deduplicated.filter { it.mangaId != currentFeatured.mangaId }
+                val perSourceLists = mutableListOf<List<HomeDiscoveryItem>>()
+                val pageUpdates = mutableMapOf<Long, Int>()
+                val hasMoreUpdates = mutableMapOf<Long, Boolean>()
 
-                        _state.update {
-                            it.copy(
-                                discoveryLatest = latest,
-                                isDiscoveryLoading = false,
-                            )
-                        }
+                for (res in fetchResults) {
+                    pageUpdates[res.sourceId] = res.page
+                    hasMoreUpdates[res.sourceId] = res.hasNextPage
+                    if (res.items.isNotEmpty()) {
+                        perSourceLists.add(res.items)
                     }
                 }
+
+                val interleavedItems = interleaveSources(perSourceLists)
+                val deduplicated = deduplicateAndUnify(interleavedItems)
+
+                DiscoveryBatchResult(
+                    pageMapUpdates = pageUpdates,
+                    hasMoreMapUpdates = hasMoreUpdates,
+                    allDiscoveryItems = interleavedItems,
+                    deduplicatedItems = deduplicated,
+                )
             }
 
-            // Final check after channel closes if no content was found across any source
-            if (_state.value.discoveryFeatured == null) {
+            // Update ViewModel state safely on main thread with final immutable result
+            sourcePageMap.putAll(batchResult.pageMapUpdates)
+            hasMorePagesMap.putAll(batchResult.hasMoreMapUpdates)
+            allDiscoveryItems = batchResult.allDiscoveryItems.toMutableList()
+
+            val deduplicated = batchResult.deduplicatedItems
+
+            if (deduplicated.isNotEmpty()) {
+                val savedMangaId = sourcePreferences.featuredMangaId.get()
+                if (savedMangaId != -1L) {
+                    val foundIndex = deduplicated.indexOfFirst { it.mangaId == savedMangaId }
+                    if (foundIndex != -1) {
+                        featuredIndex = foundIndex
+                    }
+                }
+                val featured = deduplicated[featuredIndex % deduplicated.size]
+                sourcePreferences.featuredMangaId.set(featured.mangaId)
+                val latest = deduplicated.filterIndexed { index, _ -> index != (featuredIndex % deduplicated.size) }
+                _state.update {
+                    it.copy(
+                        discoveryFeatured = featured,
+                        discoveryLatest = latest,
+                        isDiscoveryLoading = false,
+                    )
+                }
+            } else {
                 _state.update {
                     it.copy(
                         discoveryFeatured = null,
@@ -414,6 +386,13 @@ private data class SourceFetchResult(
     val page: Int,
     val hasNextPage: Boolean,
     val items: List<HomeDiscoveryItem>,
+)
+
+private data class DiscoveryBatchResult(
+    val pageMapUpdates: Map<Long, Int>,
+    val hasMoreMapUpdates: Map<Long, Boolean>,
+    val allDiscoveryItems: List<HomeDiscoveryItem>,
+    val deduplicatedItems: List<HomeDiscoveryItem>,
 )
 
 data class HomeDiscoveryItem(
