@@ -9,8 +9,10 @@ import eu.kanade.tachiyomi.util.storage.saveTo
 import kotlinx.serialization.json.Json
 import logcat.LogPriority
 import okhttp3.Response
+import okio.BufferedSource
 import okio.buffer
 import okio.sink
+import okio.source
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.chapter.model.Chapter
 import java.io.File
@@ -146,6 +148,19 @@ class ChapterCache(
      */
     @Throws(IOException::class)
     fun putImageToCache(imageUrl: String, response: Response) {
+        try {
+            putImageToCache(imageUrl, response.body.source())
+        } finally {
+            response.body.close()
+        }
+    }
+
+    @Throws(IOException::class)
+    fun putImageToCache(imageUrl: String, bytes: ByteArray) {
+        putImageToCache(imageUrl, bytes.inputStream().source().buffer())
+    }
+
+    private fun putImageToCache(imageUrl: String, source: BufferedSource) {
         // Initialize editor (edits the values for an entry).
         var editor: DiskLruCache.Editor? = null
 
@@ -155,12 +170,12 @@ class ChapterCache(
             editor = diskCache.edit(key) ?: return
 
             // Get OutputStream and write image with Okio.
-            response.body.source().saveTo(editor.newOutputStream(0))
+            source.saveTo(editor.newOutputStream(0))
 
             diskCache.flush()
             editor.commit()
         } finally {
-            response.body.close()
+            source.close()
             editor?.abortUnlessCommitted()
         }
     }

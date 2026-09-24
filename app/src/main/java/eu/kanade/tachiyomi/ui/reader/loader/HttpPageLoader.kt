@@ -2,6 +2,7 @@ package eu.kanade.tachiyomi.ui.reader.loader
 
 import eu.kanade.tachiyomi.data.cache.ChapterCache
 import eu.kanade.tachiyomi.data.database.models.toDomainChapter
+import eu.kanade.tachiyomi.source.MangaDarPageResolver
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.ui.reader.model.ReaderChapter
@@ -67,13 +68,17 @@ internal class HttpPageLoader(
      * otherwise fallbacks to network.
      */
     override suspend fun getPages(): List<ReaderPage> {
-        val pages = try {
-            chapterCache.getPageListFromCache(chapter.chapter.toDomainChapter()!!)
-        } catch (e: Throwable) {
-            if (e is CancellationException) {
+        val pages = if (MangaDarPageResolver.supports(source)) {
+            // MangaDar signs image URLs per chapter load; cached URLs can expire.
+            MangaDarPageResolver.getPages(source, chapter.chapter)
+        } else {
+            try {
+                chapterCache.getPageListFromCache(chapter.chapter.toDomainChapter()!!)
+            } catch (e: CancellationException) {
                 throw e
+            } catch (_: Exception) {
+                source.getPageList(chapter.chapter)
             }
-            source.getPageList(chapter.chapter)
         }
         return pages.mapIndexed { index, page ->
             // Don't trust sources and use our own indexing
@@ -182,17 +187,21 @@ internal class HttpPageLoader(
 
             if (force || !chapterCache.isImageInCache(imageUrl)) {
                 page.status = Page.State.DownloadImage
-                val imageResponse = source.getImage(page)
-                chapterCache.putImageToCache(imageUrl, imageResponse)
+                when (val image = PageImageUrl.parse(imageUrl)) {
+                    PageImageUrl.Http -> {
+                        val imageResponse = source.getImage(page)
+                        chapterCache.putImageToCache(imageUrl, imageResponse)
+                    }
+                    is PageImageUrl.InlineImage -> chapterCache.putImageToCache(imageUrl, image.bytes)
+                }
             }
 
             page.stream = { chapterCache.getImageFile(imageUrl).inputStream() }
             page.status = Page.State.Ready
-        } catch (e: Throwable) {
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
             page.status = Page.State.Error(e)
-            if (e is CancellationException) {
-                throw e
-            }
         }
     }
 }
