@@ -111,10 +111,6 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
 
         val scope = ProcessLifecycleOwner.get().lifecycleScope
 
-        scope.launch {
-            ManhwaRepoBootstrap.install(this@App)
-        }
-
         // Show notification to disable Incognito Mode when it's enabled
         basePreferences.incognitoMode.changes()
             .onEach { enabled ->
