@@ -47,6 +47,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -135,8 +136,13 @@ class MainActivity : BaseActivity() {
 
     private val getIncognitoState: GetIncognitoState by injectLazy()
 
-    // To be checked by splash screen. If true then splash screen will be removed.
-    var ready = false
+    // To be checked by splash screen and Compose startup transition.
+    private val readyState = mutableStateOf(false)
+    var ready: Boolean
+        get() = readyState.value
+        set(value) {
+            readyState.value = value
+        }
 
     private var navigator: Navigator? = null
 
@@ -244,9 +250,11 @@ class MainActivity : BaseActivity() {
                         }
 
                         // Branded startup transition overlay
-                        if (isLaunch) {
+                        var showStartupOverlay by rememberSaveable { mutableStateOf(isLaunch) }
+                        if (showStartupOverlay) {
                             MangaroStartupTransition(
                                 ready = ready,
+                                onDismissed = { showStartupOverlay = false },
                             )
                         }
                     }

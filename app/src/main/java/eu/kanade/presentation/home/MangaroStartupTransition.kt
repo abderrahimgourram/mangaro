@@ -1,7 +1,9 @@
 package eu.kanade.presentation.home
 
-import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -15,13 +17,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
@@ -35,37 +33,28 @@ import eu.kanade.presentation.theme.MangaroDesignSystem
 import eu.kanade.tachiyomi.R
 
 /**
- * Lightweight Branded Startup Transition overlay for MANGARO (Phase 05.5.1-I.1).
+ * Lightweight Branded Startup Transition overlay for MANGARO (Phase 05.5.1-I.2).
  *
- * Provides a continuous, premium entrance using the official M logo, dark-purple identity,
- * gold branding, Arabic tagline, and subtle ambient glow, fading out as soon as Home is ready.
- * Completely leaves composition once dismissed, leaving zero touch-blocking or dim layers.
+ * Uses AnimatedVisibility exit transition paired with a state machine to ensure
+ * 100% complete unmounting from the composition tree after fade-out completes.
  */
 @Composable
 fun MangaroStartupTransition(
     ready: Boolean,
+    onDismissed: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // If ready is already true on initial composition, dismiss immediately without rendering
-    var isDismissed by remember { mutableStateOf(ready) }
-    val alphaAnim = remember { Animatable(1f) }
+    val visibility = remember { MutableTransitionState(true) }
+    visibility.targetState = !ready
 
-    LaunchedEffect(ready) {
-        if (ready) {
-            // Animate 180ms smooth fade-out and completely unmount from composition
-            alphaAnim.animateTo(
-                targetValue = 0f,
-                animationSpec = tween(durationMillis = 180),
-            )
-            isDismissed = true
-        }
-    }
-
-    if (!isDismissed) {
+    AnimatedVisibility(
+        visibleState = visibility,
+        exit = fadeOut(animationSpec = tween(durationMillis = 200)),
+        modifier = modifier.fillMaxSize(),
+    ) {
         Box(
-            modifier = modifier
+            modifier = Modifier
                 .fillMaxSize()
-                .alpha(alphaAnim.value)
                 .background(
                     Brush.radialGradient(
                         colors = listOf(
@@ -119,5 +108,9 @@ fun MangaroStartupTransition(
                 )
             }
         }
+    }
+
+    LaunchedEffect(ready, visibility.isIdle, visibility.currentState) {
+        if (ready && visibility.isIdle && !visibility.currentState) onDismissed()
     }
 }
