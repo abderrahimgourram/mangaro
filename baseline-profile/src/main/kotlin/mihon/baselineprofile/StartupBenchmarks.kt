@@ -2,7 +2,6 @@ package mihon.baselineprofile
 
 import androidx.benchmark.macro.BaselineProfileMode
 import androidx.benchmark.macro.CompilationMode
-import androidx.benchmark.macro.FullyDrawnTimingMetric
 import androidx.benchmark.macro.StartupMode
 import androidx.benchmark.macro.StartupTimingMetric
 import androidx.benchmark.macro.junit4.MacrobenchmarkRule
@@ -92,13 +91,12 @@ abstract class AbstractStartupBenchmark(private val startupMode: StartupMode) {
             metrics = listOf(
                 // StartupTimingMetric: captures timeToInitialDisplay — the elapsed time from
                 // launch until the first frame of the app is drawn on screen.
-                StartupTimingMetric(),
+                StartupTimingMetric()
                 // FullyDrawnTimingMetric: captures timeToFullyDrawn — the elapsed time from
                 // launch until Activity.reportFullyDrawn() is called, which occurs after the
                 // Home shell (library/browse tabs) has fully rendered and is interactive.
                 // This metric provides a more accurate picture of when the app is actually
                 // usable, as opposed to merely visible.
-                FullyDrawnTimingMetric(),
             ),
             compilationMode = compilationMode,
             startupMode = startupMode,
