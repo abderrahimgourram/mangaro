@@ -74,15 +74,8 @@ abstract class AbstractStartupBenchmark(private val startupMode: StartupMode) {
         benchmark(CompilationMode.None())
 
     @Test
-    fun startupCompilationBaselineProfilesDisabled() =
-        benchmark(CompilationMode.Partial(BaselineProfileMode.Disable))
-
-    @Test
     fun startupCompilationBaselineProfiles() =
         benchmark(CompilationMode.Partial(BaselineProfileMode.Require))
-
-    @Test
-    fun startupCompilationFull() = benchmark(CompilationMode.Full())
 
     private fun benchmark(compilationMode: CompilationMode) {
         // The application id for the running build variant is read from the instrumentation arguments.
