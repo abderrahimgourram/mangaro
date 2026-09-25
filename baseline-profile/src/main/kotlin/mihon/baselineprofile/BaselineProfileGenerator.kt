@@ -1,8 +1,8 @@
 package mihon.baselineprofile
 
 import android.os.Build
-import androidx.annotation.RequiresApi
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.filters.SdkSuppress
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.BySelector
@@ -15,9 +15,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 private const val LAUNCH_TIMEOUT_MS = 10_000L
-private const val IDLE_TIMEOUT_MS = 5_000L
 
-@RequiresApi(Build.VERSION_CODES.P)
+@SdkSuppress(minSdkVersion = Build.VERSION_CODES.P)
 @RunWith(AndroidJUnit4::class)
 class BaselineProfileGenerator {
 
@@ -27,7 +26,8 @@ class BaselineProfileGenerator {
     @Test
     fun generate() = rule.collect(
         packageName = TARGET_PACKAGE_NAME,
-        includeInStartupProfile = true,
+        includeInStartupProfile = false,
+        maxIterations = 2,
     ) {
         pressHome()
         startActivityAndWait()
@@ -35,39 +35,34 @@ class BaselineProfileGenerator {
     }
 }
 
-@RequiresApi(Build.VERSION_CODES.P)
 private fun MacrobenchmarkScope.profileSetup() {
     val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
 
-    // Wait for the app to be fully idle after cold launch
-    device.waitForIdle(IDLE_TIMEOUT_MS)
-
     // Wait for the Home shell to appear — detected by a scrollable container
-    // (does not rely on network content or any text that requires data to load)
     device.wait(Until.findObject(By.scrollable(true)), LAUNCH_TIMEOUT_MS)
-    device.waitForIdle(IDLE_TIMEOUT_MS)
+    Thread.sleep(1000)
 
     // Scroll down on Home to exercise the Home feed rendering path
     device.scrollDown()
-    device.waitForIdle(IDLE_TIMEOUT_MS)
+    Thread.sleep(500)
     device.scrollDown()
-    device.waitForIdle(IDLE_TIMEOUT_MS)
+    Thread.sleep(500)
 
     // Navigate to Library tab — Arabic content description
     device.waitAndClick(By.desc("المكتبة"))
-    device.waitForIdle(IDLE_TIMEOUT_MS)
+    Thread.sleep(500)
 
     // Navigate to Browse (Explore) tab — Arabic content description
     device.waitAndClick(By.desc("الاستكشاف"))
-    device.waitForIdle(IDLE_TIMEOUT_MS)
+    Thread.sleep(500)
 
     // Navigate to More tab — Arabic content description
     device.waitAndClick(By.desc("المزيد"))
-    device.waitForIdle(IDLE_TIMEOUT_MS)
+    Thread.sleep(500)
 
     // Return to Home tab — Arabic content description
     device.waitAndClick(By.desc("الرئيسية"))
-    device.waitForIdle(IDLE_TIMEOUT_MS)
+    Thread.sleep(500)
 }
 
 /**
