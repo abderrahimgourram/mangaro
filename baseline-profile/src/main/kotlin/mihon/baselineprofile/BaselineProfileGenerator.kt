@@ -14,7 +14,6 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
-private const val PACKAGE_NAME = "eu.kanade.tachiyomi"
 private const val LAUNCH_TIMEOUT_MS = 10_000L
 private const val IDLE_TIMEOUT_MS = 5_000L
 
@@ -27,7 +26,7 @@ class BaselineProfileGenerator {
 
     @Test
     fun generate() = rule.collect(
-        packageName = PACKAGE_NAME,
+        packageName = TARGET_PACKAGE_NAME,
         includeInStartupProfile = true,
     ) {
         pressHome()

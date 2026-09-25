@@ -75,5 +75,5 @@ gradlePlugin {
 }
 
 kotlin {
-    jvmToolchain(27)
+    jvmToolchain(17)
 }
