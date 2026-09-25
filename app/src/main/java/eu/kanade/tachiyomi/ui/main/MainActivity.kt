@@ -254,7 +254,13 @@ class MainActivity : BaseActivity() {
                         if (showStartupOverlay) {
                             MangaroStartupTransition(
                                 ready = ready,
-                                onDismissed = { showStartupOverlay = false },
+                                onDismissed = {
+                                    showStartupOverlay = false
+                                    if (!fullyDrawnReported) {
+                                        fullyDrawnReported = true
+                                        reportFullyDrawn()
+                                    }
+                                },
                             )
                         }
                     }
@@ -613,6 +619,8 @@ class MainActivity : BaseActivity() {
         return (scheme == "tachiyomi" && data?.host == "add-repo") ||
             (scheme == "mihon" && data?.host == "extension-store")
     }
+
+    private var fullyDrawnReported = false
 
     companion object {
         const val INTENT_SEARCH = "eu.kanade.tachiyomi.SEARCH"

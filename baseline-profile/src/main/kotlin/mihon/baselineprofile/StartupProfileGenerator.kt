@@ -3,8 +3,7 @@ package mihon.baselineprofile
 import androidx.benchmark.macro.junit4.BaselineProfileRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.LargeTest
-import androidx.test.uiautomator.BySelector
-import androidx.test.uiautomator.UiDevice
+import androidx.test.uiautomator.By
 import androidx.test.uiautomator.Until
 import org.junit.Rule
 import org.junit.Test
@@ -25,10 +24,7 @@ class StartupProfileGenerator {
         ) {
             pressHome()
             startActivityAndWait()
+            device.wait(Until.hasObject(By.scrollable(true)), 10_000)
         }
     }
-}
-
-private fun UiDevice.waitAndClick(by: BySelector) {
-    wait(Until.findObject(by), 60_000).click()
 }
