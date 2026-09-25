@@ -76,8 +76,8 @@ private fun MacrobenchmarkScope.profileSetup() {
  * No-ops silently if the element never appears (keeps the profile run deterministic).
  */
 private fun UiDevice.waitAndClick(by: BySelector) {
-    val obj = wait(Until.findObject(by), LAUNCH_TIMEOUT_MS)
-    obj?.click()
+    val obj = wait(Until.findObject(by), LAUNCH_TIMEOUT_MS) ?: throw AssertionError("Required automation element not found: $by")
+    obj.click()
 }
 
 /**
