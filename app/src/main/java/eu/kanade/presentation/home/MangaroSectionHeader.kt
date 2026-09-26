@@ -1,8 +1,6 @@
 package eu.kanade.presentation.home
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -44,25 +42,17 @@ fun MangaroSectionHeader(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.weight(1f, fill = false),
         ) {
-            Box(
-                modifier = Modifier
-                    .size(28.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(MangaroVisualTokens.PurplePrimary.copy(alpha = 0.15f)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = MangaroVisualTokens.PurplePrimary,
-                    modifier = Modifier.size(16.dp),
-                )
-            }
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MangaroVisualTokens.GoldAccent,
+                modifier = Modifier.size(18.dp),
+            )
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleMedium.copy(
                     fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
+                    fontSize = 16.5.sp,
                 ),
                 color = Color.White,
                 maxLines = 1,
@@ -78,7 +68,7 @@ fun MangaroSectionHeader(
                 Text(
                     text = actionText,
                     style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                    color = MangaroVisualTokens.PurplePrimary,
+                    color = MangaroVisualTokens.GoldAccent,
                 )
             }
         }

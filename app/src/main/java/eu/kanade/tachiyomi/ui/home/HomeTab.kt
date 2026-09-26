@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -62,6 +63,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -166,18 +168,7 @@ object HomeTab : Tab {
                             )
                         }
                         state.isDiscoveryLoading -> {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 20.dp),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(28.dp),
-                                    strokeWidth = 2.5.dp,
-                                    color = MaterialTheme.colorScheme.primary,
-                                )
-                            }
+                            FeaturedCardSkeleton()
                         }
                         state.installedSources.isEmpty() -> {
                             EmptyDiscoveryCard(
@@ -238,7 +229,7 @@ object HomeTab : Tab {
                                 },
                             )
                         } else {
-                            SectionRowLoadingPlaceholder()
+                            MangaCardSkeletonRow()
                         }
                     }
                 }
@@ -262,7 +253,7 @@ object HomeTab : Tab {
                                 },
                             )
                         } else {
-                            SectionRowLoadingPlaceholder()
+                            MangaCardSkeletonRow()
                         }
                     }
                 }
@@ -594,18 +585,116 @@ object HomeTab : Tab {
     }
 
     @Composable
-    private fun SectionRowLoadingPlaceholder() {
-        Box(
+    private fun FeaturedCardSkeleton() {
+        Surface(
+            shape = RoundedCornerShape(18.dp),
+            color = MangaroDesignSystem.SurfaceDark,
+            border = BorderStroke(1.dp, MangaroDesignSystem.BorderSubtle),
             modifier = Modifier
                 .fillMaxWidth()
-                .height(110.dp),
-            contentAlignment = Alignment.Center,
+                .height(168.dp)
+                .padding(horizontal = 16.dp, vertical = 4.dp),
         ) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(24.dp),
-                strokeWidth = 2.dp,
-                color = MangaroDesignSystem.GoldPrimary,
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .width(96.dp)
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MangaroDesignSystem.SurfaceHigh),
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight(),
+                    verticalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .width(80.dp)
+                            .height(16.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(MangaroDesignSystem.SurfaceHigh),
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(0.9f)
+                            .height(18.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(MangaroDesignSystem.SurfaceHigh),
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(0.6f)
+                            .height(14.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(MangaroDesignSystem.SurfaceHigh.copy(alpha = 0.6f)),
+                    )
+                }
+            }
+        }
+    }
+
+    @Composable
+    private fun MangaCardSkeletonRow() {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            repeat(4) {
+                MangaCardSkeleton()
+            }
+        }
+    }
+
+    @Composable
+    private fun MangaCardSkeleton(
+        modifier: Modifier = Modifier,
+        width: Dp = 118.dp,
+    ) {
+        Surface(
+            shape = RoundedCornerShape(14.dp),
+            color = MangaroDesignSystem.SurfaceDark,
+            border = BorderStroke(1.dp, MangaroDesignSystem.BorderSubtle),
+            modifier = modifier.width(width),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(5.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(2f / 3f)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(MangaroDesignSystem.SurfaceHigh),
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(0.85f)
+                        .height(11.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(MangaroDesignSystem.SurfaceHigh.copy(alpha = 0.7f)),
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(0.5f)
+                        .height(9.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(MangaroDesignSystem.SurfaceHigh.copy(alpha = 0.4f)),
+                )
+            }
         }
     }
 
