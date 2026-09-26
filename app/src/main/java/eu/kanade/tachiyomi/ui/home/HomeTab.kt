@@ -219,29 +219,55 @@ object HomeTab : Tab {
                     }
                 }
 
-                // Section 3: Latest Manga from Installed Sources
-                if (state.discoveryLatest.isNotEmpty()) {
+                // Section 3: شائع الآن (Popular Manga)
+                if (state.popularManga.isNotEmpty() || state.isDiscoveryLoading) {
                     item {
                         Spacer(modifier = Modifier.height(8.dp))
                         MangaroSectionHeader(
-                            title = "أحدث الأعمال من مصادرك",
-                            icon = Icons.Outlined.Book,
-                            actionText = "عرض الكل",
-                            onActionClick = { navigator.push(ExpandedLatestScreen()) },
+                            title = "شائع الآن",
+                            icon = Icons.Outlined.AutoAwesome,
                         )
                     }
 
                     item {
-                        DiscoveryMangaRow(
-                            mangaList = state.discoveryLatest,
-                            onMangaClick = { mangaId ->
-                                navigator.push(MangaScreen(mangaId, true))
-                            },
-                        )
+                        if (state.popularManga.isNotEmpty()) {
+                            DiscoveryMangaRow(
+                                mangaList = state.popularManga,
+                                onMangaClick = { mangaId ->
+                                    navigator.push(MangaScreen(mangaId, true))
+                                },
+                            )
+                        } else {
+                            SectionRowLoadingPlaceholder()
+                        }
                     }
                 }
 
-                // Section 4: Explore Installed Sources
+                // Section 4: آخر التحديثات (Latest Updates)
+                if (state.latestManga.isNotEmpty() || state.isDiscoveryLoading) {
+                    item {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        MangaroSectionHeader(
+                            title = "آخر التحديثات",
+                            icon = Icons.Outlined.Book,
+                        )
+                    }
+
+                    item {
+                        if (state.latestManga.isNotEmpty()) {
+                            DiscoveryMangaRow(
+                                mangaList = state.latestManga,
+                                onMangaClick = { mangaId ->
+                                    navigator.push(MangaScreen(mangaId, true))
+                                },
+                            )
+                        } else {
+                            SectionRowLoadingPlaceholder()
+                        }
+                    }
+                }
+
+                // Section 5: Explore Installed Sources
                 if (state.installedSources.isNotEmpty()) {
                     item {
                         Spacer(modifier = Modifier.height(8.dp))
@@ -567,7 +593,21 @@ object HomeTab : Tab {
         }
     }
 
-
+    @Composable
+    private fun SectionRowLoadingPlaceholder() {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(110.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(24.dp),
+                strokeWidth = 2.dp,
+                color = MangaroDesignSystem.GoldPrimary,
+            )
+        }
+    }
 
     @Composable
     private fun DiscoveryMangaRow(
