@@ -21,7 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -578,7 +578,7 @@ object HomeTab : Tab {
             contentPadding = PaddingValues(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            itemsIndexed(mangaList, key = { index, item -> "${item.sourceId}_${item.mangaId}_$index" }) { _, item ->
+            items(mangaList, key = { item -> "${item.sourceId}_${item.mangaId}" }) { item ->
                 MangaroMangaCard(
                     item = item,
                     onMangaClick = onMangaClick,
@@ -597,7 +597,7 @@ object HomeTab : Tab {
             contentPadding = PaddingValues(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            itemsIndexed(sources, key = { index, source -> "${source.id}_$index" }) { _, source ->
+            items(sources, key = { source -> source.id }) { source ->
                 MangaroSourceChip(
                     source = source,
                     onSourceClick = onSourceClick,
