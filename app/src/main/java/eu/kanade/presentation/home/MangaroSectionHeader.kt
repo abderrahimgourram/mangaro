@@ -1,6 +1,10 @@
 package eu.kanade.presentation.home
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -21,6 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import eu.kanade.presentation.theme.MangaroDesignSystem
 
 @Composable
 fun MangaroSectionHeader(
@@ -42,17 +47,30 @@ fun MangaroSectionHeader(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.weight(1f, fill = false),
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = MangaroVisualTokens.GoldAccent,
-                modifier = Modifier.size(18.dp),
-            )
+            Box(
+                modifier = Modifier
+                    .size(24.dp)
+                    .clip(RoundedCornerShape(7.dp))
+                    .background(MangaroDesignSystem.GoldPrimary.copy(alpha = 0.12f))
+                    .border(
+                        BorderStroke(0.5.dp, MangaroDesignSystem.GoldPrimary.copy(alpha = 0.3f)),
+                        shape = RoundedCornerShape(7.dp),
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = MangaroDesignSystem.GoldPrimary,
+                    modifier = Modifier.size(13.dp),
+                )
+            }
+
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleMedium.copy(
                     fontWeight = FontWeight.Bold,
-                    fontSize = 16.5.sp,
+                    fontSize = 16.sp,
                 ),
                 color = Color.White,
                 maxLines = 1,
@@ -67,8 +85,11 @@ fun MangaroSectionHeader(
             ) {
                 Text(
                     text = actionText,
-                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                    color = MangaroVisualTokens.GoldAccent,
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                    ),
+                    color = MangaroDesignSystem.GoldPrimary,
                 )
             }
         }

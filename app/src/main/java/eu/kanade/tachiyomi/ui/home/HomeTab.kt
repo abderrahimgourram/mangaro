@@ -33,9 +33,12 @@ import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.Extension
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Whatshot
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
@@ -187,7 +190,7 @@ object HomeTab : Tab {
                         Spacer(modifier = Modifier.height(8.dp))
                         MangaroSectionHeader(
                             title = "متابعة القراءة",
-                            icon = Icons.Outlined.PlayArrow,
+                            icon = Icons.Outlined.PlayCircle,
                         )
                     }
 
@@ -216,7 +219,7 @@ object HomeTab : Tab {
                         Spacer(modifier = Modifier.height(8.dp))
                         MangaroSectionHeader(
                             title = "شائع الآن",
-                            icon = Icons.Outlined.AutoAwesome,
+                            icon = Icons.Outlined.Whatshot,
                         )
                     }
 
@@ -240,7 +243,7 @@ object HomeTab : Tab {
                         Spacer(modifier = Modifier.height(8.dp))
                         MangaroSectionHeader(
                             title = "آخر التحديثات",
-                            icon = Icons.Outlined.Book,
+                            icon = Icons.Outlined.Schedule,
                         )
                     }
 
