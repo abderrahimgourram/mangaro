@@ -113,18 +113,24 @@ class HomeViewModel(
 
                 _state.update { it.copy(installedSources = sourceItems) }
 
-                loadDiscoveryContent(onlineSources)
+                if (_state.value.popularManga.isEmpty() && _state.value.latestManga.isEmpty()) {
+                    loadDiscoveryContent(onlineSources)
+                }
             }
         }
     }
 
-    private fun loadDiscoveryContent(sources: List<CatalogueSource>) {
+    private fun loadDiscoveryContent(sources: List<CatalogueSource>, isRefresh: Boolean = false) {
         val previousJob = discoveryJob
         previousJob?.cancel()
         paginationJob?.cancel()
         discoveryJob = viewModelScope.launch {
             previousJob?.cancelAndJoin()
-            _state.update { it.copy(isDiscoveryLoading = true, isPaginationLoading = false, discoveryError = null) }
+
+            val hasExistingContent = _state.value.popularManga.isNotEmpty() || _state.value.latestManga.isNotEmpty()
+            if (!hasExistingContent && !isRefresh) {
+                _state.update { it.copy(isDiscoveryLoading = true, isPaginationLoading = false, discoveryError = null) }
+            }
 
             val eligibleSources = sources.distinctBy { s -> s.id }
             if (eligibleSources.isEmpty()) {
@@ -140,116 +146,148 @@ class HomeViewModel(
                 return@launch
             }
 
-            val batchResult = withContext(Dispatchers.IO) {
-                val semaphore = Semaphore(2)
+            // STAGE A: Deterministic Early Wave (first 2 sources)
+            val earlySources = eligibleSources.take(2)
+            val remainingSources = eligibleSources.drop(2)
 
-                // 1. Fetch Popular results concurrently (max 2)
-                val popularResults = eligibleSources.map { source ->
-                    async {
-                        semaphore.withPermit {
-                            getSourceDiscovery(source, DiscoveryCategory.POPULAR, page = 1)
-                        }
-                    }
-                }.awaitAll()
-
-                // 2. Fetch Latest results concurrently for sources supporting latest (max 2)
-                val latestResults = eligibleSources.filter {
-                    getSourceCapabilities(it).supportsLatest == CapabilitySupport.SUPPORTED
-                }.map { source ->
-                    async {
-                        semaphore.withPermit {
-                            getSourceDiscovery(source, DiscoveryCategory.LATEST, page = 1)
-                        }
-                    }
-                }.awaitAll()
-
-                val perSourcePopular = mutableListOf<List<HomeDiscoveryItem>>()
-                val pageUpdates = mutableMapOf<Long, Int>()
-                val hasMoreUpdates = mutableMapOf<Long, Boolean>()
-
-                for (res in popularResults) {
-                    pageUpdates[res.sourceId] = res.page
-                    hasMoreUpdates[res.sourceId] = res.hasNextPage
-                    if (res.items.isEmpty()) continue
-                    val domainMangas = res.items.take(12).map { it.toDomainManga() }
-                    val localMangas = networkToLocalManga(domainMangas)
-                    val items = localMangas.mapIndexed { idx, manga ->
-                        HomeDiscoveryItem(
-                            mangaId = manga.id,
-                            title = manga.title,
-                            coverData = manga.asMangaCover(),
-                            sourceId = res.sourceId,
-                            sourceName = res.sourceName,
-                            url = res.items.getOrNull(idx)?.url ?: manga.url,
-                        )
-                    }
-                    if (items.isNotEmpty()) perSourcePopular.add(items)
-                }
-
-                val perSourceLatest = mutableListOf<List<HomeDiscoveryItem>>()
-                for (res in latestResults) {
-                    if (res.items.isEmpty()) continue
-                    val domainMangas = res.items.take(12).map { it.toDomainManga() }
-                    val localMangas = networkToLocalManga(domainMangas)
-                    val items = localMangas.mapIndexed { idx, manga ->
-                        HomeDiscoveryItem(
-                            mangaId = manga.id,
-                            title = manga.title,
-                            coverData = manga.asMangaCover(),
-                            sourceId = res.sourceId,
-                            sourceName = res.sourceName,
-                            url = res.items.getOrNull(idx)?.url ?: manga.url,
-                        )
-                    }
-                    if (items.isNotEmpty()) perSourceLatest.add(items)
-                }
-
-                val interleavedPopular = interleaveSources(perSourcePopular).distinctBy { "${it.sourceId}_${it.mangaId}" }
-                val interleavedLatest = interleaveSources(perSourceLatest).distinctBy { "${it.sourceId}_${it.mangaId}" }
-
-                DiscoveryBatchResultPayload(
-                    pageMapUpdates = pageUpdates,
-                    hasMoreMapUpdates = hasMoreUpdates,
-                    popularItems = interleavedPopular,
-                    latestItems = interleavedLatest,
-                )
+            val earlyPayload = fetchSourceBatch(earlySources)
+            if (earlyPayload.popularItems.isNotEmpty() || earlyPayload.latestItems.isNotEmpty()) {
+                updateDiscoveryState(earlyPayload, isFinal = remainingSources.isEmpty())
             }
 
-            sourcePageMap.clear()
-            hasMorePagesMap.clear()
-            sourcePageMap.putAll(batchResult.pageMapUpdates)
-            hasMorePagesMap.putAll(batchResult.hasMoreMapUpdates)
-            allDiscoveryItems = batchResult.popularItems.toMutableList()
+            // STAGE B: Remaining Wave (remaining sources)
+            if (remainingSources.isNotEmpty()) {
+                val remainingPayload = fetchSourceBatch(remainingSources)
+                val combinedPopular = (earlyPayload.popularItems + remainingPayload.popularItems).distinctBy { "${it.sourceId}_${it.mangaId}" }
+                val combinedLatest = (earlyPayload.latestItems + remainingPayload.latestItems).distinctBy { "${it.sourceId}_${it.mangaId}" }
+                val combinedPageMaps = earlyPayload.pageMapUpdates + remainingPayload.pageMapUpdates
+                val combinedHasMoreMaps = earlyPayload.hasMoreMapUpdates + remainingPayload.hasMoreMapUpdates
 
-            val popularList = batchResult.popularItems
-            val latestList = batchResult.latestItems
+                val finalPayload = DiscoveryBatchResultPayload(
+                    pageMapUpdates = combinedPageMaps,
+                    hasMoreMapUpdates = combinedHasMoreMaps,
+                    popularItems = combinedPopular,
+                    latestItems = combinedLatest,
+                )
+                updateDiscoveryState(finalPayload, isFinal = true)
+            } else if (earlyPayload.popularItems.isEmpty() && earlyPayload.latestItems.isEmpty()) {
+                _state.update { it.copy(isDiscoveryLoading = false) }
+            }
+        }
+    }
 
-            if (popularList.isNotEmpty()) {
-                val savedMangaId = sourcePreferences.featuredMangaId.get()
-                featuredIndex = selectFeaturedIndex(popularList.map { it.mangaId }, savedMangaId, featuredIndex)
-                val featured = popularList[featuredIndex]
-                sourcePreferences.featuredMangaId.set(featured.mangaId)
-                val popularFiltered = popularList.filterIndexed { index, _ -> index != featuredIndex }
+    private suspend fun fetchSourceBatch(batchSources: List<CatalogueSource>): DiscoveryBatchResultPayload {
+        return withContext(Dispatchers.IO) {
+            val semaphore = Semaphore(2)
 
-                _state.update {
-                    it.copy(
-                        discoveryFeatured = featured,
-                        popularManga = popularFiltered,
-                        latestManga = latestList,
-                        discoveryLatest = popularFiltered,
-                        isDiscoveryLoading = false,
+            val popularDeferreds = batchSources.map { source ->
+                async {
+                    semaphore.withPermit {
+                        getSourceDiscovery(source, DiscoveryCategory.POPULAR, page = 1)
+                    }
+                }
+            }
+
+            val latestDeferreds = batchSources.filter {
+                getSourceCapabilities(it).supportsLatest == CapabilitySupport.SUPPORTED
+            }.map { source ->
+                async {
+                    semaphore.withPermit {
+                        getSourceDiscovery(source, DiscoveryCategory.LATEST, page = 1)
+                    }
+                }
+            }
+
+            val popularResults = popularDeferreds.awaitAll()
+            val latestResults = latestDeferreds.awaitAll()
+
+            val perSourcePopular = mutableListOf<List<HomeDiscoveryItem>>()
+            val pageUpdates = mutableMapOf<Long, Int>()
+            val hasMoreUpdates = mutableMapOf<Long, Boolean>()
+
+            for (res in popularResults) {
+                pageUpdates[res.sourceId] = res.page
+                hasMoreUpdates[res.sourceId] = res.hasNextPage
+                if (res.items.isEmpty()) continue
+                val domainMangas = res.items.take(12).map { it.toDomainManga() }
+                val localMangas = networkToLocalManga(domainMangas)
+                val items = localMangas.mapIndexed { idx, manga ->
+                    HomeDiscoveryItem(
+                        mangaId = manga.id,
+                        title = manga.title,
+                        coverData = manga.asMangaCover(),
+                        sourceId = res.sourceId,
+                        sourceName = res.sourceName,
+                        url = res.items.getOrNull(idx)?.url ?: manga.url,
                     )
                 }
-            } else {
-                _state.update {
-                    it.copy(
-                        discoveryFeatured = null,
-                        popularManga = emptyList(),
-                        latestManga = latestList,
-                        discoveryLatest = emptyList(),
-                        isDiscoveryLoading = false,
+                if (items.isNotEmpty()) perSourcePopular.add(items)
+            }
+
+            val perSourceLatest = mutableListOf<List<HomeDiscoveryItem>>()
+            for (res in latestResults) {
+                pageUpdates[res.sourceId] = res.page
+                hasMoreUpdates[res.sourceId] = res.hasNextPage
+                if (res.items.isEmpty()) continue
+                val domainMangas = res.items.take(12).map { it.toDomainManga() }
+                val localMangas = networkToLocalManga(domainMangas)
+                val items = localMangas.mapIndexed { idx, manga ->
+                    HomeDiscoveryItem(
+                        mangaId = manga.id,
+                        title = manga.title,
+                        coverData = manga.asMangaCover(),
+                        sourceId = res.sourceId,
+                        sourceName = res.sourceName,
+                        url = res.items.getOrNull(idx)?.url ?: manga.url,
                     )
                 }
+                if (items.isNotEmpty()) perSourceLatest.add(items)
+            }
+
+            val interleavedPopular = interleaveSources(perSourcePopular).distinctBy { "${it.sourceId}_${it.mangaId}" }
+            val interleavedLatest = interleaveSources(perSourceLatest).distinctBy { "${it.sourceId}_${it.mangaId}" }
+
+            DiscoveryBatchResultPayload(
+                pageMapUpdates = pageUpdates,
+                hasMoreMapUpdates = hasMoreUpdates,
+                popularItems = interleavedPopular,
+                latestItems = interleavedLatest,
+            )
+        }
+    }
+
+    private fun updateDiscoveryState(batchResult: DiscoveryBatchResultPayload, isFinal: Boolean) {
+        sourcePageMap.putAll(batchResult.pageMapUpdates)
+        hasMorePagesMap.putAll(batchResult.hasMoreMapUpdates)
+        allDiscoveryItems = batchResult.popularItems.toMutableList()
+
+        val popularList = batchResult.popularItems
+        val latestList = batchResult.latestItems
+
+        if (popularList.isNotEmpty()) {
+            val savedMangaId = sourcePreferences.featuredMangaId.get()
+            featuredIndex = selectFeaturedIndex(popularList.map { it.mangaId }, savedMangaId, featuredIndex)
+            val featured = popularList[featuredIndex]
+            sourcePreferences.featuredMangaId.set(featured.mangaId)
+            val popularFiltered = popularList.filterIndexed { index, _ -> index != featuredIndex }
+
+            _state.update {
+                it.copy(
+                    discoveryFeatured = featured,
+                    popularManga = popularFiltered,
+                    latestManga = latestList,
+                    discoveryLatest = popularFiltered,
+                    isDiscoveryLoading = !isFinal,
+                )
+            }
+        } else {
+            _state.update {
+                it.copy(
+                    popularManga = emptyList(),
+                    latestManga = latestList,
+                    discoveryLatest = emptyList(),
+                    isDiscoveryLoading = !isFinal,
+                )
             }
         }
     }
