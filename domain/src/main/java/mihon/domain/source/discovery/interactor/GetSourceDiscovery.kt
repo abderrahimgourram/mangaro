@@ -105,7 +105,7 @@ class GetSourceDiscovery(
             return FilterList()
         }
 
-        for (filter in filters) {
+        fun applyFilter(filter: Filter<*>): Boolean {
             if (filter is Filter.Select<*>) {
                 val index = filter.values.indexOfFirst { value ->
                     val text = value.toString().lowercase()
@@ -116,9 +116,20 @@ class GetSourceDiscovery(
                 }
                 if (index >= 0) {
                     filter.state = index
-                    break
+                    return true
+                }
+            } else if (filter is Filter.Group<*>) {
+                for (item in filter.state) {
+                    if (item is Filter<*> && applyFilter(item)) {
+                        return true
+                    }
                 }
             }
+            return false
+        }
+
+        for (filter in filters) {
+            if (applyFilter(filter)) break
         }
 
         return filters
