@@ -28,6 +28,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Book
+import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.Extension
@@ -251,6 +252,30 @@ object HomeTab : Tab {
                         if (state.latestManga.isNotEmpty()) {
                             DiscoveryMangaRow(
                                 mangaList = state.latestManga,
+                                onMangaClick = { mangaId ->
+                                    navigator.push(MangaScreen(mangaId, true))
+                                },
+                            )
+                        } else {
+                            MangaCardSkeletonRow()
+                        }
+                    }
+                }
+
+                // Section 5: مكتمل (Completed Manga)
+                if (state.completedManga.isNotEmpty() || state.isDiscoveryLoading) {
+                    item {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        MangaroSectionHeader(
+                            title = "مكتمل",
+                            icon = Icons.Outlined.CheckCircle,
+                        )
+                    }
+
+                    item {
+                        if (state.completedManga.isNotEmpty()) {
+                            DiscoveryMangaRow(
+                                mangaList = state.completedManga,
                                 onMangaClick = { mangaId ->
                                     navigator.push(MangaScreen(mangaId, true))
                                 },
