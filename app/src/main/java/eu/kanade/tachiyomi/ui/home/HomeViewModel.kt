@@ -113,7 +113,11 @@ class HomeViewModel(
 
                 _state.update { it.copy(installedSources = sourceItems) }
 
-                if (_state.value.popularManga.isEmpty() && _state.value.latestManga.isEmpty() && _state.value.completedManga.isEmpty()) {
+                if (_state.value.popularManga.isEmpty() &&
+                    _state.value.latestManga.isEmpty() &&
+                    _state.value.completedManga.isEmpty() &&
+                    _state.value.newManga.isEmpty()
+                ) {
                     loadDiscoveryContent(onlineSources)
                 }
             }
@@ -129,7 +133,8 @@ class HomeViewModel(
 
             val hasExistingContent = _state.value.popularManga.isNotEmpty() ||
                 _state.value.latestManga.isNotEmpty() ||
-                _state.value.completedManga.isNotEmpty()
+                _state.value.completedManga.isNotEmpty() ||
+                _state.value.newManga.isNotEmpty()
             if (!hasExistingContent && !isRefresh) {
                 _state.update { it.copy(isDiscoveryLoading = true, isPaginationLoading = false, discoveryError = null) }
             }
@@ -141,6 +146,7 @@ class HomeViewModel(
                         discoveryFeatured = null,
                         popularManga = emptyList(),
                         latestManga = emptyList(),
+                        newManga = emptyList(),
                         completedManga = emptyList(),
                         discoveryLatest = emptyList(),
                         isDiscoveryLoading = false,
@@ -154,7 +160,11 @@ class HomeViewModel(
             val remainingSources = eligibleSources.drop(2)
 
             val earlyPayload = fetchSourceBatch(earlySources)
-            if (earlyPayload.popularItems.isNotEmpty() || earlyPayload.latestItems.isNotEmpty() || earlyPayload.completedItems.isNotEmpty()) {
+            if (earlyPayload.popularItems.isNotEmpty() ||
+                earlyPayload.latestItems.isNotEmpty() ||
+                earlyPayload.completedItems.isNotEmpty() ||
+                earlyPayload.newItems.isNotEmpty()
+            ) {
                 updateDiscoveryState(earlyPayload, isFinal = remainingSources.isEmpty())
             }
 
@@ -163,6 +173,7 @@ class HomeViewModel(
                 val remainingPayload = fetchSourceBatch(remainingSources)
                 val combinedPopular = (earlyPayload.popularItems + remainingPayload.popularItems).distinctBy { "${it.sourceId}_${it.mangaId}" }
                 val combinedLatest = (earlyPayload.latestItems + remainingPayload.latestItems).distinctBy { "${it.sourceId}_${it.mangaId}" }
+                val combinedNew = (earlyPayload.newItems + remainingPayload.newItems).distinctBy { "${it.sourceId}_${it.mangaId}" }
                 val combinedCompleted = (earlyPayload.completedItems + remainingPayload.completedItems).distinctBy { "${it.sourceId}_${it.mangaId}" }
                 val combinedPageMaps = earlyPayload.pageMapUpdates + remainingPayload.pageMapUpdates
                 val combinedHasMoreMaps = earlyPayload.hasMoreMapUpdates + remainingPayload.hasMoreMapUpdates
@@ -172,10 +183,15 @@ class HomeViewModel(
                     hasMoreMapUpdates = combinedHasMoreMaps,
                     popularItems = combinedPopular,
                     latestItems = combinedLatest,
+                    newItems = combinedNew,
                     completedItems = combinedCompleted,
                 )
                 updateDiscoveryState(finalPayload, isFinal = true)
-            } else if (earlyPayload.popularItems.isEmpty() && earlyPayload.latestItems.isEmpty() && earlyPayload.completedItems.isEmpty()) {
+            } else if (earlyPayload.popularItems.isEmpty() &&
+                earlyPayload.latestItems.isEmpty() &&
+                earlyPayload.newItems.isEmpty() &&
+                earlyPayload.completedItems.isEmpty()
+            ) {
                 _state.update { it.copy(isDiscoveryLoading = false) }
             }
         }
@@ -213,9 +229,20 @@ class HomeViewModel(
                 }
             }
 
+            val newDeferreds = batchSources.filter {
+                getSourceCapabilities(it).supportsNewFilter == CapabilitySupport.SUPPORTED
+            }.map { source ->
+                async {
+                    semaphore.withPermit {
+                        getSourceDiscovery(source, DiscoveryCategory.NEW, page = 1)
+                    }
+                }
+            }
+
             val popularResults = popularDeferreds.awaitAll()
             val latestResults = latestDeferreds.awaitAll()
             val completedResults = completedDeferreds.awaitAll()
+            val newResults = newDeferreds.awaitAll()
 
             val perSourcePopular = mutableListOf<List<HomeDiscoveryItem>>()
             val pageUpdates = mutableMapOf<Long, Int>()
@@ -280,8 +307,29 @@ class HomeViewModel(
                 if (items.isNotEmpty()) perSourceCompleted.add(items)
             }
 
+            val perSourceNew = mutableListOf<List<HomeDiscoveryItem>>()
+            for (res in newResults) {
+                pageUpdates[res.sourceId] = res.page
+                hasMoreUpdates[res.sourceId] = res.hasNextPage
+                if (res.items.isEmpty()) continue
+                val domainMangas = res.items.take(12).map { it.toDomainManga() }
+                val localMangas = networkToLocalManga(domainMangas)
+                val items = localMangas.mapIndexed { idx, manga ->
+                    HomeDiscoveryItem(
+                        mangaId = manga.id,
+                        title = manga.title,
+                        coverData = manga.asMangaCover(),
+                        sourceId = res.sourceId,
+                        sourceName = res.sourceName,
+                        url = res.items.getOrNull(idx)?.url ?: manga.url,
+                    )
+                }
+                if (items.isNotEmpty()) perSourceNew.add(items)
+            }
+
             val interleavedPopular = interleaveSources(perSourcePopular).distinctBy { "${it.sourceId}_${it.mangaId}" }
             val interleavedLatest = interleaveSources(perSourceLatest).distinctBy { "${it.sourceId}_${it.mangaId}" }
+            val interleavedNew = interleaveSources(perSourceNew).distinctBy { "${it.sourceId}_${it.mangaId}" }
             val interleavedCompleted = interleaveSources(perSourceCompleted).distinctBy { "${it.sourceId}_${it.mangaId}" }
 
             DiscoveryBatchResultPayload(
@@ -289,6 +337,7 @@ class HomeViewModel(
                 hasMoreMapUpdates = hasMoreUpdates,
                 popularItems = interleavedPopular,
                 latestItems = interleavedLatest,
+                newItems = interleavedNew,
                 completedItems = interleavedCompleted,
             )
         }
@@ -301,6 +350,7 @@ class HomeViewModel(
 
         val popularList = batchResult.popularItems
         val latestList = batchResult.latestItems
+        val newList = batchResult.newItems
         val completedList = batchResult.completedItems
 
         if (popularList.isNotEmpty()) {
@@ -315,6 +365,7 @@ class HomeViewModel(
                     discoveryFeatured = featured,
                     popularManga = popularFiltered,
                     latestManga = latestList,
+                    newManga = newList,
                     completedManga = completedList,
                     discoveryLatest = popularFiltered,
                     isDiscoveryLoading = !isFinal,
@@ -325,6 +376,7 @@ class HomeViewModel(
                 it.copy(
                     popularManga = emptyList(),
                     latestManga = latestList,
+                    newManga = newList,
                     completedManga = completedList,
                     discoveryLatest = emptyList(),
                     isDiscoveryLoading = !isFinal,
@@ -507,6 +559,7 @@ private data class DiscoveryBatchResultPayload(
     val hasMoreMapUpdates: Map<Long, Boolean>,
     val popularItems: List<HomeDiscoveryItem>,
     val latestItems: List<HomeDiscoveryItem>,
+    val newItems: List<HomeDiscoveryItem>,
     val completedItems: List<HomeDiscoveryItem>,
 )
 
@@ -549,6 +602,7 @@ data class HomeState(
     val discoveryFeatured: HomeDiscoveryItem? = null,
     val popularManga: List<HomeDiscoveryItem> = emptyList(),
     val latestManga: List<HomeDiscoveryItem> = emptyList(),
+    val newManga: List<HomeDiscoveryItem> = emptyList(),
     val completedManga: List<HomeDiscoveryItem> = emptyList(),
     val discoveryLatest: List<HomeDiscoveryItem> = emptyList(),
     val installedSources: List<HomeSourceItem> = emptyList(),

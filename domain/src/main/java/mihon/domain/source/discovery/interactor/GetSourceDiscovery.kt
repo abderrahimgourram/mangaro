@@ -61,14 +61,19 @@ class GetSourceDiscovery(
                     }
                 }
                 DiscoveryCategory.NEW -> {
-                    return@withContext SourceDiscoveryResult(
-                        sourceId = source.id,
-                        sourceName = source.name,
-                        category = category,
-                        page = page,
-                        hasNextPage = false,
-                        items = emptyList(),
-                    )
+                    if (capabilities.supportsNewFilter == CapabilitySupport.SUPPORTED) {
+                        val filterList = prepareNewFilter(source)
+                        source.getSearchManga(page, query = "", filters = filterList)
+                    } else {
+                        return@withContext SourceDiscoveryResult(
+                            sourceId = source.id,
+                            sourceName = source.name,
+                            category = category,
+                            page = page,
+                            hasNextPage = false,
+                            items = emptyList(),
+                        )
+                    }
                 }
             }
         } catch (e: CancellationException) {
@@ -133,6 +138,60 @@ class GetSourceDiscovery(
         }
 
         return filters
+    }
+
+    private fun prepareNewFilter(source: CatalogueSource): FilterList {
+        val filters = try {
+            source.getFilterList()
+        } catch (_: Exception) {
+            return FilterList()
+        }
+
+        fun applyFilter(filter: Filter<*>): Boolean {
+            if (filter is Filter.Select<*>) {
+                val index = filter.values.indexOfFirst { value ->
+                    val text = value.toString().lowercase()
+                    isNewTitleValue(text)
+                }
+                if (index >= 0) {
+                    filter.state = index
+                    return true
+                }
+            } else if (filter is Filter.Group<*>) {
+                for (item in filter.state) {
+                    if (item is Filter<*> && applyFilter(item)) {
+                        return true
+                    }
+                }
+            }
+            return false
+        }
+
+        for (filter in filters) {
+            if (applyFilter(filter)) break
+        }
+
+        return filters
+    }
+
+    private fun isNewTitleValue(text: String): Boolean {
+        val isAddedOrCreated = text.contains("date added") ||
+            text.contains("added") ||
+            text.contains("newly added") ||
+            text.contains("new additions") ||
+            text.contains("الأحدث إضافة") ||
+            text.contains("تاريخ الإضافة") ||
+            text == "new" ||
+            text == "newest" ||
+            text == "جديد" ||
+            text.contains("أحدث المانجا")
+
+        val isChapterUpdate = text.contains("latest chapter") ||
+            text.contains("أحدث الفصول") ||
+            text.contains("latest update") ||
+            text.contains("updated")
+
+        return isAddedOrCreated && !isChapterUpdate
     }
 
     private fun SManga.toSourceDiscoveryItem(sourceId: Long, sourceName: String): SourceDiscoveryItem {

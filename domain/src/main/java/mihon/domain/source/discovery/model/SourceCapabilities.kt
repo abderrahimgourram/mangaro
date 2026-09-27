@@ -9,5 +9,6 @@ data class SourceCapabilities(
     val supportsSearch: CapabilitySupport = CapabilitySupport.UNKNOWN,
     val supportsStatusFilter: CapabilitySupport = CapabilitySupport.UNKNOWN,
     val supportsCompletedFilter: CapabilitySupport = CapabilitySupport.UNKNOWN,
+    val supportsNewFilter: CapabilitySupport = CapabilitySupport.UNKNOWN,
     val hasFilterList: Boolean = false,
 )

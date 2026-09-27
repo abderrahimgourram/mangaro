@@ -39,6 +39,7 @@ class GetSourceCapabilities {
 
         val hasFilterList = filterList.isNotEmpty()
         val statusFilterResult = inspectStatusFilter(filterList)
+        val supportsNewFilter = inspectNewFilter(filterList)
 
         return SourceCapabilities(
             sourceId = catalogueSource.id,
@@ -49,6 +50,7 @@ class GetSourceCapabilities {
             supportsSearch = supportsSearch,
             supportsStatusFilter = statusFilterResult.supportsStatus,
             supportsCompletedFilter = statusFilterResult.supportsCompleted,
+            supportsNewFilter = supportsNewFilter,
             hasFilterList = hasFilterList,
         )
     }
@@ -107,5 +109,53 @@ class GetSourceCapabilities {
             }
             else -> false
         }
+    }
+
+    private fun inspectNewFilter(filterList: FilterList): CapabilitySupport {
+        if (filterList.isEmpty()) return CapabilitySupport.UNSUPPORTED
+
+        for (filter in filterList) {
+            if (inspectFilterForNew(filter)) {
+                return CapabilitySupport.SUPPORTED
+            }
+        }
+        return CapabilitySupport.UNSUPPORTED
+    }
+
+    private fun inspectFilterForNew(filter: Filter<*>): Boolean {
+        return when (filter) {
+            is Filter.Select<*> -> {
+                filter.values.any { value ->
+                    val text = value.toString().lowercase()
+                    isNewTitleValue(text)
+                }
+            }
+            is Filter.Group<*> -> {
+                filter.state.any { item ->
+                    if (item is Filter<*>) inspectFilterForNew(item) else false
+                }
+            }
+            else -> false
+        }
+    }
+
+    private fun isNewTitleValue(text: String): Boolean {
+        val isAddedOrCreated = text.contains("date added") ||
+            text.contains("added") ||
+            text.contains("newly added") ||
+            text.contains("new additions") ||
+            text.contains("الأحدث إضافة") ||
+            text.contains("تاريخ الإضافة") ||
+            text == "new" ||
+            text == "newest" ||
+            text == "جديد" ||
+            text.contains("أحدث المانجا")
+
+        val isChapterUpdate = text.contains("latest chapter") ||
+            text.contains("أحدث الفصول") ||
+            text.contains("latest update") ||
+            text.contains("updated")
+
+        return isAddedOrCreated && !isChapterUpdate
     }
 }
