@@ -222,6 +222,10 @@ object HomeTab : Tab {
                         MangaroSectionHeader(
                             title = "شائع الآن",
                             icon = Icons.Outlined.Whatshot,
+                            actionText = "عرض المزيد",
+                            onActionClick = {
+                                navigator.push(DiscoveryCategoryGridScreen("POPULAR", "شائع الآن"))
+                            },
                         )
                     }
 
@@ -246,6 +250,10 @@ object HomeTab : Tab {
                         MangaroSectionHeader(
                             title = "جديد",
                             icon = Icons.Outlined.FiberNew,
+                            actionText = "عرض المزيد",
+                            onActionClick = {
+                                navigator.push(DiscoveryCategoryGridScreen("NEW", "جديد"))
+                            },
                         )
                     }
 
@@ -270,6 +278,10 @@ object HomeTab : Tab {
                         MangaroSectionHeader(
                             title = "آخر التحديثات",
                             icon = Icons.Outlined.Schedule,
+                            actionText = "عرض المزيد",
+                            onActionClick = {
+                                navigator.push(DiscoveryCategoryGridScreen("LATEST", "آخر التحديثات"))
+                            },
                         )
                     }
 
@@ -287,13 +299,17 @@ object HomeTab : Tab {
                     }
                 }
 
-                // Section 5: مكتمل (Completed Manga)
+                // Section 6: مكتمل (Completed Manga)
                 if (state.completedManga.isNotEmpty() || state.isDiscoveryLoading) {
                     item {
                         Spacer(modifier = Modifier.height(8.dp))
                         MangaroSectionHeader(
                             title = "مكتمل",
                             icon = Icons.Outlined.CheckCircle,
+                            actionText = "عرض المزيد",
+                            onActionClick = {
+                                navigator.push(DiscoveryCategoryGridScreen("COMPLETED", "مكتمل"))
+                            },
                         )
                     }
 
