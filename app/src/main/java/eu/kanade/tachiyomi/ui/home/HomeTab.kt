@@ -709,7 +709,7 @@ object HomeTab : Tab {
     }
 
     @Composable
-    private fun MangaCardSkeleton(
+    fun MangaCardSkeleton(
         modifier: Modifier = Modifier,
         width: Dp = 118.dp,
     ) {
