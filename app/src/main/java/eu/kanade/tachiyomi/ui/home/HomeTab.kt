@@ -32,6 +32,7 @@ import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.Extension
+import androidx.compose.material.icons.outlined.FiberNew
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.PlayCircle
@@ -238,7 +239,31 @@ object HomeTab : Tab {
                     }
                 }
 
-                // Section 4: آخر التحديثات (Latest Updates)
+                // Section 4: جديد (New Manga)
+                if (state.newManga.isNotEmpty() || (state.isDiscoveryLoading && state.popularManga.isEmpty())) {
+                    item {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        MangaroSectionHeader(
+                            title = "جديد",
+                            icon = Icons.Outlined.FiberNew,
+                        )
+                    }
+
+                    item {
+                        if (state.newManga.isNotEmpty()) {
+                            DiscoveryMangaRow(
+                                mangaList = state.newManga,
+                                onMangaClick = { mangaId ->
+                                    navigator.push(MangaScreen(mangaId, true))
+                                },
+                            )
+                        } else {
+                            MangaCardSkeletonRow()
+                        }
+                    }
+                }
+
+                // Section 5: آخر التحديثات (Latest Updates)
                 if (state.latestManga.isNotEmpty() || state.isDiscoveryLoading) {
                     item {
                         Spacer(modifier = Modifier.height(8.dp))
