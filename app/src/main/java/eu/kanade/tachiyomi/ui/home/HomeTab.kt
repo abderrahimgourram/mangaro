@@ -102,6 +102,8 @@ import tachiyomi.presentation.core.components.ScrollbarLazyColumn
 import tachiyomi.presentation.core.components.material.PullRefresh
 import tachiyomi.presentation.core.components.material.Scaffold
 
+const val HOME_DISCOVERY_PREVIEW_LIMIT = 8
+
 object HomeTab : Tab {
 
     override val options: TabOptions
@@ -788,8 +790,6 @@ object HomeTab : Tab {
             }
         }
     }
-
-const val HOME_DISCOVERY_PREVIEW_LIMIT = 8
 
     @Composable
     private fun DiscoveryMangaRow(
