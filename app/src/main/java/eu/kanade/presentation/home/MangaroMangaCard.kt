@@ -85,6 +85,27 @@ fun MangaroMangaCard(
                     modifier = Modifier.fillMaxWidth(),
                 )
 
+                if (item.availableVersions.size > 1) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(4.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(Color(0xE61E172A))
+                            .border(BorderStroke(0.5.dp, MangaroVisualTokens.GoldAccent.copy(alpha = 0.6f)), RoundedCornerShape(6.dp))
+                            .padding(horizontal = 5.dp, vertical = 2.dp),
+                    ) {
+                        Text(
+                            text = "${item.availableVersions.size} مصادر",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                            ),
+                            color = MangaroVisualTokens.GoldAccent,
+                        )
+                    }
+                }
+
                 // Bottom subtle shadow overlay over cover
                 Box(
                     modifier = Modifier
@@ -118,9 +139,15 @@ fun MangaroMangaCard(
 
             Spacer(modifier = Modifier.height(2.dp))
 
+            val displaySourceName = if (item.availableVersions.size > 1) {
+                "${item.sourceName} +${item.availableVersions.size - 1}"
+            } else {
+                item.sourceName
+            }
+
             // Source Name (No chapter information displayed)
             Text(
-                text = item.sourceName,
+                text = displaySourceName,
                 style = MaterialTheme.typography.labelSmall.copy(
                     fontSize = 10.5.sp,
                     fontWeight = FontWeight.SemiBold,

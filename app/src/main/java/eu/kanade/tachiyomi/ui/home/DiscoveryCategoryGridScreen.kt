@@ -32,7 +32,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -44,7 +46,9 @@ import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.presentation.home.MangaroMangaCard
+import eu.kanade.presentation.home.MangaroSourceChooserSheet
 import eu.kanade.presentation.theme.MangaroDesignSystem
+import eu.kanade.tachiyomi.ui.home.HomeDiscoveryItem
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import mihon.domain.source.discovery.model.DiscoveryCategory
 import tachiyomi.presentation.core.components.material.Scaffold
@@ -71,6 +75,7 @@ data class DiscoveryCategoryGridScreen(
         )
         val state by gridViewModel.state.collectAsState()
         val gridState = rememberLazyGridState()
+        var selectedMultiSourceItem by remember { mutableStateOf<HomeDiscoveryItem?>(null) }
 
         // Pagination Trigger when scrolling near the bottom
         val shouldLoadMore by remember {
@@ -173,8 +178,12 @@ data class DiscoveryCategoryGridScreen(
                             ) { item ->
                                 MangaroMangaCard(
                                     item = item,
-                                    onMangaClick = { mangaId ->
-                                        navigator.push(MangaScreen(mangaId, true))
+                                    onMangaClick = {
+                                        if (item.availableVersions.size > 1) {
+                                            selectedMultiSourceItem = item
+                                        } else {
+                                            navigator.push(MangaScreen(item.mangaId, true))
+                                        }
                                     },
                                     cardWidth = 150.dp,
                                 )
@@ -198,6 +207,16 @@ data class DiscoveryCategoryGridScreen(
                             }
                         }
                     }
+                }
+
+                if (selectedMultiSourceItem != null) {
+                    MangaroSourceChooserSheet(
+                        item = selectedMultiSourceItem!!,
+                        onSelectVersion = { mangaId ->
+                            navigator.push(MangaScreen(mangaId, true))
+                        },
+                        onDismiss = { selectedMultiSourceItem = null },
+                    )
                 }
             }
         }
