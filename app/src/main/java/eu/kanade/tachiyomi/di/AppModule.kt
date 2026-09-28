@@ -21,6 +21,10 @@ import eu.kanade.tachiyomi.extension.ExtensionManager
 import eu.kanade.tachiyomi.network.JavaScriptEngine
 import eu.kanade.tachiyomi.network.NetworkHelper
 import eu.kanade.tachiyomi.source.AndroidSourceManager
+import mihon.domain.source.registry.DefaultInternalSourceRegistry
+import mihon.domain.source.registry.DefaultSourceCollisionPolicy
+import mihon.domain.source.registry.InternalSourceRegistry
+import mihon.domain.source.registry.SourceCollisionPolicy
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.protobuf.ProtoBuf
 import nl.adaptivity.xmlutil.XmlDeclMode
@@ -115,7 +119,9 @@ class AppModule(val app: Application) : InjektModule {
         addSingletonFactory { NetworkHelper(app, get()) }
         addSingletonFactory { JavaScriptEngine(app) }
 
-        addSingletonFactory<SourceManager> { AndroidSourceManager(app, get(), get()) }
+        addSingletonFactory<InternalSourceRegistry> { DefaultInternalSourceRegistry() }
+        addSingletonFactory<SourceCollisionPolicy> { DefaultSourceCollisionPolicy() }
+        addSingletonFactory<SourceManager> { AndroidSourceManager(app, get(), get(), get(), get()) }
         addSingletonFactory { ExtensionManager(app) }
 
         addSingletonFactory { DownloadProvider(app) }
