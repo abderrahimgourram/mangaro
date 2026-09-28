@@ -26,6 +26,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowForward
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Book
 import androidx.compose.material.icons.outlined.CheckCircle
@@ -74,6 +75,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.Navigator
+import mihon.domain.source.discovery.model.DiscoveryCategory
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cafe.adriel.voyager.navigator.tab.LocalTabNavigator
 import cafe.adriel.voyager.navigator.tab.TabOptions
@@ -224,6 +226,7 @@ object HomeTab : Tab {
                             icon = Icons.Outlined.Whatshot,
                             actionText = "عرض المزيد",
                             onActionClick = {
+                                DiscoverySnapshotStore.setSnapshot(DiscoveryCategory.POPULAR, state.popularManga)
                                 navigator.push(DiscoveryCategoryGridScreen("POPULAR", "شائع الآن"))
                             },
                         )
@@ -235,6 +238,10 @@ object HomeTab : Tab {
                                 mangaList = state.popularManga,
                                 onMangaClick = { mangaId ->
                                     navigator.push(MangaScreen(mangaId, true))
+                                },
+                                onViewMoreClick = {
+                                    DiscoverySnapshotStore.setSnapshot(DiscoveryCategory.POPULAR, state.popularManga)
+                                    navigator.push(DiscoveryCategoryGridScreen("POPULAR", "شائع الآن"))
                                 },
                             )
                         } else {
@@ -252,6 +259,7 @@ object HomeTab : Tab {
                             icon = Icons.Outlined.FiberNew,
                             actionText = "عرض المزيد",
                             onActionClick = {
+                                DiscoverySnapshotStore.setSnapshot(DiscoveryCategory.NEW, state.newManga)
                                 navigator.push(DiscoveryCategoryGridScreen("NEW", "جديد"))
                             },
                         )
@@ -263,6 +271,10 @@ object HomeTab : Tab {
                                 mangaList = state.newManga,
                                 onMangaClick = { mangaId ->
                                     navigator.push(MangaScreen(mangaId, true))
+                                },
+                                onViewMoreClick = {
+                                    DiscoverySnapshotStore.setSnapshot(DiscoveryCategory.NEW, state.newManga)
+                                    navigator.push(DiscoveryCategoryGridScreen("NEW", "جديد"))
                                 },
                             )
                         } else {
@@ -280,6 +292,7 @@ object HomeTab : Tab {
                             icon = Icons.Outlined.Schedule,
                             actionText = "عرض المزيد",
                             onActionClick = {
+                                DiscoverySnapshotStore.setSnapshot(DiscoveryCategory.LATEST, state.latestManga)
                                 navigator.push(DiscoveryCategoryGridScreen("LATEST", "آخر التحديثات"))
                             },
                         )
@@ -291,6 +304,10 @@ object HomeTab : Tab {
                                 mangaList = state.latestManga,
                                 onMangaClick = { mangaId ->
                                     navigator.push(MangaScreen(mangaId, true))
+                                },
+                                onViewMoreClick = {
+                                    DiscoverySnapshotStore.setSnapshot(DiscoveryCategory.LATEST, state.latestManga)
+                                    navigator.push(DiscoveryCategoryGridScreen("LATEST", "آخر التحديثات"))
                                 },
                             )
                         } else {
@@ -308,6 +325,7 @@ object HomeTab : Tab {
                             icon = Icons.Outlined.CheckCircle,
                             actionText = "عرض المزيد",
                             onActionClick = {
+                                DiscoverySnapshotStore.setSnapshot(DiscoveryCategory.COMPLETED, state.completedManga)
                                 navigator.push(DiscoveryCategoryGridScreen("COMPLETED", "مكتمل"))
                             },
                         )
@@ -319,6 +337,10 @@ object HomeTab : Tab {
                                 mangaList = state.completedManga,
                                 onMangaClick = { mangaId ->
                                     navigator.push(MangaScreen(mangaId, true))
+                                },
+                                onViewMoreClick = {
+                                    DiscoverySnapshotStore.setSnapshot(DiscoveryCategory.COMPLETED, state.completedManga)
+                                    navigator.push(DiscoveryCategoryGridScreen("COMPLETED", "مكتمل"))
                                 },
                             )
                         } else {
@@ -767,20 +789,85 @@ object HomeTab : Tab {
         }
     }
 
+const val HOME_DISCOVERY_PREVIEW_LIMIT = 8
+
     @Composable
     private fun DiscoveryMangaRow(
         mangaList: List<HomeDiscoveryItem>,
         onMangaClick: (Long) -> Unit,
+        onViewMoreClick: (() -> Unit)? = null,
     ) {
+        val previewItems = mangaList.take(HOME_DISCOVERY_PREVIEW_LIMIT)
+
         LazyRow(
             contentPadding = PaddingValues(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            items(mangaList, key = { item -> "${item.sourceId}_${item.mangaId}" }) { item ->
+            items(previewItems, key = { item -> "${item.sourceId}_${item.mangaId}" }) { item ->
                 MangaroMangaCard(
                     item = item,
                     onMangaClick = onMangaClick,
                     cardWidth = 118.dp,
+                )
+            }
+
+            if (onViewMoreClick != null && mangaList.isNotEmpty()) {
+                item(key = "end_cap_view_more") {
+                    ViewMoreEndCapCard(onClick = onViewMoreClick)
+                }
+            }
+        }
+    }
+
+    @Composable
+    private fun ViewMoreEndCapCard(
+        onClick: () -> Unit,
+    ) {
+        Surface(
+            onClick = onClick,
+            shape = RoundedCornerShape(14.dp),
+            color = MangaroDesignSystem.SurfaceDark,
+            border = BorderStroke(1.dp, MangaroDesignSystem.GoldPrimary.copy(alpha = 0.35f)),
+            modifier = Modifier
+                .width(108.dp)
+                .height(178.dp),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MangaroDesignSystem.SurfaceCardGradient)
+                    .padding(8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(MangaroDesignSystem.GoldPrimary.copy(alpha = 0.15f))
+                        .border(
+                            BorderStroke(1.dp, MangaroDesignSystem.GoldPrimary.copy(alpha = 0.4f)),
+                            shape = CircleShape,
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Outlined.ArrowForward,
+                        contentDescription = "عرض المزيد",
+                        tint = MangaroDesignSystem.GoldPrimary,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    text = "عرض المزيد",
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                    ),
+                    color = MangaroDesignSystem.GoldPrimary,
+                    textAlign = TextAlign.Center,
                 )
             }
         }
