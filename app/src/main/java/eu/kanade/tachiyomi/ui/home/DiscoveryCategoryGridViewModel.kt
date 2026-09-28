@@ -62,6 +62,17 @@ class DiscoveryCategoryGridViewModel(
     private var paginationJob: Job? = null
 
     init {
+        val seedItems = DiscoverySnapshotStore.getSnapshot(category)
+        if (seedItems.isNotEmpty()) {
+            _state.update {
+                it.copy(
+                    items = seedItems,
+                    isLoadingInitial = false,
+                    hasMore = true,
+                )
+            }
+        }
+
         viewModelScope.launch {
             getEnabledSources.subscribe().collectLatest { sources ->
                 val onlineSources = sources
@@ -72,9 +83,7 @@ class DiscoveryCategoryGridViewModel(
                 val eligibleSources = filterEligibleSources(onlineSources, category)
                 sourcesList = eligibleSources
 
-                if (_state.value.items.isEmpty()) {
-                    loadInitialPage()
-                }
+                loadInitialPage(isRefresh = false, hasSeedItems = seedItems.isNotEmpty())
             }
         }
     }
@@ -91,36 +100,36 @@ class DiscoveryCategoryGridViewModel(
         }
     }
 
-    fun loadInitialPage(isRefresh: Boolean = false) {
+    fun loadInitialPage(isRefresh: Boolean = false, hasSeedItems: Boolean = false) {
         val previousJob = initialJob
         previousJob?.cancel()
         paginationJob?.cancel()
         initialJob = viewModelScope.launch {
             previousJob?.cancelAndJoin()
 
-            if (!isRefresh && _state.value.items.isEmpty()) {
+            if (!isRefresh && _state.value.items.isEmpty() && !hasSeedItems) {
                 _state.update { it.copy(isLoadingInitial = true, error = null) }
             } else if (isRefresh) {
                 _state.update { it.copy(isSwipeRefreshing = true, error = null) }
             }
 
-            sourcePageMap.clear()
-            sourceHasMoreMap.clear()
-
-            val batchResult = fetchCategoryPage(sourcesList, pageMap = emptyMap())
+            val pageMapToUse = if (!isRefresh && hasSeedItems) sourcePageMap else emptyMap()
+            val batchResult = fetchCategoryPage(sourcesList, pageMap = pageMapToUse)
 
             sourcePageMap.putAll(batchResult.pageMap)
             sourceHasMoreMap.putAll(batchResult.hasMoreMap)
 
+            val currentItems = if (isRefresh) emptyList() else _state.value.items
+            val combinedItems = (currentItems + batchResult.items).distinctBy { "${it.sourceId}_${it.mangaId}" }
             val hasMoreAny = sourceHasMoreMap.values.any { it }
 
             _state.update {
                 it.copy(
-                    items = batchResult.items,
+                    items = combinedItems,
                     isLoadingInitial = false,
                     isSwipeRefreshing = false,
                     hasMore = hasMoreAny,
-                    error = if (batchResult.items.isEmpty() && sourcesList.isNotEmpty()) "لا توجد نتائج" else null,
+                    error = if (combinedItems.isEmpty() && sourcesList.isNotEmpty()) "لا توجد نتائج" else null,
                 )
             }
         }
