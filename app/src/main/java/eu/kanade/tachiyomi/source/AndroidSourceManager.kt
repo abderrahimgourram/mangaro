@@ -3,6 +3,7 @@ package eu.kanade.tachiyomi.source
 import android.content.Context
 import eu.kanade.tachiyomi.data.download.DownloadManager
 import eu.kanade.tachiyomi.extension.ExtensionManager
+import eu.kanade.tachiyomi.extension.model.Extension
 import eu.kanade.tachiyomi.source.online.HttpSource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -15,6 +16,12 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import logcat.Priority
+import logcat.logcat
+import mihon.domain.source.registry.DefaultSourceCollisionPolicy
+import mihon.domain.source.registry.InternalSourceRegistry
+import mihon.domain.source.registry.SourceCollisionPolicy
+import mihon.domain.source.registry.SourcePreferenceMode
 import tachiyomi.domain.source.model.StubSource
 import tachiyomi.domain.source.repository.StubSourceRepository
 import tachiyomi.domain.source.service.SourceManager
@@ -28,6 +35,8 @@ class AndroidSourceManager(
     private val context: Context,
     private val extensionManager: ExtensionManager,
     private val sourceRepository: StubSourceRepository,
+    private val internalSourceRegistry: InternalSourceRegistry = Injekt.get(),
+    private val collisionPolicy: SourceCollisionPolicy = DefaultSourceCollisionPolicy(),
 ) : SourceManager {
 
     private val _isInitialized = MutableStateFlow(false)
@@ -41,28 +50,16 @@ class AndroidSourceManager(
 
     private val stubSourcesMap = ConcurrentHashMap<Long, StubSource>()
 
+    private val sourcePreferenceModes = ConcurrentHashMap<Long, SourcePreferenceMode>()
+
     override val sources: Flow<List<Source>> = sourcesMapFlow.map { it.values.toList() }
 
     init {
         scope.launch {
             extensionManager.installedExtensionsFlow
                 .collectLatest { extensions ->
-                    val mutableMap = ConcurrentHashMap<Long, Source>(
-                        mapOf(
-                            LocalSource.ID to LocalSource(
-                                context,
-                                Injekt.get(),
-                                Injekt.get(),
-                            ),
-                        ),
-                    )
-                    extensions.forEach { extension ->
-                        extension.sources.forEach {
-                            mutableMap[it.id] = it
-                            registerStubSource(StubSource.from(it))
-                        }
-                    }
-                    sourcesMapFlow.value = mutableMap
+                    val newMap = buildCanonicalSourcesMap(extensions)
+                    sourcesMapFlow.value = newMap
                     _isInitialized.value = true
                 }
         }
@@ -76,6 +73,66 @@ class AndroidSourceManager(
                     }
                 }
         }
+    }
+
+    fun setPreferenceMode(sourceId: Long, mode: SourcePreferenceMode) {
+        sourcePreferenceModes[sourceId] = mode
+        refreshSources()
+    }
+
+    fun refreshSources() {
+        val currentExtensions = extensionManager.installedExtensionsFlow.value
+        sourcesMapFlow.value = buildCanonicalSourcesMap(currentExtensions)
+    }
+
+    private fun buildCanonicalSourcesMap(extensions: List<Extension>): ConcurrentHashMap<Long, Source> {
+        val resultMap = ConcurrentHashMap<Long, Source>()
+
+        val localSource = LocalSource(context, Injekt.get(), Injekt.get())
+        resultMap[LocalSource.ID] = localSource
+
+        val internalSourcesMap = try {
+            internalSourceRegistry.getSources().associateBy { it.id }
+        } catch (_: Exception) {
+            emptyMap()
+        }
+
+        val extensionSourcesMap = mutableMapOf<Long, Source>()
+        extensions.forEach { extension ->
+            extension.sources.forEach { source ->
+                extensionSourcesMap[source.id] = source
+                registerStubSource(StubSource.from(source))
+            }
+        }
+
+        internalSourcesMap.values.forEach { source ->
+            registerStubSource(StubSource.from(source))
+        }
+
+        val allSourceIds = (internalSourcesMap.keys + extensionSourcesMap.keys).filter { it != LocalSource.ID }
+
+        for (sourceId in allSourceIds) {
+            val internalSrc = internalSourcesMap[sourceId]
+            val extensionSrc = extensionSourcesMap[sourceId]
+            val prefMode = sourcePreferenceModes[sourceId] ?: SourcePreferenceMode.EXTERNAL_PREFERRED
+
+            val resolution = collisionPolicy.resolveCollision(
+                sourceId = sourceId,
+                internalSource = internalSrc,
+                extensionSource = extensionSrc,
+                preferenceMode = prefMode,
+            )
+
+            if (resolution.isCollision) {
+                logcat(Priority.INFO) {
+                    "Source collision resolved for ID $sourceId: selected ${resolution.selectedSource.javaClass.simpleName} (${resolution.selectedOrigin}), fallback ${resolution.fallbackSource?.javaClass?.simpleName} (${resolution.fallbackOrigin})"
+                }
+            }
+
+            resultMap[sourceId] = resolution.selectedSource
+        }
+
+        return resultMap
     }
 
     override fun get(sourceKey: Long): Source? {
