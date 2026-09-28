@@ -16,7 +16,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import logcat.Priority
+import logcat.LogPriority
 import logcat.logcat
 import mihon.domain.source.registry.DefaultSourceCollisionPolicy
 import mihon.domain.source.registry.InternalSourceRegistry
@@ -98,7 +98,7 @@ class AndroidSourceManager(
         }
 
         val extensionSourcesMap = mutableMapOf<Long, Source>()
-        extensions.forEach { extension ->
+        extensions.filterIsInstance<Extension.Installed>().forEach { extension ->
             extension.sources.forEach { source ->
                 extensionSourcesMap[source.id] = source
                 registerStubSource(StubSource.from(source))
@@ -124,7 +124,7 @@ class AndroidSourceManager(
             )
 
             if (resolution.isCollision) {
-                logcat(Priority.INFO) {
+                logcat(LogPriority.INFO) {
                     "Source collision resolved for ID $sourceId: selected ${resolution.selectedSource.javaClass.simpleName} (${resolution.selectedOrigin}), fallback ${resolution.fallbackSource?.javaClass?.simpleName} (${resolution.fallbackOrigin})"
                 }
             }

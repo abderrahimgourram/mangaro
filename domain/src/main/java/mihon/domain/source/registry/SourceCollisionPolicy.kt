@@ -1,6 +1,6 @@
 package mihon.domain.source.registry
 
-import tachiyomi.domain.source.model.Source
+import eu.kanade.tachiyomi.source.Source
 
 enum class SourceOrigin {
     LOCAL,
