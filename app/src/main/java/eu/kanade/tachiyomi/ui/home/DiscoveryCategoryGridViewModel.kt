@@ -120,7 +120,7 @@ class DiscoveryCategoryGridViewModel(
             sourceHasMoreMap.putAll(batchResult.hasMoreMap)
 
             val currentItems = if (isRefresh) emptyList() else _state.value.items
-            val combinedItems = (currentItems + batchResult.items).distinctBy { "${it.sourceId}_${it.mangaId}" }
+            val combinedItems = GroupDiscoveryItems.group(currentItems + batchResult.items)
             val hasMoreAny = sourceHasMoreMap.values.any { it }
 
             _state.update {
@@ -152,7 +152,7 @@ class DiscoveryCategoryGridViewModel(
             sourcePageMap.putAll(batchResult.pageMap)
             sourceHasMoreMap.putAll(batchResult.hasMoreMap)
 
-            val newCombined = (_state.value.items + batchResult.items).distinctBy { "${it.sourceId}_${it.mangaId}" }
+            val newCombined = GroupDiscoveryItems.group(_state.value.items + batchResult.items)
             val hasMoreAny = sourceHasMoreMap.values.any { it }
 
             _state.update {
@@ -209,7 +209,7 @@ class DiscoveryCategoryGridViewModel(
                 if (items.isNotEmpty()) perSourceItems.add(items)
             }
 
-            val interleaved = interleaveSources(perSourceItems).distinctBy { "${it.sourceId}_${it.mangaId}" }
+            val interleaved = GroupDiscoveryItems.group(interleaveSources(perSourceItems))
 
             CategoryBatchResult(
                 pageMap = newPageMap,

@@ -490,23 +490,7 @@ class HomeViewModel(
     }
 
     private fun deduplicateAndUnify(items: List<HomeDiscoveryItem>): List<HomeDiscoveryItem> {
-        val grouped = items.groupBy { normalizeTitle(it.title) }
-        return grouped.map { (_, group) ->
-            val first = group.first()
-            if (group.size > 1) {
-                val versions = group.map { HomeSourceVersion(it.mangaId, it.sourceId, it.sourceName) }
-                    .distinctBy { it.sourceId }
-                first.copy(availableVersions = versions)
-            } else {
-                first.copy(availableVersions = listOf(HomeSourceVersion(first.mangaId, first.sourceId, first.sourceName)))
-            }
-        }
-    }
-
-    private fun normalizeTitle(title: String): String {
-        return title.lowercase()
-            .replace(Regex("[^a-zA-Z0-9\\u0600-\\u06FF]"), "")
-            .trim()
+        return GroupDiscoveryItems.group(items)
     }
 }
 
@@ -537,6 +521,8 @@ data class HomeSourceVersion(
     val mangaId: Long,
     val sourceId: Long,
     val sourceName: String,
+    val url: String = "",
+    val title: String = "",
 )
 
 private data class SourceFetchResult(
