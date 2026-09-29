@@ -21,6 +21,7 @@ import eu.kanade.tachiyomi.extension.ExtensionManager
 import eu.kanade.tachiyomi.network.JavaScriptEngine
 import eu.kanade.tachiyomi.network.NetworkHelper
 import eu.kanade.tachiyomi.source.AndroidSourceManager
+import eu.kanade.tachiyomi.source.internal.teamx.TeamX
 import mihon.domain.source.registry.DefaultInternalSourceRegistry
 import mihon.domain.source.registry.DefaultSourceCollisionPolicy
 import mihon.domain.source.registry.InternalSourceRegistry
@@ -119,7 +120,13 @@ class AppModule(val app: Application) : InjektModule {
         addSingletonFactory { NetworkHelper(app, get()) }
         addSingletonFactory { JavaScriptEngine(app) }
 
-        addSingletonFactory<InternalSourceRegistry> { DefaultInternalSourceRegistry() }
+        addSingletonFactory<InternalSourceRegistry> {
+            DefaultInternalSourceRegistry(
+                listOf(
+                    TeamX(),
+                ),
+            )
+        }
         addSingletonFactory<SourceCollisionPolicy> { DefaultSourceCollisionPolicy() }
         addSingletonFactory<SourceManager> { AndroidSourceManager(app, get(), get(), get(), get()) }
         addSingletonFactory { ExtensionManager(app) }
