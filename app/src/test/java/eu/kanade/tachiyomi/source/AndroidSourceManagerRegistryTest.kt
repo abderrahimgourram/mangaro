@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.source
 
+import eu.kanade.tachiyomi.source.internal.teamx.TeamX
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
@@ -114,6 +115,54 @@ class AndroidSourceManagerRegistryTest {
 
         val sourcesList = listOf(res.selectedSource)
         sourcesList.map { it.id }.distinct().size shouldBe sourcesList.size
+    }
+
+    @Test
+    fun `verify internal teamx source id is exact`() {
+        val internalTeamX = TeamX()
+        internalTeamX.id shouldBe 4110737012647435874L
+        internalTeamX.name shouldBe "Team X"
+        internalTeamX.lang shouldBe "ar"
+        internalTeamX.versionId shouldBe 1
+    }
+
+    @Test
+    fun `verify teamx collision resolution lifecycle when extension appears and disappears`() {
+        val teamXId = 4110737012647435874L
+        val internalTeamX = TeamX()
+        val extensionTeamX = TestCatalogueSource(id = teamXId, name = "Extension Team X")
+
+        // 1. Both present -> EXTENSION selected
+        val bothRes = collisionPolicy.resolveCollision(
+            sourceId = teamXId,
+            internalSource = internalTeamX,
+            extensionSource = extensionTeamX,
+            preferenceMode = SourcePreferenceMode.EXTERNAL_PREFERRED,
+        )
+        bothRes.selectedOrigin shouldBe SourceOrigin.EXTENSION
+        bothRes.selectedSource.name shouldBe "Extension Team X"
+        bothRes.fallbackSource?.name shouldBe "Team X"
+
+        // 2. Extension disappears -> INTERNAL selected automatically
+        val internalOnlyRes = collisionPolicy.resolveCollision(
+            sourceId = teamXId,
+            internalSource = internalTeamX,
+            extensionSource = null,
+            preferenceMode = SourcePreferenceMode.EXTERNAL_PREFERRED,
+        )
+        internalOnlyRes.selectedOrigin shouldBe SourceOrigin.INTERNAL
+        internalOnlyRes.selectedSource.name shouldBe "Team X"
+        internalOnlyRes.fallbackSource shouldBe null
+
+        // 3. Extension returns -> EXTENSION selected again
+        val returnRes = collisionPolicy.resolveCollision(
+            sourceId = teamXId,
+            internalSource = internalTeamX,
+            extensionSource = extensionTeamX,
+            preferenceMode = SourcePreferenceMode.EXTERNAL_PREFERRED,
+        )
+        returnRes.selectedOrigin shouldBe SourceOrigin.EXTENSION
+        returnRes.selectedSource.name shouldBe "Extension Team X"
     }
 
     private class TestCatalogueSource(
