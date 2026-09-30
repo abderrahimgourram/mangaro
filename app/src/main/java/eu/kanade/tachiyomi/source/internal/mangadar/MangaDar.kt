@@ -50,7 +50,7 @@ class MangaDar(
         return popularMangaParse(response)
     }
 
-    override fun popularMangaRequest(page: Int): Request {
+    public override fun popularMangaRequest(page: Int): Request {
         return GET("$baseUrl/manga/?sort=popular&page=$page", headers)
     }
 
@@ -65,7 +65,7 @@ class MangaDar(
         return latestUpdatesParse(response)
     }
 
-    override fun latestUpdatesRequest(page: Int): Request {
+    public override fun latestUpdatesRequest(page: Int): Request {
         return GET("$baseUrl/manga/?sort=latest&page=$page", headers)
     }
 
@@ -80,10 +80,10 @@ class MangaDar(
         return searchMangaParse(response)
     }
 
-    override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
+    public override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
         val trimmed = query.trim()
         val encoded = URLEncoder.encode(trimmed, "UTF-8")
-        return GET("$baseUrl/search?keyword=$encoded&page=$page", headers)
+        return GET("$baseUrl/manga/?s=$encoded&page=$page", headers)
     }
 
     override fun searchMangaParse(response: Response): MangasPage {
@@ -94,34 +94,43 @@ class MangaDar(
     override fun getFilterList(): FilterList = FilterList()
 
     fun parseMangaListFromDocument(document: Document): MangasPage {
-        val elements = document.select("div.manga-card, div.bsx, div.page-item-detail, div.manga-item, div.bs div.bsx")
+        SourceValidationUtil.checkCloudflareOrError(document)
+        val elements = document.select("a.group, div.manga-card, div.bsx, div.page-item-detail, div.manga-item, div.bs div.bsx")
         val mangas = elements.mapNotNull { element ->
             parseMangaFromElement(element)
         }.distinctBy { it.url }
 
-        val hasNextPage = document.select("a.r, a.next, ul.pagination a[rel=next]").first() != null ||
+        val hasNextPage = document.select("a.r, a.next, ul.pagination a[rel=next], a.page-numbers").first() != null ||
             document.select("div.hpage a.r").first() != null
 
         return MangasPage(mangas, hasNextPage)
     }
 
+    private fun isMangaUrl(url: String): Boolean {
+        val clean = url.trim().substringBefore("?").substringBefore("#").trim('/')
+        val parts = clean.split('/')
+        return parts.size == 2 && parts[0] == "manga"
+    }
+
     fun parseMangaFromElement(element: Element): SManga? {
-        val linkElement = element.selectFirst("a") ?: return null
+        val linkElement = if (element.tagName() == "a") element else element.selectFirst("a[href]") ?: return null
         val href = linkElement.attr("href")
-        if (href.isBlank()) return null
+        if (href.isBlank() || !isMangaUrl(getRelativeUrl(href))) return null
 
         val relativeUrl = getRelativeUrl(href)
         val titleText = linkElement.attr("title").ifBlank {
-            element.selectFirst("h3, .title, .tt, div.post-title")?.text() ?: linkElement.selectFirst("img")?.attr("alt") ?: ""
+            element.selectFirst("h3, h2, .title, .tt, div.post-title")?.text()
+                ?: element.selectFirst("img")?.attr("alt")
+                ?: linkElement.text()
         }.trim()
 
         if (titleText.isBlank()) return null
 
         val imgElement = element.selectFirst("img")
         val thumbnailUrl = imgElement?.attr("abs:data-src")
+            ?.ifBlank { imgElement.attr("data-src") }
             ?.ifBlank { imgElement.attr("abs:src") }
             ?.ifBlank { imgElement.attr("src") }
-            ?.ifBlank { imgElement.attr("data-src") }
 
         return SManga.create().apply {
             url = relativeUrl
@@ -165,9 +174,10 @@ class MangaDar(
             val imgElement = document.selectFirst("div.thumb img, div.summary_image img")
             if (imgElement != null) {
                 val coverUrl = imgElement.attr("abs:data-src")
+                    .ifBlank { imgElement.attr("data-src") }
                     .ifBlank { imgElement.attr("abs:src") }
                     .ifBlank { imgElement.attr("src") }
-                if (coverUrl.isNotBlank()) {
+                if (coverUrl.isNotBlank() && !coverUrl.startsWith("data:")) {
                     thumbnail_url = coverUrl
                 }
             }

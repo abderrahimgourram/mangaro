@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.source.internal.mangadar
 
+import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.SManga
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
@@ -22,6 +23,15 @@ class MangaDarParserTest {
         mangaDar.name shouldBe "MangaDar"
         mangaDar.lang shouldBe "ar"
         mangaDar.versionId shouldBe 1
+    }
+
+    @Test
+    fun `verify searchMangaRequest and popularMangaRequest build valid routes without 404`() {
+        val popularReq = mangaDar.popularMangaRequest(1)
+        popularReq.url.toString() shouldBe "https://mangadar.com/manga/?sort=popular&page=1"
+
+        val searchReq = mangaDar.searchMangaRequest(1, "solo", FilterList())
+        searchReq.url.toString() shouldBe "https://mangadar.com/manga/?s=solo&page=1"
     }
 
     @Test
