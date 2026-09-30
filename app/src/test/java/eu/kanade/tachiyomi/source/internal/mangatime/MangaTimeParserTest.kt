@@ -33,28 +33,38 @@ class MangaTimeParserTest {
     }
 
     @Test
-    fun `verify parseSeriesSearchResponse correctly parses tRPC series list`() {
+    fun `verify popularMangaRequest builds non-batch tRPC input string`() {
+        val req = mangaTime.popularMangaRequest(1)
+        val url = req.url.toString()
+
+        url.contains("search.searchSeries") shouldBe true
+        url.contains("input=") shouldBe true
+        // Must contain non-batch json key, NOT {"0":{"json":...}}
+        url.contains("%7B%22json%22%3A") shouldBe true
+        url.contains("%7B%220%22%3A") shouldBe false
+    }
+
+    @Test
+    fun `verify parseSeriesSearchResponse correctly parses non-batch tRPC series list`() {
         val jsonResponse = """
-            [
-              {
-                "result": {
-                  "data": {
-                    "json": {
-                      "series": [
-                        {
-                          "id": "697df7820c5d340ac154519f",
-                          "slug": "blue-lock",
-                          "type": "manga",
-                          "title": "Blue Lock",
-                          "cover": "https://mangatime.org/uploads/blue-lock.png"
-                        }
-                      ],
-                      "hasMore": true
-                    }
+            {
+              "result": {
+                "data": {
+                  "json": {
+                    "results": [
+                      {
+                        "id": "697df7820c5d340ac154519f",
+                        "title": "بلو لوك",
+                        "slug": "blue-lock",
+                        "coverUrl": "https://mangatime.org/uploads/cover.jpg",
+                        "type": "manga"
+                      }
+                    ],
+                    "hasMore": true
                   }
                 }
               }
-            ]
+            }
         """.trimIndent()
 
         val mangasPage = mangaTime.parseSeriesSearchResponse(jsonResponse)
@@ -62,9 +72,9 @@ class MangaTimeParserTest {
         mangasPage.mangas.size shouldBe 1
 
         val manga = mangasPage.mangas.first()
-        manga.title shouldBe "Blue Lock"
+        manga.title shouldBe "بلو لوك"
         manga.url shouldBe "/manga/blue-lock#697df7820c5d340ac154519f"
-        manga.thumbnail_url shouldBe "https://mangatime.org/uploads/blue-lock.png"
+        manga.thumbnail_url shouldBe "https://mangatime.org/uploads/cover.jpg"
     }
 
     @Test
@@ -75,27 +85,25 @@ class MangaTimeParserTest {
         }
 
         val jsonResponse = """
-            [
-              {
-                "result": {
-                  "data": {
-                    "json": {
-                      "id": "697df7820c5d340ac154519f",
-                      "title": "Blue Lock - بلو لوك",
-                      "description": "Awesome soccer manga",
-                      "cover": "/uploads/blue-lock-cover.jpg",
-                      "status": "ONGOING"
-                    }
+            {
+              "result": {
+                "data": {
+                  "json": {
+                    "id": "697df7820c5d340ac154519f",
+                    "title": "بلو لوك",
+                    "description": "Awesome soccer manga",
+                    "coverUrl": "https://mangatime.org/uploads/cover.jpg",
+                    "status": "ongoing"
                   }
                 }
               }
-            ]
+            }
         """.trimIndent()
 
         val updated = mangaTime.parseMangaDetailsResponse(jsonResponse, initialManga, "manga", "blue-lock", "697df7820c5d340ac154519f")
-        updated.title shouldBe "Blue Lock - بلو لوك"
+        updated.title shouldBe "بلو لوك"
         updated.description shouldBe "Awesome soccer manga"
-        updated.thumbnail_url shouldBe "https://mangatime.org/uploads/blue-lock-cover.jpg"
+        updated.thumbnail_url shouldBe "https://mangatime.org/uploads/cover.jpg"
         updated.status shouldBe SManga.ONGOING
         updated.url shouldBe "/manga/blue-lock#697df7820c5d340ac154519f"
     }
@@ -103,33 +111,31 @@ class MangaTimeParserTest {
     @Test
     fun `verify parseChaptersResponse correctly extracts chapter list`() {
         val jsonResponse = """
-            [
-              {
-                "result": {
-                  "data": {
-                    "json": {
-                      "chapters": [
-                        {
-                          "id": "ch1",
-                          "number": 363,
-                          "title": "Final Match"
-                        },
-                        {
-                          "id": "ch2",
-                          "number": 362
-                        }
-                      ]
-                    }
+            {
+              "result": {
+                "data": {
+                  "json": {
+                    "chapters": [
+                      {
+                        "id": "ch1",
+                        "number": 363,
+                        "title": "الفصل 363: لعبة المحظورات"
+                      },
+                      {
+                        "id": "ch2",
+                        "number": 362
+                      }
+                    ]
                   }
                 }
               }
-            ]
+            }
         """.trimIndent()
 
         val chapters = mangaTime.parseChaptersResponse(jsonResponse, "manga", "blue-lock")
         chapters.size shouldBe 2
 
-        chapters[0].name shouldBe "الفصل 363: Final Match"
+        chapters[0].name shouldBe "الفصل 363: لعبة المحظورات"
         chapters[0].url shouldBe "/manga/blue-lock/chapter/363"
         chapters[0].chapter_number shouldBe 363.0f
 
@@ -141,26 +147,23 @@ class MangaTimeParserTest {
     @Test
     fun `verify parseChapterPagesResponse correctly parses image URLs`() {
         val jsonResponse = """
-            [
-              {
-                "result": {
-                  "data": {
-                    "json": {
-                      "pages": [
-                        "https://mangatime.org/pages/p1.png",
-                        "/pages/p2.png"
-                      ],
-                      "isUnlocked": true
-                    }
+            {
+              "result": {
+                "data": {
+                  "json": {
+                    "pages": [
+                      "https://mangatime.org/uploads/chapters/ch1/001.webp",
+                      "https://mangatime.org/uploads/chapters/ch1/002.webp"
+                    ]
                   }
                 }
               }
-            ]
+            }
         """.trimIndent()
 
         val pages = mangaTime.parseChapterPagesResponse(jsonResponse)
         pages.size shouldBe 2
-        pages[0].imageUrl shouldBe "https://mangatime.org/pages/p1.png"
-        pages[1].imageUrl shouldBe "https://mangatime.org/pages/p2.png"
+        pages[0].imageUrl shouldBe "https://mangatime.org/uploads/chapters/ch1/001.webp"
+        pages[1].imageUrl shouldBe "https://mangatime.org/uploads/chapters/ch1/002.webp"
     }
 }

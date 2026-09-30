@@ -57,8 +57,8 @@ class MangaTime(
         return popularMangaParse(response)
     }
 
-    override fun popularMangaRequest(page: Int): Request {
-        val input = """{"0":{"json":{"limit":24,"page":$page,"sortBy":"popularity"}}}"""
+    public override fun popularMangaRequest(page: Int): Request {
+        val input = """{"json":{"limit":24,"page":$page,"sortBy":"popularity"}}"""
         val encoded = URLEncoder.encode(input, "UTF-8")
         return GET("$baseUrl/api/trpc/search.searchSeries?input=$encoded", headers)
     }
@@ -74,7 +74,7 @@ class MangaTime(
     }
 
     override fun latestUpdatesRequest(page: Int): Request {
-        val input = """{"0":{"json":{"limit":24,"page":$page,"sortBy":"recent"}}}"""
+        val input = """{"json":{"limit":24,"page":$page,"sortBy":"recent"}}"""
         val encoded = URLEncoder.encode(input, "UTF-8")
         return GET("$baseUrl/api/trpc/search.searchSeries?input=$encoded", headers)
     }
@@ -92,9 +92,9 @@ class MangaTime(
     override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
         val trimmed = query.trim()
         val input = if (trimmed.isNotEmpty()) {
-            """{"0":{"json":{"query":"$trimmed","limit":24,"page":$page,"sortBy":"popularity"}}}"""
+            """{"json":{"query":"$trimmed","limit":24,"page":$page,"sortBy":"popularity"}}"""
         } else {
-            """{"0":{"json":{"limit":24,"page":$page,"sortBy":"popularity"}}}"""
+            """{"json":{"limit":24,"page":$page,"sortBy":"popularity"}}"""
         }
         val encoded = URLEncoder.encode(input, "UTF-8")
         return GET("$baseUrl/api/trpc/search.searchSeries?input=$encoded", headers)
@@ -107,6 +107,9 @@ class MangaTime(
     override fun getFilterList(): FilterList = FilterList()
 
     fun parseSeriesSearchResponse(responseBody: String): MangasPage {
+        if (responseBody.contains(""""error":""")) {
+            throw IOException("MangaTime tRPC error: $responseBody")
+        }
         val jsonElement = json.parseToJsonElement(responseBody)
         val rootObj = if (jsonElement is JsonArray) {
             jsonElement.firstOrNull()?.jsonObject
@@ -117,14 +120,14 @@ class MangaTime(
         val resultData = rootObj["result"]?.jsonObject?.get("data")?.jsonObject?.get("json")?.jsonObject
             ?: return MangasPage(emptyList(), false)
 
-        val seriesArray = resultData["series"]?.jsonArray ?: emptyList()
+        val seriesArray = resultData["results"]?.jsonArray ?: resultData["series"]?.jsonArray ?: emptyList()
         val mangas = seriesArray.mapNotNull { element ->
             val obj = element.jsonObject
             val id = obj["id"]?.jsonPrimitive?.content ?: return@mapNotNull null
             val slug = obj["slug"]?.jsonPrimitive?.content ?: return@mapNotNull null
             val type = obj["type"]?.jsonPrimitive?.content ?: "manhwa"
             val title = obj["title"]?.jsonPrimitive?.content ?: slug
-            val cover = obj["cover"]?.jsonPrimitive?.content
+            val cover = obj["coverUrl"]?.jsonPrimitive?.content ?: obj["cover"]?.jsonPrimitive?.content
 
             SManga.create().apply {
                 url = "/$type/$slug#$id"
@@ -149,11 +152,15 @@ class MangaTime(
 
         var updatedManga = manga
         if (fetchDetails) {
-            val input = """{"0":{"json":{"slug":"$slug","type":"$type"}}}"""
+            val input = """{"json":{"slug":"$slug","type":"$type"}}"""
             val encoded = URLEncoder.encode(input, "UTF-8")
             val req = GET("$baseUrl/api/trpc/content.getSeriesBySlug?input=$encoded", headers)
             val resp = client.newCall(req).awaitSuccess()
-            updatedManga = parseMangaDetailsResponse(resp.body.string(), manga, type, slug, seriesId)
+            val body = resp.body.string()
+            if (body.contains(""""error":""")) {
+                throw IOException("MangaTime tRPC details error for $slug")
+            }
+            updatedManga = parseMangaDetailsResponse(body, manga, type, slug, seriesId)
         }
 
         var updatedChapters = chapters
@@ -162,11 +169,15 @@ class MangaTime(
                 parseSeriesIdFromUrl(updatedManga.url)
             }
             if (effectiveSeriesId.isNotEmpty()) {
-                val input = """{"0":{"json":{"seriesId":"$effectiveSeriesId","limit":-1}}}"""
+                val input = """{"json":{"seriesId":"$effectiveSeriesId","limit":-1}}"""
                 val encoded = URLEncoder.encode(input, "UTF-8")
                 val req = GET("$baseUrl/api/trpc/content.getChapters?input=$encoded", headers)
                 val resp = client.newCall(req).awaitSuccess()
-                updatedChapters = parseChaptersResponse(resp.body.string(), type, slug)
+                val body = resp.body.string()
+                if (body.contains(""""error":""")) {
+                    throw IOException("MangaTime tRPC chapters error for series $effectiveSeriesId")
+                }
+                updatedChapters = parseChaptersResponse(body, type, slug)
             }
         }
 
@@ -187,7 +198,8 @@ class MangaTime(
 
         val titleText = seriesData?.get("title")?.jsonPrimitive?.content ?: manga.title
         val descriptionText = seriesData?.get("description")?.jsonPrimitive?.content ?: manga.description
-        val coverUrl = seriesData?.get("cover")?.jsonPrimitive?.content
+        val coverUrl = seriesData?.get("coverUrl")?.jsonPrimitive?.content
+            ?: seriesData?.get("cover")?.jsonPrimitive?.content
         val realSeriesId = seriesData?.get("id")?.jsonPrimitive?.content ?: existingSeriesId
         val statusText = seriesData?.get("status")?.jsonPrimitive?.content
 
@@ -216,12 +228,17 @@ class MangaTime(
             val obj = element.jsonObject
             val number = obj["number"]?.jsonPrimitive?.doubleOrNull
                 ?: obj["number"]?.jsonPrimitive?.intOrNull?.toDouble()
+                ?: obj["number"]?.jsonPrimitive?.contentOrNull?.toDoubleOrNull()
                 ?: return@mapNotNull null
             val numberStr = if (number % 1.0 == 0.0) number.toInt().toString() else number.toString()
             val chapterTitle = obj["title"]?.jsonPrimitive?.contentOrNull
 
             val formattedName = if (!chapterTitle.isNullOrBlank()) {
-                "الفصل $numberStr: $chapterTitle"
+                if (chapterTitle.contains("الفصل") || chapterTitle.contains("Chapter")) {
+                    chapterTitle
+                } else {
+                    "الفصل $numberStr: $chapterTitle"
+                }
             } else {
                 "الفصل $numberStr"
             }
@@ -239,7 +256,7 @@ class MangaTime(
         val doubleNum = chapterNumberStr.toDoubleOrNull()
         val jsonNumVal = if (doubleNum != null && doubleNum % 1.0 != 0.0) "$doubleNum" else "${doubleNum?.toInt() ?: chapterNumberStr.toIntOrNull() ?: 1}"
 
-        val input = """{"0":{"json":{"seriesSlug":"$slug","chapterNumber":$jsonNumVal}}}"""
+        val input = """{"json":{"seriesSlug":"$slug","chapterNumber":$jsonNumVal}}"""
         val encoded = URLEncoder.encode(input, "UTF-8")
         val req = GET("$baseUrl/api/trpc/content.getChapterPages?input=$encoded", headers)
         val response = client.newCall(req).awaitSuccess()
