@@ -41,8 +41,8 @@ class MangaDar(
     override val client: OkHttpClient get() = customClient ?: network.client
 
     override fun headersBuilder(): Headers.Builder = Headers.Builder()
-        .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         .add("Referer", "$baseUrl/")
+        .add("Cache-Control", "no-cache")
 
     override suspend fun getPopularManga(page: Int): MangasPage {
         val request = popularMangaRequest(page)
@@ -115,8 +115,15 @@ class MangaDar(
             parseMangaFromElement(element)
         }.distinctBy { it.url }
 
+        if (mangas.isEmpty()) {
+            throw IOException("MangaDar returned 0 manga cards")
+        }
+
         val hasNextPage = document.select("a.r, a.next, ul.pagination a[rel=next], a.page-numbers").first() != null ||
-            document.select("div.hpage a.r").first() != null
+            document.select("div.hpage a.r").first() != null ||
+            document.select("template").any { t ->
+                t.select("a.r, a.next, ul.pagination a[rel=next], a.page-numbers").first() != null
+            }
 
         return MangasPage(mangas, hasNextPage)
     }

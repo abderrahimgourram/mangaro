@@ -4,6 +4,8 @@ import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.SManga
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import org.jsoup.Jsoup
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -54,6 +56,26 @@ class MangaDarParserTest {
         manga.title shouldBe "Kingdom"
         manga.url shouldBe "/manga/kingdom/"
         manga.thumbnail_url shouldBe "https://mangadar.com/wp-content/uploads/2026/04/cover-8-300x420.webp"
+    }
+
+    @Test
+    fun `verify live Popular page parsing produces non-empty manga list`() {
+        val client = OkHttpClient()
+        val req = Request.Builder()
+            .url("https://mangadar.com/manga/?sort=popular&page=1")
+            .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .addHeader("Referer", "https://mangadar.com/")
+            .addHeader("Cache-Control", "no-cache")
+            .build()
+
+        val resp = client.newCall(req).execute()
+        val html = resp.body.string()
+        val doc = Jsoup.parse(html, "https://mangadar.com")
+        val page = mangaDar.parseMangaListFromDocument(doc)
+
+        page.mangas.isEmpty() shouldBe false
+        page.mangas.first().title shouldBe "Kingdom"
+        page.mangas.first().url shouldBe "/manga/kingdom/"
     }
 
     @Test
