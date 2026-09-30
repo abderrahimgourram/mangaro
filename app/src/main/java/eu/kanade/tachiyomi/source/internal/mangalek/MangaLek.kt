@@ -117,19 +117,30 @@ class MangaLek(
         return MangasPage(mangas, hasNextPage)
     }
 
-    fun parseMangaFromElement(element: Element): SManga? {
-        val linkElement = element.selectFirst("div.post-title a, h3 a, div.item-thumb a, a[title]") ?: return null
-        val href = linkElement.attr("href")
-        if (href.isBlank() || !href.contains("/manga/")) return null
+    private fun isMangaUrl(url: String): Boolean {
+        val clean = url.trim().substringBefore("?").substringBefore("#").trim('/')
+        val parts = clean.split('/')
+        return parts.size == 2 && parts[0] == "manga"
+    }
 
-        val relativeUrl = getRelativeUrl(href)
-        val titleText = linkElement.attr("title").ifBlank {
-            element.selectFirst("div.post-title a, h3 a")?.text() ?: linkElement.text()
-        }.trim()
+    fun parseMangaFromElement(element: Element): SManga? {
+        val allLinks = element.select("a[href]")
+        val mangaLink = allLinks.firstOrNull { link ->
+            val href = link.attr("href")
+            href.isNotBlank() && isMangaUrl(getRelativeUrl(href))
+        } ?: return null
+
+        val relativeUrl = getRelativeUrl(mangaLink.attr("href"))
+
+        val titleText = element.selectFirst("div.post-title a, h3.h5 a, h3.h4 a, h3 a")?.text()?.trim()
+            ?.ifBlank { mangaLink.attr("title").trim() }
+            ?.ifBlank { mangaLink.text().trim() }
+            ?.ifBlank { element.selectFirst("img")?.attr("alt")?.trim() ?: "" }
+            ?: ""
 
         if (titleText.isBlank()) return null
 
-        val imgElement = element.selectFirst("img")
+        val imgElement = element.selectFirst("div.item-thumb img, div.tab-thumb img, img")
         val thumbnailUrl = imgElement?.attr("abs:data-src")
             ?.ifBlank { imgElement.attr("abs:src") }
             ?.ifBlank { imgElement.attr("src") }
@@ -185,12 +196,12 @@ class MangaLek(
 
     fun parseMangaDetails(document: Document, manga: SManga): SManga {
         return manga.apply {
-            val titleText = document.selectFirst("div.post-title h1")?.text()?.trim()
+            val titleText = document.selectFirst("div.post-title h1, h1.entry-title")?.text()?.trim()
             if (!titleText.isNullOrBlank()) {
                 title = titleText
             }
 
-            val imgElement = document.selectFirst("div.summary_image img")
+            val imgElement = document.selectFirst("div.summary_image img, div.thumb img")
             if (imgElement != null) {
                 val coverUrl = imgElement.attr("abs:data-src")
                     .ifBlank { imgElement.attr("abs:src") }
@@ -200,7 +211,11 @@ class MangaLek(
                 }
             }
 
-            description = document.select("div.description-summary, div.summary__content").text().trim()
+            author = document.select("div.author-content a, div.manga-authors a").joinToString(", ") { it.text().trim() }.ifBlank { null }
+            artist = document.select("div.artist-content a, div.manga-artists a").joinToString(", ") { it.text().trim() }.ifBlank { null }
+            genre = document.select("div.genres-content a, div.manga-genres a").joinToString(", ") { it.text().trim() }.ifBlank { null }
+            description = document.select("div.description-summary, div.summary__content, div.manga-excerpt").text().trim()
+
             val text = document.text()
             status = when {
                 text.contains("مستمر") || text.contains("Ongoing") -> SManga.ONGOING

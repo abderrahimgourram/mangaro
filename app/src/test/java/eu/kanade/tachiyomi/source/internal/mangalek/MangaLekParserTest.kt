@@ -48,6 +48,72 @@ class MangaLekParserTest {
     }
 
     @Test
+    fun `verify chained catalogue-to-details-to-chapters pipeline correctly isolates manga URL from chapter links`() {
+        // Card HTML containing both manga link AND nested chapter links with title attribute (matching live Tales of Demons and Gods homepage card)
+        val catalogueHtml = """
+            <div class="col-6 col-md-2 badge-pos-1">
+              <div class="page-item-detail manga">
+                <div id="manga-item-80" class="item-thumb c-image-hover">
+                  <a href="https://mangalik.net/manga/tales-of-demons-and-gods/" title="Tales of Demons and Gods">
+                    <img src="https://io.mangalik.net/covers/tales.jpg" alt="Tales of Demons and Gods"/>
+                  </a>
+                </div>
+                <div class="item-summary">
+                  <div class="post-title font-title">
+                    <h3 class="h5">
+                      <a href="https://mangalik.net/manga/tales-of-demons-and-gods/">Tales of Demons and Gods</a>
+                    </h3>
+                  </div>
+                  <div class="chapter-item">
+                    <span class="chapter font-meta">
+                      <a href="https://mangalik.net/manga/tales-of-demons-and-gods/532/" class="btn-link"> 532 </a>
+                    </span>
+                    <span class="c-new-tag">
+                      <a href="https://mangalik.net/manga/tales-of-demons-and-gods/532/" title="27 دقيقة ago"><img src="new.gif"/></a>
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+        """.trimIndent()
+
+        val catalogueDoc = Jsoup.parse(catalogueHtml, "https://mangalik.net")
+        val mangasPage = mangaLek.parseMangaListFromDocument(catalogueDoc)
+
+        mangasPage.mangas.size shouldBe 1
+        val catalogueManga = mangasPage.mangas.first()
+
+        // CRITICAL CHECK: Catalogue MUST extract the manga URL, NOT the chapter URL /532/
+        catalogueManga.url shouldBe "/manga/tales-of-demons-and-gods/"
+        catalogueManga.title shouldBe "Tales of Demons and Gods"
+
+        // Next step in pipeline: Details page
+        val detailsHtml = """
+            <div class="post-title"><h1>Tales of Demons and Gods</h1></div>
+            <div class="summary_image"><img src="https://io.mangalik.net/covers/tales.jpg"/></div>
+            <div class="author-content"><a href="/manga-author/mad-snail/">Mad Snail</a></div>
+            <div class="description-summary">Nie Li reborn with demon spirit book</div>
+            <ul class="main version-chap">
+              <li class="wp-manga-chapter">
+                <a href="https://mangalik.net/manga/tales-of-demons-and-gods/532/">الفصل 532</a>
+              </li>
+            </ul>
+        """.trimIndent()
+
+        val detailsDoc = Jsoup.parse(detailsHtml, "https://mangalik.net")
+        val updatedManga = mangaLek.parseMangaDetails(detailsDoc, catalogueManga)
+
+        updatedManga.title shouldBe "Tales of Demons and Gods"
+        updatedManga.author shouldBe "Mad Snail"
+        updatedManga.description shouldBe "Nie Li reborn with demon spirit book"
+
+        val chapters = mangaLek.parseChapters(detailsDoc)
+        chapters.size shouldBe 1
+        chapters.first().name shouldBe "الفصل 532"
+        chapters.first().url shouldBe "/manga/tales-of-demons-and-gods/532/"
+    }
+
+    @Test
     fun `verify parseMangaDetails correctly parses Madara details HTML`() {
         val initialManga = SManga.create().apply {
             url = "/manga/otherworldly-evil-monarch/"
