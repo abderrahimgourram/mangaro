@@ -21,6 +21,7 @@ import eu.kanade.tachiyomi.extension.ExtensionManager
 import eu.kanade.tachiyomi.network.JavaScriptEngine
 import eu.kanade.tachiyomi.network.NetworkHelper
 import eu.kanade.tachiyomi.source.AndroidSourceManager
+import eu.kanade.tachiyomi.source.internal.azora.Azora
 import eu.kanade.tachiyomi.source.internal.mangatime.MangaTime
 import eu.kanade.tachiyomi.source.internal.teamx.TeamX
 import mihon.domain.source.registry.DefaultInternalSourceRegistry
@@ -126,6 +127,7 @@ class AppModule(val app: Application) : InjektModule {
                 listOf(
                     TeamX(),
                     MangaTime(),
+                    Azora(),
                 ),
             )
         }
