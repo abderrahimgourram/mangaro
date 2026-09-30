@@ -12,6 +12,7 @@ import eu.kanade.tachiyomi.source.online.HttpSource
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
@@ -271,7 +272,11 @@ class Azora(
 
         val req = GET("$baseUrl/api/chapter?chapterId=$chapterId", headers)
         val response = client.newCall(req).awaitSuccess()
-        return parseChapterPagesResponse(response.body.string())
+        val pages = parseChapterPagesResponse(response.body.string())
+        if (pages.isEmpty()) {
+            throw IOException("No pages returned for Azora chapter ${chapter.name}")
+        }
+        return pages
     }
 
     fun parseChapterPagesResponse(responseBody: String): List<Page> {
@@ -280,12 +285,22 @@ class Azora(
             ?: rootObj["data"]?.jsonObject
             ?: rootObj
 
-        val pagesArray = chapterObj["pages"]?.jsonArray ?: return emptyList()
+        val isLocked = chapterObj["isLocked"]?.jsonPrimitive?.booleanOrNull == true
+        if (isLocked) {
+            throw IOException("Azora chapter is locked")
+        }
+
+        val pagesArray = chapterObj["images"]?.jsonArray
+            ?: chapterObj["pages"]?.jsonArray
+            ?: chapterObj["data"]?.jsonArray
+            ?: return emptyList()
+
         return pagesArray.mapIndexedNotNull { index, element ->
             val pageObj = if (element is JsonObject) element.jsonObject else null
-            val pageUrl = pageObj?.get("pageUrl")?.jsonPrimitive?.contentOrNull
-                ?: pageObj?.get("url")?.jsonPrimitive?.contentOrNull
-                ?: element.jsonPrimitive.contentOrNull
+            val pageUrl = pageObj?.get("url")?.jsonPrimitive?.contentOrNull
+                ?: pageObj?.get("pageUrl")?.jsonPrimitive?.contentOrNull
+                ?: pageObj?.get("image")?.jsonPrimitive?.contentOrNull
+                ?: (if (element is JsonPrimitive) element.jsonPrimitive.contentOrNull else null)
             if (pageUrl.isNullOrBlank()) null else Page(index, "", if (pageUrl.startsWith("http")) pageUrl else "$baseUrl$pageUrl")
         }
     }

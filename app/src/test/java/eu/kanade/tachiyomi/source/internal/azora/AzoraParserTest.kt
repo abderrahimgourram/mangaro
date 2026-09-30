@@ -143,13 +143,15 @@ class AzoraParserTest {
     }
 
     @Test
-    fun `verify parseChapterPagesResponse correctly parses page list`() {
+    fun `verify parseChapterPagesResponse extracts images from chapter images array in live JSON format`() {
         val jsonResponse = """
             {
               "chapter": {
-                "pages": [
-                  { "pageUrl": "https://storage.azorafly.com/pages/p1.webp" },
-                  { "pageUrl": "https://storage.azorafly.com/pages/p2.webp" }
+                "id": 137141,
+                "slug": "chapter-5",
+                "images": [
+                  { "id": 2384472, "url": "https://storage.azorafly.com/upload/p1.jpg" },
+                  { "id": 2384473, "url": "https://storage.azorafly.com/upload/p2.jpg" }
                 ]
               }
             }
@@ -157,7 +159,7 @@ class AzoraParserTest {
 
         val pages = azora.parseChapterPagesResponse(jsonResponse)
         pages.size shouldBe 2
-        pages[0].imageUrl shouldBe "https://storage.azorafly.com/pages/p1.webp"
-        pages[1].imageUrl shouldBe "https://storage.azorafly.com/pages/p2.webp"
+        pages[0].imageUrl shouldBe "https://storage.azorafly.com/upload/p1.jpg"
+        pages[1].imageUrl shouldBe "https://storage.azorafly.com/upload/p2.jpg"
     }
 }
