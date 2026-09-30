@@ -40,8 +40,10 @@ class MangaLek(
 
     override val id: Long by lazy { generateId(name, lang, versionId) }
 
+    override val client: OkHttpClient get() = customClient ?: network.client
+
     private val directClient: OkHttpClient by lazy {
-        val base = customClient ?: network.client
+        val base = client
         val filtered = base.interceptors.filter { it !is CloudflareInterceptor }
         base.newBuilder().apply {
             interceptors().clear()
@@ -49,10 +51,7 @@ class MangaLek(
         }.build()
     }
 
-    override val client: OkHttpClient get() = directClient
-
     override fun headersBuilder(): Headers.Builder = Headers.Builder()
-        .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         .add("Referer", "$baseUrl/")
 
     override suspend fun getPopularManga(page: Int): MangasPage {
@@ -194,7 +193,7 @@ class MangaLek(
         var doc: Document? = null
         try {
             val request = GET(baseUrl + cleanUrl, headers)
-            val response = client.newCall(request).awaitSuccess()
+            val response = directClient.newCall(request).awaitSuccess()
             val document = response.asJsoup()
             SourceValidationUtil.checkCloudflareOrError(document)
             doc = document
@@ -227,7 +226,7 @@ class MangaLek(
                         .add("manga", mangaId)
                         .build()
                     val ajaxReq = POST("$baseUrl/wp-admin/admin-ajax.php", headers, formBody)
-                    val ajaxResp = client.newCall(ajaxReq).awaitSuccess()
+                    val ajaxResp = directClient.newCall(ajaxReq).awaitSuccess()
                     val ajaxDoc = ajaxResp.asJsoup()
                     SourceValidationUtil.checkCloudflareOrError(ajaxDoc)
                     updatedChapters = parseChapters(ajaxDoc)
