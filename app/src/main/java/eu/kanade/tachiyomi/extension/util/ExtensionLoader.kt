@@ -360,6 +360,10 @@ internal object ExtensionLoader {
      * @param pkgInfo The package info of the application.
      */
     private fun isPackageAnExtension(pkgInfo: PackageInfo): Boolean {
+        val appInfo = pkgInfo.applicationInfo
+        if (appInfo != null && !appInfo.enabled) {
+            return false
+        }
         return pkgInfo.reqFeatures.orEmpty().any { it.name == EXTENSION_FEATURE }
     }
 

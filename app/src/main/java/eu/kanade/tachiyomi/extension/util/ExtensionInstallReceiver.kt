@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.os.Build
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import eu.kanade.tachiyomi.BuildConfig
@@ -26,13 +27,14 @@ internal class ExtensionInstallReceiver(private val listener: Listener) : Broadc
     val scope = CoroutineScope(SupervisorJob())
 
     fun register(context: Context) {
-        ContextCompat.registerReceiver(context, this, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+        ContextCompat.registerReceiver(context, this, filter, ContextCompat.RECEIVER_EXPORTED)
     }
 
     private val filter = IntentFilter().apply {
         addAction(Intent.ACTION_PACKAGE_ADDED)
         addAction(Intent.ACTION_PACKAGE_REPLACED)
         addAction(Intent.ACTION_PACKAGE_REMOVED)
+        addAction(Intent.ACTION_PACKAGE_CHANGED)
         addAction(ACTION_EXTENSION_ADDED)
         addAction(ACTION_EXTENSION_REPLACED)
         addAction(ACTION_EXTENSION_REMOVED)
@@ -73,6 +75,18 @@ internal class ExtensionInstallReceiver(private val listener: Listener) : Broadc
                 val pkgName = getPackageNameFromIntent(intent)
                 if (pkgName != null) {
                     listener.onPackageUninstalled(pkgName)
+                }
+            }
+            Intent.ACTION_PACKAGE_CHANGED -> {
+                val pkgName = getPackageNameFromIntent(intent)
+                if (pkgName != null) {
+                    scope.launch {
+                        when (val result = getExtensionFromIntent(context, intent)) {
+                            is LoadResult.Success -> listener.onExtensionUpdated(result.extension)
+                            is LoadResult.Untrusted -> listener.onExtensionUntrusted(result.extension)
+                            else -> listener.onPackageUninstalled(pkgName)
+                        }
+                    }
                 }
             }
         }
