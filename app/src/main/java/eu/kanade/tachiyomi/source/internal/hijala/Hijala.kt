@@ -104,8 +104,12 @@ class Hijala(
         return popularMangaParse(response)
     }
 
-    override fun popularMangaRequest(page: Int): Request {
-        return GET("$baseUrl/manga/?page=$page&order=popular", headers)
+    public override fun popularMangaRequest(page: Int): Request {
+        return if (page == 1) {
+            GET("$baseUrl/manga/?order=popular", headers)
+        } else {
+            GET("$baseUrl/manga/page/$page/?order=popular", headers)
+        }
     }
 
     override fun popularMangaParse(response: Response): MangasPage {
@@ -120,7 +124,11 @@ class Hijala(
     }
 
     override fun latestUpdatesRequest(page: Int): Request {
-        return GET("$baseUrl/manga/?page=$page&order=update", headers)
+        return if (page == 1) {
+            GET("$baseUrl/manga/?order=update", headers)
+        } else {
+            GET("$baseUrl/manga/page/$page/?order=update", headers)
+        }
     }
 
     override fun latestUpdatesParse(response: Response): MangasPage {
@@ -137,7 +145,11 @@ class Hijala(
     override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
         val trimmed = query.trim()
         val encoded = URLEncoder.encode(trimmed, "UTF-8")
-        return GET("$baseUrl/?s=$encoded&page=$page", headers)
+        return if (page == 1) {
+            GET("$baseUrl/?s=$encoded", headers)
+        } else {
+            GET("$baseUrl/page/$page/?s=$encoded", headers)
+        }
     }
 
     override fun searchMangaParse(response: Response): MangasPage {
@@ -148,6 +160,7 @@ class Hijala(
     override fun getFilterList(): FilterList = FilterList()
 
     fun parseMangaListFromDocument(document: Document): MangasPage {
+        SourceValidationUtil.checkCloudflareOrError(document)
         val elements = document.select("div.listupd div.bsx, div.bs div.bsx")
         val mangas = elements.mapNotNull { element ->
             parseMangaFromElement(element)

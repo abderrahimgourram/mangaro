@@ -25,6 +25,15 @@ class HijalaParserTest {
     }
 
     @Test
+    fun `verify popularMangaRequest builds valid pagination URLs`() {
+        val req1 = hijala.popularMangaRequest(1)
+        req1.url.toString() shouldBe "https://hijala.com/manga/?order=popular"
+
+        val req2 = hijala.popularMangaRequest(2)
+        req2.url.toString() shouldBe "https://hijala.com/manga/page/2/?order=popular"
+    }
+
+    @Test
     fun `verify parseMangaListFromDocument extracts manga entries and ignores template links`() {
         val html = """
             <div class="listupd">
