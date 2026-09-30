@@ -3,6 +3,7 @@ package eu.kanade.tachiyomi.source.internal.mangalek
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.POST
 import eu.kanade.tachiyomi.network.awaitSuccess
+import eu.kanade.tachiyomi.network.interceptor.CloudflareInterceptor
 import eu.kanade.tachiyomi.source.internal.util.SourceValidationUtil
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
@@ -39,7 +40,16 @@ class MangaLek(
 
     override val id: Long by lazy { generateId(name, lang, versionId) }
 
-    override val client: OkHttpClient get() = customClient ?: network.client
+    private val directClient: OkHttpClient by lazy {
+        val base = customClient ?: network.client
+        val filtered = base.interceptors.filter { it !is CloudflareInterceptor }
+        base.newBuilder().apply {
+            interceptors().clear()
+            interceptors().addAll(filtered)
+        }.build()
+    }
+
+    override val client: OkHttpClient get() = directClient
 
     override fun headersBuilder(): Headers.Builder = Headers.Builder()
         .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
@@ -123,6 +133,10 @@ class MangaLek(
         return parts.size == 2 && parts[0] == "manga"
     }
 
+    private fun parsePostIdFromUrl(url: String): String {
+        return url.substringAfter("#", "").trim()
+    }
+
     fun parseMangaFromElement(element: Element): SManga? {
         val allLinks = element.select("a[href]")
         val mangaLink = allLinks.firstOrNull { link ->
@@ -131,6 +145,18 @@ class MangaLek(
         } ?: return null
 
         val relativeUrl = getRelativeUrl(mangaLink.attr("href"))
+
+        val postId = element.selectFirst("[data-post-id]")?.attr("data-post-id")
+            ?.ifBlank { null }
+            ?: element.selectFirst("[id^=manga-item-]")?.id()?.substringAfter("manga-item-")
+            ?: ""
+
+        val cleanRelUrl = relativeUrl.substringBefore("#").trimEnd('/')
+        val finalUrl = if (postId.isNotBlank()) {
+            "$cleanRelUrl/#$postId"
+        } else {
+            cleanRelUrl
+        }
 
         val titleText = element.selectFirst("div.post-title a, h3.h5 a, h3.h4 a, h3 a")?.text()?.trim()
             ?.ifBlank { mangaLink.attr("title").trim() }
@@ -147,7 +173,7 @@ class MangaLek(
             ?.ifBlank { imgElement.attr("data-src") }
 
         return SManga.create().apply {
-            url = relativeUrl
+            url = finalUrl
             title = titleText
             thumbnail_url = thumbnailUrl
         }
@@ -159,22 +185,43 @@ class MangaLek(
         fetchDetails: Boolean,
         fetchChapters: Boolean,
     ): SMangaUpdate {
-        val request = GET(baseUrl + manga.url, headers)
-        val response = client.newCall(request).awaitSuccess()
-        val document = response.asJsoup()
-        SourceValidationUtil.checkCloudflareOrError(document)
+        val cleanUrl = manga.url.substringBefore("#")
+        val urlPostId = parsePostIdFromUrl(manga.url)
 
-        val updatedManga = if (fetchDetails) parseMangaDetails(document, manga) else manga
-
+        var updatedManga = manga
         var updatedChapters = chapters
+
+        var doc: Document? = null
+        try {
+            val request = GET(baseUrl + cleanUrl, headers)
+            val response = client.newCall(request).awaitSuccess()
+            val document = response.asJsoup()
+            SourceValidationUtil.checkCloudflareOrError(document)
+            doc = document
+        } catch (e: Exception) {
+            if (!fetchChapters || urlPostId.isBlank()) {
+                throw e
+            }
+        }
+
+        if (fetchDetails && doc != null) {
+            updatedManga = parseMangaDetails(doc, manga)
+        } else if (fetchDetails) {
+            updatedManga = manga.apply { initialized = true }
+        }
+
         if (fetchChapters) {
-            updatedChapters = parseChapters(document)
+            if (doc != null) {
+                updatedChapters = parseChapters(doc)
+            }
             if (updatedChapters.isEmpty()) {
-                // Try Madara AJAX endpoint
-                val mangaId = document.selectFirst("div#manga-chapters-holder")?.attr("data-id")
-                    ?: document.selectFirst("input.rating_post_id")?.attr("value")
-                    ?: document.selectFirst("a.wp-manga-action-button")?.attr("data-post")
-                if (!mangaId.isNullOrBlank()) {
+                val mangaId = doc?.selectFirst("div#manga-chapters-holder")?.attr("data-id")
+                    .orEmpty()
+                    .ifBlank { doc?.selectFirst("input.rating_post_id")?.attr("value").orEmpty() }
+                    .ifBlank { doc?.selectFirst("a.wp-manga-action-button")?.attr("data-post").orEmpty() }
+                    .ifBlank { urlPostId }
+
+                if (mangaId.isNotBlank()) {
                     val formBody = FormBody.Builder()
                         .add("action", "manga_get_chapters")
                         .add("manga", mangaId)
@@ -186,7 +233,7 @@ class MangaLek(
                     updatedChapters = parseChapters(ajaxDoc)
                 }
             }
-            if (updatedChapters.isEmpty() && document.select("div.summary_content, div.post-title").isNotEmpty()) {
+            if (updatedChapters.isEmpty() && doc != null && doc.select("div.summary_content, div.post-title").isNotEmpty()) {
                 throw IOException("MangaLek returned 0 chapters for manga ${manga.title}")
             }
         }

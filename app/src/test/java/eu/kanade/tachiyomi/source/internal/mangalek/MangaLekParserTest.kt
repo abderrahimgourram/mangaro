@@ -43,7 +43,7 @@ class MangaLekParserTest {
         mangasPage.mangas.size shouldBe 1
         val manga = mangasPage.mangas.first()
         manga.title shouldBe "Otherworldly Evil Monarch"
-        manga.url shouldBe "/manga/otherworldly-evil-monarch/"
+        manga.url shouldBe "/manga/otherworldly-evil-monarch"
         manga.thumbnail_url shouldBe "https://mangalik.net/covers/monarch.jpg"
     }
 
@@ -84,7 +84,7 @@ class MangaLekParserTest {
         val catalogueManga = mangasPage.mangas.first()
 
         // CRITICAL CHECK: Catalogue MUST extract the manga URL, NOT the chapter URL /532/
-        catalogueManga.url shouldBe "/manga/tales-of-demons-and-gods/"
+        catalogueManga.url shouldBe "/manga/tales-of-demons-and-gods/#80"
         catalogueManga.title shouldBe "Tales of Demons and Gods"
 
         // Next step in pipeline: Details page
