@@ -23,6 +23,7 @@ import eu.kanade.tachiyomi.network.NetworkHelper
 import eu.kanade.tachiyomi.source.AndroidSourceManager
 import eu.kanade.tachiyomi.source.internal.azora.Azora
 import eu.kanade.tachiyomi.source.internal.hijala.Hijala
+import eu.kanade.tachiyomi.source.internal.mangadar.MangaDar
 import eu.kanade.tachiyomi.source.internal.mangalek.MangaLek
 import eu.kanade.tachiyomi.source.internal.mangatime.MangaTime
 import eu.kanade.tachiyomi.source.internal.teamx.TeamX
@@ -132,6 +133,7 @@ class AppModule(val app: Application) : InjektModule {
                     Azora(),
                     Hijala(),
                     MangaLek(),
+                    MangaDar(),
                 ),
             )
         }
