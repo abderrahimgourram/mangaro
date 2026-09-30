@@ -24,6 +24,7 @@ import okhttp3.Request
 import okhttp3.Response
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
+import java.io.IOException
 import java.net.URLEncoder
 
 class MangaTime(
@@ -235,13 +236,18 @@ class MangaTime(
 
     override suspend fun getPageList(chapter: SChapter): List<Page> {
         val (type, slug, chapterNumberStr) = parseChapterUrl(chapter.url)
-        val chapterNum = chapterNumberStr.toIntOrNull() ?: chapterNumberStr.toDoubleOrNull()?.toInt() ?: 1
+        val doubleNum = chapterNumberStr.toDoubleOrNull()
+        val jsonNumVal = if (doubleNum != null && doubleNum % 1.0 != 0.0) "$doubleNum" else "${doubleNum?.toInt() ?: chapterNumberStr.toIntOrNull() ?: 1}"
 
-        val input = """{"0":{"json":{"seriesSlug":"$slug","chapterNumber":$chapterNum}}}"""
+        val input = """{"0":{"json":{"seriesSlug":"$slug","chapterNumber":$jsonNumVal}}}"""
         val encoded = URLEncoder.encode(input, "UTF-8")
         val req = GET("$baseUrl/api/trpc/content.getChapterPages?input=$encoded", headers)
         val response = client.newCall(req).awaitSuccess()
-        return parseChapterPagesResponse(response.body.string())
+        val responseBody = response.body.string()
+        if (responseBody.contains(""""error":""")) {
+            throw IOException("MangaTime tRPC error for $slug chapter $chapterNumberStr")
+        }
+        return parseChapterPagesResponse(responseBody)
     }
 
     fun parseChapterPagesResponse(responseBody: String): List<Page> {

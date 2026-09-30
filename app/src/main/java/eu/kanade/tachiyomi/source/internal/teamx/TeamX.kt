@@ -2,6 +2,7 @@ package eu.kanade.tachiyomi.source.internal.teamx
 
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.awaitSuccess
+import eu.kanade.tachiyomi.source.internal.util.SourceValidationUtil
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
@@ -21,6 +22,7 @@ import okhttp3.Request
 import okhttp3.Response
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
+import java.io.IOException
 import java.net.URI
 import java.net.URLEncoder
 
@@ -195,11 +197,16 @@ class TeamX(
     }
 
     suspend fun parseChapters(initialDocument: Document, mangaUrl: String): List<SChapter> = coroutineScope {
+        SourceValidationUtil.checkCloudflareOrError(initialDocument)
         val page1Chapters = parseChaptersFromDocument(initialDocument)
         val additionalPageUrls = getAdditionalChapterPageUrls(initialDocument, mangaUrl)
 
         if (additionalPageUrls.isEmpty()) {
-            return@coroutineScope page1Chapters.distinctBy { it.url }
+            val chapters = page1Chapters.distinctBy { it.url }
+            if (chapters.isEmpty() && initialDocument.select("h1, .entry-title, .post-title").isNotEmpty()) {
+                throw IOException("TeamX returned 0 chapters for $mangaUrl")
+            }
+            return@coroutineScope chapters
         }
 
         val deferredPages = additionalPageUrls.map { pageUrl ->
@@ -208,6 +215,7 @@ class TeamX(
                     val req = GET(baseUrl + pageUrl, headers)
                     val resp = client.newCall(req).awaitSuccess()
                     val doc = resp.asJsoup()
+                    SourceValidationUtil.checkCloudflareOrError(doc)
                     parseChaptersFromDocument(doc)
                 }
             }
@@ -221,7 +229,11 @@ class TeamX(
             allChapters.addAll(list)
         }
 
-        allChapters.distinctBy { it.url }
+        val result = allChapters.distinctBy { it.url }
+        if (result.isEmpty() && initialDocument.select("h1, .entry-title, .post-title").isNotEmpty()) {
+            throw IOException("TeamX returned 0 chapters for $mangaUrl")
+        }
+        result
     }
 
     fun parseChaptersFromDocument(document: Document): List<SChapter> {

@@ -13,6 +13,8 @@ import eu.kanade.tachiyomi.source.online.HttpSource
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
+import logcat.LogPriority
+import tachiyomi.core.common.util.system.logcat
 import tachiyomi.data.chapter.ChapterSanitizer
 import tachiyomi.domain.chapter.interactor.GetChaptersByMangaId
 import tachiyomi.domain.chapter.interactor.ShouldUpdateDbChapter
@@ -209,9 +211,17 @@ class SyncChaptersWithSource(
             chapter
         }
 
-        if (removedChapters.isNotEmpty()) {
+        val isChapterCountCollapse = !source.isLocal() &&
+            dbChapters.size >= 5 &&
+            sourceChapters.size < (dbChapters.size * 0.5)
+
+        if (removedChapters.isNotEmpty() && !isChapterCountCollapse) {
             val toDeleteIds = removedChapters.map { it.id }
             chapterRepository.removeChaptersWithIds(toDeleteIds)
+        } else if (isChapterCountCollapse) {
+            this.logcat(LogPriority.WARN) {
+                "Chapter collapse prevented for manga ${manga.id} (${manga.title}): DB had ${dbChapters.size} chapters, remote returned ${sourceChapters.size}. Preserving existing DB chapters."
+            }
         }
 
         if (updatedToAdd.isNotEmpty()) {

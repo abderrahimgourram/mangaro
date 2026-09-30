@@ -5,6 +5,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.awaitSuccess
+import eu.kanade.tachiyomi.source.internal.util.SourceValidationUtil
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
@@ -24,6 +25,7 @@ import okhttp3.ResponseBody.Companion.toResponseBody
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import java.io.ByteArrayOutputStream
+import java.io.IOException
 import java.net.URI
 import java.net.URLEncoder
 
@@ -191,9 +193,18 @@ class Hijala(
         val request = GET(baseUrl + manga.url, headers)
         val response = client.newCall(request).awaitSuccess()
         val document = response.asJsoup()
+        SourceValidationUtil.checkCloudflareOrError(document)
 
         val updatedManga = if (fetchDetails) parseMangaDetails(document, manga) else manga
-        val updatedChapters = if (fetchChapters) parseChapters(document) else chapters
+        val updatedChapters = if (fetchChapters) {
+            val parsed = parseChapters(document)
+            if (parsed.isEmpty() && document.select("div#chapterlist").isNotEmpty()) {
+                throw IOException("Hijala returned 0 chapters for ${manga.title}")
+            }
+            parsed
+        } else {
+            chapters
+        }
 
         return SMangaUpdate(updatedManga, updatedChapters)
     }

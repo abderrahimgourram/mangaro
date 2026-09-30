@@ -3,6 +3,7 @@ package eu.kanade.tachiyomi.source.internal.mangadar
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.awaitSuccess
 import eu.kanade.tachiyomi.source.MangaDarPageResolver
+import eu.kanade.tachiyomi.source.internal.util.SourceValidationUtil
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
@@ -17,6 +18,7 @@ import okhttp3.Request
 import okhttp3.Response
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
+import java.io.IOException
 import java.net.URI
 import java.net.URLEncoder
 
@@ -137,9 +139,18 @@ class MangaDar(
         val request = GET(baseUrl + manga.url, headers)
         val response = client.newCall(request).awaitSuccess()
         val document = response.asJsoup()
+        SourceValidationUtil.checkCloudflareOrError(document)
 
         val updatedManga = if (fetchDetails) parseMangaDetails(document, manga) else manga
-        val updatedChapters = if (fetchChapters) parseChapters(document) else chapters
+        val updatedChapters = if (fetchChapters) {
+            val parsed = parseChapters(document)
+            if (parsed.isEmpty() && document.select("h1.entry-title, h1.title, div.post-title h1").isNotEmpty()) {
+                throw IOException("MangaDar returned 0 chapters for manga ${manga.title}")
+            }
+            parsed
+        } else {
+            chapters
+        }
 
         return SMangaUpdate(updatedManga, updatedChapters)
     }

@@ -3,6 +3,7 @@ package eu.kanade.tachiyomi.source.internal.mangalek
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.POST
 import eu.kanade.tachiyomi.network.awaitSuccess
+import eu.kanade.tachiyomi.source.internal.util.SourceValidationUtil
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
@@ -18,6 +19,7 @@ import okhttp3.Request
 import okhttp3.Response
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
+import java.io.IOException
 import java.net.URI
 import java.net.URLEncoder
 
@@ -137,6 +139,7 @@ class MangaLek(
         val request = GET(baseUrl + manga.url, headers)
         val response = client.newCall(request).awaitSuccess()
         val document = response.asJsoup()
+        SourceValidationUtil.checkCloudflareOrError(document)
 
         val updatedManga = if (fetchDetails) parseMangaDetails(document, manga) else manga
 
@@ -147,6 +150,7 @@ class MangaLek(
                 // Try Madara AJAX endpoint
                 val mangaId = document.selectFirst("div#manga-chapters-holder")?.attr("data-id")
                     ?: document.selectFirst("input.rating_post_id")?.attr("value")
+                    ?: document.selectFirst("a.wp-manga-action-button")?.attr("data-post")
                 if (!mangaId.isNullOrBlank()) {
                     val formBody = FormBody.Builder()
                         .add("action", "manga_get_chapters")
@@ -155,8 +159,12 @@ class MangaLek(
                     val ajaxReq = POST("$baseUrl/wp-admin/admin-ajax.php", headers, formBody)
                     val ajaxResp = client.newCall(ajaxReq).awaitSuccess()
                     val ajaxDoc = ajaxResp.asJsoup()
+                    SourceValidationUtil.checkCloudflareOrError(ajaxDoc)
                     updatedChapters = parseChapters(ajaxDoc)
                 }
+            }
+            if (updatedChapters.isEmpty() && document.select("div.summary_content, div.post-title").isNotEmpty()) {
+                throw IOException("MangaLek returned 0 chapters for manga ${manga.title}")
             }
         }
 

@@ -23,6 +23,7 @@ import okhttp3.Request
 import okhttp3.Response
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
+import java.io.IOException
 import java.net.URLEncoder
 
 class Azora(
@@ -136,7 +137,7 @@ class Azora(
         var postId = manga.url.substringAfter("#", "")
 
         var updatedManga = manga
-        if (fetchDetails) {
+        if (fetchDetails || (fetchChapters && postId.isEmpty())) {
             val req = GET("$baseUrl/api/post?postSlug=$postSlug", headers)
             val resp = client.newCall(req).awaitSuccess()
             updatedManga = parsePostDetailsResponse(resp.body.string(), manga, postSlug, postId)
@@ -144,10 +145,18 @@ class Azora(
         }
 
         var updatedChapters = chapters
-        if (fetchChapters && postId.isNotEmpty()) {
-            val req = GET("$baseUrl/api/chapters?postId=$postId", headers)
-            val resp = client.newCall(req).awaitSuccess()
-            updatedChapters = parseChaptersResponse(resp.body.string(), postSlug)
+        if (fetchChapters) {
+            if (postId.isNotEmpty()) {
+                val req = GET("$baseUrl/api/chapters?postId=$postId", headers)
+                val resp = client.newCall(req).awaitSuccess()
+                val body = resp.body.string()
+                if (body.contains(""""error":""") || (body.contains(""""message":""") && !body.contains(""""chapters":""""))) {
+                    throw IOException("Azora chapters API error for post $postId")
+                }
+                updatedChapters = parseChaptersResponse(body, postSlug)
+            } else {
+                throw IOException("Unable to determine post ID for Azora manga $postSlug")
+            }
         }
 
         return SMangaUpdate(updatedManga, updatedChapters)
