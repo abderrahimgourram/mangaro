@@ -52,7 +52,11 @@ class MangaLek(
     }
 
     override fun popularMangaRequest(page: Int): Request {
-        return GET("$baseUrl/manga/page/$page/?m_orderby=views", headers)
+        return if (page == 1) {
+            GET("$baseUrl/", headers)
+        } else {
+            GET("$baseUrl/manga/page/$page/?m_orderby=views", headers)
+        }
     }
 
     override fun popularMangaParse(response: Response): MangasPage {
@@ -67,7 +71,11 @@ class MangaLek(
     }
 
     override fun latestUpdatesRequest(page: Int): Request {
-        return GET("$baseUrl/manga/page/$page/?m_orderby=latest", headers)
+        return if (page == 1) {
+            GET("$baseUrl/", headers)
+        } else {
+            GET("$baseUrl/manga/page/$page/?m_orderby=latest", headers)
+        }
     }
 
     override fun latestUpdatesParse(response: Response): MangasPage {
@@ -83,6 +91,9 @@ class MangaLek(
 
     override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
         val trimmed = query.trim()
+        if (trimmed.isEmpty() && page == 1) {
+            return GET("$baseUrl/", headers)
+        }
         val encoded = URLEncoder.encode(trimmed, "UTF-8")
         return GET("$baseUrl/page/$page/?s=$encoded&post_type=wp-manga", headers)
     }
@@ -95,7 +106,8 @@ class MangaLek(
     override fun getFilterList(): FilterList = FilterList()
 
     fun parseMangaListFromDocument(document: Document): MangasPage {
-        val elements = document.select("div.manga, div.c-tabs-item__content, div.page-item-detail")
+        SourceValidationUtil.checkCloudflareOrError(document)
+        val elements = document.select("div.page-item-detail, div.manga, div.badge-pos-1, div.c-tabs-item__content, div.col-6")
         val mangas = elements.mapNotNull { element ->
             parseMangaFromElement(element)
         }.distinctBy { it.url }
@@ -106,14 +118,14 @@ class MangaLek(
     }
 
     fun parseMangaFromElement(element: Element): SManga? {
-        val linkElement = element.selectFirst("div.post-title h3 a, h3.h4 a, div.tab-thumb a") ?: return null
+        val linkElement = element.selectFirst("div.post-title a, h3 a, div.item-thumb a, a[title]") ?: return null
         val href = linkElement.attr("href")
-        if (href.isBlank()) return null
+        if (href.isBlank() || !href.contains("/manga/")) return null
 
         val relativeUrl = getRelativeUrl(href)
-        val titleText = linkElement.text().trim().ifBlank {
-            element.selectFirst("img")?.attr("alt") ?: ""
-        }
+        val titleText = linkElement.attr("title").ifBlank {
+            element.selectFirst("div.post-title a, h3 a")?.text() ?: linkElement.text()
+        }.trim()
 
         if (titleText.isBlank()) return null
 
@@ -223,6 +235,8 @@ class MangaLek(
     override suspend fun getPageList(chapter: SChapter): List<Page> {
         val request = GET(baseUrl + chapter.url, headers)
         val response = client.newCall(request).awaitSuccess()
+        val document = response.asJsoup()
+        SourceValidationUtil.checkCloudflareOrError(document)
         return pageListParse(response)
     }
 
