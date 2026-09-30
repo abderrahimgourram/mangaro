@@ -163,7 +163,7 @@ class MangaLekParserTest {
     }
 
     @Test
-    fun `verify parsePagesFromDocument extracts valid Madara reader images`() {
+    fun `verify parsePagesFromDocument extracts valid Madara reader images without double-reading response body`() {
         val html = """
             <div class="reading-content">
               <div class="page-break"><img src="https://mangalik.net/pages/01.jpg"/></div>

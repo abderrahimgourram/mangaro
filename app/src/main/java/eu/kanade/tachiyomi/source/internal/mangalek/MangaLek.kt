@@ -298,7 +298,7 @@ class MangaLek(
         val response = client.newCall(request).awaitSuccess()
         val document = response.asJsoup()
         SourceValidationUtil.checkCloudflareOrError(document)
-        return pageListParse(response)
+        return parsePagesFromDocument(document)
     }
 
     override fun pageListParse(response: Response): List<Page> {
