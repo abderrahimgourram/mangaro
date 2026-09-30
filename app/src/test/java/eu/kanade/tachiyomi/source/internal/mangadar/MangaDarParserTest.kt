@@ -35,14 +35,15 @@ class MangaDarParserTest {
     }
 
     @Test
-    fun `verify parseMangaListFromDocument extracts manga entries`() {
+    fun `verify parseMangaListFromDocument extracts manga entries from template elements`() {
         val html = """
-            <div class="manga-card">
-              <a href="https://mangadar.com/manga/one-piece" title="One Piece">
-                <div class="title">One Piece</div>
-                <img src="https://mangadar.com/covers/op.jpg"/>
+            <template x-if="view === 'grid'">
+              <a href="https://mangadar.com/manga/kingdom/" class="group block">
+                <div class="relative">
+                  <img src="https://mangadar.com/wp-content/uploads/2026/04/cover-8-300x420.webp" alt="Kingdom"/>
+                </div>
               </a>
-            </div>
+            </template>
         """.trimIndent()
 
         val doc = Jsoup.parse(html, "https://mangadar.com")
@@ -50,40 +51,40 @@ class MangaDarParserTest {
 
         mangasPage.mangas.size shouldBe 1
         val manga = mangasPage.mangas.first()
-        manga.title shouldBe "One Piece"
-        manga.url shouldBe "/manga/one-piece"
-        manga.thumbnail_url shouldBe "https://mangadar.com/covers/op.jpg"
+        manga.title shouldBe "Kingdom"
+        manga.url shouldBe "/manga/kingdom/"
+        manga.thumbnail_url shouldBe "https://mangadar.com/wp-content/uploads/2026/04/cover-8-300x420.webp"
     }
 
     @Test
     fun `verify parseMangaDetails correctly parses details HTML`() {
         val initialManga = SManga.create().apply {
-            url = "/manga/one-piece"
-            title = "One Piece"
+            url = "/manga/kingdom/"
+            title = "Kingdom"
         }
 
         val html = """
-            <h1 class="entry-title">One Piece</h1>
-            <div class="thumb"><img src="https://mangadar.com/covers/op.jpg"/></div>
-            <div class="description"><p>Pirate adventure</p></div>
+            <h1 class="entry-title">Kingdom</h1>
+            <div class="thumb"><img src="https://mangadar.com/covers/kingdom.jpg"/></div>
+            <div class="description"><p>Historical war epic</p></div>
             <span>مستمر</span>
         """.trimIndent()
 
         val doc = Jsoup.parse(html, "https://mangadar.com")
         val updated = mangaDar.parseMangaDetails(doc, initialManga)
 
-        updated.title shouldBe "One Piece"
-        updated.description shouldBe "Pirate adventure"
+        updated.title shouldBe "Kingdom"
+        updated.description shouldBe "Historical war epic"
         updated.status shouldBe SManga.ONGOING
-        updated.thumbnail_url shouldBe "https://mangadar.com/covers/op.jpg"
+        updated.thumbnail_url shouldBe "https://mangadar.com/covers/kingdom.jpg"
     }
 
     @Test
     fun `verify parseChapters extracts chapter list`() {
         val html = """
             <div class="chapter-card">
-              <a href="https://mangadar.com/manga/one-piece/1194/">
-                <span class="chapter-title">الفصل 1194</span>
+              <a href="https://mangadar.com/manga/kingdom/800/">
+                <span class="chapter-title">الفصل 800</span>
               </a>
             </div>
         """.trimIndent()
@@ -92,8 +93,8 @@ class MangaDarParserTest {
         val chapters = mangaDar.parseChapters(doc)
 
         chapters.size shouldBe 1
-        chapters[0].name shouldBe "الفصل 1194"
-        chapters[0].url shouldBe "/manga/one-piece/1194/"
-        chapters[0].chapter_number shouldBe 1194.0f
+        chapters[0].name shouldBe "الفصل 800"
+        chapters[0].url shouldBe "/manga/kingdom/800/"
+        chapters[0].chapter_number shouldBe 800.0f
     }
 }

@@ -95,7 +95,22 @@ class MangaDar(
 
     fun parseMangaListFromDocument(document: Document): MangasPage {
         SourceValidationUtil.checkCloudflareOrError(document)
-        val elements = document.select("a.group, div.manga-card, div.bsx, div.page-item-detail, div.manga-item, div.bs div.bsx")
+
+        val selector = "a.group, div.manga-card, div.bsx, div.page-item-detail, div.manga-item, div.bs div.bsx"
+        val elements = mutableListOf<Element>()
+        elements.addAll(document.select(selector))
+
+        document.select("template").forEach { template ->
+            elements.addAll(template.select(selector))
+            template.children().forEach { child ->
+                if (child.tagName() == "a" && child.hasClass("group")) {
+                    elements.add(child)
+                } else {
+                    elements.addAll(child.select(selector))
+                }
+            }
+        }
+
         val mangas = elements.mapNotNull { element ->
             parseMangaFromElement(element)
         }.distinctBy { it.url }
@@ -119,8 +134,8 @@ class MangaDar(
 
         val relativeUrl = getRelativeUrl(href)
         val titleText = linkElement.attr("title").ifBlank {
-            element.selectFirst("h3, h2, .title, .tt, div.post-title")?.text()
-                ?: element.selectFirst("img")?.attr("alt")
+            element.selectFirst("img")?.attr("alt")
+                ?: element.selectFirst("h3, h2, .title, .tt, div.post-title")?.text()
                 ?: linkElement.text()
         }.trim()
 
