@@ -80,61 +80,66 @@ class AzoraParserTest {
     }
 
     @Test
-    fun `verify parsePostDetailsResponse correctly parses post detail`() {
+    fun `verify parsePostDetailsResponse correctly parses post detail and preserves postId fragment`() {
         val initialManga = SManga.create().apply {
-            url = "world-destruction-war#2794"
-            title = "World Destruction War"
+            url = "i-bought-the-villains-with-money#2820"
+            title = "I Bought the Villains With Money"
         }
 
         val jsonResponse = """
             {
               "post": {
-                "id": 2794,
-                "postTitle": "World Destruction War",
-                "postContent": "<p>Great fantasy series</p>",
-                "featuredImage": "https://storage.azorafly.com/upload/series/featured/wdw.png",
+                "id": 2820,
+                "postTitle": "I Bought the Villains With Money",
+                "postContent": "<p>Reincarnated story</p>",
+                "featuredImage": "https://storage.azorafly.com/upload/series/featured/villains.jpg",
                 "seriesStatus": "ONGOING"
               }
             }
         """.trimIndent()
 
-        val updated = azora.parsePostDetailsResponse(jsonResponse, initialManga, "world-destruction-war", "2794")
-        updated.title shouldBe "World Destruction War"
-        updated.description shouldBe "Great fantasy series"
+        val updated = azora.parsePostDetailsResponse(jsonResponse, initialManga, "i-bought-the-villains-with-money", "2820")
+        updated.title shouldBe "I Bought the Villains With Money"
+        updated.description shouldBe "Reincarnated story"
         updated.status shouldBe SManga.ONGOING
-        updated.thumbnail_url shouldBe "https://storage.azorafly.com/upload/series/featured/wdw.png"
-        updated.url shouldBe "world-destruction-war#2794"
+        updated.thumbnail_url shouldBe "https://storage.azorafly.com/upload/series/featured/villains.jpg"
+        updated.url shouldBe "i-bought-the-villains-with-money#2820"
     }
 
     @Test
-    fun `verify parseChaptersResponse correctly extracts chapter list using split API`() {
+    fun `verify parseChaptersResponse correctly extracts chapters from post chapters nested JSON structure`() {
         val jsonResponse = """
             {
-              "chapters": [
-                {
-                  "id": 89157,
-                  "slug": "chapter-68",
-                  "name": "Chapter 68"
-                },
-                {
-                  "id": 89156,
-                  "slug": "chapter-67",
-                  "name": "Chapter 67"
-                }
-              ]
+              "post": {
+                "chapters": [
+                  {
+                    "id": 137141,
+                    "slug": "chapter-5",
+                    "number": 5,
+                    "title": ""
+                  },
+                  {
+                    "id": 137139,
+                    "slug": "chapter-4",
+                    "number": 4,
+                    "title": ""
+                  }
+                ]
+              },
+              "totalChapterCount": 5
             }
         """.trimIndent()
 
-        val chapters = azora.parseChaptersResponse(jsonResponse, "world-destruction-war")
+        val chapters = azora.parseChaptersResponse(jsonResponse, "i-bought-the-villains-with-money")
         chapters.size shouldBe 2
 
-        chapters[0].name shouldBe "Chapter 68"
-        chapters[0].url shouldBe "/series/world-destruction-war/chapter-68#89157"
-        chapters[0].chapter_number shouldBe 68.0f
+        chapters[0].name shouldBe "الفصل 5"
+        chapters[0].url shouldBe "/series/i-bought-the-villains-with-money/chapter-5#137141"
+        chapters[0].chapter_number shouldBe 5.0f
 
-        chapters[1].name shouldBe "Chapter 67"
-        chapters[1].url shouldBe "/series/world-destruction-war/chapter-67#89156"
-        chapters[1].chapter_number shouldBe 67.0f
+        chapters[1].name shouldBe "الفصل 4"
+        chapters[1].url shouldBe "/series/i-bought-the-villains-with-money/chapter-4#137139"
+        chapters[1].chapter_number shouldBe 4.0f
     }
 
     @Test

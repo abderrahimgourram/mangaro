@@ -14,6 +14,8 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -174,7 +176,10 @@ class Azora(
             ?: rootObj["data"]?.jsonObject
             ?: rootObj
 
-        val realPostId = postObj["id"]?.jsonPrimitive?.contentOrNull ?: existingPostId
+        val realPostId = postObj["id"]?.jsonPrimitive?.contentOrNull
+            ?: rootObj["post"]?.jsonObject?.get("id")?.jsonPrimitive?.contentOrNull
+            ?: existingPostId
+
         val titleText = postObj["postTitle"]?.jsonPrimitive?.contentOrNull
             ?: postObj["title"]?.jsonPrimitive?.contentOrNull
             ?: postObj["name"]?.jsonPrimitive?.contentOrNull
@@ -220,9 +225,12 @@ class Azora(
     }
 
     fun parseChaptersResponse(responseBody: String, postSlug: String): List<SChapter> {
-        val rootObj = json.parseToJsonElement(responseBody).jsonObject
-        val chaptersArray = rootObj["chapters"]?.jsonArray
-            ?: rootObj["data"]?.jsonArray
+        val rootElement = json.parseToJsonElement(responseBody)
+        val rootObj = if (rootElement is JsonObject) rootElement.jsonObject else null
+        val chaptersArray = rootObj?.get("post")?.jsonObject?.get("chapters")?.jsonArray
+            ?: rootObj?.get("chapters")?.jsonArray
+            ?: rootObj?.get("data")?.jsonArray
+            ?: (if (rootElement is JsonArray) rootElement.jsonArray else null)
             ?: return emptyList()
 
         return chaptersArray.mapNotNull { element ->
@@ -230,14 +238,28 @@ class Azora(
             val chapterId = obj["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
             val chapterSlug = obj["slug"]?.jsonPrimitive?.contentOrNull
                 ?: obj["chapterSlug"]?.jsonPrimitive?.contentOrNull ?: "chapter-$chapterId"
-            val chapterName = obj["name"]?.jsonPrimitive?.contentOrNull
-                ?: obj["title"]?.jsonPrimitive?.contentOrNull ?: chapterSlug
+            val rawName = obj["name"]?.jsonPrimitive?.contentOrNull
+            val rawTitle = obj["title"]?.jsonPrimitive?.contentOrNull
+            val number = obj["number"]?.jsonPrimitive?.doubleOrNull?.toFloat()
+                ?: obj["number"]?.jsonPrimitive?.intOrNull?.toFloat()
+                ?: parseChapterNumber(chapterSlug, rawName ?: rawTitle ?: "")
 
-            val number = parseChapterNumber(chapterSlug, chapterName)
+            val numberStr = if (number % 1.0f == 0f) number.toInt().toString() else number.toString()
+
+            val titleText = (rawName?.ifBlank { null } ?: rawTitle?.ifBlank { null })
+            val formattedName = if (!titleText.isNullOrBlank()) {
+                if (titleText.contains("الفصل") || titleText.contains("Chapter") || titleText.contains("chapter")) {
+                    titleText
+                } else {
+                    "الفصل $numberStr: $titleText"
+                }
+            } else {
+                "الفصل $numberStr"
+            }
 
             SChapter.create().apply {
                 url = "/series/$postSlug/$chapterSlug#$chapterId"
-                name = chapterName
+                name = formattedName
                 chapter_number = number
             }
         }.sortedByDescending { it.chapter_number }
