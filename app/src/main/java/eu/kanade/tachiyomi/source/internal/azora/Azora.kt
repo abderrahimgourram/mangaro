@@ -110,9 +110,15 @@ class Azora(
             val id = obj["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
             val slug = obj["postSlug"]?.jsonPrimitive?.contentOrNull
                 ?: obj["slug"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
-            val titleText = obj["title"]?.jsonPrimitive?.contentOrNull ?: slug
-            val coverUrl = obj["cover"]?.jsonPrimitive?.contentOrNull
+            val titleText = obj["postTitle"]?.jsonPrimitive?.contentOrNull
+                ?: obj["title"]?.jsonPrimitive?.contentOrNull
+                ?: obj["name"]?.jsonPrimitive?.contentOrNull
+                ?: slug
+            val coverUrl = obj["featuredImage"]?.jsonPrimitive?.contentOrNull
+                ?: obj["featuredImageCL"]?.jsonPrimitive?.contentOrNull
+                ?: obj["cover"]?.jsonPrimitive?.contentOrNull
                 ?: obj["poster"]?.jsonPrimitive?.contentOrNull
+                ?: obj["banner"]?.jsonPrimitive?.contentOrNull
 
             SManga.create().apply {
                 url = "$slug#$id"
@@ -169,16 +175,40 @@ class Azora(
             ?: rootObj
 
         val realPostId = postObj["id"]?.jsonPrimitive?.contentOrNull ?: existingPostId
-        val titleText = postObj["title"]?.jsonPrimitive?.contentOrNull ?: manga.title
-        val descriptionText = postObj["description"]?.jsonPrimitive?.contentOrNull ?: manga.description
-        val coverUrl = postObj["cover"]?.jsonPrimitive?.contentOrNull
+        val titleText = postObj["postTitle"]?.jsonPrimitive?.contentOrNull
+            ?: postObj["title"]?.jsonPrimitive?.contentOrNull
+            ?: postObj["name"]?.jsonPrimitive?.contentOrNull
+            ?: manga.title
+        val rawDescription = postObj["postContent"]?.jsonPrimitive?.contentOrNull
+            ?: postObj["description"]?.jsonPrimitive?.contentOrNull
+            ?: postObj["summary"]?.jsonPrimitive?.contentOrNull
+            ?: manga.description
+        val cleanDescription = rawDescription?.replace(Regex("<[^>]*>"), "")?.trim() ?: ""
+
+        val coverUrl = postObj["featuredImage"]?.jsonPrimitive?.contentOrNull
+            ?: postObj["featuredImageCL"]?.jsonPrimitive?.contentOrNull
+            ?: postObj["cover"]?.jsonPrimitive?.contentOrNull
             ?: postObj["poster"]?.jsonPrimitive?.contentOrNull
-        val statusText = postObj["status"]?.jsonPrimitive?.contentOrNull
+        val statusText = postObj["seriesStatus"]?.jsonPrimitive?.contentOrNull
+            ?: postObj["status"]?.jsonPrimitive?.contentOrNull
+
+        val authorName = postObj["author"]?.jsonPrimitive?.contentOrNull
+            ?: postObj["createdby"]?.jsonObject?.get("name")?.jsonPrimitive?.contentOrNull
+
+        val artistName = postObj["artist"]?.jsonPrimitive?.contentOrNull
+
+        val genresArray = postObj["genres"]?.jsonArray
+        val genresText = genresArray?.mapNotNull {
+            it.jsonObject["name"]?.jsonPrimitive?.contentOrNull
+        }?.joinToString(", ")?.ifBlank { null }
 
         return manga.apply {
             url = "$postSlug#$realPostId"
             title = titleText
-            description = descriptionText
+            description = cleanDescription
+            author = authorName?.ifBlank { null }
+            artist = artistName?.ifBlank { null }
+            genre = genresText
             coverUrl?.let { thumbnail_url = if (it.startsWith("http")) it else "$baseUrl$it" }
             status = when {
                 statusText?.contains("ONGOING", ignoreCase = true) == true || statusText?.contains("مستمر") == true -> SManga.ONGOING
