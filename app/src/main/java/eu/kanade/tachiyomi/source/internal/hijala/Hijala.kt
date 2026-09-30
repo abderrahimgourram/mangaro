@@ -123,7 +123,7 @@ class Hijala(
         return latestUpdatesParse(response)
     }
 
-    override fun latestUpdatesRequest(page: Int): Request {
+    public override fun latestUpdatesRequest(page: Int): Request {
         return if (page == 1) {
             GET("$baseUrl/manga/?order=update", headers)
         } else {
@@ -142,7 +142,7 @@ class Hijala(
         return searchMangaParse(response)
     }
 
-    override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
+    public override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
         val trimmed = query.trim()
         val encoded = URLEncoder.encode(trimmed, "UTF-8")
         return if (page == 1) {
@@ -185,10 +185,10 @@ class Hijala(
         if (titleText.isBlank()) return null
 
         val imgElement = element.selectFirst("img")
-        val thumbnailUrl = imgElement?.attr("abs:src")
-            ?.ifBlank { imgElement.attr("src") }
-            ?.ifBlank { imgElement.attr("abs:data-src") }
+        val thumbnailUrl = imgElement?.attr("abs:data-src")
             ?.ifBlank { imgElement.attr("data-src") }
+            ?.ifBlank { imgElement.attr("abs:src") }
+            ?.ifBlank { imgElement.attr("src") }
 
         return SManga.create().apply {
             url = relativeUrl
@@ -231,8 +231,14 @@ class Hijala(
 
             val imgElement = document.selectFirst("div.thumb img")
             if (imgElement != null) {
-                val coverUrl = imgElement.attr("abs:src").ifBlank { imgElement.attr("src") }
-                if (coverUrl.isNotBlank()) {
+                val coverUrl = imgElement.attr("abs:data-src")
+                    .ifBlank { imgElement.attr("data-src") }
+                    .ifBlank { imgElement.attr("abs:data-lazy-src") }
+                    .ifBlank { imgElement.attr("data-lazy-src") }
+                    .ifBlank { imgElement.attr("abs:src") }
+                    .ifBlank { imgElement.attr("src") }
+
+                if (coverUrl.isNotBlank() && !coverUrl.startsWith("data:")) {
                     thumbnail_url = coverUrl
                 }
             }

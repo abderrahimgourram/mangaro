@@ -57,26 +57,30 @@ class HijalaParserTest {
     }
 
     @Test
-    fun `verify parseMangaDetails correctly parses details HTML`() {
+    fun `verify parseMangaDetails correctly parses details HTML and extracts data-src cover when src is SVG placeholder`() {
         val initialManga = SManga.create().apply {
-            url = "/solo-leveling/"
-            title = "Solo Leveling"
+            url = "/the-bully-in-charge/"
+            title = "The Bully In Charge"
+            thumbnail_url = "https://hijala.com/wp-content/uploads/2024/05/0b6c08c2449bde04.webp"
         }
 
+        // Live Hijala HTML with SVG placeholder in src and real image in data-src
         val html = """
-            <h1 class="entry-title">Solo Leveling</h1>
-            <div class="thumb"><img src="https://hijala.com/covers/solo.jpg"/></div>
-            <div class="entry-content"><p>Shadow monarch story</p></div>
-            <span>الحالة: مستمر</span>
+            <h1 class="entry-title">The Bully In Charge</h1>
+            <div class="thumb">
+              <img src="data:image/svg+xml;base64,PHN2Zy..." data-src="https://hijala.com/wp-content/uploads/2024/05/0b6c08c2449bde04.webp" class="wp-post-image"/>
+            </div>
+            <div class="entry-content"><p>Action school life story</p></div>
+            <span>Ongoing</span>
         """.trimIndent()
 
         val doc = Jsoup.parse(html, "https://hijala.com")
         val updated = hijala.parseMangaDetails(doc, initialManga)
 
-        updated.title shouldBe "Solo Leveling"
-        updated.description shouldBe "Shadow monarch story"
+        updated.title shouldBe "The Bully In Charge"
+        updated.description shouldBe "Action school life story"
         updated.status shouldBe SManga.ONGOING
-        updated.thumbnail_url shouldBe "https://hijala.com/covers/solo.jpg"
+        updated.thumbnail_url shouldBe "https://hijala.com/wp-content/uploads/2024/05/0b6c08c2449bde04.webp"
     }
 
     @Test
