@@ -152,7 +152,7 @@ class MangaDar(
         // 3. Filter anchors that satisfy valid MangaDar manga detail URL identity
         val validMangaAnchors = candidateAnchors.filter { anchor ->
             val href = anchor.attr("href")
-            href.isNotBlank() && isMangaDetailUrl(getRelativeUrl(href))
+            href.isNotBlank() && runCatching { isMangaDetailUrl(getRelativeUrl(href)) }.getOrDefault(false)
         }
 
         // 4. Map each valid anchor to an SManga object
@@ -347,20 +347,11 @@ class MangaDar(
     }
 
     private fun getRelativeUrl(url: String): String {
-        return try {
-            val uri = URI(url)
-            val path = uri.rawPath
-            val query = uri.rawQuery
-            val fragment = uri.rawFragment
-
-            buildString {
-                append(path)
-                if (query != null) append("?$query")
-                if (fragment != null) append("#$fragment")
-            }
-        } catch (_: Exception) {
-            url
-        }
+        val base = baseUrl.toHttpUrl()
+        val resolved = base.resolve(url.trim()) ?: throw IOException("MangaDar invalid source URL")
+        if (resolved.host != base.host || resolved.encodedPath == "/") throw IOException("MangaDar source URL lost identity")
+        return resolved.encodedPath + (resolved.encodedQuery?.let { "?$it" } ?: "") +
+            (resolved.encodedFragment?.let { "#$it" } ?: "")
     }
 
     private fun parseChapterNumber(name: String, url: String): Float {

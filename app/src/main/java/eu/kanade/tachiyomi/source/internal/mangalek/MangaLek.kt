@@ -135,7 +135,7 @@ class MangaLek(
         val allLinks = element.select("a[href]")
         val mangaLink = allLinks.firstOrNull { link ->
             val href = link.attr("href")
-            href.isNotBlank() && isMangaUrl(getRelativeUrl(href))
+            href.isNotBlank() && runCatching { isMangaUrl(getRelativeUrl(href)) }.getOrDefault(false)
         } ?: return null
 
         val relativeUrl = getRelativeUrl(mangaLink.attr("href"))
