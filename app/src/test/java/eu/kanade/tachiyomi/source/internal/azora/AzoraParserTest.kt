@@ -7,6 +7,8 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import java.io.IOException
+import okhttp3.ResponseBody.Companion.toResponseBody
+import okhttp3.MediaType.Companion.toMediaType
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.fullType
 
@@ -131,7 +133,7 @@ class AzoraParserTest {
                   }
                 ]
               },
-              "totalChapterCount": 5
+              "totalChapterCount": 2
             }
         """.trimIndent()
 
@@ -251,4 +253,63 @@ class AzoraParserTest {
             listOf("sample-0#0", "sample-1#1", "sample-2#2")
     }
 
+
+    private fun fixture(name: String): String = javaClass.getResource("/azora/$name")!!.readText()
+
+    private fun updateWith(details: String, chapters: String) = kotlinx.coroutines.runBlocking {
+        val client = okhttp3.OkHttpClient.Builder().addInterceptor { chain ->
+            okhttp3.Response.Builder().request(chain.request()).protocol(okhttp3.Protocol.HTTP_1_1)
+                .code(200).message("OK")
+                .body((if (chain.request().url.encodedPath == "/api/post") details else chapters)
+                    .toResponseBody("application/json".toMediaType())).build()
+        }.build()
+        Azora(client).getMangaUpdate(SManga.create().apply { url = "rabbit-holes#2822"; title = "Rabbit Holes" }, emptyList(), true, true)
+    }
+
+    @Test
+    fun `real Rabbit Holes confirmed zero is complete instead of empty duplicate error`() {
+        val result = updateWith(fixture("rabbit-holes-details.json"), fixture("rabbit-holes-chapters.json"))
+        result.chapters.size shouldBe 0
+        result.chapterCompleteness shouldBe eu.kanade.tachiyomi.source.model.ChapterFetchCompleteness.COMPLETE
+        result.manga.url shouldBe "rabbit-holes#2822"
+        result.manga.initialized shouldBe true
+    }
+
+    @Test
+    fun `empty rows are rejected when total is positive absent or disagrees with details`() {
+        for (body in listOf("""{"post":{"chapters":[]},"totalChapterCount":1}""", """{"post":{"chapters":[]}}""")) {
+            assertThrows<IOException> { azora.parseChaptersResponse(body, "rabbit-holes") }
+        }
+        val details = fixture("rabbit-holes-details.json").replace("\"chapters\":0", "\"chapters\":1")
+        assertThrows<IOException> { updateWith(details, fixture("rabbit-holes-chapters.json")) }
+        assertThrows<IOException> { updateWith("""{"post":{"id":2822}}""", fixture("rabbit-holes-chapters.json")) }
+    }
+
+    @Test
+    fun `remote identity rejects repeated IDs even with different slugs and keeps same numbered chapters`() {
+        val rows = """{"chapters":[{"id":1,"slug":"chapter-1","number":1},{"id":1,"slug":"chapter-1-alt","number":1}],"totalChapterCount":2}"""
+        assertThrows<IOException> { azora.parseChaptersResponse(rows, "series") }
+        val chapters = azora.parseChaptersResponse(rows.replace("\"id\":1,\"slug\":\"chapter-1-alt", "\"id\":2,\"slug\":\"chapter-1-alt"), "series")
+        chapters.size shouldBe 2
+        chapters.map { it.chapter_number } shouldBe listOf(1f, 1f)
+    }
+
+    @Test
+    fun `truncated response wrong post and duplicate URLs fail cleanly`() {
+        assertThrows<IOException> { azora.parseChaptersResponse("""{"chapters":[{"id":1}],"totalChapterCount":2}""", "series") }
+        assertThrows<IOException> { azora.parseChaptersResponse("""{"chapters":[{"id":1}],"hasMore":true}""", "series") }
+        assertThrows<IOException> { azora.parseChaptersResponse("""{"chapters":[],"totalChapterCount":0,"error":"unavailable"}""", "series") }
+        assertThrows<IOException> { azora.parseChaptersResponse("""{"chapters":[{"id":1,"mangaPostId":5}]}""", "series", "2822") }
+        assertThrows<IOException> { azora.parseChaptersResponse("""{"chapters":[{"id":1,"slug":"chapter-1"},{"id":1,"slug":"chapter-1"}]}""", "series") }
+    }
+
+    @Test
+    fun `chapter identity date and metadata survive parsing`() {
+        val chapter = azora.parseChaptersResponse("""{"chapters":[{"id":137118,"slug":"chapter-332","number":332,"title":"special forces","createdAt":"2026-09-30T19:40:03.564Z","scanlator":"team"}],"totalChapterCount":1}""", "nano-machine-s").single()
+        chapter.url shouldBe "/series/nano-machine-s/chapter-332#137118"
+        chapter.memo["azora.id"].toString() shouldBe "\"137118\""
+        chapter.date_upload shouldBe java.time.Instant.parse("2026-09-30T19:40:03.564Z").toEpochMilli()
+        chapter.scanlator shouldBe "team"
+        chapter.name shouldBe "الفصل 332: special forces"
+    }
 }

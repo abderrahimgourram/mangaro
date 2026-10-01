@@ -31,6 +31,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
 import mihon.core.archive.archiveReader
 import org.jsoup.Jsoup
@@ -55,9 +56,11 @@ class SourceAuditInstrumentation : Instrumentation() {
     private var matrix = false
     private var catalogueOnly = false
     private var paginationUi = false
+    private var azoraChapters: String? = null
     override fun onCreate(arguments: Bundle?) {
         super.onCreate(arguments)
         selected = arguments?.getString("source")
+        azoraChapters = arguments?.getString("azoraChapters")
         full = arguments?.getString("full") == "true"
         matrix = arguments?.getString("matrix") == "true"
         catalogueOnly = arguments?.getString("catalogueOnly") == "true"
@@ -203,6 +206,61 @@ class SourceAuditInstrumentation : Instrumentation() {
                         failures++
                         record("${source.javaClass.simpleName} $name ERROR ${e.javaClass.simpleName}: ${e.message}")
                     }
+                }
+                if (source is Azora && azoraChapters != null) {
+                    for (title in listOf("Rabbit Holes", "Nano machine", "Rebirth Of The Urban Immortal Cultivator")) step("chapter-evidence-$title") {
+                        val manga = source.getSearchManga(1, title, FilterList()).mangas.first { it.title == title }
+                        val catalogueUrl = manga.url
+                        val id = catalogueUrl.substringAfter('#')
+                        val endpoint = source.baseUrl + "/api/chapters?postId=$id"
+                        val body = source.client.newCall(GET(endpoint, source.headers)).awaitSuccess().use { it.body.string() }
+                        targetContext.openFileOutput("Azora-chapter-audit-$id.json", 0).use { it.write(body.toByteArray()) }
+                        val root = kotlinx.serialization.json.Json.parseToJsonElement(body).jsonObject
+                        val rows = root["post"]!!.jsonObject["chapters"]!!.jsonArray
+                        val ids = rows.map { it.jsonObject["id"]!!.jsonPrimitive.content }
+                        val urls = rows.map { "/series/${catalogueUrl.substringBefore('#')}/${it.jsonObject["slug"]!!.jsonPrimitive.content}#${it.jsonObject["id"]!!.jsonPrimitive.content}" }
+                        val count = root["totalChapterCount"]!!.jsonPrimitive.intOrNull!!
+                        val details = source.client.newCall(GET(source.baseUrl + "/api/post?postSlug=" + catalogueUrl.substringBefore('#'), source.headers)).awaitSuccess().use { it.body.string() }
+                        targetContext.openFileOutput("Azora-chapter-audit-$id-details.json", 0).use { it.write(details.toByteArray()) }
+                        val detailsRoot = kotlinx.serialization.json.Json.parseToJsonElement(details).jsonObject
+                        check(detailsRoot["totalChapterCount"]!!.jsonPrimitive.intOrNull == count)
+                        check(detailsRoot["post"]!!.jsonObject["_count"]!!.jsonObject["chapters"]!!.jsonPrimitive.intOrNull == count)
+                        if (title == "Nano machine") {
+                            for (page in 1..2) {
+                                val probe = source.client.newCall(GET("$endpoint&page=$page&perPage=10", source.headers)).awaitSuccess().use { it.body.string() }
+                                val probeRows = kotlinx.serialization.json.Json.parseToJsonElement(probe).jsonObject["post"]!!.jsonObject["chapters"]!!.jsonArray
+                                check(probeRows.map { it.jsonObject["id"]!!.jsonPrimitive.content } == ids)
+                                record("Azora Android chapters page probe=$page perPage=10 returned=${probeRows.size}; endpoint returns full list")
+                            }
+                        }
+                        record("Azora evidence title=$title catalogue=$catalogueUrl postId=$id endpoint=$endpoint total=$count raw=${rows.size} uniqueIDs=${ids.toSet().size} uniqueURLs=${urls.toSet().size} duplicateIDs=${ids.groupingBy { it }.eachCount().filterValues { it > 1 }} duplicateURLs=${urls.groupingBy { it }.eachCount().filterValues { it > 1 }} pages=single-unpaginated cursors=none")
+                        if (azoraChapters == "before" && count == 0) {
+                            val error = runCatching { source.getMangaUpdate(manga, emptyList(), true, true) }.exceptionOrNull()
+                            check(error?.message == "Azora empty or duplicate chapter list")
+                            record("Azora reproduced $title: ${error?.message}")
+                        } else {
+                            val update = source.getMangaUpdate(manga, emptyList(), true, true)
+                            check(update.manga.url == catalogueUrl)
+                            check(update.chapters.size == count && update.chapterCompleteness == eu.kanade.tachiyomi.source.model.ChapterFetchCompleteness.COMPLETE)
+                            record("Azora $title internal=${update.chapters.size} completeness=${update.chapterCompleteness}")
+                            if (full) {
+                                val local = Injekt.get<NetworkToLocalManga>().invoke(Manga.create().copy(source=source.id, url=update.manga.url, title=update.manga.title).copyFrom(update.manga))
+                                // Global synchronization deliberately refuses empty lists; keep that safeguard.
+                                if (count > 0) Injekt.get<SyncChaptersWithSource>().await(update.chapters, local, source, completeness=update.chapterCompleteness)
+                                targetContext.startActivity(Intent(targetContext, eu.kanade.tachiyomi.ui.main.MainActivity::class.java)
+                                    .setAction(tachiyomi.core.common.Constants.SHORTCUT_MANGA)
+                                    .putExtra(tachiyomi.core.common.Constants.MANGA_EXTRA, local.id)
+                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
+                                waitForText(title)
+                                if (count > 0) waitForText(count.toString())
+                                delay(1500)
+                                check(textNodes("Azora empty or duplicate chapter list").isEmpty())
+                                saveScreenshot("Azora-chapter-audit-$id.png")
+                                record("Azora $title UI details loaded chapters=$count")
+                            }
+                        }
+                    }
+                    continue
                 }
                 if (source is Azora) step("image-type-discovery") {
                     val orders = listOf("totalViews", "lastChapterAddedAt", "createdAt", "postTitle")

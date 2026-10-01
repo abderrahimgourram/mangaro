@@ -181,8 +181,13 @@ class Azora(
             val root = json.parseToJsonElement(body).requireObject("Azora details")
             val post = root["post"]?.jsonObjectOrNull ?: throw IOException("Azora details missing post")
             if (post["isNovel"]?.jsonPrimitiveOrNull?.booleanOrNull == true) throw IOException("Azora novels are not supported by the image Reader")
-            expectedChapterCount = post["totalChapterCount"]?.jsonPrimitiveOrNull?.intOrNull
-                ?: post["_count"]?.jsonObjectOrNull?.get("chapters")?.jsonPrimitiveOrNull?.intOrNull
+            val counts = listOfNotNull(
+                root["totalChapterCount"]?.jsonPrimitiveOrNull?.intOrNull,
+                post["totalChapterCount"]?.jsonPrimitiveOrNull?.intOrNull,
+                post["_count"]?.jsonObjectOrNull?.get("chapters")?.jsonPrimitiveOrNull?.intOrNull,
+            )
+            if (counts.any { it < 0 } || counts.toSet().size > 1) throw IOException("Azora inconsistent details chapter counts")
+            expectedChapterCount = counts.firstOrNull()
             updatedManga = parsePostDetailsResponse(body, manga, postSlug, postId)
             postId = updatedManga.url.substringAfter("#", postId)
         }
@@ -192,13 +197,16 @@ class Azora(
             if (postId.isNotEmpty()) {
                 val req = GET("$baseUrl/api/chapters?postId=$postId", headers)
                 val resp = client.newCall(req).awaitSuccess()
-                val body = resp.body.string()
-                if (body.contains(""""error":""") || (body.contains(""""message":""") && !body.contains(""""chapters":""""))) {
-                    throw IOException("Azora chapters API error for post $postId")
+                val body = resp.use { it.body.string() }
+                val chapterRoot = json.parseToJsonElement(body).requireObject("Azora chapters")
+                val chapterCount = chapterRoot["totalChapterCount"]?.jsonPrimitiveOrNull?.intOrNull
+                if (chapterCount != null && (chapterCount < 0 || expectedChapterCount != null && chapterCount != expectedChapterCount)) {
+                    throw IOException("Azora inconsistent chapter counts: details=$expectedChapterCount chapters=$chapterCount")
                 }
-                val chapterRoot = json.parseToJsonElement(body) as? JsonObject
-                expectedChapterCount = chapterRoot?.get("totalChapterCount")?.jsonPrimitiveOrNull?.intOrNull ?: expectedChapterCount
-                updatedChapters = parseChaptersResponse(body, postSlug)
+                // A zero is verified only by agreement between the independent details and chapter endpoints.
+                if (chapterCount == 0 && expectedChapterCount != 0) throw IOException("Azora unconfirmed empty chapter list")
+                updatedChapters = parseChaptersResponse(body, postSlug, postId)
+                expectedChapterCount = chapterCount ?: expectedChapterCount
             } else {
                 throw IOException("Unable to determine post ID for Azora manga $postSlug")
             }
@@ -267,18 +275,29 @@ class Azora(
         }
     }
 
-    fun parseChaptersResponse(responseBody: String, postSlug: String): List<SChapter> {
+    fun parseChaptersResponse(responseBody: String, postSlug: String, expectedPostId: String? = null): List<SChapter> {
         val rootElement = json.parseToJsonElement(responseBody)
         val rootObj = if (rootElement is JsonObject) rootElement else null
+        if (rootObj?.get("error")?.let { it != kotlinx.serialization.json.JsonNull } == true) throw IOException("Azora chapters API error")
+        if (rootObj?.get("hasMore")?.jsonPrimitiveOrNull?.booleanOrNull == true ||
+            rootObj?.get("nextCursor")?.jsonPrimitiveOrNull?.contentOrNull?.isNotBlank() == true
+        ) throw IOException("Azora chapters response requires additional pages")
         val chaptersArray = rootObj?.get("post")?.jsonObjectOrNull?.get("chapters")?.jsonArrayOrNull
             ?: rootObj?.get("chapters")?.jsonArrayOrNull
             ?: rootObj?.get("data")?.jsonArrayOrNull
             ?: (if (rootElement is JsonArray) rootElement else null)
             ?: throw IOException("Azora chapters missing array")
 
+        val declaredCount = rootObj?.get("totalChapterCount")?.jsonPrimitiveOrNull?.intOrNull
+        if (chaptersArray.isEmpty() && declaredCount != 0) throw IOException("Azora unconfirmed empty chapter list")
+        val remoteIds = HashSet<String>()
         val parsed = chaptersArray.map { element ->
             val obj = element.requireObject("Azora entry")
             val chapterId = obj["id"]?.jsonPrimitiveOrNull?.contentOrNull ?: throw IOException("Azora chapter missing remote ID")
+            if (chapterId.isBlank()) throw IOException("Azora chapter missing remote ID")
+            if (!remoteIds.add(chapterId)) throw IOException("Azora duplicate remote chapter ID: $chapterId")
+            val rowPostId = obj["mangaPostId"]?.jsonPrimitiveOrNull?.contentOrNull
+            if (expectedPostId != null && rowPostId != null && rowPostId != expectedPostId) throw IOException("Azora chapter belongs to another post")
             val chapterSlug = obj["slug"]?.jsonPrimitiveOrNull?.contentOrNull
                 ?: obj["chapterSlug"]?.jsonPrimitiveOrNull?.contentOrNull ?: "chapter-$chapterId"
             val rawName = obj["name"]?.jsonPrimitiveOrNull?.contentOrNull
@@ -304,10 +323,15 @@ class Azora(
                 url = "/series/$postSlug/$chapterSlug#$chapterId"
                 name = formattedName
                 chapter_number = number
+                date_upload = obj["createdAt"]?.jsonPrimitiveOrNull?.contentOrNull?.let {
+                    runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrNull()
+                } ?: 0L
+                scanlator = obj["scanlator"]?.jsonPrimitiveOrNull?.contentOrNull
                 memo = buildJsonObject { put("azora.id", chapterId); put("id", chapterId); put("slug", chapterSlug) }
             }
         }.sortedByDescending { it.chapter_number }
-        if (parsed.isEmpty() || parsed.distinctBy { it.url }.size != parsed.size) throw IOException("Azora empty or duplicate chapter list")
+        if (parsed.map { it.url }.toSet().size != parsed.size) throw IOException("Azora duplicate chapter URL")
+        if (declaredCount != null && declaredCount != parsed.size) throw IOException("Azora incomplete chapters: expected $declaredCount, received ${parsed.size}")
         return parsed
     }
 
