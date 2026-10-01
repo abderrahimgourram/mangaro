@@ -5,6 +5,7 @@ import eu.kanade.tachiyomi.network.POST
 import eu.kanade.tachiyomi.network.awaitSuccess
 import eu.kanade.tachiyomi.network.interceptor.CloudflareInterceptor
 import eu.kanade.tachiyomi.source.internal.util.SourceValidationUtil
+import kotlinx.coroutines.CancellationException
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
@@ -61,11 +62,7 @@ class MangaLek(
     }
 
     override fun popularMangaRequest(page: Int): Request {
-        return if (page == 1) {
-            GET("$baseUrl/", headers)
-        } else {
-            GET("$baseUrl/manga/page/$page/?m_orderby=views", headers)
-        }
+        return GET("$baseUrl/manga/page/$page/?m_orderby=views", headers)
     }
 
     override fun popularMangaParse(response: Response): MangasPage {
@@ -80,11 +77,7 @@ class MangaLek(
     }
 
     override fun latestUpdatesRequest(page: Int): Request {
-        return if (page == 1) {
-            GET("$baseUrl/", headers)
-        } else {
-            GET("$baseUrl/manga/page/$page/?m_orderby=latest", headers)
-        }
+        return GET("$baseUrl/manga/page/$page/?m_orderby=latest", headers)
     }
 
     override fun latestUpdatesParse(response: Response): MangasPage {
@@ -100,9 +93,6 @@ class MangaLek(
 
     override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
         val trimmed = query.trim()
-        if (trimmed.isEmpty() && page == 1) {
-            return GET("$baseUrl/", headers)
-        }
         val encoded = URLEncoder.encode(trimmed, "UTF-8")
         return GET("$baseUrl/page/$page/?s=$encoded&post_type=wp-manga", headers)
     }
@@ -121,7 +111,8 @@ class MangaLek(
             parseMangaFromElement(element)
         }.distinctBy { it.url }
 
-        val hasNextPage = document.select("div.nav-previous, a.next, span.current + a.page-numbers").first() != null
+        if (mangas.isEmpty()) throw IOException("MangaLek catalogue contained no validated manga cards")
+        val hasNextPage = document.select("div.nav-previous a[href], a.next[href], span.current + a.page-numbers[href]").first() != null
 
         return MangasPage(mangas, hasNextPage)
     }
@@ -197,6 +188,8 @@ class MangaLek(
             val document = response.asJsoup()
             SourceValidationUtil.checkCloudflareOrError(document)
             doc = document
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             if (!fetchChapters || urlPostId.isBlank()) {
                 throw e
@@ -206,13 +199,12 @@ class MangaLek(
         if (fetchDetails && doc != null) {
             updatedManga = parseMangaDetails(doc, manga)
         } else if (fetchDetails) {
-            updatedManga = manga.apply { initialized = true }
+            updatedManga = manga
         }
 
         if (fetchChapters) {
-            if (doc != null) {
-                updatedChapters = parseChapters(doc)
-            }
+            // Never reuse the old list as evidence that a failed remote fetch completed.
+            updatedChapters = doc?.let { parseChapters(it) }.orEmpty()
             if (updatedChapters.isEmpty()) {
                 val mangaId = doc?.selectFirst("div#manga-chapters-holder")?.attr("data-id")
                     .orEmpty()
@@ -232,7 +224,7 @@ class MangaLek(
                     updatedChapters = parseChapters(ajaxDoc)
                 }
             }
-            if (updatedChapters.isEmpty() && doc != null && doc.select("div.summary_content, div.post-title").isNotEmpty()) {
+            if (updatedChapters.isEmpty()) {
                 throw IOException("MangaLek returned 0 chapters for manga ${manga.title}")
             }
         }
@@ -307,6 +299,7 @@ class MangaLek(
     }
 
     fun parsePagesFromDocument(document: Document): List<Page> {
+        SourceValidationUtil.checkCloudflareOrError(document)
         val elements = document.select("div.page-break img, div.reading-content img")
         val pages = mutableListOf<Page>()
 
@@ -321,6 +314,7 @@ class MangaLek(
             }
         }
 
+        if (pages.isEmpty() || pages.size != elements.size) throw IOException("MangaLek returned an empty or incomplete page list")
         return pages
     }
 
