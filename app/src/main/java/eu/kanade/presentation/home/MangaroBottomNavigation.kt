@@ -75,8 +75,9 @@ fun MangaroNavigationBar(
 ) {
     Surface(
         color = MangaroDesignSystem.SurfaceDark,
-        tonalElevation = 8.dp,
-        border = BorderStroke(1.dp, MangaroDesignSystem.BorderSubtle),
+        tonalElevation = 6.dp,
+        shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+        border = BorderStroke(1.dp, Color(0x1DA78BFA)),
         modifier = modifier
             .fillMaxWidth()
             .navigationBarsPadding(),
@@ -84,8 +85,8 @@ fun MangaroNavigationBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(62.dp)
-                .padding(horizontal = 8.dp),
+                .height(58.dp)
+                .padding(horizontal = 6.dp),
             horizontalArrangement = Arrangement.SpaceAround,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -112,15 +113,17 @@ private fun RowScope.MangaroNavItem(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
+    val inactiveColor = Color(0xFF8C80A1)
+
     val animatedIconColor by animateColorAsState(
-        targetValue = if (selected) MangaroDesignSystem.GoldPrimary else Color.White.copy(alpha = 0.65f),
-        animationSpec = tween(durationMillis = 200),
+        targetValue = if (selected) MangaroDesignSystem.GoldPrimary else inactiveColor,
+        animationSpec = tween(durationMillis = 180),
         label = "iconColor",
     )
 
     val animatedTextColor by animateColorAsState(
-        targetValue = if (selected) MangaroDesignSystem.GoldPrimary else Color.White.copy(alpha = 0.65f),
-        animationSpec = tween(durationMillis = 200),
+        targetValue = if (selected) MangaroDesignSystem.GoldPrimary else inactiveColor,
+        animationSpec = tween(durationMillis = 180),
         label = "textColor",
     )
 
@@ -139,10 +142,10 @@ private fun RowScope.MangaroNavItem(
     ) {
         Box(
             modifier = Modifier
-                .size(width = 50.dp, height = 30.dp)
-                .clip(RoundedCornerShape(15.dp))
+                .size(width = 44.dp, height = 28.dp)
+                .clip(RoundedCornerShape(14.dp))
                 .background(
-                    if (selected) MangaroDesignSystem.LavenderPrimary.copy(alpha = 0.22f)
+                    if (selected) MangaroDesignSystem.LavenderPrimary.copy(alpha = 0.12f)
                     else Color.Transparent,
                 ),
             contentAlignment = Alignment.Center,
@@ -181,17 +184,17 @@ private fun RowScope.MangaroNavItem(
                     imageVector = if (selected) iconPair.second else iconPair.first,
                     contentDescription = tab.options.title,
                     tint = animatedIconColor,
-                    modifier = Modifier.size(22.dp),
+                    modifier = Modifier.size(20.dp),
                 )
             }
         }
 
-        Spacer(modifier = Modifier.height(3.dp))
+        Spacer(modifier = Modifier.height(2.dp))
 
         Text(
             text = tab.options.title,
             style = MaterialTheme.typography.labelSmall.copy(
-                fontSize = 10.5.sp,
+                fontSize = 10.sp,
                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                 textDirection = TextDirection.Content,
             ),
