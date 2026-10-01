@@ -64,9 +64,11 @@ class SourceAuditInstrumentation : Instrumentation() {
     private var azoraChapters: String? = null
     private var reliability = false
     private var ruleRepair = false
+    private var productionFeed: String? = null
     override fun onCreate(arguments: Bundle?) {
         super.onCreate(arguments)
         selected = arguments?.getString("source")
+        productionFeed = arguments?.getString("productionFeed")
         ruleRepair = arguments?.getString("ruleRepair") == "true"
         reliability = arguments?.getString("reliability") == "true"
         azoraChapters = arguments?.getString("azoraChapters")
@@ -492,6 +494,11 @@ class SourceAuditInstrumentation : Instrumentation() {
         runBlocking {
             val manager = Injekt.get<SourceManager>()
             withTimeout(30_000) { manager.isInitialized.first { it } }
+            if (productionFeed != null) {
+                try { withTimeout(180_000) { ProductionFeedAudit.run(targetContext, productionFeed!!, ::record) } }
+                catch (e: Exception) { failures++; record("Production feed ERROR ${e.javaClass.simpleName}: ${e.message}; ${e.stackTrace.take(4).joinToString()}") }
+                return@runBlocking
+            }
             if (ruleRepair) {
                 try { withTimeout(480_000) { auditRules(manager) } }
                 catch (e: Exception) { failures++; record("Rules ERROR ${e.javaClass.simpleName}: ${e.message}; ${e.stackTrace.take(3).joinToString()}") }
