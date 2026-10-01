@@ -116,7 +116,7 @@ class TeamX(
         val hasNextPage = document.select("ul.pagination a[rel=next]").first() != null ||
             document.select("ul.pagination li.page-item:not(.disabled) a[href*=?page=]").any {
                 it.text().trim() == ">" || it.text().trim() == "›" || it.attr("rel") == "next"
-            }
+            } || document.select(".tx-pager a.tx-pager-btn[href]").any { it.text().contains("التالي") }
 
         return MangasPage(mangas, hasNextPage)
     }

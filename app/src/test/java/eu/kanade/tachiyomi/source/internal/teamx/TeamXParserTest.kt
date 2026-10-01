@@ -66,6 +66,15 @@ class TeamXParserTest {
     }
 
     @Test
+    fun `search follows native tx pager and does not mistake previous for next`() {
+        val card = """<a class="tx-card" href="/series/sample"><h3>Sample</h3><img src="/sample.jpg"></a>"""
+        val previous = """<a class="tx-pager-btn" href="/search?keyword=ma&amp;page=11">السابق</a>"""
+        val next = """<a class="tx-pager-btn" href="/search?keyword=ma&amp;page=12">التالي <i></i></a>"""
+        teamX.parseMangaListFromDocument(Jsoup.parse("$card<div class='tx-pager'>$previous$next</div>", teamX.baseUrl)).hasNextPage shouldBe true
+        teamX.parseMangaListFromDocument(Jsoup.parse("$card<div class='tx-pager'>$previous</div>", teamX.baseUrl)).hasNextPage shouldBe false
+    }
+
+    @Test
     fun `verify latest manga parsing from html fixture`() {
         val html = """
             <html>
