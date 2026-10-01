@@ -149,7 +149,21 @@ class MangaRepositoryImpl(
 
     override suspend fun insertNetworkManga(manga: List<Manga>): List<Manga> {
         return database.transactionWithResult {
-            manga.map {
+            manga.map { remote ->
+                // Catalogue and details share the same source-scoped row. Optional omissions
+                // must not erase a previously initialized manga when rediscovered.
+                val existing = database.mangasQueries.getMangaByUrlAndSource(remote.url, remote.source, MangaMapper::mapManga).awaitAsOneOrNull()
+                val it = remote.copy(
+                    thumbnailUrl = tachiyomi.domain.manga.model.CoverUrl.valid(remote.thumbnailUrl) ?: existing?.thumbnailUrl,
+                    author = remote.author?.takeIf { it.isNotBlank() } ?: existing?.author,
+                    artist = remote.artist?.takeIf { it.isNotBlank() } ?: existing?.artist,
+                    description = remote.description?.takeIf { it.isNotBlank() } ?: existing?.description,
+                    genre = remote.genre?.takeIf { it.isNotEmpty() } ?: existing?.genre,
+                    status = remote.status.takeIf { it != 0L } ?: existing?.status ?: remote.status,
+                    initialized = remote.initialized || existing?.initialized == true,
+                    updateStrategy = if (remote.initialized) remote.updateStrategy else existing?.updateStrategy ?: remote.updateStrategy,
+                    memo = kotlinx.serialization.json.JsonObject(existing?.memo.orEmpty() + remote.memo),
+                )
                 database.mangasQueries.insertNetworkManga(
                     source = it.source,
                     url = it.url,

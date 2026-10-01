@@ -61,6 +61,7 @@ class UpdateMangaFromRemote(
         fetchWindow: Pair<Long, Long> = Pair(0, 0),
     ): Result<RemoteMangaUpdate> {
         return try {
+            require(source.id == manga.source) { "Manga source identity mismatch" }
             val chapters = chapterRepository.getChapterByMangaId(manga.id)
                 .sortedBy { it.sourceOrder }
             val update = withIOContext {
@@ -112,16 +113,17 @@ class UpdateMangaFromRemote(
 
         // if the manga isn't a favorite (or 'update titles' preference is enabled), set its title from source and update in db
         val title =
-            if (remoteTitle.isNotEmpty() && (!localManga.favorite || libraryPreferences.updateMangaTitles.get())) {
+            if (remoteTitle.isNotBlank() && (!localManga.favorite || libraryPreferences.updateMangaTitles.get())) {
                 remoteTitle
             } else {
                 null
             }
 
+        val thumbnailUrl = tachiyomi.domain.manga.model.CoverUrl.valid(remoteManga.thumbnail_url)
         val coverLastModified = when {
             // Never refresh covers if the url is empty to avoid "losing" existing covers
-            remoteManga.thumbnail_url.isNullOrEmpty() -> null
-            !manualFetch && localManga.thumbnailUrl == remoteManga.thumbnail_url -> null
+            thumbnailUrl == null -> null
+            !manualFetch && localManga.thumbnailUrl == thumbnailUrl -> null
             localManga.isLocal() -> Clock.System.now().toEpochMilliseconds()
             localManga.hasCustomCover(coverCache) -> {
                 coverCache.deleteFromCache(localManga, false)
@@ -132,8 +134,6 @@ class UpdateMangaFromRemote(
                 Clock.System.now().toEpochMilliseconds()
             }
         }
-
-        val thumbnailUrl = remoteManga.thumbnail_url?.takeIf { it.isNotEmpty() }
 
         val success = mangaRepository.update(
             MangaUpdate(
@@ -146,9 +146,9 @@ class UpdateMangaFromRemote(
                 genre = remoteManga.getGenres()?.takeIf { it.isNotEmpty() },
                 thumbnailUrl = thumbnailUrl,
                 status = remoteManga.status.takeIf { it != SManga.UNKNOWN }?.toLong(),
-                updateStrategy = remoteManga.update_strategy,
-                initialized = remoteManga.initialized,
-                memo = remoteManga.memo,
+                updateStrategy = if (remoteManga.initialized) remoteManga.update_strategy else localManga.updateStrategy,
+                initialized = remoteManga.initialized || localManga.initialized,
+                memo = kotlinx.serialization.json.JsonObject(localManga.memo + remoteManga.memo),
             ),
         )
         if (success && title != null) {

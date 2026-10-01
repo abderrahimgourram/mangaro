@@ -31,6 +31,7 @@ import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.manga.model.MangaCover
 import tachiyomi.domain.source.service.SourceManager
+import uy.kohesive.injekt.api.get
 import uy.kohesive.injekt.injectLazy
 import java.io.File
 import java.io.IOException
@@ -55,6 +56,7 @@ class MangaCoverFetcher(
     private val sourceLazy: Lazy<HttpSource?>,
     private val callFactoryLazy: Lazy<Call.Factory>,
     private val imageLoader: ImageLoader,
+    private val mangaId: Long? = null,
 ) : Fetcher {
 
     private val diskCacheKey: String
@@ -71,12 +73,12 @@ class MangaCoverFetcher(
         }
 
         // diskCacheKey is thumbnail_url
-        if (url == null) error("No cover specified")
+        if (url == null) return recoverCover() ?: error("No cover specified")
         return when (getResourceType(url)) {
             Type.File -> fileLoader(File(url.substringAfter("file://")))
             Type.URI -> fileUriLoader(url)
             Type.URL -> httpLoader()
-            null -> error("Invalid image")
+            null -> recoverCover() ?: error("Invalid image")
         }
     }
 
@@ -134,7 +136,12 @@ class MangaCoverFetcher(
             }
 
             // Fetch from network
-            val response = executeNetworkRequest()
+            val response = try { executeNetworkRequest() } catch (error: Exception) {
+                val recoverable = error is InvalidCoverResponse ||
+                    error is eu.kanade.tachiyomi.network.HttpException && error.code in setOf(403, 404, 410)
+                if (!recoverable) throw error
+                return recoverCover() ?: throw error
+            }
             val responseBody = checkNotNull(response.body) { "Null response source" }
             try {
                 // Read from cover cache after library manga cover updated
@@ -169,12 +176,32 @@ class MangaCoverFetcher(
         }
     }
 
+    private suspend fun recoverCover(): FetchResult? {
+        if (!options.networkCachePolicy.readEnabled) return null
+        val source = sourceLazy.value ?: return null
+        val id = mangaId ?: return null
+        val response = eu.kanade.domain.manga.interactor.RecoverMangaCover(uy.kohesive.injekt.Injekt.get())
+            .await(source, id, url) ?: return null
+        // The original key describes a missing/stale URL. SQL observers request the
+        // verified replacement under its new key; never cache bytes under the old one.
+        return SourceFetchResult(
+            source = ImageSource(source = response.body.source(), fileSystem = FileSystem.SYSTEM),
+            mimeType = response.header("Content-Type"), dataSource = DataSource.NETWORK,
+        )
+    }
+
+    private class InvalidCoverResponse : IOException("Cover response is not an image")
+
     private suspend fun executeNetworkRequest(): Response {
         val client = sourceLazy.value?.client ?: callFactoryLazy.value
         val response = client.newCall(newRequest()).await()
         if (!response.isSuccessful && response.code != HTTP_NOT_MODIFIED) {
             response.close()
-            throw IOException(response.message)
+            throw eu.kanade.tachiyomi.network.HttpException(response.code)
+        }
+        if (response.code != HTTP_NOT_MODIFIED && tachiyomi.core.common.util.system.ImageUtil.findImageType(response.peekBody(512).byteStream()) == null) {
+            response.close()
+            throw InvalidCoverResponse()
         }
         return response
     }
@@ -306,6 +333,7 @@ class MangaCoverFetcher(
 
         override fun create(data: Manga, options: Options, imageLoader: ImageLoader): Fetcher {
             return MangaCoverFetcher(
+                mangaId = data.id,
                 url = data.thumbnailUrl,
                 isLibraryManga = data.favorite,
                 options = options,
@@ -328,6 +356,7 @@ class MangaCoverFetcher(
 
         override fun create(data: MangaCover, options: Options, imageLoader: ImageLoader): Fetcher {
             return MangaCoverFetcher(
+                mangaId = data.mangaId,
                 url = data.url,
                 isLibraryManga = data.isMangaFavorite,
                 options = options,

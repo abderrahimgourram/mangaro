@@ -49,25 +49,25 @@ fun Manga.toSManga(): SManga = SManga.create().also {
 }
 
 fun Manga.copyFrom(other: SManga): Manga {
-    val author = other.author ?: author
-    val artist = other.artist ?: artist
-    val description = other.description ?: description
-    val genres = if (other.genre != null) {
+    val author = other.author?.takeIf { it.isNotBlank() } ?: author
+    val artist = other.artist?.takeIf { it.isNotBlank() } ?: artist
+    val description = other.description?.takeIf { it.isNotBlank() } ?: description
+    val genres = if (!other.genre.isNullOrBlank()) {
         other.getGenres()
     } else {
         genre
     }
-    val thumbnailUrl = other.thumbnail_url ?: thumbnailUrl
+    val thumbnailUrl = tachiyomi.domain.manga.model.CoverUrl.valid(other.thumbnail_url) ?: thumbnailUrl
     return this.copy(
         author = author,
         artist = artist,
         description = description,
         genre = genres,
         thumbnailUrl = thumbnailUrl,
-        status = other.status.toLong(),
-        updateStrategy = other.update_strategy,
-        initialized = other.initialized && initialized,
-        memo = other.memo,
+        status = other.status.takeIf { it != SManga.UNKNOWN }?.toLong() ?: status,
+        updateStrategy = if (other.initialized) other.update_strategy else updateStrategy,
+        initialized = other.initialized || initialized,
+        memo = kotlinx.serialization.json.JsonObject(memo + other.memo),
     )
 }
 
