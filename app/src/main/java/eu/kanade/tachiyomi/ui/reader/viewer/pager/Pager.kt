@@ -17,6 +17,10 @@ open class Pager(
     isHorizontal: Boolean = true,
 ) : DirectionalViewPager(context, isHorizontal) {
 
+    init {
+        layoutDirection = android.view.View.LAYOUT_DIRECTION_LTR
+    }
+
     /**
      * Tap listener function to execute when a tap is detected.
      */

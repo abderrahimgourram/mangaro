@@ -26,7 +26,6 @@ import coil3.util.DebugLogger
 import dev.mihon.injekt.patchInjekt
 import eu.kanade.domain.DomainModule
 import eu.kanade.domain.base.BasePreferences
-import eu.kanade.domain.ui.UiPreferences
 import eu.kanade.tachiyomi.core.security.PrivacyPreferences
 import eu.kanade.tachiyomi.crash.CrashActivity
 import eu.kanade.tachiyomi.crash.GlobalExceptionHandler
@@ -38,7 +37,6 @@ import eu.kanade.tachiyomi.data.coil.TachiyomiImageDecoder
 import eu.kanade.tachiyomi.data.notification.Notifications
 import eu.kanade.tachiyomi.di.AppModule
 import eu.kanade.tachiyomi.di.PreferenceModule
-import eu.kanade.tachiyomi.extension.ManhwaRepoBootstrap
 import eu.kanade.tachiyomi.network.NetworkHelper
 import eu.kanade.tachiyomi.network.NetworkPreferences
 import eu.kanade.tachiyomi.ui.base.delegate.SecureActivityDelegate
@@ -48,6 +46,7 @@ import eu.kanade.tachiyomi.util.system.WebViewUtil
 import eu.kanade.tachiyomi.util.system.animatorDurationScale
 import eu.kanade.tachiyomi.util.system.cancelNotification
 import eu.kanade.tachiyomi.util.system.notify
+import java.security.Security
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
@@ -69,7 +68,6 @@ import tachiyomi.presentation.widget.WidgetManager
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import uy.kohesive.injekt.injectLazy
-import java.security.Security
 
 class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factory {
 
@@ -78,6 +76,10 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
     private val networkPreferences: NetworkPreferences by injectLazy()
 
     private val disableIncognitoReceiver = DisableIncognitoReceiver()
+
+    override fun attachBaseContext(base: android.content.Context) {
+        super.attachBaseContext(eu.kanade.tachiyomi.util.system.MangaroLocale.wrap(base))
+    }
 
     @SuppressLint("LaunchActivityFromNotification")
     override fun onCreate() {
@@ -192,11 +194,7 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
         }
 
         initializeMigrator()
-        scope.launch(Dispatchers.IO) {
-            // Wait for database migrations before registering the default store.
-            Migrator.await()
-            ManhwaRepoBootstrap.install(this@App)
-        }
+
     }
 
     private fun initializeMigrator() {

@@ -15,11 +15,12 @@ open class BaseActivity :
     ThemingDelegate by ThemingDelegateImpl() {
 
     override fun attachBaseContext(newBase: Context) {
-        super.attachBaseContext(newBase.prepareTabletUiContext())
+        super.attachBaseContext(eu.kanade.tachiyomi.util.system.MangaroLocale.wrap(newBase.prepareTabletUiContext()))
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         applyAppTheme(this)
         super.onCreate(savedInstanceState)
+        window.decorView.layoutDirection = android.view.View.LAYOUT_DIRECTION_RTL
     }
 }
