@@ -14,7 +14,7 @@ class DownloadHeaderHolder(view: View, adapter: FlexibleAdapter<*>) : Expandable
     @SuppressLint("SetTextI18n")
     fun bind(item: DownloadHeaderItem) {
         setDragHandleView(binding.reorder)
-        binding.title.text = "${item.name} (${item.size})"
+        binding.title.text = "التنزيلات (${item.size})"
     }
 
     override fun onActionStateChanged(position: Int, actionState: Int) {

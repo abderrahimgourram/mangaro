@@ -3,15 +3,17 @@ package eu.kanade.presentation.util
 import android.content.Context
 import eu.kanade.tachiyomi.network.HttpException
 import eu.kanade.tachiyomi.util.system.isOnline
+import java.net.UnknownHostException
 import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.data.source.NoResultsException
 import tachiyomi.domain.source.model.SourceNotInstalledException
 import tachiyomi.i18n.MR
-import java.net.UnknownHostException
 
 context(context: Context)
 val Throwable.formattedMessage: String
     get() {
+        val displayMessage = message.contentErrorMessage()
+        if (displayMessage != message) return displayMessage.orEmpty()
         when (this) {
             is HttpException -> return context.stringResource(MR.strings.exception_http, code)
             is UnknownHostException -> {

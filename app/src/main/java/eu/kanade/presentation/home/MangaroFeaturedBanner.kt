@@ -97,28 +97,6 @@ fun MangaroFeaturedBanner(
                     ) {
                         // Top Section: Source Badge & Title
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            // Source Badge Chip
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(Color(0x28A78BFA))
-                                    .border(
-                                        BorderStroke(0.5.dp, MangaroVisualTokens.PurplePrimary.copy(alpha = 0.4f)),
-                                        RoundedCornerShape(6.dp),
-                                    )
-                                    .padding(horizontal = 8.dp, vertical = 3.dp),
-                            ) {
-                                Text(
-                                    text = item.sourceName,
-                                    style = MaterialTheme.typography.labelSmall.copy(
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 11.sp,
-                                    ),
-                                    color = MangaroVisualTokens.GoldAccent,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
 
                             // Manga Title
                             Text(

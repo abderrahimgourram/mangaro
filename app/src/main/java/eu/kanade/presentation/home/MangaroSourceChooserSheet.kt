@@ -90,7 +90,7 @@ fun MangaroSourceChooserSheet(
                                     tint = MangaroDesignSystem.GoldPrimary,
                                 )
                                 Text(
-                                    text = version.sourceName,
+                                    text = "نسخة أخرى",
                                     style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
                                     color = Color.White,
                                 )

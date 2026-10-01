@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import eu.kanade.domain.source.service.SourcePreferences
 import eu.kanade.tachiyomi.extension.ExtensionManager
 import eu.kanade.tachiyomi.source.Source
+import java.util.concurrent.Executors
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.async
@@ -27,7 +28,6 @@ import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.source.service.SourceManager
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
-import java.util.concurrent.Executors
 
 abstract class SearchViewModel(
     initialState: State = State(),
@@ -80,7 +80,7 @@ abstract class SearchViewModel(
 
     open fun getEnabledSources(): List<Source> {
         return sourceManager.getAll()
-            .filter { it.lang in enabledLanguages && "${it.id}" !in disabledSources }
+            .filterIsInstance<eu.kanade.tachiyomi.source.online.HttpSource>()
             .sortedWith(
                 compareBy(
                     { "${it.id}" !in pinnedSources },
@@ -90,17 +90,7 @@ abstract class SearchViewModel(
     }
 
     private fun getSelectedSources(): List<Source> {
-        val enabledSources = getEnabledSources()
-
-        val filter = extensionFilter
-        if (filter.isNullOrEmpty()) {
-            return enabledSources
-        }
-
-        return extensionManager.installedExtensionsFlow.value
-            .filter { it.pkgName == filter }
-            .flatMap { it.sources }
-            .filter { it in enabledSources }
+        return getEnabledSources()
     }
 
     fun updateSearchQuery(query: String?) {

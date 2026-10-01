@@ -5,6 +5,7 @@ import eu.kanade.tachiyomi.data.download.DownloadManager
 import eu.kanade.tachiyomi.extension.ExtensionManager
 import eu.kanade.tachiyomi.extension.model.Extension
 import eu.kanade.tachiyomi.source.online.HttpSource
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -16,8 +17,6 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import logcat.LogPriority
-import logcat.logcat
 import mihon.domain.source.registry.DefaultSourceCollisionPolicy
 import mihon.domain.source.registry.InternalSourceRegistry
 import mihon.domain.source.registry.SourceCollisionPolicy
@@ -29,7 +28,6 @@ import tachiyomi.source.local.LocalSource
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import uy.kohesive.injekt.injectLazy
-import java.util.concurrent.ConcurrentHashMap
 
 class AndroidSourceManager(
     private val context: Context,
@@ -96,39 +94,11 @@ class AndroidSourceManager(
             emptyMap()
         }
 
-        val extensionSourcesMap = mutableMapOf<Long, Source>()
-        extensions.filterIsInstance<Extension.Installed>().forEach { extension ->
-            extension.sources.forEach { source ->
-                extensionSourcesMap[source.id] = source
-                registerStubSource(StubSource.from(source))
-            }
-        }
-
+        // Mangaro exposes only its bundled sources. Legacy source rows and downloads
+        // remain available through stubs; an installed APK cannot override our parser.
         internalSourcesMap.values.forEach { source ->
             registerStubSource(StubSource.from(source))
-        }
-
-        val allSourceIds = (internalSourcesMap.keys + extensionSourcesMap.keys).filter { it != LocalSource.ID }
-
-        for (sourceId in allSourceIds) {
-            val internalSrc = internalSourcesMap[sourceId]
-            val extensionSrc = extensionSourcesMap[sourceId]
-            val prefMode = sourcePreferenceModes[sourceId] ?: SourcePreferenceMode.EXTERNAL_PREFERRED
-
-            val resolution = collisionPolicy.resolveCollision(
-                sourceId = sourceId,
-                internalSource = internalSrc,
-                extensionSource = extensionSrc,
-                preferenceMode = prefMode,
-            )
-
-            if (resolution.isCollision) {
-                logcat(LogPriority.INFO) {
-                    "Source collision resolved for ID $sourceId: selected ${resolution.selectedSource.javaClass.simpleName} (${resolution.selectedOrigin}), fallback ${resolution.fallbackSource?.javaClass?.simpleName} (${resolution.fallbackOrigin})"
-                }
-            }
-
-            resultMap[sourceId] = resolution.selectedSource
+            resultMap[source.id] = source
         }
 
         return resultMap

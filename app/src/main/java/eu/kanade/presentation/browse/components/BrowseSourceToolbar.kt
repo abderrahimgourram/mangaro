@@ -81,7 +81,7 @@ fun BrowseSourceToolbar(
     onSearch: (String) -> Unit,
     scrollBehavior: TopAppBarScrollBehavior? = null,
 ) {
-    val title = source?.name ?: ""
+    val title = "الاستكشاف"
     val isLocalSource = source is LocalSource
     val isConfigurableSource = source is ConfigurableSource
 

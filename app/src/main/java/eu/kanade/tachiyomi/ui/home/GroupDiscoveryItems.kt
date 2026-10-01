@@ -24,31 +24,7 @@ object GroupDiscoveryItems {
     }
 
     fun group(items: List<HomeDiscoveryItem>): List<HomeDiscoveryItem> {
-        if (items.isEmpty()) return emptyList()
-
-        val groupedMap = LinkedHashMap<String, MutableList<HomeDiscoveryItem>>()
-
-        for (item in items) {
-            val key = normalizeTitle(item.title)
-            val list = groupedMap.getOrPut(key) { mutableListOf() }
-            if (list.none { it.sourceId == item.sourceId && (it.mangaId == item.mangaId || (it.url.isNotEmpty() && it.url == item.url)) }) {
-                list.add(item)
-            }
-        }
-
-        return groupedMap.values.map { group ->
-            val first = group.first()
-            val versions = group.map {
-                HomeSourceVersion(
-                    mangaId = it.mangaId,
-                    sourceId = it.sourceId,
-                    sourceName = it.sourceName,
-                    url = it.url,
-                    title = it.title,
-                )
-            }.distinctBy { it.sourceId }
-
-            first.copy(availableVersions = versions)
-        }
+        // Presentation must never collapse separate source/manga identities.
+        return items.distinctBy { it.sourceId to it.mangaId }.map { it.copy(availableVersions = emptyList()) }
     }
 }

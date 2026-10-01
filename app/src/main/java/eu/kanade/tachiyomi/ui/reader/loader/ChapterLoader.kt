@@ -101,7 +101,7 @@ class ChapterLoader(
                 }
             }
             source is HttpSource -> HttpPageLoader(chapter, source)
-            source is StubSource -> error(context.stringResource(MR.strings.source_not_installed, source.toString()))
+            source is StubSource -> error("هذا المحتوى غير متاح حالياً")
             else -> error(context.stringResource(MR.strings.loader_not_implemented_error))
         }
     }

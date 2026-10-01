@@ -5,7 +5,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -13,13 +12,13 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -35,24 +34,19 @@ import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.Extension
 import androidx.compose.material.icons.outlined.FiberNew
 import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Whatshot
-import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -65,7 +59,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -75,7 +68,6 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.Navigator
-import mihon.domain.source.discovery.model.DiscoveryCategory
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cafe.adriel.voyager.navigator.tab.LocalTabNavigator
 import cafe.adriel.voyager.navigator.tab.TabOptions
@@ -85,19 +77,15 @@ import eu.kanade.presentation.home.MangaroHomeHeader
 import eu.kanade.presentation.home.MangaroMangaCard
 import eu.kanade.presentation.home.MangaroSectionHeader
 import eu.kanade.presentation.home.MangaroSourceChip
-import eu.kanade.presentation.theme.MangaroDesignSystem
-import androidx.compose.material3.Surface
 import eu.kanade.presentation.manga.components.MangaCover as MangaCoverComposable
+import eu.kanade.presentation.theme.MangaroDesignSystem
 import eu.kanade.presentation.util.Tab
-import eu.kanade.presentation.util.formatChapterDisplay
-import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.ui.browse.BrowseTab
-import eu.kanade.tachiyomi.ui.browse.source.browse.BrowseSourceScreen
 import eu.kanade.tachiyomi.ui.browse.source.globalsearch.GlobalSearchScreen
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.more.MoreTab
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
-import tachiyomi.domain.history.model.HistoryWithRelations
+import mihon.domain.source.discovery.model.DiscoveryCategory
 import tachiyomi.presentation.core.components.ScrollbarLazyColumn
 import tachiyomi.presentation.core.components.material.PullRefresh
 import tachiyomi.presentation.core.components.material.Scaffold
@@ -181,10 +169,7 @@ object HomeTab : Tab {
                         }
                         state.installedSources.isEmpty() -> {
                             EmptyDiscoveryCard(
-                                onExploreExtensionsClick = {
-                                    BrowseTab.showExtension()
-                                    tabNavigator.current = BrowseTab
-                                },
+                                onExploreExtensionsClick = { viewModel.onHomeSwipeRefresh() },
                             )
                         }
                     }
@@ -351,28 +336,6 @@ object HomeTab : Tab {
                     }
                 }
 
-                // Section 5: Explore Installed Sources
-                if (state.installedSources.isNotEmpty()) {
-                    item {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        MangaroSectionHeader(
-                            title = "من مصادرك",
-                            icon = Icons.Outlined.Explore,
-                            actionText = "عرض الكل",
-                            onActionClick = { tabNavigator.current = BrowseTab },
-                        )
-                    }
-
-                    item {
-                        InstalledSourcesRow(
-                            sources = state.installedSources,
-                            onSourceClick = { sourceId ->
-                                navigator.push(BrowseSourceScreen(sourceId, null))
-                            },
-                        )
-                    }
-                }
-
                 // Section 5: Quick Access Shortcuts
                 item {
                     Spacer(modifier = Modifier.height(8.dp))
@@ -531,7 +494,7 @@ object HomeTab : Tab {
                                 .padding(horizontal = 8.dp, vertical = 3.dp),
                         ) {
                             Text(
-                                text = item.sourceName,
+                                text = "",
                                 style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                                 color = MaterialTheme.colorScheme.secondary,
                             )
@@ -656,7 +619,7 @@ object HomeTab : Tab {
                     textAlign = TextAlign.Center,
                 )
                 Text(
-                    text = "ثبّت مصادر المانهوا المفضلة لديك لتبدأ الاستكشاف والقراءة.",
+                    text = "تعذّر تحميل القصص حالياً. حاول مجدداً عند توفر الاتصال.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
@@ -668,7 +631,7 @@ object HomeTab : Tab {
                     contentPadding = PaddingValues(horizontal = 18.dp, vertical = 6.dp),
                 ) {
                     Text(
-                        text = "إضافة المصادر",
+                        text = "إعادة المحاولة",
                         color = MaterialTheme.colorScheme.onPrimary,
                         fontWeight = FontWeight.Bold,
                     )
@@ -910,8 +873,8 @@ object HomeTab : Tab {
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        QuickShortcutCard("المصادر", Icons.Outlined.Explore, Modifier.weight(1f), onBrowseClick)
-                        QuickShortcutCard("الإضافات", Icons.Outlined.Extension, Modifier.weight(1f), onExtensionsClick)
+                        QuickShortcutCard("الاستكشاف", Icons.Outlined.Explore, Modifier.weight(1f), onBrowseClick)
+
                     }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -926,8 +889,8 @@ object HomeTab : Tab {
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    QuickShortcutCard("المصادر", Icons.Outlined.Explore, Modifier.weight(1f), onBrowseClick)
-                    QuickShortcutCard("الإضافات", Icons.Outlined.Extension, Modifier.weight(1f), onExtensionsClick)
+                    QuickShortcutCard("الاستكشاف", Icons.Outlined.Explore, Modifier.weight(1f), onBrowseClick)
+
                     QuickShortcutCard("البحث", Icons.Outlined.Search, Modifier.weight(1f), onSearchClick)
                     QuickShortcutCard("التنزيلات", Icons.Outlined.Download, Modifier.weight(1f), onDownloadsClick)
                 }

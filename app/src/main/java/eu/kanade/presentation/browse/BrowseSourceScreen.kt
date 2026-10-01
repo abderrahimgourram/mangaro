@@ -34,7 +34,6 @@ import tachiyomi.presentation.core.components.material.Scaffold
 import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.presentation.core.screens.EmptyScreen
 import tachiyomi.presentation.core.screens.EmptyScreenAction
-import tachiyomi.presentation.core.screens.LoadingScreen
 import tachiyomi.source.local.LocalSource
 
 @Composable
@@ -152,14 +151,14 @@ internal fun MissingSourceScreen(
     Scaffold(
         topBar = { scrollBehavior ->
             AppBar(
-                title = source.name,
+                title = "الاستكشاف",
                 navigateUp = navigateUp,
                 scrollBehavior = scrollBehavior,
             )
         },
     ) { paddingValues ->
         EmptyScreen(
-            message = stringResource(MR.strings.source_not_installed, source.toString()),
+            message = "هذا المحتوى غير متاح حالياً",
             modifier = Modifier.padding(paddingValues),
         )
     }

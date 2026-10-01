@@ -14,7 +14,6 @@ import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.ui.browse.source.globalsearch.SearchItemResult
 import eu.kanade.tachiyomi.ui.browse.source.globalsearch.SearchViewModel
 import eu.kanade.tachiyomi.ui.browse.source.globalsearch.SourceFilter
-import eu.kanade.tachiyomi.util.system.LocaleHelper
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.presentation.core.components.material.Scaffold
 
@@ -40,7 +39,7 @@ fun GlobalSearchScreen(
                 navigateUp = navigateUp,
                 onChangeSearchQuery = onChangeSearchQuery,
                 onSearch = onSearch,
-                hideSourceFilter = false,
+                hideSourceFilter = true,
                 sourceFilter = state.sourceFilter,
                 onChangeSearchFilter = onChangeSearchFilter,
                 onlyShowHasResults = state.onlyShowHasResults,
@@ -76,10 +75,8 @@ internal fun GlobalSearchContent(
         items.forEach { (source, result) ->
             item(key = source.id) {
                 GlobalSearchResultItem(
-                    title = fromSourceId?.let {
-                        "▶ ${source.name}".takeIf { source.id == fromSourceId }
-                    } ?: source.name,
-                    subtitle = LocaleHelper.getLocalizedDisplayName(source.lang),
+                    title = "نتائج البحث",
+                    subtitle = "",
                     onClick = { onClickSource(source) },
                     modifier = Modifier.animateItem(),
                 ) {

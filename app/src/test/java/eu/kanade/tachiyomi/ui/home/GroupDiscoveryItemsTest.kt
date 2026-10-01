@@ -17,15 +17,15 @@ class GroupDiscoveryItemsTest {
     }
 
     @Test
-    fun `verify identical titles from different sources group into single entry with multiple variants`() {
+    fun `verify identical titles from different sources remain separate source identities`() {
         val itemA = HomeDiscoveryItem(mangaId = 10L, title = "Solo Leveling", coverData = MangaCover(10L, 1L, false, "http://coverA.jpg", 0L), sourceId = 100L, sourceName = "Azora")
         val itemB = HomeDiscoveryItem(mangaId = 20L, title = "solo leveling", coverData = MangaCover(20L, 1L, false, "http://coverB.jpg", 0L), sourceId = 200L, sourceName = "MangaDar")
 
         val grouped = GroupDiscoveryItems.group(listOf(itemA, itemB))
 
-        grouped.size shouldBe 1
-        grouped.first().availableVersions.size shouldBe 2
-        grouped.first().availableVersions.map { it.sourceName } shouldContainExactly listOf("Azora", "MangaDar")
+        grouped.size shouldBe 2
+        grouped.first().availableVersions.size shouldBe 0
+        grouped.map { it.sourceId } shouldContainExactly listOf(100L, 200L)
     }
 
     @Test
@@ -58,13 +58,13 @@ class GroupDiscoveryItemsTest {
         val page1Grouped = GroupDiscoveryItems.group(listOf(page1Item))
         val page2Combined = GroupDiscoveryItems.group(page1Grouped + listOf(page2Duplicate))
 
-        page2Combined.size shouldBe 1
-        page2Combined.first().availableVersions.size shouldBe 2
-        page2Combined.first().availableVersions.map { it.sourceName } shouldContainExactly listOf("Azora", "MangaDar")
+        page2Combined.size shouldBe 2
+        page2Combined.first().availableVersions.size shouldBe 0
+        page2Combined.map { it.mangaId } shouldContainExactly listOf(10L, 20L)
     }
 
     @Test
-    fun `verify Home preview limit counts groups rather than raw items`() {
+    fun `verify Home preview keeps separate editions within the existing limit`() {
         val item1A = HomeDiscoveryItem(mangaId = 1L, title = "Manga 1", coverData = MangaCover(1L, 1L, false, "http://cover.jpg", 0L), sourceId = 100L, sourceName = "S1")
         val item1B = HomeDiscoveryItem(mangaId = 2L, title = "Manga 1", coverData = MangaCover(2L, 1L, false, "http://cover.jpg", 0L), sourceId = 200L, sourceName = "S2")
 
@@ -76,6 +76,6 @@ class GroupDiscoveryItemsTest {
         val previewGroups = grouped.take(HOME_DISCOVERY_PREVIEW_LIMIT)
 
         previewGroups.size shouldBe 8
-        previewGroups.first().availableVersions.size shouldBe 2
+        previewGroups.first().availableVersions.size shouldBe 0
     }
 }

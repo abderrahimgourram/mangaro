@@ -9,6 +9,7 @@ import androidx.appcompat.widget.AppCompatTextView
 import androidx.core.view.isNotEmpty
 import androidx.core.view.isVisible
 import com.google.android.material.progressindicator.CircularProgressIndicator
+import eu.kanade.presentation.util.contentErrorMessage
 import eu.kanade.tachiyomi.ui.reader.model.ChapterTransition
 import eu.kanade.tachiyomi.ui.reader.model.ReaderChapter
 import eu.kanade.tachiyomi.ui.reader.viewer.ReaderTransitionView
@@ -120,7 +121,7 @@ class WebtoonTransitionHolder(
     private fun setError(error: Throwable, transition: ChapterTransition) {
         val textView = AppCompatTextView(context).apply {
             wrapContent()
-            text = context.stringResource(MR.strings.transition_pages_error, error.message ?: "")
+            text = context.stringResource(MR.strings.transition_pages_error, error.message.contentErrorMessage() ?: "")
         }
 
         val retryBtn = AppCompatButton(context).apply {

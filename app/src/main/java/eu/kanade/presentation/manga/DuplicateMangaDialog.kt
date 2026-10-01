@@ -278,7 +278,7 @@ private fun DuplicateMangaListItem(
                 )
             }
             Text(
-                text = source.name,
+                text = "نسخة أخرى",
                 style = MaterialTheme.typography.labelSmall,
                 overflow = TextOverflow.Ellipsis,
                 maxLines = 1,

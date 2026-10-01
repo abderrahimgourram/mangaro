@@ -119,12 +119,11 @@ class HomeViewModel(
             }
         }
 
-        // Collect enabled extension sources & fetch discovery catalog
+        // Bundled sources are available independently of legacy extension filters.
         viewModelScope.launch {
-            getEnabledSources.subscribe().collectLatest { sources ->
+            sourceManager.sources.collectLatest { sources ->
                 val onlineSources = sources
-                    .mapNotNull { sourceManager.get(it.id) as? CatalogueSource }
-                    .filter { it is HttpSource }
+                    .filterIsInstance<HttpSource>()
                     .distinctBy { it.id }
 
                 val sourceItems = onlineSources.map {

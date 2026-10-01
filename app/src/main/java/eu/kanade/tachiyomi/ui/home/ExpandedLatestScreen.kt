@@ -195,7 +195,7 @@ class ExpandedLatestScreen : Screen {
                                     )
                                     Spacer(modifier = Modifier.height(2.dp))
                                     Text(
-                                        text = item.sourceName,
+                                        text = "",
                                         style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
                                         color = MaterialTheme.colorScheme.secondary,
                                         maxLines = 1,
@@ -259,7 +259,7 @@ class ExpandedLatestScreen : Screen {
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
                                         Text(
-                                            text = version.sourceName,
+                                            text = "نسخة أخرى",
                                             style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
                                             color = MaterialTheme.colorScheme.onSurface,
                                         )

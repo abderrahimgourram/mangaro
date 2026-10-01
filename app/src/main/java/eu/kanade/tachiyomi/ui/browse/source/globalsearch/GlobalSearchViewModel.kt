@@ -37,6 +37,5 @@ class GlobalSearchViewModel(
 
     override fun getEnabledSources(): List<Source> {
         return super.getEnabledSources()
-            .filter { state.value.sourceFilter != SourceFilter.PinnedOnly || "${it.id}" in pinnedSources }
     }
 }

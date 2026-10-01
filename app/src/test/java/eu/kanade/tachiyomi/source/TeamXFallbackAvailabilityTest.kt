@@ -17,7 +17,6 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.mockk.every
 import io.mockk.mockk
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
@@ -25,6 +24,8 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import mihon.domain.source.registry.DefaultInternalSourceRegistry
 import mihon.domain.source.registry.DefaultSourceCollisionPolicy
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
 import tachiyomi.core.common.preference.InMemoryPreferenceStore
 import tachiyomi.data.source.SourceRepositoryImpl
 import tachiyomi.domain.source.model.StubSource
@@ -33,8 +34,6 @@ import tachiyomi.source.local.image.LocalCoverManager
 import tachiyomi.source.local.io.LocalSourceFileSystem
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.fullType
-import org.junit.jupiter.api.BeforeEach
-import org.junit.jupiter.api.Test
 
 class TeamXFallbackAvailabilityTest {
 
@@ -81,7 +80,7 @@ class TeamXFallbackAvailabilityTest {
     }
 
     @Test
-    fun `verify Arabic enabled with both external and internal provider resolves external as canonical`() = runTest {
+    fun `verify Arabic enabled with both external and internal provider resolves internal as canonical`() = runTest {
         val externalTeamX = TestCatalogueSource(id = teamXId, name = "External Team X", lang = "ar")
         val extension = createInstalledExtension("eu.kanade.tachiyomi.extension.ar.teamx", listOf(externalTeamX))
 
@@ -90,8 +89,8 @@ class TeamXFallbackAvailabilityTest {
 
         val resolvedSource = sourceManager.get(teamXId)
         resolvedSource shouldNotBe null
-        resolvedSource!!.name shouldBe "External Team X"
-        (resolvedSource is TeamX) shouldBe false
+        resolvedSource!!.name shouldBe "Team X"
+        (resolvedSource is TeamX) shouldBe true
     }
 
     @Test
@@ -102,7 +101,7 @@ class TeamXFallbackAvailabilityTest {
         // Step 1: External active
         installedExtensionsFlow.value = listOf(extension)
         val sourceManager = createSourceManager()
-        sourceManager.get(teamXId)!!.name shouldBe "External Team X"
+        sourceManager.get(teamXId)!!.name shouldBe "Team X"
 
         // Step 2: External removed / disabled
         installedExtensionsFlow.value = emptyList()
@@ -136,7 +135,7 @@ class TeamXFallbackAvailabilityTest {
         val getEnabledSources = GetEnabledSources(repository, sourcePreferences)
 
         // Step 1: External active -> GetEnabledSources contains External Team X
-        var enabledList = getEnabledSources.subscribe().first { list -> list.any { it.id == teamXId && it.name == "External Team X" } }
+        var enabledList = getEnabledSources.subscribe().first { list -> list.any { it.id == teamXId && it.name == "Team X" } }
         enabledList.any { it.id == teamXId } shouldBe true
 
         // Step 2: External removed -> GetEnabledSources STILL contains Team X (Internal)
@@ -161,8 +160,8 @@ class TeamXFallbackAvailabilityTest {
 
         // 2. Extension added -> External canonical
         installedExtensionsFlow.value = listOf(extension)
-        sourceManager.sources.first { list -> list.any { it.id == teamXId && it.name == "External Team X" } }
-        sourceManager.get(teamXId)!!.name shouldBe "External Team X"
+        sourceManager.sources.first { list -> list.any { it.id == teamXId && it.name == "Team X" } }
+        sourceManager.get(teamXId)!!.name shouldBe "Team X"
 
         // 3. Extension removed -> Internal canonical again
         installedExtensionsFlow.value = emptyList()
@@ -171,8 +170,8 @@ class TeamXFallbackAvailabilityTest {
 
         // 4. Extension restored -> External canonical again
         installedExtensionsFlow.value = listOf(extension)
-        sourceManager.sources.first { list -> list.any { it.id == teamXId && it.name == "External Team X" } }
-        sourceManager.get(teamXId)!!.name shouldBe "External Team X"
+        sourceManager.sources.first { list -> list.any { it.id == teamXId && it.name == "Team X" } }
+        sourceManager.get(teamXId)!!.name shouldBe "Team X"
     }
 
     @Test
@@ -184,7 +183,7 @@ class TeamXFallbackAvailabilityTest {
 
         for (i in 1..5) {
             val isExternal = i % 2 == 1
-            val expectedName = if (isExternal) "External Team X" else "Team X"
+            val expectedName = "Team X"
             installedExtensionsFlow.value = if (isExternal) listOf(extension) else emptyList()
             sourceManager.sources.first { list -> list.any { it.id == teamXId && it.name == expectedName } }
 
@@ -230,6 +229,15 @@ class TeamXFallbackAvailabilityTest {
         // When Arabic is enabled, internal TeamX becomes visible
         sourcePreferences.enabledLanguages.set(setOf("ar"))
         getEnabledSources.subscribe().first { list -> list.any { it.id == teamXId } }.any { it.id == teamXId } shouldBe true
+    }
+
+    @Test
+    fun `unrelated installed extension never registers as a source`() = runTest {
+        installedExtensionsFlow.value = listOf(createInstalledExtension("third.party", listOf(TestCatalogueSource(123456L, "Third party"))))
+        val manager = createSourceManager()
+        manager.get(123456L) shouldBe null
+        manager.getAll().any { it.id == 123456L } shouldBe false
+        manager.getOrStub(123456L).id shouldBe 123456L
     }
 
     private fun createInstalledExtension(pkgName: String, sources: List<Source>): Extension.Installed {

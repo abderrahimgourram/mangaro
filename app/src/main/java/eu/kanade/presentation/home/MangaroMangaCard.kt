@@ -46,7 +46,7 @@ fun MangaroMangaCard(
         title = item.title,
     )
 
-    val accessibilityLabel = "${item.title} من ${item.sourceName}"
+    val accessibilityLabel = item.title
 
     Card(
         modifier = modifier
@@ -139,27 +139,6 @@ fun MangaroMangaCard(
 
             Spacer(modifier = Modifier.height(2.dp))
 
-            val displaySourceName = if (item.availableVersions.size > 1) {
-                "${item.sourceName} +${item.availableVersions.size - 1}"
-            } else {
-                item.sourceName
-            }
-
-            // Source Name (No chapter information displayed)
-            Text(
-                text = displaySourceName,
-                style = MaterialTheme.typography.labelSmall.copy(
-                    fontSize = 10.5.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    textDirection = TextDirection.Content,
-                ),
-                color = MangaroVisualTokens.GoldAccent,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 2.dp),
-            )
         }
     }
 }
