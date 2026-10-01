@@ -9,6 +9,7 @@ import eu.kanade.tachiyomi.data.download.DownloadManager
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.model.SManga
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.withLock
 import eu.kanade.tachiyomi.source.model.ChapterFetchCompleteness
 import java.io.IOException
 import logcat.LogPriority
@@ -34,6 +35,15 @@ class UpdateMangaFromRemote(
     private val libraryPreferences: LibraryPreferences,
     private val downloadManager: DownloadManager,
 ) {
+    private data class OperationKey(val source: Long, val manga: Long, val url: String, val details: Boolean,
+        val chapters: Boolean, val manual: Boolean, val window: Pair<Long, Long>)
+    private class Pending {
+        val mutex = kotlinx.coroutines.sync.Mutex()
+        var users = 0
+        var result: Result<RemoteMangaUpdate>? = null
+    }
+    companion object { private val pending = mutableMapOf<OperationKey, Pending>() }
+
     suspend operator fun invoke(
         manga: Manga,
         fetchDetails: Boolean = false,
@@ -60,6 +70,20 @@ class UpdateMangaFromRemote(
         manualFetch: Boolean = false,
         fetchWindow: Pair<Long, Long> = Pair(0, 0),
     ): Result<RemoteMangaUpdate> {
+        val key = OperationKey(source.id, manga.id, manga.url, fetchDetails, fetchChapters, manualFetch, fetchWindow)
+        val entry = synchronized(pending) { pending.getOrPut(key) { Pending() }.also { it.users++ } }
+        try {
+            return entry.mutex.withLock {
+                entry.result ?: perform(source, manga, fetchDetails, fetchChapters, manualFetch, fetchWindow)
+                    .also { entry.result = it }
+            }
+        } finally {
+            synchronized(pending) { if (--entry.users == 0) pending.remove(key) }
+        }
+    }
+
+    private suspend fun perform(source: Source, manga: Manga, fetchDetails: Boolean, fetchChapters: Boolean,
+        manualFetch: Boolean, fetchWindow: Pair<Long, Long>): Result<RemoteMangaUpdate> {
         return try {
             require(source.id == manga.source) { "Manga source identity mismatch" }
             val chapters = chapterRepository.getChapterByMangaId(manga.id)
@@ -80,7 +104,7 @@ class UpdateMangaFromRemote(
             if (fetchChapters && update.chapterCompleteness == ChapterFetchCompleteness.FAILED) {
                 throw IOException("Source chapter fetch failed; existing chapters preserved")
             }
-            awaitUpdateFromSource(manga, update.manga, manualFetch)
+            awaitUpdateFromSource(mangaRepository.getMangaById(manga.id), update.manga, manualFetch)
             val newChapters = if (fetchChapters) syncChaptersWithSource.await(
                 rawSourceChapters = update.chapters,
                 manga = manga,
@@ -129,11 +153,11 @@ class UpdateMangaFromRemote(
                 null
             }
 
-        val thumbnailUrl = tachiyomi.domain.manga.model.CoverUrl.valid(remoteManga.thumbnail_url)
+        val thumbnailUrl = tachiyomi.domain.manga.model.CoverUrl.best(localManga.thumbnailUrl, remoteManga.thumbnail_url)
         val coverLastModified = when {
             // Never refresh covers if the url is empty to avoid "losing" existing covers
             thumbnailUrl == null -> null
-            !manualFetch && localManga.thumbnailUrl == thumbnailUrl -> null
+            localManga.thumbnailUrl == thumbnailUrl -> null
             localManga.isLocal() -> Clock.System.now().toEpochMilliseconds()
             localManga.hasCustomCover(coverCache) -> {
                 coverCache.deleteFromCache(localManga, false)

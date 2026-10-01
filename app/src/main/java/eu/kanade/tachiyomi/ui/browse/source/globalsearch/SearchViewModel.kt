@@ -9,6 +9,8 @@ import eu.kanade.tachiyomi.extension.ExtensionManager
 import eu.kanade.tachiyomi.source.Source
 import java.util.concurrent.Executors
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -102,6 +104,10 @@ abstract class SearchViewModel(
     }
 
     fun updateSearchQuery(query: String?) {
+        if (state.value.searchQuery != query) {
+            searchJob?.cancel()
+            lastQuery = null
+        }
         mutableState.update { it.copy(searchQuery = query) }
     }
 
@@ -118,7 +124,12 @@ abstract class SearchViewModel(
         val query = state.value.searchQuery
         val sourceFilter = state.value.sourceFilter
 
-        if (query.isNullOrBlank()) return
+        if (query.isNullOrBlank()) {
+            searchJob?.cancel()
+            lastQuery = null
+            updateItems(emptyMap())
+            return
+        }
 
         val sameQuery = this.lastQuery == query
         if (sameQuery && this.lastSourceFilter == sourceFilter) return
@@ -144,7 +155,7 @@ abstract class SearchViewModel(
             )
         }
 
-        searchJob = viewModelScope.launchIO {
+        searchJob = viewModelScope.launchIO { supervisorScope {
             sources.map { source ->
                 async {
                     if (state.value.items[source] !is SearchItemResult.Loading) {
@@ -153,7 +164,9 @@ abstract class SearchViewModel(
 
                     try {
                         val page = withContext(coroutineDispatcher) {
-                            source.getSearchManga(1, query, source.getFilterList())
+                            mihon.domain.source.health.SourceHealthMonitor.shared.run(source.id, 30_000) {
+                                source.getSearchManga(1, query, source.getFilterList())
+                            }
                         }
 
                         val titles = page.mangas
@@ -161,18 +174,26 @@ abstract class SearchViewModel(
                             .distinctBy { it.url }
                             .let { networkToLocalManga(it) }
 
-                        if (isActive) {
+                        if (isActive && state.value.searchQuery == query) {
                             updateItem(source, SearchItemResult.Success(titles))
                         }
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (e: Exception) {
-                        if (isActive) {
+                        if (isActive && state.value.searchQuery == query) {
                             updateItem(source, SearchItemResult.Error(e))
                         }
                     }
                 }
             }
                 .awaitAll()
-        }
+        } }
+    }
+
+    override fun onCleared() {
+        searchJob?.cancel()
+        coroutineDispatcher.close()
+        super.onCleared()
     }
 
     private fun updateItems(items: Map<Source, SearchItemResult>) {
