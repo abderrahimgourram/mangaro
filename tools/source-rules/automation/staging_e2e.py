@@ -63,17 +63,27 @@ def run(key,token=None,report_path=None):
     props,_=configuration();public=props['sourceRulesPublicKey'];directory=HERE.parent/'staging';root=directory/'public'
     publisher=VercelPublisher(public,key,HOST,json.loads((directory/'hosting.json').read_text()),root,token,{SID},http_factory=lambda:Http(budget=80,delay=.05))
     if publisher.feed==props['sourceRulesUrl']:raise Unsafe('PRODUCTION_SIMULATION_FORBIDDEN')
+    def deploy_fixture():
+        import shutil,tempfile
+        # Artifact deployment: no Android checkout/Git author metadata or private files.
+        with tempfile.TemporaryDirectory(prefix='mangaro-staging-fixture-') as tmp:
+            artifact=Path(tmp)
+            shutil.copytree(root,artifact/'public')
+            shutil.copyfile(directory/'vercel.json',artifact/'vercel.json')
+            (artifact/'.vercel').mkdir()
+            (artifact/'.vercel/project.json').write_text(canonical(publisher.hosting))
+            publisher.command(['deploy','--prod','--yes'],artifact)
     prior=publisher.fetch(SID); revision=verify(prior,public,SID)['revision']+1 if prior else 1
     original=baseline(revision)
     build(root,False)
     signed_baseline=sign(original,key,public)
     path=root/'baseline'/f'{SID}.json';path.parent.mkdir(exist_ok=True);path.write_text(canonical(signed_baseline))
-    publisher.command(['deploy','--prod','--yes'],directory)
+    deploy_fixture()
     await_representation(False)
     http=lambda:Http(budget=80,delay=.05)
     state={'baseline':original,'witness':validate(original,http()),'evidence':capture(original,http())}
     print('Staging healthy: real HTTPS, four manga, full chapter traversal and image verified.')
-    build(root,True);publisher.command(['deploy','--prod','--yes'],directory)
+    build(root,True);deploy_fixture()
     await_representation(True)
     calls=0
     def publish(candidate,previous):
@@ -86,7 +96,7 @@ def run(key,token=None,report_path=None):
         controller.clock=lambda poll=poll:1000000+poll*21600
         state,result=controller.run({'sourceId':SID,'name':'unregistered staging acceptance'},state)
         statuses.append(result['result'])
-    if statuses!=['FAILURE_PENDING','FAILURE_PENDING','REPAIRED'] or calls!=1:raise Unsafe('E2E_AUTOMATIC_REPAIR_FAILED_'+statuses[-1])
+    if statuses!=['FAILURE_PENDING','FAILURE_PENDING','REPAIRED'] or calls!=1:raise Unsafe('E2E_AUTOMATIC_REPAIR_FAILED_'+statuses[-1]+'_'+result.get('reason','UNKNOWN_GATE'))
     fetched=publisher.fetch(SID);current=verify(fetched,public,SID)
     if current!=state['baseline']:raise Unsafe('E2E_PUBLIC_PAYLOAD_MISMATCH')
     # Real HTTPS fresh controller restored from serialized state; no manual candidate payload.
