@@ -1131,12 +1131,14 @@ class MangaViewModel(
                 chapters.applyFilters(manga).toList()
             }
 
+            val verifiedChapterList by lazy { !filterActive && tachiyomi.domain.chapter.service.ChapterListIntegrity.verified(manga, chapters.map { it.chapter }) }
+
             val isAnySelected by lazy {
                 chapters.fastAny { it.selected }
             }
 
             val chapterListItems by lazy {
-                if (hideMissingChapters) {
+                if (hideMissingChapters || filterActive || !tachiyomi.domain.chapter.service.ChapterListIntegrity.verified(manga, chapters.map { it.chapter })) {
                     return@lazy processedChapters
                 }
 
@@ -1148,14 +1150,8 @@ class MangaViewModel(
                     }
                     if (higherChapter == null) return@insertSeparators null
 
-                    if (lowerChapter == null) {
-                        floor(higherChapter.chapter.chapterNumber)
-                            .toInt()
-                            .minus(1)
-                            .coerceAtLeast(0)
-                    } else {
-                        calculateChapterGap(higherChapter.chapter, lowerChapter.chapter)
-                    }
+                    if (lowerChapter == null) return@insertSeparators null
+                    calculateChapterGap(higherChapter.chapter, lowerChapter.chapter)
                         .takeIf { it > 0 }
                         ?.let { missingCount ->
                             ChapterList.MissingCount(

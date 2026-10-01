@@ -95,6 +95,16 @@ class UpdateMangaFromRemote(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            if (fetchChapters && source.id == manga.source) {
+                try {
+                    val current = mangaRepository.getMangaById(manga.id)
+                    if (current.source == manga.source && current.url == manga.url) {
+                        val memo = tachiyomi.domain.chapter.service.ChapterListIntegrity.memo(current, ChapterFetchCompleteness.FAILED.name, chapterRepository.getChapterByMangaId(manga.id))
+                        if (mangaRepository.update(MangaUpdate(manga.id, memo=memo))) eu.kanade.tachiyomi.ui.home.PreferredMangaVariants.remember(current.copy(memo=memo))
+                    }
+                } catch (failure: CancellationException) { throw failure }
+                catch (_: Exception) { /* Keep the original source error if persistence is unavailable. */ }
+            }
             logcat(LogPriority.ERROR, e)
             Result.failure(e)
         }
@@ -148,7 +158,7 @@ class UpdateMangaFromRemote(
                 status = remoteManga.status.takeIf { it != SManga.UNKNOWN }?.toLong(),
                 updateStrategy = if (remoteManga.initialized) remoteManga.update_strategy else localManga.updateStrategy,
                 initialized = remoteManga.initialized || localManga.initialized,
-                memo = kotlinx.serialization.json.JsonObject(localManga.memo + remoteManga.memo),
+                memo = kotlinx.serialization.json.JsonObject(localManga.memo + (remoteManga.memo - tachiyomi.domain.chapter.service.ChapterListIntegrity.KEY)),
             ),
         )
         if (success && title != null) {

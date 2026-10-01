@@ -206,8 +206,11 @@ class MangaLek(
 
         if (fetchChapters) {
             // Never reuse the old list as evidence that a failed remote fetch completed.
-            updatedChapters = doc?.let { parseChapters(it) }.orEmpty()
-            if (updatedChapters.isEmpty()) {
+            updatedChapters = doc?.let(::parseChapters).orEmpty()
+            var usedFullEndpoint = false
+            // A nonempty HTML list may contain only the latest chapter. Always ask the
+            // existing full-list endpoint when its source-provided manga ID is available.
+            run {
                 val mangaId = doc?.selectFirst("div#manga-chapters-holder")?.attr("data-id")
                     .orEmpty()
                     .ifBlank { doc?.selectFirst("input.rating_post_id")?.attr("value").orEmpty() }
@@ -220,11 +223,20 @@ class MangaLek(
                         .add("manga", mangaId)
                         .build()
                     val ajaxReq = POST("$baseUrl/wp-admin/admin-ajax.php", headers, formBody)
-                    val ajaxResp = directClient.newCall(ajaxReq).awaitSuccess()
-                    val ajaxDoc = ajaxResp.asJsoup()
-                    SourceValidationUtil.checkCloudflareOrError(ajaxDoc)
-                    updatedChapters = parseChapters(ajaxDoc)
+                    try {
+                        val ajaxDoc = directClient.newCall(ajaxReq).awaitSuccess().use { it.asJsoup() }
+                        SourceValidationUtil.checkCloudflareOrError(ajaxDoc)
+                        val full = eu.kanade.tachiyomi.source.internal.util.ChapterPagination.collect(this, ajaxDoc, cleanUrl, ::parseChapters)
+                        // Same current URL is authoritative; do not merge different chapter identities by number.
+                        updatedChapters = (updatedChapters + full).associateBy { it.url }.values.toList()
+                        usedFullEndpoint = true
+                    } catch (e: CancellationException) { throw e }
+                    catch (e: Exception) { if (updatedChapters.isEmpty()) throw e }
+
                 }
+            }
+            if (!usedFullEndpoint && doc != null && updatedChapters.isNotEmpty()) {
+                updatedChapters = eu.kanade.tachiyomi.source.internal.util.ChapterPagination.collect(this, doc, cleanUrl, ::parseChapters)
             }
             if (updatedChapters.isEmpty()) {
                 throw IOException("MangaLek returned 0 chapters for manga ${manga.title}")

@@ -211,7 +211,7 @@ class Hijala(
 
         val updatedManga = if (fetchDetails) parseMangaDetails(document, manga) else manga
         val updatedChapters = if (fetchChapters) {
-            val parsed = parseChapters(document)
+            val parsed = eu.kanade.tachiyomi.source.internal.util.ChapterPagination.collect(this, document, manga.url, ::parseChapters)
             if (parsed.isEmpty()) {
                 throw IOException("Hijala returned 0 chapters for ${manga.title}")
             }

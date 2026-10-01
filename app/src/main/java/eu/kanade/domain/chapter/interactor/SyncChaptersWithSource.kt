@@ -60,6 +60,13 @@ class SyncChaptersWithSource(
         fetchWindow: Pair<Long, Long> = Pair(0, 0),
         completeness: ChapterFetchCompleteness = ChapterFetchCompleteness.DEGRADED,
     ): List<Chapter> {
+        require(source.id == manga.source) { "Chapter source identity mismatch" }
+        // Invalidate proof before any write; failure/cancellation cannot leave a falsely verified list.
+        suspend fun recordIntegrity(state: ChapterFetchCompleteness) {
+            val rows = chapterRepository.getChapterByMangaId(manga.id)
+            updateManga.awaitChapterIntegrity(manga, state.name, rows)
+        }
+        recordIntegrity(if (completeness == ChapterFetchCompleteness.FAILED) completeness else ChapterFetchCompleteness.DEGRADED)
         if (completeness == ChapterFetchCompleteness.FAILED) {
             throw java.io.IOException("Chapter fetch failed; existing chapters preserved")
         }
@@ -80,9 +87,12 @@ class SyncChaptersWithSource(
             }
 
         // A URL collision may contain different remote IDs. Never silently drop a row.
-        if (sourceChapters.any { it.url.isBlank() } || sourceChapters.map { it.url }.toSet().size != sourceChapters.size) {
+        if (sourceChapters.any { it.url.isBlank() || it.name.isBlank() } || sourceChapters.map { it.url }.toSet().size != sourceChapters.size) {
             throw java.io.IOException("Invalid or duplicate chapter URLs; existing chapters preserved")
         }
+        val effectiveCompleteness = if (completeness == ChapterFetchCompleteness.COMPLETE &&
+            sourceChapters.size == 1 && ChapterRecognition.parseChapterNumber(manga.title, sourceChapters.single().name, sourceChapters.single().chapterNumber) > 1.0 && !source.isLocal()
+        ) ChapterFetchCompleteness.DEGRADED else completeness
         val ids = sourceChapters.flatMap { ChapterIdentity.remoteIds(it, source.id) }
         if (ids.toSet().size != ids.size) throw java.io.IOException("Duplicate remote chapter identities; existing chapters preserved")
         val dbChapters = getChaptersByMangaId.await(manga.id)
@@ -90,17 +100,17 @@ class SyncChaptersWithSource(
         val newChapters = mutableListOf<Chapter>()
         val updatedChapters = mutableListOf<Chapter>()
         val identityUpdates = mutableListOf<ChapterUpdate>()
-        var identityPlan = ChapterIdentity.reconcile(source.id, manga.source, manga.id, dbChapters, sourceChapters, allowFingerprint = completeness == ChapterFetchCompleteness.COMPLETE || source.isLocal())
+        var identityPlan = ChapterIdentity.reconcile(source.id, manga.source, manga.id, dbChapters, sourceChapters, allowFingerprint = effectiveCompleteness == ChapterFetchCompleteness.COMPLETE || source.isLocal())
         if (source is HttpSource && identityPlan.unresolved) {
             val matched = identityPlan.matches.values.map { it.id }.toSet()
             val redirects = ResolveChapterRedirects().await(source, dbChapters.filterNot { it.id in matched }, sourceChapters)
-            if (redirects.isNotEmpty()) identityPlan = ChapterIdentity.reconcile(source.id, manga.source, manga.id, dbChapters, sourceChapters, redirects, allowFingerprint = completeness == ChapterFetchCompleteness.COMPLETE || source.isLocal())
+            if (redirects.isNotEmpty()) identityPlan = ChapterIdentity.reconcile(source.id, manga.source, manga.id, dbChapters, sourceChapters, redirects, allowFingerprint = effectiveCompleteness == ChapterFetchCompleteness.COMPLETE || source.isLocal())
         }
         if (identityPlan.unresolved) {
             mihon.domain.source.health.SourceHealthMonitor.shared.degrade(source.id)
             this.logcat(LogPriority.WARN) { "Degraded chapter reconciliation for manga ${manga.id}; unresolved rows preserved" }
         }
-        val mayRemoveChapters = source.isLocal() || completeness == ChapterFetchCompleteness.COMPLETE && !identityPlan.unresolved
+        val mayRemoveChapters = source.isLocal() || effectiveCompleteness == ChapterFetchCompleteness.COMPLETE && !identityPlan.unresolved
         // Retain matched local IDs, including rows whose remote URL will change below.
         // Comparing the old URL snapshot schedules in-place migrations for deletion.
         val retainedIds = identityPlan.matches.values.map { it.id }.toSet()
@@ -143,9 +153,19 @@ class SyncChaptersWithSource(
                 val moved = dbChapter.copy(url = chapter.url, memo = kotlinx.serialization.json.JsonObject(dbChapter.memo + chapter.memo))
                 MigrateChapterIdentity(chapterRepository, downloadManager).await(source, manga, dbChapter, moved)
                 identityUpdates += ChapterUpdate(dbChapter.id, url = moved.url, memo = moved.memo)
+                if (effectiveCompleteness == ChapterFetchCompleteness.COMPLETE && dbChapter.sourceOrder != chapter.sourceOrder) {
+                    updatedChapters += moved.copy(sourceOrder = chapter.sourceOrder)
+                }
             } else {
                 if (shouldUpdateDbChapter.await(dbChapter, chapter)) {
-                    val shouldRenameChapter = downloadProvider.isChapterDirNameChanged(dbChapter, chapter) &&
+                    var toChangeChapter = dbChapter.copy(
+                        name = chapter.name,
+                        chapterNumber = chapter.chapterNumber.takeIf { it >= 0 || it == -2.0 } ?: dbChapter.chapterNumber,
+                        scanlator = chapter.scanlator?.takeIf { it.isNotBlank() } ?: dbChapter.scanlator,
+                        sourceOrder = if (effectiveCompleteness == ChapterFetchCompleteness.COMPLETE) chapter.sourceOrder else dbChapter.sourceOrder,
+                        memo = kotlinx.serialization.json.JsonObject(dbChapter.memo + chapter.memo),
+                    )
+                    val shouldRenameChapter = downloadProvider.isChapterDirNameChanged(dbChapter, toChangeChapter) &&
                         downloadManager.isChapterDownloaded(
                             dbChapter.name,
                             dbChapter.scanlator,
@@ -153,18 +173,9 @@ class SyncChaptersWithSource(
                             manga.title,
                             manga.source,
                         )
-
                     if (shouldRenameChapter) {
-                        downloadManager.renameChapter(source, manga, dbChapter, chapter)
+                        downloadManager.renameChapter(source, manga, dbChapter, toChangeChapter)
                     }
-
-                    var toChangeChapter = dbChapter.copy(
-                        name = chapter.name,
-                        chapterNumber = chapter.chapterNumber,
-                        scanlator = chapter.scanlator,
-                        sourceOrder = chapter.sourceOrder,
-                        memo = kotlinx.serialization.json.JsonObject(dbChapter.memo + chapter.memo),
-                    )
 
                     if (chapter.dateUpload != 0L) {
                         toChangeChapter = toChangeChapter.copy(dateUpload = chapter.dateUpload)
@@ -184,6 +195,7 @@ class SyncChaptersWithSource(
                     fetchWindow,
                 )
             }
+            recordIntegrity(if (identityPlan.unresolved) ChapterFetchCompleteness.DEGRADED else effectiveCompleteness)
             return emptyList()
         }
 
@@ -243,6 +255,10 @@ class SyncChaptersWithSource(
         // Note that last_update actually represents last time the chapter list changed at all
         updateManga.awaitUpdateLastUpdate(manga.id)
 
+        val finalRows = chapterRepository.getChapterByMangaId(manga.id)
+        val verified = effectiveCompleteness == ChapterFetchCompleteness.COMPLETE && !identityPlan.unresolved &&
+            !isChapterCountCollapse && finalRows.size == sourceChapters.size
+        recordIntegrity(if (verified) ChapterFetchCompleteness.COMPLETE else if (effectiveCompleteness == ChapterFetchCompleteness.COMPLETE) ChapterFetchCompleteness.DEGRADED else effectiveCompleteness)
         val excludedScanlators = getExcludedScanlators.await(manga.id).toHashSet()
 
         return updatedToAdd.filterNot { it.url in changedOrDuplicateReadUrls || it.scanlator in excludedScanlators }

@@ -5,6 +5,7 @@ import eu.kanade.tachiyomi.ui.reader.model.ReaderChapter
 import tachiyomi.domain.chapter.service.calculateChapterGap as domainCalculateChapterGap
 
 fun calculateChapterGap(higherReaderChapter: ReaderChapter?, lowerReaderChapter: ReaderChapter?): Int {
+    if (higherReaderChapter?.verifiedChapterList != true || lowerReaderChapter?.verifiedChapterList != true) return 0
     return domainCalculateChapterGap(
         higherReaderChapter?.chapter?.toDomainChapter(),
         lowerReaderChapter?.chapter?.toDomainChapter(),

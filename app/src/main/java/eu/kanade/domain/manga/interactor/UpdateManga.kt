@@ -14,6 +14,15 @@ class UpdateManga(
     private val fetchInterval: FetchInterval,
 ) {
 
+    suspend fun awaitChapterIntegrity(manga: Manga, state: String, chapters: List<tachiyomi.domain.chapter.model.Chapter>): Boolean {
+        val current = mangaRepository.getMangaById(manga.id)
+        require(current.source == manga.source && current.url == manga.url) { "Manga identity changed during chapter fetch" }
+        val memo = tachiyomi.domain.chapter.service.ChapterListIntegrity.memo(current, state, chapters)
+        val saved = mangaRepository.update(MangaUpdate(manga.id, memo = memo))
+        if (saved) eu.kanade.tachiyomi.ui.home.PreferredMangaVariants.remember(current.copy(memo=memo))
+        return saved
+    }
+
     suspend fun await(mangaUpdate: MangaUpdate): Boolean {
         return mangaRepository.update(mangaUpdate)
     }

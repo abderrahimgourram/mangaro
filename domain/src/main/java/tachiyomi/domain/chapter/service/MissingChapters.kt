@@ -22,10 +22,10 @@ fun List<Double>.missingChaptersCount(): Int {
     }
 
     var missingChaptersCount = 0
-    var previousChapter = 0 // The actual chapter number, not the array index
+    var previousChapter = chapters.first() // Do not invent chapters preceding the earliest available entry
 
     // We go from 0 to lastChapter - Make sure to use the current index instead of the value
-    for (i in chapters.indices) {
+    for (i in 1 until chapters.size) {
         val currentChapter = chapters[i]
         if (currentChapter > previousChapter + 1) {
             // Add the amount of missing chapters

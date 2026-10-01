@@ -162,7 +162,7 @@ class MangaRepositoryImpl(
                     status = remote.status.takeIf { it != 0L } ?: existing?.status ?: remote.status,
                     initialized = remote.initialized || existing?.initialized == true,
                     updateStrategy = if (remote.initialized) remote.updateStrategy else existing?.updateStrategy ?: remote.updateStrategy,
-                    memo = kotlinx.serialization.json.JsonObject(existing?.memo.orEmpty() + remote.memo),
+                    memo = kotlinx.serialization.json.JsonObject(existing?.memo.orEmpty() + (remote.memo - tachiyomi.domain.chapter.service.ChapterListIntegrity.KEY)),
                 )
                 database.mangasQueries.insertNetworkManga(
                     source = it.source,

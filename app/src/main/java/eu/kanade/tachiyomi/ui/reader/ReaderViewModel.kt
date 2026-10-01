@@ -232,7 +232,11 @@ class ReaderViewModel @JvmOverloads constructor(
                 }
             }
             .map { it.toDbChapter() }
-            .map(::ReaderChapter)
+            .map { ReaderChapter(it).also { reader ->
+                reader.verifiedChapterList = tachiyomi.domain.chapter.service.ChapterListIntegrity.verified(manga, unfilteredChapterList) &&
+                    chaptersForReader.size == unfilteredChapterList.size && !basePreferences.downloadedOnly.get() &&
+                    !readerPreferences.skipRead.get() && !readerPreferences.skipFiltered.get()
+            } }
     }
 
     private val incognitoMode: Boolean by lazy { getIncognitoState.await(manga?.source) }
