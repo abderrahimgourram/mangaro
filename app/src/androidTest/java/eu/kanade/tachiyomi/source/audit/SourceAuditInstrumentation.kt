@@ -16,6 +16,7 @@ import eu.kanade.tachiyomi.source.internal.hijala.Hijala
 import eu.kanade.tachiyomi.source.internal.mangadar.MangaDar
 import eu.kanade.tachiyomi.source.internal.mangalek.MangaLek
 import eu.kanade.tachiyomi.source.internal.mangatime.MangaTime
+import eu.kanade.tachiyomi.source.internal.mangaswat.MangaSwat
 import eu.kanade.tachiyomi.source.internal.teamx.TeamX
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.Page
@@ -149,17 +150,53 @@ class SourceAuditInstrumentation : Instrumentation() {
         record("${source.javaClass.simpleName} UI catalogue first=$firstTitle visible")
     }
 
+    private suspend fun verifyOfflineReader(manga: Manga, chapter: tachiyomi.domain.chapter.model.Chapter) {
+        fun shell(command: String) { uiAutomation.executeShellCommand(command).use { android.os.ParcelFileDescriptor.AutoCloseInputStream(it).readBytes() } }
+        val connectivity = targetContext.getSystemService(android.net.ConnectivityManager::class.java)
+        val monitor = addMonitor(ReaderActivity::class.java.name, null, false)
+        var reader: ReaderActivity? = null
+        try {
+            shell("svc wifi disable")
+            shell("svc data disable")
+            withTimeout(15_000) { while (connectivity.activeNetwork != null) delay(250) }
+            record("MangaSwat offline activeNetwork=null")
+            targetContext.startActivity(ReaderActivity.newIntent(targetContext, manga.id, chapter.id).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            reader = monitor.waitForActivityWithTimeout(20_000) as? ReaderActivity ?: error("Offline Reader did not open")
+            var vm: eu.kanade.tachiyomi.ui.reader.ReaderViewModel? = null
+            runOnMainSync { vm = reader!!.viewModel }
+            withTimeout(60_000) {
+                while (true) {
+                    vm!!.state.value.initError?.let { throw it }
+                    val current = vm!!.state.value.currentChapter
+                    (current?.state as? ReaderChapter.State.Error)?.let { throw it.error }
+                    var rendered = false
+                    runOnMainSync { rendered = hasRenderedImage(reader!!.window.decorView) }
+                    if (current?.chapter?.id == chapter.id && current.pageLoader is DownloadPageLoader && rendered) break
+                    delay(250)
+                }
+            }
+            saveScreenshot("MangaSwat-offline-reader.png")
+            record("MangaSwat OFFLINE Reader RENDERED loader=DownloadPageLoader pages=${vm!!.state.value.currentChapter!!.pages!!.size}")
+        } finally {
+            reader?.let { runOnMainSync { it.finish() } }
+            removeMonitor(monitor)
+            shell("svc wifi enable")
+            shell("svc data enable")
+        }
+    }
+
     override fun onStart() {
         super.onStart()
         waitForIdleSync()
         runBlocking {
             val manager = Injekt.get<SourceManager>()
             withTimeout(30_000) { manager.isInitialized.first { it } }
-            val sources = listOf(TeamX(), MangaTime(), MangaLek(), Azora(), Hijala(), MangaDar()).map {
+            val sources = listOf(TeamX(), MangaTime(), MangaLek(), Azora(), Hijala(), MangaDar(), MangaSwat()).map {
                 val registered = manager.get(it.id) as? HttpSource ?: error("Source not registered: ${it.name}")
                 check(registered.javaClass == it.javaClass) { "UI uses another implementation: ${registered.javaClass}" }
                 registered
             }
+            record("Registered MangaSwat origin=${manager.get(MangaSwat().id)?.javaClass?.name}; external preferred default retained")
             for (source in sources.filter { selected == null || it.javaClass.simpleName == selected }) {
                 suspend fun step(name: String, action: suspend () -> Unit) {
                     try { withTimeout(180_000) { action() } } catch (e: Exception) {
@@ -200,7 +237,7 @@ class SourceAuditInstrumentation : Instrumentation() {
                 step("search") {
                     val query = first?.title?.split(' ')?.firstOrNull() ?: "solo"
                     val result = source.getSearchManga(1, query, FilterList())
-                    record("${source.javaClass.simpleName} search query=$query count=${result.mangas.size} filters=${source.getFilterList().size}")
+                    record("${source.javaClass.simpleName} search query=$query count=${result.mangas.size} next=${result.hasNextPage} filters=${source.getFilterList().size}")
                 }
                 if (full) step("catalogue-ui") {
                     openCatalogueUi(source, first?.title ?: error("No catalogue manga"))
@@ -216,7 +253,71 @@ class SourceAuditInstrumentation : Instrumentation() {
                         if (!catalogueOnly) openCatalogueUi(source, first!!.title)
                     }
                 }
+                if (source is MangaSwat && full) step("latest-search-ui") {
+                    check(clickText("الأحدث")) { "Latest UI action unavailable" }
+                    val latest = source.getLatestUpdates(1).mangas.first()
+                    waitForText(latest.title)
+                    saveScreenshot("MangaSwat-latest.png")
+                    record("MangaSwat UI Latest rendered title=${latest.title}")
+                    check(clickText("بحث")) { "Search UI action unavailable" }
+                    delay(500)
+                    uiAutomation.executeShellCommand("input text Revenge").use { android.os.ParcelFileDescriptor.AutoCloseInputStream(it).readBytes() }
+                    delay(500)
+                    saveScreenshot("MangaSwat-search-input.png")
+                    // Submit with the on-screen IME action, matching phone input.
+                    val screen = uiAutomation.takeScreenshot() ?: error("Keyboard screenshot unavailable")
+                    val x = screen.width * 0.92f
+                    val y = screen.height * 0.91f
+                    screen.recycle()
+                    val time = android.os.SystemClock.uptimeMillis()
+                    for (action in listOf(android.view.MotionEvent.ACTION_DOWN, android.view.MotionEvent.ACTION_UP)) {
+                        val event = android.view.MotionEvent.obtain(time, android.os.SystemClock.uptimeMillis(), action, x, y, 0)
+                        event.source = android.view.InputDevice.SOURCE_TOUCHSCREEN
+                        check(uiAutomation.injectInputEvent(event, true))
+                        event.recycle()
+                    }
+                    val searchTitle = source.getSearchManga(1, "Revenge", FilterList()).mangas.first().title
+                    waitForText(searchTitle)
+                    delay(500)
+                    saveScreenshot("MangaSwat-search.png")
+                    record("MangaSwat UI Search Revenge rendered first=$searchTitle count=9")
+                    openCatalogueUi(source, first!!.title)
+                }
                 if (matrix) {
+                    if (source is MangaSwat) step("latest-terminal-page") {
+                        source.client.newCall(source.latestUpdatesRequest(1)).awaitSuccess().use { response ->
+                            val root = kotlinx.serialization.json.Json.parseToJsonElement(response.body.string()).jsonObject
+                            val count = root["count"]!!.jsonPrimitive.intOrNull!!
+                            val size = (root["results"] as kotlinx.serialization.json.JsonArray).size
+                            val last = (count + size - 1) / size
+                            val result = source.getLatestUpdates(last)
+                            check(!result.hasNextPage)
+                            record("MangaSwat latest total=$count terminalPage=$last count=${result.mangas.size} next=false")
+                        }
+                    }
+                    if (source is MangaSwat) step("large-chapter-pagination") {
+                        val sample = source.getPopularManga(1).mangas.first { it.title == "Nano Machine" }
+                        val update = source.getMangaUpdate(sample, emptyList(), true, true)
+                        var next: String? = source.baseUrl + "/v2/api/v2/chapters/?serie=${sample.url}&order_by=-order&page_size=200"
+                        val ids = mutableSetOf<String>()
+                        var pages = 0
+                        var count = -1
+                        while (next != null) {
+                            check(++pages <= 100)
+                            source.client.newCall(GET(next!!, source.headers)).awaitSuccess().use { response ->
+                                val body = response.body.string()
+                                targetContext.openFileOutput("MangaSwat-large-chapters-$pages.txt", 0).use { it.write(body.toByteArray()) }
+                                val root = kotlinx.serialization.json.Json.parseToJsonElement(body).jsonObject
+                                count = root["count"]!!.jsonPrimitive.intOrNull!!
+                                (root["results"] as kotlinx.serialization.json.JsonArray).forEach { ids.add(it.jsonObject["id"]!!.jsonPrimitive.content) }
+                                next = root["next"]!!.jsonPrimitive.let { if (it is kotlinx.serialization.json.JsonNull) null else it.content }
+                                record("MangaSwat large raw page=$pages accumulated=${ids.size} next=${next != null}")
+                            }
+                        }
+                        check(ids.size == count && ids.size == update.chapters.size)
+                        check(update.chapterCompleteness == eu.kanade.tachiyomi.source.model.ChapterFetchCompleteness.COMPLETE)
+                        record("MangaSwat Nano Machine live=$count internal=${update.chapters.size} pages=$pages COMPLETE")
+                    }
                     if (source is TeamX) step("large-chapter-pagination") {
                         val manga = eu.kanade.tachiyomi.source.model.SManga.create().apply { url = "/series/god-of-martial-arts" }
                         val update = source.getMangaUpdate(manga, emptyList(), true, true)
@@ -372,7 +473,7 @@ class SourceAuditInstrumentation : Instrumentation() {
                             if (body.trimStart().startsWith("{")) {
                                 val root = kotlinx.serialization.json.Json.parseToJsonElement(body).jsonObject
                                 val data = root["result"]?.jsonObject?.get("data")?.jsonObject?.get("json")?.jsonObject ?: root
-                                data["totalPages"]?.jsonPrimitive?.intOrNull
+                                if (source is MangaSwat) (root["count"]!!.jsonPrimitive.intOrNull!! + root["results"]!!.let { (it as kotlinx.serialization.json.JsonArray).size } - 1) / (root["results"] as kotlinx.serialization.json.JsonArray).size else data["totalPages"]?.jsonPrimitive?.intOrNull
                                     ?: data["totalCount"]?.jsonPrimitive?.intOrNull?.let { (it + 23) / 24 }
                             } else {
                                 val doc = Jsoup.parse(body)
@@ -393,21 +494,55 @@ class SourceAuditInstrumentation : Instrumentation() {
                         }
                     }
                 }
+                if (source is Azora) step("rebirth-null-runtime") {
+                    val manga = source.getSearchManga(1, "Rebirth Of The Urban Immortal Cultivator", FilterList()).mangas
+                        .first { it.title == "Rebirth Of The Urban Immortal Cultivator" }
+                    val update = source.getMangaUpdate(manga, emptyList(), true, true)
+                    val body = source.client.newCall(GET(source.baseUrl + "/api/post?postSlug=" + manga.url.substringBefore('#'), source.headers)).awaitSuccess().use { it.body.string() }
+                    targetContext.openFileOutput("Azora-Rebirth-details.json", 0).use { it.write(body.toByteArray()) }
+                    val count = kotlinx.serialization.json.Json.parseToJsonElement(body).jsonObject["post"]!!.jsonObject["_count"]!!.jsonObject["chapters"]!!.jsonPrimitive.intOrNull!!
+                    check(count == update.chapters.size)
+                    record("Azora Rebirth details initialized=${update.manga.initialized} description=${update.manga.description?.length} genres=${update.manga.genre} live=$count internal=${update.chapters.size} COMPLETE=${update.chapterCompleteness}")
+                    if (full) {
+                        val local = Injekt.get<NetworkToLocalManga>().invoke(Manga.create().copy(source=source.id, url=update.manga.url, title=update.manga.title).copyFrom(update.manga))
+                        Injekt.get<SyncChaptersWithSource>().await(update.chapters, local, source, completeness=update.chapterCompleteness)
+                        targetContext.startActivity(Intent(targetContext, eu.kanade.tachiyomi.ui.main.MainActivity::class.java)
+                            .setAction(tachiyomi.core.common.Constants.SHORTCUT_MANGA)
+                            .putExtra(tachiyomi.core.common.Constants.MANGA_EXTRA, local.id)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
+                        waitForText(update.manga.title)
+                        waitForText(count.toString())
+                        saveScreenshot("Azora-Rebirth-details.png")
+                        record("Azora Rebirth UI details and $count chapters visible")
+                        openCatalogueUi(source, first!!.title)
+                    }
+                }
                 if (catalogueOnly) continue
                 first?.let { manga -> step("details-chapters-reader") {
+                    val catalogueUrl = manga.url
+                    val catalogueMemo = manga.memo
                     val update = source.getMangaUpdate(manga, emptyList(), true, true)
+                    if (source is MangaSwat) check(update.manga.url == catalogueUrl && update.manga.memo == catalogueMemo) { "MangaSwat catalogue identity changed in details" }
                     if (source is MangaDar) source.client.newCall(GET(source.baseUrl + manga.url, source.headers)).awaitSuccess().use { response ->
                         targetContext.openFileOutput("MangaDar-details.txt", 0).use { it.write(response.body.bytes()) }
                     }
                     record("${source.javaClass.simpleName} completeness=${update.chapterCompleteness}")
                     record("${source.javaClass.simpleName} details url=${update.manga.url} title=${update.manga.title} cover=${!update.manga.thumbnail_url.isNullOrBlank()} initialized=${update.manga.initialized} chapters=${update.chapters.size}")
                     val evidenceUrl = when (source) {
+                        is MangaSwat -> source.baseUrl + "/v2/api/v2/chapters/?serie=${manga.url}&order_by=-order&page_size=200"
                         is MangaTime -> source.baseUrl + "/api/trpc/content.getChapters?input=" + URLEncoder.encode("""{"json":{"seriesId":"${manga.url.substringAfter('#')}","limit":-1}}""", "UTF-8")
                         is Azora -> source.baseUrl + "/api/chapters?postId=" + manga.url.substringAfter('#')
                         else -> source.baseUrl + manga.url.substringBefore('#')
                     }
                     source.client.newCall(GET(evidenceUrl, source.headers)).awaitSuccess().use { response ->
-                        targetContext.openFileOutput("${source.javaClass.simpleName}-chapters.txt", 0).use { it.write(response.body.bytes()) }
+                        val body = response.body.string()
+                        targetContext.openFileOutput("${source.javaClass.simpleName}-chapters.txt", 0).use { it.write(body.toByteArray()) }
+                        if (source is MangaSwat) {
+                            val root = kotlinx.serialization.json.Json.parseToJsonElement(body).jsonObject
+                            val count = root["count"]!!.jsonPrimitive.intOrNull!!
+                            check(count == update.chapters.size) { "MangaSwat live count mismatch" }
+                            record("MangaSwat Android live=$count internal=${update.chapters.size} urlIdentity=${update.manga.url == manga.url} mangaMemo=${manga.memo}")
+                        }
                     }
                     if (source is Hijala) {
                         val newest = update.chapters.first()
@@ -443,6 +578,7 @@ class SourceAuditInstrumentation : Instrumentation() {
                         )
                         Injekt.get<SyncChaptersWithSource>().await(update.chapters, local, source, completeness = update.chapterCompleteness)
                         val dbChapter = Injekt.get<ChapterRepository>().getChapterByMangaId(local.id).first { it.url == chapter.url }
+                        if (source is MangaSwat) check(dbChapter.memo == chapter.memo) { "MangaSwat remote chapter memo lost in DB" }
                         record("${source.javaClass.simpleName} UI ids manga=${local.id} chapter=${dbChapter.id}")
                         check(clickText(update.manga.title)) { "Catalogue detail card unavailable" }
                         waitForText(update.chapters.size.toString())
@@ -522,6 +658,8 @@ class SourceAuditInstrumentation : Instrumentation() {
                             }
                             record("${source.javaClass.simpleName} DOWNLOAD complete originals=${originalGroups.size} storedImages=${downloadedPages.size}")
                         } finally { loader.recycle() }
+                        if (source is MangaSwat) verifyOfflineReader(local, dbChapter)
+
                     }
 
                 } }
