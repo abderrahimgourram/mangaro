@@ -173,6 +173,7 @@ abstract class SearchViewModel(
                             .map { it.toDomainManga(source.id) }
                             .distinctBy { it.url }
                             .let { networkToLocalManga(it) }
+                            .let { eu.kanade.tachiyomi.source.internal.util.DiscoveryChapterGate.filter(it) }
 
                         if (isActive && state.value.searchQuery == query) {
                             updateItem(source, SearchItemResult.Success(titles))

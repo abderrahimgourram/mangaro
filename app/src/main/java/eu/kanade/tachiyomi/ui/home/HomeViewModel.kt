@@ -230,7 +230,7 @@ class HomeViewModel(
                 hasMoreUpdates[res.sourceId] = res.hasNextPage
                 if (res.items.isEmpty()) continue
                 val domainMangas = res.items.take(12).map { it.toDomainManga() }
-                val localMangas = networkToLocalManga(domainMangas)
+                val localMangas = networkToLocalManga(domainMangas).let { eu.kanade.tachiyomi.source.internal.util.DiscoveryChapterGate.filter(it) }
                 val items = localMangas.mapIndexed { idx, manga ->
                     HomeDiscoveryItem(
                         mangaId = manga.id,
@@ -238,7 +238,7 @@ class HomeViewModel(
                         coverData = manga.also { PreferredMangaVariants.remember(it) }.asMangaCover(),
                         sourceId = res.sourceId,
                         sourceName = res.sourceName,
-                        url = res.items.getOrNull(idx)?.url ?: manga.url,
+                        url = manga.url,
                     )
                 }
                 if (items.isNotEmpty()) perSourcePopular.add(items)
@@ -250,7 +250,7 @@ class HomeViewModel(
                 hasMoreUpdates[res.sourceId] = res.hasNextPage
                 if (res.items.isEmpty()) continue
                 val domainMangas = res.items.take(12).map { it.toDomainManga() }
-                val localMangas = networkToLocalManga(domainMangas)
+                val localMangas = networkToLocalManga(domainMangas).let { eu.kanade.tachiyomi.source.internal.util.DiscoveryChapterGate.filter(it) }
                 val items = localMangas.mapIndexed { idx, manga ->
                     HomeDiscoveryItem(
                         mangaId = manga.id,
@@ -258,7 +258,7 @@ class HomeViewModel(
                         coverData = manga.also { PreferredMangaVariants.remember(it) }.asMangaCover(),
                         sourceId = res.sourceId,
                         sourceName = res.sourceName,
-                        url = res.items.getOrNull(idx)?.url ?: manga.url,
+                        url = manga.url,
                     )
                 }
                 if (items.isNotEmpty()) perSourceLatest.add(items)
@@ -270,7 +270,7 @@ class HomeViewModel(
                 hasMoreUpdates[res.sourceId] = res.hasNextPage
                 if (res.items.isEmpty()) continue
                 val domainMangas = res.items.take(12).map { it.toDomainManga() }
-                val localMangas = networkToLocalManga(domainMangas)
+                val localMangas = networkToLocalManga(domainMangas).let { eu.kanade.tachiyomi.source.internal.util.DiscoveryChapterGate.filter(it) }
                 val items = localMangas.mapIndexed { idx, manga ->
                     HomeDiscoveryItem(
                         mangaId = manga.id,
@@ -278,7 +278,7 @@ class HomeViewModel(
                         coverData = manga.also { PreferredMangaVariants.remember(it) }.asMangaCover(),
                         sourceId = res.sourceId,
                         sourceName = res.sourceName,
-                        url = res.items.getOrNull(idx)?.url ?: manga.url,
+                        url = manga.url,
                     )
                 }
                 if (items.isNotEmpty()) perSourceCompleted.add(items)
@@ -290,7 +290,7 @@ class HomeViewModel(
                 hasMoreUpdates[res.sourceId] = res.hasNextPage
                 if (res.items.isEmpty()) continue
                 val domainMangas = res.items.take(12).map { it.toDomainManga() }
-                val localMangas = networkToLocalManga(domainMangas)
+                val localMangas = networkToLocalManga(domainMangas).let { eu.kanade.tachiyomi.source.internal.util.DiscoveryChapterGate.filter(it) }
                 val items = localMangas.mapIndexed { idx, manga ->
                     HomeDiscoveryItem(
                         mangaId = manga.id,
@@ -298,7 +298,7 @@ class HomeViewModel(
                         coverData = manga.also { PreferredMangaVariants.remember(it) }.asMangaCover(),
                         sourceId = res.sourceId,
                         sourceName = res.sourceName,
-                        url = res.items.getOrNull(idx)?.url ?: manga.url,
+                        url = manga.url,
                     )
                 }
                 if (items.isNotEmpty()) perSourceNew.add(items)
@@ -323,7 +323,7 @@ class HomeViewModel(
     /** Publish each healthy source as soon as it finishes, independent of a hung sibling. */
     private suspend fun publishEarlyPopular(result: mihon.domain.source.discovery.model.SourceDiscoveryResult) {
         if (result.items.isEmpty() || !mihon.domain.source.health.SourceHealthMonitor.shared.discoverable(result.sourceId)) return
-        val local = networkToLocalManga(result.items.map { it.toDomainManga() })
+        val local = networkToLocalManga(result.items.map { it.toDomainManga() }).let { eu.kanade.tachiyomi.source.internal.util.DiscoveryChapterGate.filter(it) }
         val incoming = local.map { manga ->
             HomeDiscoveryItem(mangaId = manga.id, title = manga.title, coverData = manga.also { PreferredMangaVariants.remember(it) }.asMangaCover(),
                 sourceId = result.sourceId, sourceName = result.sourceName, url = manga.url)
@@ -414,7 +414,7 @@ class HomeViewModel(
                         val domainMangas = mangasPage.mangas.map { sManga ->
                             sManga.toDomainManga(source.id)
                         }
-                        val localMangas = networkToLocalManga(domainMangas)
+                        val localMangas = networkToLocalManga(domainMangas).let { eu.kanade.tachiyomi.source.internal.util.DiscoveryChapterGate.filter(it) }
                         PaginationResult(source.id, nextPage, mangasPage.hasNextPage, localMangas.map { manga ->
                             HomeDiscoveryItem(
                                 mangaId = manga.id,

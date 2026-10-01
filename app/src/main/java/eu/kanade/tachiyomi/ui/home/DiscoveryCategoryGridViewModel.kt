@@ -208,7 +208,7 @@ class DiscoveryCategoryGridViewModel(
                 if (res.items.isEmpty()) continue
 
                 val domainMangas = res.items.take(12).map { it.toDomainManga() }
-                val localMangas = networkToLocalManga(domainMangas)
+                val localMangas = networkToLocalManga(domainMangas).let { eu.kanade.tachiyomi.source.internal.util.DiscoveryChapterGate.filter(it) }
                 val items = localMangas.mapIndexed { idx, manga ->
                     HomeDiscoveryItem(
                         mangaId = manga.id,
@@ -216,7 +216,7 @@ class DiscoveryCategoryGridViewModel(
                         coverData = manga.also { PreferredMangaVariants.remember(it) }.asMangaCover(),
                         sourceId = res.sourceId,
                         sourceName = res.sourceName,
-                        url = res.items.getOrNull(idx)?.url ?: manga.url,
+                        url = manga.url,
                     )
                 }
                 if (items.isNotEmpty()) perSourceItems.add(items)
