@@ -3,6 +3,8 @@ package eu.kanade.tachiyomi.source.internal.mangatime
 import eu.kanade.tachiyomi.source.model.SManga
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -166,4 +168,12 @@ class MangaTimeParserTest {
         pages[0].imageUrl shouldBe "https://mangatime.org/uploads/chapters/ch1/001.webp"
         pages[1].imageUrl shouldBe "https://mangatime.org/uploads/chapters/ch1/002.webp"
     }
+    @Test
+    fun `search query is encoded as JSON rather than interpolated JSON syntax`() {
+        val query = "quoted \"title\" \\ path"
+        val request = mangaTime.searchMangaRequest(1, query, eu.kanade.tachiyomi.source.model.FilterList())
+        val input = kotlinx.serialization.json.Json.parseToJsonElement(request.url.queryParameter("input")!!)
+        input.jsonObject["json"]!!.jsonObject["query"]!!.jsonPrimitive.content shouldBe query
+    }
+
 }

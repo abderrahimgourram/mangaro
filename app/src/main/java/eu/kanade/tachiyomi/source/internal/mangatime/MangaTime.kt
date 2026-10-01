@@ -2,6 +2,7 @@ package eu.kanade.tachiyomi.source.internal.mangatime
 
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.awaitSuccess
+import eu.kanade.tachiyomi.source.model.ChapterFetchCompleteness
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
@@ -11,6 +12,9 @@ import eu.kanade.tachiyomi.source.model.SMangaUpdate
 import eu.kanade.tachiyomi.source.online.HttpSource
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
@@ -89,10 +93,10 @@ class MangaTime(
         return searchMangaParse(response)
     }
 
-    override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
+    public override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
         val trimmed = query.trim()
         val input = if (trimmed.isNotEmpty()) {
-            """{"json":{"query":"$trimmed","limit":24,"page":$page,"sortBy":"popularity"}}"""
+            """{"json":{"query":${JsonPrimitive(trimmed)},"limit":24,"page":$page,"sortBy":"popularity"}}"""
         } else {
             """{"json":{"limit":24,"page":$page,"sortBy":"popularity"}}"""
         }
@@ -108,23 +112,23 @@ class MangaTime(
 
     fun parseSeriesSearchResponse(responseBody: String): MangasPage {
         if (responseBody.contains(""""error":""")) {
-            throw IOException("MangaTime tRPC error: $responseBody")
+            throw IOException("MangaTime tRPC catalogue error")
         }
         val jsonElement = json.parseToJsonElement(responseBody)
         val rootObj = if (jsonElement is JsonArray) {
             jsonElement.firstOrNull()?.jsonObject
         } else {
             jsonElement.jsonObject
-        } ?: return MangasPage(emptyList(), false)
+        } ?: throw IOException("MangaTime catalogue missing result envelope")
 
         val resultData = rootObj["result"]?.jsonObject?.get("data")?.jsonObject?.get("json")?.jsonObject
-            ?: return MangasPage(emptyList(), false)
+            ?: throw IOException("MangaTime catalogue missing result envelope")
 
-        val seriesArray = resultData["results"]?.jsonArray ?: resultData["series"]?.jsonArray ?: emptyList()
+        val seriesArray = resultData["results"]?.jsonArray ?: resultData["series"]?.jsonArray ?: throw IOException("MangaTime catalogue missing results")
         val mangas = seriesArray.mapNotNull { element ->
             val obj = element.jsonObject
-            val id = obj["id"]?.jsonPrimitive?.content ?: return@mapNotNull null
-            val slug = obj["slug"]?.jsonPrimitive?.content ?: return@mapNotNull null
+            val id = obj["id"]?.jsonPrimitive?.content ?: throw IOException("MangaTime catalogue missing ID")
+            val slug = obj["slug"]?.jsonPrimitive?.content ?: throw IOException("MangaTime catalogue missing slug")
             val type = obj["type"]?.jsonPrimitive?.content ?: "manhwa"
             val title = obj["title"]?.jsonPrimitive?.content ?: slug
             val cover = obj["coverUrl"]?.jsonPrimitive?.content ?: obj["cover"]?.jsonPrimitive?.content
@@ -164,10 +168,12 @@ class MangaTime(
         }
 
         var updatedChapters = chapters
+        var completeness = ChapterFetchCompleteness.DEGRADED
         if (fetchChapters) {
             val effectiveSeriesId = seriesId.ifEmpty {
                 parseSeriesIdFromUrl(updatedManga.url)
             }
+            if (effectiveSeriesId.isEmpty()) throw IOException("MangaTime manga missing series ID; refresh details")
             if (effectiveSeriesId.isNotEmpty()) {
                 val input = """{"json":{"seriesId":"$effectiveSeriesId","limit":-1}}"""
                 val encoded = URLEncoder.encode(input, "UTF-8")
@@ -178,10 +184,20 @@ class MangaTime(
                     throw IOException("MangaTime tRPC chapters error for series $effectiveSeriesId")
                 }
                 updatedChapters = parseChaptersResponse(body, type, slug)
+                val envelope = json.parseToJsonElement(body)
+                val root = if (envelope is JsonArray) envelope.first().jsonObject else envelope.jsonObject
+                val data = root["result"]?.jsonObject?.get("data")?.jsonObject?.get("json")?.jsonObject
+                    ?: throw IOException("MangaTime chapters missing result")
+                if (data["hasMore"]?.jsonPrimitive?.booleanOrNull == true || !data["nextCursor"]?.jsonPrimitive?.contentOrNull.isNullOrEmpty()) {
+                    throw IOException("MangaTime unlimited chapter request returned a partial result")
+                }
+                if (data["hasMore"]?.jsonPrimitive?.booleanOrNull == false && "nextCursor" in data) {
+                    completeness = ChapterFetchCompleteness.COMPLETE
+                }
             }
         }
 
-        return SMangaUpdate(updatedManga, updatedChapters)
+        return SMangaUpdate(updatedManga, updatedChapters, completeness)
     }
 
     fun parseMangaDetailsResponse(
@@ -195,6 +211,7 @@ class MangaTime(
         val rootObj = if (jsonElement is JsonArray) jsonElement.firstOrNull()?.jsonObject else jsonElement.jsonObject
         val seriesData = rootObj?.get("result")?.jsonObject?.get("data")?.jsonObject?.get("json")?.jsonObject
             ?: rootObj?.get("result")?.jsonObject?.get("data")?.jsonObject
+            ?: throw IOException("MangaTime details missing result")
 
         val titleText = seriesData?.get("title")?.jsonPrimitive?.content ?: manga.title
         val descriptionText = seriesData?.get("description")?.jsonPrimitive?.content ?: manga.description
@@ -222,14 +239,14 @@ class MangaTime(
         val rootObj = if (jsonElement is JsonArray) jsonElement.firstOrNull()?.jsonObject else jsonElement.jsonObject
         val chaptersArray = rootObj?.get("result")?.jsonObject?.get("data")?.jsonObject?.get("json")?.jsonObject?.get("chapters")?.jsonArray
             ?: rootObj?.get("result")?.jsonObject?.get("data")?.jsonObject?.get("chapters")?.jsonArray
-            ?: return emptyList()
+            ?: throw IOException("MangaTime missing chapters array")
 
-        return chaptersArray.mapNotNull { element ->
+        val parsed = chaptersArray.map { element ->
             val obj = element.jsonObject
             val number = obj["number"]?.jsonPrimitive?.doubleOrNull
                 ?: obj["number"]?.jsonPrimitive?.intOrNull?.toDouble()
                 ?: obj["number"]?.jsonPrimitive?.contentOrNull?.toDoubleOrNull()
-                ?: return@mapNotNull null
+                ?: throw IOException("MangaTime chapter missing number")
             val numberStr = if (number % 1.0 == 0.0) number.toInt().toString() else number.toString()
             val chapterTitle = obj["title"]?.jsonPrimitive?.contentOrNull
 
@@ -247,8 +264,13 @@ class MangaTime(
                 url = "/$type/$slug/chapter/$numberStr"
                 name = formattedName
                 chapter_number = number.toFloat()
+                memo = kotlinx.serialization.json.buildJsonObject {
+                    obj["id"]?.jsonPrimitive?.contentOrNull?.let { put("mangatime.id", it) }
+                }
             }
         }.sortedByDescending { it.chapter_number }
+        if (parsed.isEmpty() || parsed.distinctBy { it.url }.size != parsed.size) throw IOException("MangaTime empty or ambiguous chapter list")
+        return parsed
     }
 
     override suspend fun getPageList(chapter: SChapter): List<Page> {
@@ -271,12 +293,13 @@ class MangaTime(
         val jsonElement = json.parseToJsonElement(responseBody)
         val rootObj = if (jsonElement is JsonArray) jsonElement.firstOrNull()?.jsonObject else jsonElement.jsonObject
         val dataObj = rootObj?.get("result")?.jsonObject?.get("data")?.jsonObject?.get("json")?.jsonObject
-            ?: return emptyList()
+            ?: throw IOException("MangaTime pages missing result envelope")
 
-        val pagesArray = dataObj["pages"]?.jsonArray ?: return emptyList()
+        val pagesArray = dataObj["pages"]?.jsonArray ?: throw IOException("MangaTime pages missing array")
+        if (pagesArray.isEmpty()) throw IOException("MangaTime returned no pages")
         return pagesArray.mapIndexedNotNull { index, element ->
             val imgUrl = element.jsonPrimitive.content
-            if (imgUrl.isBlank()) null else Page(index, "", if (imgUrl.startsWith("http")) imgUrl else "$baseUrl$imgUrl")
+            if (imgUrl.isBlank()) throw IOException("MangaTime returned an incomplete page list") else Page(index, "", if (imgUrl.startsWith("http")) imgUrl else "$baseUrl$imgUrl")
         }
     }
 
