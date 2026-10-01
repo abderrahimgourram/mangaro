@@ -186,4 +186,26 @@ class AzoraParserTest {
         assertThrows<IOException> { azora.parsePostsResponse("""{"posts":[]}""") }
     }
 
+    @Test
+    fun `live Rebirth null creator does not crash details`() {
+        val body = javaClass.getResource("/source-null/rebirth-details.json")!!.readText()
+        val manga = SManga.create().apply { url = "rebirth-of-the-urban-immortal-cultivator#92"; title = "Rebirth Of The Urban Immortal Cultivator" }
+        val details = azora.parsePostDetailsResponse(body, manga, "rebirth-of-the-urban-immortal-cultivator", "92")
+        details.author shouldBe null
+        details.genre!!.contains("أكشن") shouldBe true
+        details.initialized shouldBe true
+        details.url shouldBe manga.url
+    }
+
+    @Test
+    fun `optional null objects and arrays are absent but required payloads fail cleanly`() {
+        val manga = SManga.create().apply { title = "Existing" }
+        azora.parsePostDetailsResponse("""{"post":{"id":92,"createdby":null,"genres":null,"_count":null}}""", manga, "rebirth", "92").author shouldBe null
+        azora.parsePostDetailsResponse("""{"post":{"id":92,"genres":[null,{"name":"Action"}]}}""", manga, "rebirth", "92").genre shouldBe "Action"
+        assertThrows<IOException> { azora.parsePostDetailsResponse("""{"post":null}""", manga, "rebirth", "92") }
+        assertThrows<IOException> { azora.parseChaptersResponse("""{"post":null}""", "rebirth") }
+        assertThrows<IOException> { azora.parseChapterPagesResponse("""{"chapter":null}""") }
+        assertThrows<IOException> { azora.parseChaptersResponse("""{"chapters":[null]}""", "rebirth") }
+    }
+
 }

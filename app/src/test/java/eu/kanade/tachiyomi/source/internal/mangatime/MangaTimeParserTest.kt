@@ -176,4 +176,19 @@ class MangaTimeParserTest {
         input.jsonObject["json"]!!.jsonObject["query"]!!.jsonPrimitive.content shouldBe query
     }
 
+    @Test
+    fun `null optional metadata preserves catalogue data and required null envelopes fail cleanly`() {
+        val manga = SManga.create().apply { title = "Existing"; description = "Description"; thumbnail_url = "https://example.org/cover.jpg" }
+        val details = mangaTime.parseMangaDetailsResponse("""{"result":{"data":{"json":{"id":"42","title":null,"description":null,"coverUrl":null,"status":null}}}}""", manga, "manhwa", "sample", "42")
+        details.title shouldBe "Existing"
+        details.description shouldBe "Description"
+        details.thumbnail_url shouldBe "https://example.org/cover.jpg"
+        for (body in listOf("null", "[null]", "{\"result\":null}", "{\"result\":{\"data\":{\"json\":null}}}")) {
+            org.junit.jupiter.api.assertThrows<java.io.IOException> { mangaTime.parseMangaDetailsResponse(body, manga, "manhwa", "sample", "42") }
+            org.junit.jupiter.api.assertThrows<java.io.IOException> { mangaTime.parseChaptersResponse(body, "manhwa", "sample") }
+            org.junit.jupiter.api.assertThrows<java.io.IOException> { mangaTime.parseChapterPagesResponse(body) }
+        }
+        org.junit.jupiter.api.assertThrows<java.io.IOException> { mangaTime.parseSeriesSearchResponse("""{"result":{"data":{"json":{"results":[{"id":null,"slug":"sample"}]}}}}""") }
+    }
+
 }

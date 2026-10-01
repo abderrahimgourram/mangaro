@@ -22,15 +22,16 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
+import eu.kanade.tachiyomi.source.internal.util.jsonArrayOrNull
+import eu.kanade.tachiyomi.source.internal.util.jsonObjectOrNull
+import eu.kanade.tachiyomi.source.internal.util.jsonPrimitiveOrNull
 import okhttp3.Headers
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
+import eu.kanade.tachiyomi.source.internal.util.requireObject
 import java.io.IOException
 import java.net.URLEncoder
 
@@ -119,26 +120,26 @@ class Azora(
         val jsonElement = json.parseToJsonElement(responseBody)
         val rootObj = (jsonElement as? JsonObject) ?: throw IOException("Azora catalogue is not an object")
 
-        val postsArray = rootObj["posts"]?.jsonArray
-            ?: rootObj["data"]?.jsonArray
+        val postsArray = rootObj["posts"]?.jsonArrayOrNull
+            ?: rootObj["data"]?.jsonArrayOrNull
             ?: (if (jsonElement is JsonArray) jsonElement else null)
             ?: throw IOException("Azora catalogue missing posts")
 
         val mangas = postsArray.mapNotNull { element ->
-            val obj = element.jsonObject
-            if (obj["isNovel"]?.jsonPrimitive?.booleanOrNull == true) return@mapNotNull null
-            val id = obj["id"]?.jsonPrimitive?.contentOrNull ?: throw IOException("Azora catalogue missing ID")
-            val slug = obj["postSlug"]?.jsonPrimitive?.contentOrNull
-                ?: obj["slug"]?.jsonPrimitive?.contentOrNull ?: throw IOException("Azora catalogue missing slug")
-            val titleText = obj["postTitle"]?.jsonPrimitive?.contentOrNull
-                ?: obj["title"]?.jsonPrimitive?.contentOrNull
-                ?: obj["name"]?.jsonPrimitive?.contentOrNull
+            val obj = element.requireObject("Azora entry")
+            if (obj["isNovel"]?.jsonPrimitiveOrNull?.booleanOrNull == true) return@mapNotNull null
+            val id = obj["id"]?.jsonPrimitiveOrNull?.contentOrNull ?: throw IOException("Azora catalogue missing ID")
+            val slug = obj["postSlug"]?.jsonPrimitiveOrNull?.contentOrNull
+                ?: obj["slug"]?.jsonPrimitiveOrNull?.contentOrNull ?: throw IOException("Azora catalogue missing slug")
+            val titleText = obj["postTitle"]?.jsonPrimitiveOrNull?.contentOrNull
+                ?: obj["title"]?.jsonPrimitiveOrNull?.contentOrNull
+                ?: obj["name"]?.jsonPrimitiveOrNull?.contentOrNull
                 ?: slug
-            val coverUrl = obj["featuredImage"]?.jsonPrimitive?.contentOrNull
-                ?: obj["featuredImageCL"]?.jsonPrimitive?.contentOrNull
-                ?: obj["cover"]?.jsonPrimitive?.contentOrNull
-                ?: obj["poster"]?.jsonPrimitive?.contentOrNull
-                ?: obj["banner"]?.jsonPrimitive?.contentOrNull
+            val coverUrl = obj["featuredImage"]?.jsonPrimitiveOrNull?.contentOrNull
+                ?: obj["featuredImageCL"]?.jsonPrimitiveOrNull?.contentOrNull
+                ?: obj["cover"]?.jsonPrimitiveOrNull?.contentOrNull
+                ?: obj["poster"]?.jsonPrimitiveOrNull?.contentOrNull
+                ?: obj["banner"]?.jsonPrimitiveOrNull?.contentOrNull
 
             SManga.create().apply {
                 url = "$slug#$id"
@@ -147,8 +148,8 @@ class Azora(
             }
         }
 
-        val total = rootObj["totalCount"]?.jsonPrimitive?.intOrNull
-        val hasMore = rootObj["hasMore"]?.jsonPrimitive?.booleanOrNull
+        val total = rootObj["totalCount"]?.jsonPrimitiveOrNull?.intOrNull
+        val hasMore = rootObj["hasMore"]?.jsonPrimitiveOrNull?.booleanOrNull
             ?: total?.let { page.toLong() * maxOf(24, postsArray.size) < it }
             ?: throw IOException("Azora catalogue missing pagination metadata")
 
@@ -171,11 +172,11 @@ class Azora(
             val req = GET("$baseUrl/api/post?postSlug=$postSlug", headers)
             val resp = client.newCall(req).awaitSuccess()
             val body = resp.use { it.body.string() }
-            val root = json.parseToJsonElement(body).jsonObject
-            val post = root["post"]?.jsonObject ?: throw IOException("Azora details missing post")
-            if (post["isNovel"]?.jsonPrimitive?.booleanOrNull == true) throw IOException("Azora novels are not supported by the image Reader")
-            expectedChapterCount = post["totalChapterCount"]?.jsonPrimitive?.intOrNull
-                ?: post["_count"]?.jsonObject?.get("chapters")?.jsonPrimitive?.intOrNull
+            val root = json.parseToJsonElement(body).requireObject("Azora details")
+            val post = root["post"]?.jsonObjectOrNull ?: throw IOException("Azora details missing post")
+            if (post["isNovel"]?.jsonPrimitiveOrNull?.booleanOrNull == true) throw IOException("Azora novels are not supported by the image Reader")
+            expectedChapterCount = post["totalChapterCount"]?.jsonPrimitiveOrNull?.intOrNull
+                ?: post["_count"]?.jsonObjectOrNull?.get("chapters")?.jsonPrimitiveOrNull?.intOrNull
             updatedManga = parsePostDetailsResponse(body, manga, postSlug, postId)
             postId = updatedManga.url.substringAfter("#", postId)
         }
@@ -190,7 +191,7 @@ class Azora(
                     throw IOException("Azora chapters API error for post $postId")
                 }
                 val chapterRoot = json.parseToJsonElement(body) as? JsonObject
-                expectedChapterCount = chapterRoot?.get("totalChapterCount")?.jsonPrimitive?.intOrNull ?: expectedChapterCount
+                expectedChapterCount = chapterRoot?.get("totalChapterCount")?.jsonPrimitiveOrNull?.intOrNull ?: expectedChapterCount
                 updatedChapters = parseChaptersResponse(body, postSlug)
             } else {
                 throw IOException("Unable to determine post ID for Azora manga $postSlug")
@@ -206,40 +207,41 @@ class Azora(
     }
 
     fun parsePostDetailsResponse(responseBody: String, manga: SManga, postSlug: String, existingPostId: String): SManga {
-        val rootObj = json.parseToJsonElement(responseBody).jsonObject
-        val postObj = rootObj["post"]?.jsonObject
-            ?: rootObj["data"]?.jsonObject
-            ?: rootObj
+        val rootObj = json.parseToJsonElement(responseBody).requireObject("Azora response")
+        val postObj = rootObj["post"]?.jsonObjectOrNull
+            ?: rootObj["data"]?.jsonObjectOrNull
+            ?: rootObj.takeUnless { "post" in it || "data" in it || "chapter" in it }
+            ?: throw IOException("Azora response missing payload")
 
-        val realPostId = postObj["id"]?.jsonPrimitive?.contentOrNull
-            ?: rootObj["post"]?.jsonObject?.get("id")?.jsonPrimitive?.contentOrNull
+        val realPostId = postObj["id"]?.jsonPrimitiveOrNull?.contentOrNull
+            ?: rootObj["post"]?.jsonObjectOrNull?.get("id")?.jsonPrimitiveOrNull?.contentOrNull
             ?: existingPostId
 
-        val titleText = postObj["postTitle"]?.jsonPrimitive?.contentOrNull
-            ?: postObj["title"]?.jsonPrimitive?.contentOrNull
-            ?: postObj["name"]?.jsonPrimitive?.contentOrNull
+        val titleText = postObj["postTitle"]?.jsonPrimitiveOrNull?.contentOrNull
+            ?: postObj["title"]?.jsonPrimitiveOrNull?.contentOrNull
+            ?: postObj["name"]?.jsonPrimitiveOrNull?.contentOrNull
             ?: manga.title
-        val rawDescription = postObj["postContent"]?.jsonPrimitive?.contentOrNull
-            ?: postObj["description"]?.jsonPrimitive?.contentOrNull
-            ?: postObj["summary"]?.jsonPrimitive?.contentOrNull
+        val rawDescription = postObj["postContent"]?.jsonPrimitiveOrNull?.contentOrNull
+            ?: postObj["description"]?.jsonPrimitiveOrNull?.contentOrNull
+            ?: postObj["summary"]?.jsonPrimitiveOrNull?.contentOrNull
             ?: manga.description
         val cleanDescription = rawDescription?.replace(Regex("<[^>]*>"), "")?.trim() ?: ""
 
-        val coverUrl = postObj["featuredImage"]?.jsonPrimitive?.contentOrNull
-            ?: postObj["featuredImageCL"]?.jsonPrimitive?.contentOrNull
-            ?: postObj["cover"]?.jsonPrimitive?.contentOrNull
-            ?: postObj["poster"]?.jsonPrimitive?.contentOrNull
-        val statusText = postObj["seriesStatus"]?.jsonPrimitive?.contentOrNull
-            ?: postObj["status"]?.jsonPrimitive?.contentOrNull
+        val coverUrl = postObj["featuredImage"]?.jsonPrimitiveOrNull?.contentOrNull
+            ?: postObj["featuredImageCL"]?.jsonPrimitiveOrNull?.contentOrNull
+            ?: postObj["cover"]?.jsonPrimitiveOrNull?.contentOrNull
+            ?: postObj["poster"]?.jsonPrimitiveOrNull?.contentOrNull
+        val statusText = postObj["seriesStatus"]?.jsonPrimitiveOrNull?.contentOrNull
+            ?: postObj["status"]?.jsonPrimitiveOrNull?.contentOrNull
 
-        val authorName = postObj["author"]?.jsonPrimitive?.contentOrNull
-            ?: postObj["createdby"]?.jsonObject?.get("name")?.jsonPrimitive?.contentOrNull
+        val authorName = postObj["author"]?.jsonPrimitiveOrNull?.contentOrNull
+            ?: postObj["createdby"]?.jsonObjectOrNull?.get("name")?.jsonPrimitiveOrNull?.contentOrNull
 
-        val artistName = postObj["artist"]?.jsonPrimitive?.contentOrNull
+        val artistName = postObj["artist"]?.jsonPrimitiveOrNull?.contentOrNull
 
-        val genresArray = postObj["genres"]?.jsonArray
+        val genresArray = postObj["genres"]?.jsonArrayOrNull
         val genresText = genresArray?.mapNotNull {
-            it.jsonObject["name"]?.jsonPrimitive?.contentOrNull
+            it.jsonObjectOrNull?.get("name")?.jsonPrimitiveOrNull?.contentOrNull
         }?.joinToString(", ")?.ifBlank { null }
 
         return manga.apply {
@@ -261,22 +263,22 @@ class Azora(
 
     fun parseChaptersResponse(responseBody: String, postSlug: String): List<SChapter> {
         val rootElement = json.parseToJsonElement(responseBody)
-        val rootObj = if (rootElement is JsonObject) rootElement.jsonObject else null
-        val chaptersArray = rootObj?.get("post")?.jsonObject?.get("chapters")?.jsonArray
-            ?: rootObj?.get("chapters")?.jsonArray
-            ?: rootObj?.get("data")?.jsonArray
-            ?: (if (rootElement is JsonArray) rootElement.jsonArray else null)
+        val rootObj = if (rootElement is JsonObject) rootElement else null
+        val chaptersArray = rootObj?.get("post")?.jsonObjectOrNull?.get("chapters")?.jsonArrayOrNull
+            ?: rootObj?.get("chapters")?.jsonArrayOrNull
+            ?: rootObj?.get("data")?.jsonArrayOrNull
+            ?: (if (rootElement is JsonArray) rootElement else null)
             ?: throw IOException("Azora chapters missing array")
 
         val parsed = chaptersArray.map { element ->
-            val obj = element.jsonObject
-            val chapterId = obj["id"]?.jsonPrimitive?.contentOrNull ?: throw IOException("Azora chapter missing remote ID")
-            val chapterSlug = obj["slug"]?.jsonPrimitive?.contentOrNull
-                ?: obj["chapterSlug"]?.jsonPrimitive?.contentOrNull ?: "chapter-$chapterId"
-            val rawName = obj["name"]?.jsonPrimitive?.contentOrNull
-            val rawTitle = obj["title"]?.jsonPrimitive?.contentOrNull
-            val number = obj["number"]?.jsonPrimitive?.doubleOrNull?.toFloat()
-                ?: obj["number"]?.jsonPrimitive?.intOrNull?.toFloat()
+            val obj = element.requireObject("Azora entry")
+            val chapterId = obj["id"]?.jsonPrimitiveOrNull?.contentOrNull ?: throw IOException("Azora chapter missing remote ID")
+            val chapterSlug = obj["slug"]?.jsonPrimitiveOrNull?.contentOrNull
+                ?: obj["chapterSlug"]?.jsonPrimitiveOrNull?.contentOrNull ?: "chapter-$chapterId"
+            val rawName = obj["name"]?.jsonPrimitiveOrNull?.contentOrNull
+            val rawTitle = obj["title"]?.jsonPrimitiveOrNull?.contentOrNull
+            val number = obj["number"]?.jsonPrimitiveOrNull?.doubleOrNull?.toFloat()
+                ?: obj["number"]?.jsonPrimitiveOrNull?.intOrNull?.toFloat()
                 ?: parseChapterNumber(chapterSlug, rawName ?: rawTitle ?: "")
 
             val numberStr = if (number % 1.0f == 0f) number.toInt().toString() else number.toString()
@@ -317,28 +319,29 @@ class Azora(
     }
 
     fun parseChapterPagesResponse(responseBody: String): List<Page> {
-        val rootObj = json.parseToJsonElement(responseBody).jsonObject
-        val chapterObj = rootObj["chapter"]?.jsonObject
-            ?: rootObj["data"]?.jsonObject
-            ?: rootObj
+        val rootObj = json.parseToJsonElement(responseBody).requireObject("Azora response")
+        val chapterObj = rootObj["chapter"]?.jsonObjectOrNull
+            ?: rootObj["data"]?.jsonObjectOrNull
+            ?: rootObj.takeUnless { "post" in it || "data" in it || "chapter" in it }
+            ?: throw IOException("Azora response missing payload")
 
-        val isLocked = chapterObj["isLocked"]?.jsonPrimitive?.booleanOrNull == true
+        val isLocked = chapterObj["isLocked"]?.jsonPrimitiveOrNull?.booleanOrNull == true
         if (isLocked) {
             throw IOException("Azora chapter is locked")
         }
 
-        val pagesArray = chapterObj["images"]?.jsonArray
-            ?: chapterObj["pages"]?.jsonArray
-            ?: chapterObj["data"]?.jsonArray
+        val pagesArray = chapterObj["images"]?.jsonArrayOrNull
+            ?: chapterObj["pages"]?.jsonArrayOrNull
+            ?: chapterObj["data"]?.jsonArrayOrNull
             ?: throw IOException("Azora pages missing array")
 
         if (pagesArray.isEmpty()) throw IOException("Azora returned no pages")
-        return pagesArray.sortedBy { (it as? JsonObject)?.get("order")?.jsonPrimitive?.intOrNull ?: Int.MAX_VALUE }.mapIndexedNotNull { index, element ->
-            val pageObj = if (element is JsonObject) element.jsonObject else null
-            val pageUrl = pageObj?.get("url")?.jsonPrimitive?.contentOrNull
-                ?: pageObj?.get("pageUrl")?.jsonPrimitive?.contentOrNull
-                ?: pageObj?.get("image")?.jsonPrimitive?.contentOrNull
-                ?: (if (element is JsonPrimitive) element.jsonPrimitive.contentOrNull else null)
+        return pagesArray.sortedBy { (it as? JsonObject)?.get("order")?.jsonPrimitiveOrNull?.intOrNull ?: Int.MAX_VALUE }.mapIndexedNotNull { index, element ->
+            val pageObj = if (element is JsonObject) element.requireObject("Azora entry") else null
+            val pageUrl = pageObj?.get("url")?.jsonPrimitiveOrNull?.contentOrNull
+                ?: pageObj?.get("pageUrl")?.jsonPrimitiveOrNull?.contentOrNull
+                ?: pageObj?.get("image")?.jsonPrimitiveOrNull?.contentOrNull
+                ?: (if (element is JsonPrimitive) element.jsonPrimitiveOrNull?.contentOrNull else null)
             if (pageUrl.isNullOrBlank()) throw IOException("Azora returned an incomplete page list") else Page(index, "", if (pageUrl.startsWith("http")) pageUrl else "$baseUrl$pageUrl")
         }
     }
