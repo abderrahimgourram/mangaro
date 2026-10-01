@@ -15,6 +15,9 @@ import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.storage.DiskUtil
 import eu.kanade.tachiyomi.util.storage.DiskUtil.NOMEDIA_FILE
 import eu.kanade.tachiyomi.util.storage.saveTo
+import java.io.File
+import java.util.Locale
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -59,9 +62,6 @@ import tachiyomi.domain.track.interactor.GetTracks
 import tachiyomi.i18n.MR
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
-import java.io.File
-import java.util.Locale
-import kotlin.time.Duration.Companion.seconds
 
 /**
  * This class is the one in charge of downloading chapters.
@@ -130,7 +130,11 @@ class Downloader(
         }
 
         val pending = queueState.value.filter { it.status != Download.State.DOWNLOADED }
-        pending.forEach { if (it.status != Download.State.QUEUE) it.status = Download.State.QUEUE }
+        pending.forEach {
+            // A retry must resolve fresh signed/temporary URLs, while existing image files resume.
+            if (it.status == Download.State.ERROR) it.pages = null
+            if (it.status != Download.State.QUEUE) it.status = Download.State.QUEUE
+        }
 
         isPaused = false
 
@@ -275,7 +279,7 @@ class Downloader(
         if (chapters.isEmpty()) return
 
         val source = sourceManager.get(manga.source) as? HttpSource ?: return
-        val wasEmpty = queueState.value.isEmpty()
+        val shouldStart = shouldAutoStartDownloads(autoStart, isPaused, isRunning, queueState.value.map { it.status })
         val chaptersToQueue = chapters.asSequence()
             // Filter out those already downloaded.
             .filter { provider.findChapterDir(it.name, it.scanlator, it.url, manga.title, source) == null }
@@ -289,30 +293,30 @@ class Downloader(
 
         if (chaptersToQueue.isNotEmpty()) {
             addAllToQueue(chaptersToQueue)
+        }
 
-            // Start downloader if needed
-            if (autoStart && wasEmpty) {
-                val queuedDownloads = queueState.value.count { it.source !is UnmeteredSource }
-                val maxDownloadsFromSource = queueState.value
-                    .groupBy { it.source }
-                    .filterKeys { it !is UnmeteredSource }
-                    .maxOfOrNull { it.value.size }
-                    ?: 0
-                if (
-                    queuedDownloads > DOWNLOADS_QUEUED_WARNING_THRESHOLD ||
-                    maxDownloadsFromSource > CHAPTERS_PER_SOURCE_QUEUE_WARNING_THRESHOLD
-                ) {
-                    notifier.onWarning(
-                        context.stringResource(
-                            MR.strings.download_queue_size_warning,
-                            context.stringResource(MR.strings.app_name),
-                        ),
-                        WARNING_NOTIF_TIMEOUT_MS,
-                        NotificationHandler.openUrl(context, LibraryUpdateNotifier.HELP_WARNING_URL),
-                    )
-                }
-                DownloadJob.start(context)
+        // An existing restored/error entry is also a valid new user request to resume.
+        if (shouldStart && queueState.value.any { queued -> chapters.any { it.id == queued.chapter.id } }) {
+            val queuedDownloads = queueState.value.count { it.source !is UnmeteredSource }
+            val maxDownloadsFromSource = queueState.value
+                .groupBy { it.source }
+                .filterKeys { it !is UnmeteredSource }
+                .maxOfOrNull { it.value.size }
+                ?: 0
+            if (
+                queuedDownloads > DOWNLOADS_QUEUED_WARNING_THRESHOLD ||
+                maxDownloadsFromSource > CHAPTERS_PER_SOURCE_QUEUE_WARNING_THRESHOLD
+            ) {
+                notifier.onWarning(
+                    context.stringResource(
+                        MR.strings.download_queue_size_warning,
+                        context.stringResource(MR.strings.app_name),
+                    ),
+                    WARNING_NOTIF_TIMEOUT_MS,
+                    NotificationHandler.openUrl(context, LibraryUpdateNotifier.HELP_WARNING_URL),
+                )
             }
+            DownloadJob.start(context)
         }
     }
 
@@ -376,6 +380,9 @@ class Downloader(
 
             download.status = Download.State.DOWNLOADING
 
+            val imageRefresh = DownloadImageRefresh(pageList) {
+                download.source.getPageList(download.chapter.toSChapter())
+            }
             // Start downloading images, consider we can have downloaded images already
             pageList.asFlow().flatMapMerge(concurrency = downloadPreferences.parallelPageLimit.get()) { page ->
                 flow {
@@ -389,7 +396,7 @@ class Downloader(
                         }
                     }
 
-                    withIOContext { getOrDownloadImage(page, download, tmpDir) }
+                    withIOContext { getOrDownloadImage(page, download, tmpDir, imageRefresh) }
                     emit(page)
                 }
                     .flowOn(Dispatchers.IO)
@@ -440,7 +447,7 @@ class Downloader(
      * @param download the download of the page.
      * @param tmpDir the temporary directory of the download.
      */
-    private suspend fun getOrDownloadImage(page: Page, download: Download, tmpDir: UniFile) {
+    private suspend fun getOrDownloadImage(page: Page, download: Download, tmpDir: UniFile, imageRefresh: DownloadImageRefresh) {
         // If the image URL is empty, do nothing
         if (page.imageUrl == null) {
             return
@@ -461,7 +468,7 @@ class Downloader(
                 chapterCache.isImageInCache(
                     page.imageUrl!!,
                 ) -> copyImageFromCache(chapterCache.getImageFile(page.imageUrl!!), tmpDir, filename)
-                else -> downloadImage(page, download.source, tmpDir, filename)
+                else -> downloadImage(page, download.source, tmpDir, filename, imageRefresh)
             }
 
             // When the page is ready, set page path, progress (just in case) and status
@@ -487,7 +494,7 @@ class Downloader(
      * @param tmpDir the temporary directory of the download.
      * @param filename the filename of the image.
      */
-    private suspend fun downloadImage(page: Page, source: HttpSource, tmpDir: UniFile, filename: String): UniFile {
+    private suspend fun downloadImage(page: Page, source: HttpSource, tmpDir: UniFile, filename: String, imageRefresh: DownloadImageRefresh): UniFile {
         page.status = Page.State.DownloadImage
         page.progress = 0
         return flow {
@@ -514,7 +521,12 @@ class Downloader(
             emit(file)
         }
             // Retry 3 times, waiting 2, 4 and 8 seconds between attempts.
-            .retryWhen { _, attempt ->
+            .retryWhen { error, attempt ->
+                if (error is CancellationException) throw error
+                if (error is HttpException && error.code in listOf(403, 404, 410) && attempt == 0L) {
+                    imageRefresh.refresh()
+                    if (page.imageUrl.isNullOrBlank()) page.imageUrl = source.getImageUrl(page)
+                }
                 if (attempt < 3) {
                     delay((2L shl attempt.toInt()).seconds)
                     true
@@ -681,6 +693,7 @@ class Downloader(
     private fun addAllToQueue(downloads: List<Download>) {
         _queueState.update {
             downloads.forEach { download ->
+                if (download.status == Download.State.ERROR) download.pages = null
                 download.status = Download.State.QUEUE
             }
             store.addAll(downloads)

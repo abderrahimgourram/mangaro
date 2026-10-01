@@ -1,15 +1,11 @@
 package eu.kanade.tachiyomi.source.audit
 
-import okhttp3.ResponseBody.Companion.toResponseBody
-import okhttp3.MediaType.Companion.toMediaType
-
-import eu.kanade.domain.chapter.model.toSChapter
-
 import android.app.Instrumentation
 import android.content.Intent
 import android.os.Bundle
 import android.util.Log
 import eu.kanade.domain.chapter.interactor.SyncChaptersWithSource
+import eu.kanade.domain.chapter.model.toSChapter
 import eu.kanade.domain.manga.model.copyFrom
 import eu.kanade.tachiyomi.data.download.DownloadManager
 import eu.kanade.tachiyomi.data.download.DownloadProvider
@@ -20,8 +16,8 @@ import eu.kanade.tachiyomi.source.internal.azora.Azora
 import eu.kanade.tachiyomi.source.internal.hijala.Hijala
 import eu.kanade.tachiyomi.source.internal.mangadar.MangaDar
 import eu.kanade.tachiyomi.source.internal.mangalek.MangaLek
-import eu.kanade.tachiyomi.source.internal.mangatime.MangaTime
 import eu.kanade.tachiyomi.source.internal.mangaswat.MangaSwat
+import eu.kanade.tachiyomi.source.internal.mangatime.MangaTime
 import eu.kanade.tachiyomi.source.internal.teamx.TeamX
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.Page
@@ -35,10 +31,12 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.intOrNull
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import mihon.core.archive.archiveReader
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.jsoup.Jsoup
 import tachiyomi.domain.chapter.repository.ChapterRepository
 import tachiyomi.domain.manga.interactor.NetworkToLocalManga
@@ -55,6 +53,7 @@ import uy.kohesive.injekt.api.get
  * Raw public responses and screenshots stay in the instrumented app's private files directory.
  */
 class SourceAuditInstrumentation : Instrumentation() {
+    private var productDownload: String? = null
     private var selected: String? = null
     private var full = false
     private var failures = 0
@@ -69,6 +68,7 @@ class SourceAuditInstrumentation : Instrumentation() {
     private var publisherEngine: String? = null
     override fun onCreate(arguments: Bundle?) {
         super.onCreate(arguments)
+        productDownload = arguments?.getString("productDownload")
         selected = arguments?.getString("source")
         productionFeed = arguments?.getString("productionFeed")
         publisherNative = arguments?.getString("publisherNative") == "true"
@@ -177,7 +177,7 @@ class SourceAuditInstrumentation : Instrumentation() {
             shell("svc wifi disable")
             shell("svc data disable")
             withTimeout(15_000) { while (connectivity.activeNetwork != null) delay(250) }
-            record("MangaSwat offline activeNetwork=null")
+            record("Product offline activeNetwork=null")
             targetContext.startActivity(ReaderActivity.newIntent(targetContext, manga.id, chapter.id).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             reader = monitor.waitForActivityWithTimeout(20_000) as? ReaderActivity ?: error("Offline Reader did not open")
             var vm: eu.kanade.tachiyomi.ui.reader.ReaderViewModel? = null
@@ -193,14 +193,72 @@ class SourceAuditInstrumentation : Instrumentation() {
                     delay(250)
                 }
             }
-            saveScreenshot("MangaSwat-offline-reader.png")
-            record("MangaSwat OFFLINE Reader RENDERED loader=DownloadPageLoader pages=${vm!!.state.value.currentChapter!!.pages!!.size}")
+            check(reader!!.resources.configuration.locales[0].language == "ar")
+            check(reader!!.window.decorView.layoutDirection == android.view.View.LAYOUT_DIRECTION_RTL)
+            if (productDownload == "directions") {
+                val original = eu.kanade.tachiyomi.ui.reader.setting.ReadingMode.fromPreference(vm!!.getMangaReadingMode(false))
+                try {
+                    runOnMainSync { vm!!.setMangaReadingMode(eu.kanade.tachiyomi.ui.reader.setting.ReadingMode.LEFT_TO_RIGHT) }
+                    withTimeout(15_000) { while (vm!!.state.value.viewer !is eu.kanade.tachiyomi.ui.reader.viewer.pager.L2RPagerViewer) delay(100) }
+                    runOnMainSync { vm!!.setMangaReadingMode(eu.kanade.tachiyomi.ui.reader.setting.ReadingMode.RIGHT_TO_LEFT) }
+                    withTimeout(15_000) { while (vm!!.state.value.viewer !is eu.kanade.tachiyomi.ui.reader.viewer.pager.R2LPagerViewer) delay(100) }
+                    record("Product Reader LTR/RTL setting switches viewers independently of Arabic RTL controls")
+                } finally { runOnMainSync { vm!!.setMangaReadingMode(original) } }
+            }
+            saveScreenshot("product-offline-${chapter.id}.png")
+            record("Product OFFLINE Reader RENDERED loader=DownloadPageLoader pages=${vm!!.state.value.currentChapter!!.pages!!.size}")
         } finally {
             reader?.let { runOnMainSync { it.finish() } }
             removeMonitor(monitor)
             shell("svc wifi enable")
             shell("svc data enable")
         }
+    }
+
+    private suspend fun verifyProductDownload(manager: SourceManager, mode: String) {
+        val downloads = Injekt.get<DownloadManager>()
+        val chapters = Injekt.get<ChapterRepository>()
+        val stored = targetContext.getSharedPreferences("product-download-acceptance", 0)
+        if (mode == "restart" || mode == "directions") {
+            for (key in if (mode == "directions") listOf("normal") else listOf("normal", "special")) {
+                val id = stored.getLong("$key.chapter", -1L)
+                val row = chapters.getChapterById(id) ?: error("Acceptance chapter missing")
+                val local = Injekt.get<tachiyomi.domain.manga.interactor.GetManga>().await(row.mangaId)!!
+                check(downloads.isChapterDownloaded(row.name, row.scanlator, row.url, local.title, local.source, true))
+                verifyOfflineReader(local, row)
+                record("Product $key downloaded state survived process restart chapterId=$id")
+            }
+            return
+        }
+        val sid = if (mode == "normal") 215553151312092548L else 3975276517041363504L
+        val source = manager.get(sid) as HttpSource
+        check(manager.getOnlineSources().size == 7) { "Only seven internal online sources must register" }
+        val produced = source.getPopularManga(1).mangas.first()
+        val update = source.getMangaUpdate(produced, emptyList(), true, true)
+        val local = Injekt.get<NetworkToLocalManga>().invoke(
+            Manga.create().copy(source = source.id, url = produced.url, title = produced.title).copyFrom(update.manga),
+        )
+        Injekt.get<SyncChaptersWithSource>().await(update.chapters, local, source, completeness = update.chapterCompleteness)
+        val remote = update.chapters.last()
+        val row = chapters.getChapterByMangaId(local.id).first { it.url == remote.url }
+        val expected = source.getPageList(remote).size
+        val preferences = Injekt.get<tachiyomi.domain.download.service.DownloadPreferences>()
+        val split = preferences.splitTallImages.get()
+        try {
+            if (mode == "special") preferences.splitTallImages.set(true)
+            downloads.downloadChapters(local, listOf(row))
+            withTimeout(180_000) {
+                while (!downloads.isChapterDownloaded(row.name, row.scanlator, row.url, local.title, source.id, true)) {
+                    check(downloads.getQueuedDownloadOrNull(row.id)?.status != Download.State.ERROR) { "Normal Downloader failed; inspect Downloader diagnostic" }
+                    delay(500)
+                }
+            }
+            val same = chapters.getChapterById(row.id)!!
+            check(same.url == row.url && same.memo == row.memo && same.bookmark == row.bookmark && same.read == row.read && same.lastPageRead == row.lastPageRead)
+            stored.edit().putLong("$mode.chapter", row.id).apply()
+            record("Product $mode normal Downloader complete title=${produced.title} chapter=${row.name} pages=$expected favorite=${local.favorite} localId=${row.id}")
+            verifyOfflineReader(local, row)
+        } finally { preferences.splitTallImages.set(split) }
     }
 
     private data class RecoveryAuditState(
@@ -498,6 +556,11 @@ class SourceAuditInstrumentation : Instrumentation() {
         runBlocking {
             val manager = Injekt.get<SourceManager>()
             withTimeout(30_000) { manager.isInitialized.first { it } }
+            if (productDownload != null) {
+                try { withTimeout(240_000) { verifyProductDownload(manager, productDownload!!) } }
+                catch (e: Exception) { failures++; record("Product download ERROR ${e.javaClass.simpleName}: ${e.message}") }
+                return@runBlocking
+            }
             if (publisherEngine != null) {
                 try { withTimeout(180_000) { PublisherEngineAudit.run(targetContext, publisherEngine!!, ::record) } }
                 catch (e: Exception) { failures++; record("Publisher engine ERROR ${e.javaClass.simpleName}: ${e.message}") }
