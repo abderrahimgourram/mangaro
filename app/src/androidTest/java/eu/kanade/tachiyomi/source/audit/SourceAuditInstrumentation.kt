@@ -1,5 +1,10 @@
 package eu.kanade.tachiyomi.source.audit
 
+import okhttp3.ResponseBody.Companion.toResponseBody
+import okhttp3.MediaType.Companion.toMediaType
+
+import eu.kanade.domain.chapter.model.toSChapter
+
 import android.app.Instrumentation
 import android.content.Intent
 import android.os.Bundle
@@ -57,9 +62,11 @@ class SourceAuditInstrumentation : Instrumentation() {
     private var catalogueOnly = false
     private var paginationUi = false
     private var azoraChapters: String? = null
+    private var reliability = false
     override fun onCreate(arguments: Bundle?) {
         super.onCreate(arguments)
         selected = arguments?.getString("source")
+        reliability = arguments?.getString("reliability") == "true"
         azoraChapters = arguments?.getString("azoraChapters")
         full = arguments?.getString("full") == "true"
         matrix = arguments?.getString("matrix") == "true"
@@ -188,6 +195,219 @@ class SourceAuditInstrumentation : Instrumentation() {
         }
     }
 
+    private data class RecoveryAuditState(
+        val local: Manga,
+        val row: tachiyomi.domain.chapter.model.Chapter,
+        val update: eu.kanade.tachiyomi.source.model.SMangaUpdate,
+        val favorite: Boolean,
+        val history: tachiyomi.domain.history.model.History?,
+    )
+
+    private suspend fun prepareRecoveryAudit(source: Azora): RecoveryAuditState {
+        val repo = Injekt.get<ChapterRepository>()
+        val manga = source.getSearchManga(1, "Nano machine", FilterList()).mangas.single()
+        val update = source.getMangaUpdate(manga, emptyList(), true, true)
+        val local = Injekt.get<NetworkToLocalManga>().invoke(Manga.create().copy(source = source.id, url = manga.url, title = manga.title).copyFrom(update.manga))
+        val favorite = Injekt.get<tachiyomi.domain.manga.repository.MangaRepository>().getMangaById(local.id).favorite
+        Injekt.get<SyncChaptersWithSource>().await(update.chapters, local, source, completeness = update.chapterCompleteness)
+        val remote = update.chapters.asReversed()[1]
+        val row = repo.getChapterByMangaId(local.id).single { it.url == remote.url }
+        val previous = Injekt.get<tachiyomi.domain.history.repository.HistoryRepository>().getHistoryByMangaId(local.id).firstOrNull { it.chapterId == row.id }
+        return RecoveryAuditState(local, row, update, favorite, previous)
+    }
+
+    private suspend fun auditReliability(sources: List<HttpSource>) {
+        androidx.work.WorkManager.getInstance(targetContext).cancelUniqueWork("source-health-startup").result.get()
+        val source = sources.filterIsInstance<Azora>().single()
+        val fixture = prepareRecoveryAudit(source)
+        try {
+            Injekt.get<tachiyomi.domain.manga.repository.MangaRepository>().update(tachiyomi.domain.manga.model.MangaUpdate(fixture.local.id, favorite = true))
+            val repo = Injekt.get<ChapterRepository>()
+            val history = Injekt.get<tachiyomi.domain.history.repository.HistoryRepository>()
+            val row = fixture.row
+            val local = fixture.local
+            check(!Injekt.get<DownloadManager>().isChapterDownloaded(row.name, row.scanlator, row.url, local.title, source.id, true))
+            history.upsertHistory(tachiyomi.domain.history.model.HistoryUpdate(row.id, java.util.Date(), 1234))
+            val historyId = history.getHistoryByMangaId(local.id).single { it.chapterId == row.id }.id
+            val stale = row.copy(url = "/series/nano-machine-s/expired#999999999", read = false, bookmark = true, lastPageRead = 1)
+            repo.update(stale.toChapterUpdateForAudit())
+            var failureCode = -1
+            try { source.getPageList(stale.toSChapter()) }
+            catch (e: eu.kanade.tachiyomi.network.HttpException) { failureCode = e.code }
+            check(failureCode == 404)
+            val count = repo.getChapterByMangaId(local.id).size
+            Injekt.get<SyncChaptersWithSource>().await(fixture.update.chapters, local, source, completeness = eu.kanade.tachiyomi.source.model.ChapterFetchCompleteness.PARTIAL)
+            val synced = repo.getChapterById(row.id)!!
+            check(synced.url == row.url && synced.id == row.id && synced.bookmark && !synced.read && synced.lastPageRead == 1L)
+            check(repo.getChapterByMangaId(local.id).size == count)
+            check(history.getHistoryByMangaId(local.id).single { it.chapterId == row.id }.id == historyId)
+            record("In-place PARTIAL sync id=${row.id} count=$count bookmark=true read=false lastPage=1 historyId=$historyId preserved; duplicates=0")
+            repo.update(stale.toChapterUpdateForAudit())
+            auditStaleReader(local, row, historyId, count)
+            auditDownloadMigration(source, local)
+            auditSourceIsolation(sources, source, local)
+        } finally {
+            restoreRecoveryAudit(fixture, source.id)
+            eu.kanade.tachiyomi.data.library.SourceHealthJob.schedule(targetContext)
+        }
+    }
+
+    private suspend fun restoreRecoveryAudit(fixture: RecoveryAuditState, sourceId: Long) {
+        mihon.domain.source.health.SourceHealthMonitor.shared.success(sourceId)
+        Injekt.get<ChapterRepository>().update(fixture.row.toChapterUpdateForAudit())
+        Injekt.get<tachiyomi.domain.manga.repository.MangaRepository>().update(tachiyomi.domain.manga.model.MangaUpdate(fixture.local.id, favorite = fixture.favorite))
+        val history = Injekt.get<tachiyomi.domain.history.repository.HistoryRepository>()
+        val previous = fixture.history
+        if (previous == null) {
+            val current = history.getHistoryByMangaId(fixture.local.id).firstOrNull { it.chapterId == fixture.row.id }
+            if (current != null) history.resetHistory(current.id)
+        } else history.upsertHistory(tachiyomi.domain.history.model.HistoryUpdate(fixture.row.id, previous.readAt ?: java.util.Date(), 0))
+    }
+
+    private suspend fun auditStaleReader(local: Manga, row: tachiyomi.domain.chapter.model.Chapter, historyId: Long, count: Int) {
+        val repo = Injekt.get<ChapterRepository>()
+        val history = Injekt.get<tachiyomi.domain.history.repository.HistoryRepository>()
+            val monitor = addMonitor(ReaderActivity::class.java.name, null, false)
+            targetContext.startActivity(ReaderActivity.newIntent(targetContext, local.id, row.id).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            val reader = monitor.waitForActivityWithTimeout(20_000) as? ReaderActivity ?: error("Reader not opened")
+            try {
+                var vm: eu.kanade.tachiyomi.ui.reader.ReaderViewModel? = null
+                runOnMainSync { vm = reader.viewModel }
+                withTimeout(150_000) {
+                    while (true) {
+                        val state = vm!!.state.value
+                        state.initError?.let { throw it }
+                        (state.currentChapter?.state as? ReaderChapter.State.Error)?.let { throw it.error }
+                        var rendered = false
+                        runOnMainSync { rendered = hasRenderedImage(reader.window.decorView) }
+                        if (state.currentChapter?.chapter?.id == row.id && rendered) break
+                        delay(250)
+                    }
+                }
+                val recovered = repo.getChapterById(row.id)!!
+                check(recovered.url == row.url && recovered.bookmark && !recovered.read && recovered.lastPageRead == 1L)
+                check(repo.getChapterByMangaId(local.id).size == count)
+                check(history.getHistoryByMangaId(local.id).single { it.chapterId == row.id }.id == historyId)
+                saveScreenshot("reliability-stale-reader.png")
+                record("Real Reader 404 -> refresh -> SAME id=${row.id} URL=${recovered.url} RENDERED bookmark/read/lastPage/history preserved")
+            } finally { runOnMainSync { reader.finish() }; removeMonitor(monitor) }
+
+    }
+
+    private suspend fun auditDownloadMigration(source: Azora, local: Manga) {
+        val repo = Injekt.get<ChapterRepository>()
+        val downloads = Injekt.get<DownloadManager>()
+            // Verify the actual URL-hashed download archive remains linked after identity migration.
+            var downloaded = repo.getChapterByMangaId(local.id).firstOrNull { downloads.isChapterDownloaded(it.name, it.scanlator, it.url, local.title, source.id, true) }
+            if (downloaded == null) {
+                val candidate = repo.getChapterByMangaId(local.id).maxBy { it.sourceOrder }
+                downloads.downloadChapters(local, listOf(candidate))
+                withTimeout(150_000) {
+                    while (!downloads.isChapterDownloaded(candidate.name, candidate.scanlator, candidate.url, local.title, source.id, true)) {
+                        check(downloads.getQueuedDownloadOrNull(candidate.id)?.status != Download.State.ERROR) { "Normal Downloader failed" }
+                        delay(500)
+                    }
+                }
+                downloaded = candidate
+                record("Normal Downloader completed before URL-hash migration id=${candidate.id}")
+            }
+            val original = downloaded
+            if (original != null) {
+                val downloaded = original
+                val moved = downloaded.copy(url = downloaded.url.substringBefore('#') + "-moved#" + downloaded.url.substringAfter('#'))
+                val migrator = eu.kanade.domain.chapter.interactor.MigrateChapterIdentity(repo, downloads)
+                try {
+                    migrator.await(source, local, downloaded, moved)
+                    check(downloads.isChapterDownloaded(moved.name, moved.scanlator, moved.url, local.title, source.id, true))
+                    check(repo.getChapterById(downloaded.id)!!.id == downloaded.id)
+                    record("Downloaded archive migration id=${downloaded.id} new URL lookup=true local identity preserved")
+                } finally {
+                    val current = repo.getChapterById(downloaded.id)!!
+                    if (current.url != downloaded.url) migrator.await(source, local, current, downloaded)
+                }
+            } else record("Download relationship audit SKIPPED: no existing downloaded Azora chapter")
+
+    }
+
+    private suspend fun auditHealthyLibraryUpdate(source: MangaTime) {
+        val produced = source.getPopularManga(1).mangas.first()
+        val local = Injekt.get<NetworkToLocalManga>().invoke(Manga.create().copy(source = source.id, url = produced.url, title = produced.title).copyFrom(produced))
+        val update = Injekt.get<mihon.domain.source.interactor.UpdateMangaFromRemote>()(local, fetchDetails = true, fetchChapters = true).getOrThrow()
+        val chapters = Injekt.get<ChapterRepository>().getChapterByMangaId(local.id)
+        check(chapters.isNotEmpty())
+        record("Healthy source REAL library updater continued: ${source.name}, chapters=${chapters.size}, initialized=${update.manga.initialized}")
+    }
+
+    private suspend fun auditSourceIsolation(sources: List<HttpSource>, source: Azora, local: Manga) {
+        val health = mihon.domain.source.health.SourceHealthMonitor.shared
+        val discovery = mihon.domain.source.discovery.interactor.GetSourceDiscovery()
+        val work = androidx.work.WorkManager.getInstance(targetContext)
+        check(work.getWorkInfosForUniqueWork("source-health").get().count { !it.state.isFinished } == 1)
+        check(work.getWorkInfosForUniqueWork("LibraryUpdate-auto").get().count { !it.state.isFinished } == 1)
+        record("WorkManager verified: one hourly source-health job and one configured daily library update job")
+        val repo = Injekt.get<ChapterRepository>()
+        val history = Injekt.get<tachiyomi.domain.history.repository.HistoryRepository>()
+            for (item in sources) {
+                health.success(item.id)
+                val popular = discovery(item, mihon.domain.source.discovery.model.DiscoveryCategory.POPULAR)
+                val latest = discovery(item, mihon.domain.source.discovery.model.DiscoveryCategory.LATEST)
+                check(popular.items.isNotEmpty()) { "${item.name} live catalogue failed" }
+                record("Reliability baseline ${item.name} popular=${popular.items.size} latest=${latest.items.size} state=${health.health(item.id).state}")
+            }
+            val preservedRows = repo.getChapterByMangaId(local.id).map { it.id }.toSet()
+            val preservedHistory = history.getHistoryByMangaId(local.id).map { it.id }.toSet()
+            var calls = 0
+            val failedClient = Injekt.get<eu.kanade.tachiyomi.network.NetworkHelper>().client.newBuilder().addInterceptor { chain ->
+                calls++
+                okhttp3.Response.Builder().request(chain.request()).protocol(okhttp3.Protocol.HTTP_1_1).code(200).message("simulated invalid API")
+                    .body("{\"post\":null}".toResponseBody("application/json".toMediaType())).build()
+            }.build()
+            val broken = Azora(failedClient)
+            for (attempt in 1..3) {
+                // Advance eligibility only, simulating elapsed backoff without real multi-minute sleeps.
+                health.restore(health.states.value + (source.id to health.health(source.id).copy(nextProbeAt = 0)))
+                val result = discovery(broken, mihon.domain.source.discovery.model.DiscoveryCategory.POPULAR)
+                check(health.health(source.id).failures == attempt)
+                if (attempt < 3) check(result.items.isNotEmpty()) { "Last-known-good catalogue lost" }
+                val callsBefore = calls
+                repeat(5) { discovery(broken, mihon.domain.source.discovery.model.DiscoveryCategory.POPULAR) }
+                check(calls == callsBefore) { "Retry storm" }
+                val other = discovery(sources.first { it.id != source.id }, mihon.domain.source.discovery.model.DiscoveryCategory.POPULAR)
+                check(other.items.isNotEmpty())
+                record("Broken source attempt=$attempt state=${health.health(source.id).state} actualCalls=$calls extraRetries=0 otherSourceResults=${other.items.size}")
+            }
+            check(!health.discoverable(source.id))
+            val blockedUpdate = Injekt.get<mihon.domain.source.interactor.UpdateMangaFromRemote>()(local, fetchChapters = true)
+            check(blockedUpdate.isFailure && blockedUpdate.exceptionOrNull()?.message == "Source temporarily unavailable")
+            record("Real library updater refused unavailable source before reconciliation: clean error")
+            auditHealthyLibraryUpdate(sources.filterIsInstance<MangaTime>().single())
+            check(repo.getChapterByMangaId(local.id).map { it.id }.toSet() == preservedRows)
+            check(history.getHistoryByMangaId(local.id).map { it.id }.toSet() == preservedHistory)
+            check(Injekt.get<tachiyomi.domain.manga.repository.MangaRepository>().getMangaById(local.id).favorite)
+            record("UNAVAILABLE source library, history, chapters preserved; deletion=0")
+            val mainMonitor = addMonitor(eu.kanade.tachiyomi.ui.main.MainActivity::class.java.name, null, false)
+            targetContext.startActivity(Intent(targetContext, eu.kanade.tachiyomi.ui.main.MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
+            val main = mainMonitor.waitForActivityWithTimeout(20_000) as? eu.kanade.tachiyomi.ui.main.MainActivity ?: error("Home not opened")
+            try {
+                var home: eu.kanade.tachiyomi.ui.home.HomeViewModel? = null
+                runOnMainSync { home = androidx.lifecycle.ViewModelProvider(main)[eu.kanade.tachiyomi.ui.home.HomeViewModel::class.java] }
+                withTimeout(150_000) { while (home!!.state.value.isDiscoveryLoading || home!!.state.value.popularManga.isEmpty()) delay(250) }
+                check(home!!.state.value.popularManga.none { it.sourceId == source.id })
+                check(home!!.state.value.latestManga.none { it.sourceId == source.id })
+                saveScreenshot("reliability-home-broken.png")
+                record("Real Home usable while Azora UNAVAILABLE, healthyItems=${home!!.state.value.popularManga.size}, hidden broken source=true")
+                health.restore(health.states.value + (source.id to health.health(source.id).copy(nextProbeAt = 0)))
+                check(discovery(source, mihon.domain.source.discovery.model.DiscoveryCategory.POPULAR).items.isNotEmpty())
+                check(health.health(source.id).state == mihon.domain.source.health.SourceHealthMonitor.State.HEALTHY)
+                withTimeout(150_000) { while (home!!.state.value.popularManga.none { it.sourceId == source.id } && home!!.state.value.discoveryFeatured?.sourceId != source.id) delay(250) }
+                saveScreenshot("reliability-home-restored.png")
+                check(repo.getChapterByMangaId(local.id).map { it.id }.toSet() == preservedRows)
+                record("Restored production source HEALTHY; Home includes Azora again; same chapter IDs, no duplicates")
+            } finally { removeMonitor(mainMonitor) }
+    }
+
+    private fun tachiyomi.domain.chapter.model.Chapter.toChapterUpdateForAudit() = tachiyomi.domain.chapter.model.ChapterUpdate(id, url = url, memo = memo, read = read, bookmark = bookmark, lastPageRead = lastPageRead)
+
     override fun onStart() {
         super.onStart()
         waitForIdleSync()
@@ -198,6 +418,11 @@ class SourceAuditInstrumentation : Instrumentation() {
                 val registered = manager.get(it.id) as? HttpSource ?: error("Source not registered: ${it.name}")
                 check(registered.javaClass == it.javaClass) { "UI uses another implementation: ${registered.javaClass}" }
                 registered
+            }
+            if (reliability) {
+                try { withTimeout(480_000) { auditReliability(sources) } }
+                catch (e: Exception) { failures++; record("Reliability ERROR ${e.javaClass.simpleName}: ${e.message}") }
+                return@runBlocking
             }
             record("Registered MangaSwat origin=${manager.get(MangaSwat().id)?.javaClass?.name}; external preferred default retained")
             for (source in sources.filter { selected == null || it.javaClass.simpleName == selected }) {
