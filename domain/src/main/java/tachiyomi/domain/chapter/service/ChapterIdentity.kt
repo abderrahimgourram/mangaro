@@ -48,7 +48,11 @@ object ChapterIdentity {
         }
         match { old, new -> old.url == new.url }
         match { old, new -> remoteIds(old, sourceId).intersect(remoteIds(new, sourceId)).isNotEmpty() }
-        match { old, new -> verifiedRedirects[old.url] == new.url }
+        match { old, new ->
+            verifiedRedirects[old.url] == new.url &&
+                (old.chapterNumber < 0 || new.chapterNumber < 0 || old.chapterNumber == new.chapterNumber) &&
+                (old.scanlator.isNullOrBlank() || new.scanlator.isNullOrBlank() || old.scanlator == new.scanlator)
+        }
         match { old, new ->
             val oldIds = remoteIds(old, sourceId)
             val newIds = remoteIds(new, sourceId)

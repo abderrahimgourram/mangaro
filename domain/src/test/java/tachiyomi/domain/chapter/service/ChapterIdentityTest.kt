@@ -42,4 +42,7 @@ class ChapterIdentityTest {
         ChapterIdentity.reconcile(2482399499047903203L, 2482399499047903203L, 10, listOf(old), listOf(moved)).matches[0]?.id shouldBe 7
         ChapterIdentity.remoteIds(old, 4).isEmpty() shouldBe true
     }
+    @Test fun `redirect to a different numbered chapter is not equivalence`() {
+        ChapterIdentity.reconcile(4, 4, 10, listOf(row(1, "/old", "1")), listOf(row(-1, "/new", "2").copy(chapterNumber = 2.0)), mapOf("/old" to "/new")).matches.size shouldBe 0
+    }
 }
