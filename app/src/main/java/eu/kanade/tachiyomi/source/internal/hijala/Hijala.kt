@@ -6,6 +6,7 @@ import android.graphics.Canvas
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.awaitSuccess
 import eu.kanade.tachiyomi.source.internal.util.SourceValidationUtil
+import eu.kanade.tachiyomi.source.internal.util.HtmlMangaIntegrity
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
@@ -14,6 +15,7 @@ import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.SMangaUpdate
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Headers
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
@@ -50,48 +52,40 @@ class Hijala(
         val url = request.url
         if (url.host == "127.0.0.1" && url.queryParameter("leftImage") != null) {
             val leftUrl = url.queryParameter("leftImage")!!
-            val rightUrl = url.queryParameter("rightImage")!!
+            val rightUrl = url.queryParameter("rightImage") ?: throw IOException("Hijala split image missing right half")
 
             val leftReq = request.newBuilder().url(leftUrl).build()
             val rightReq = request.newBuilder().url(rightUrl).build()
 
-            val leftResp = chain.proceed(leftReq)
-            val rightResp = chain.proceed(rightReq)
-
-            val leftBitmap = BitmapFactory.decodeStream(leftResp.body.byteStream())
-            val rightBitmap = BitmapFactory.decodeStream(rightResp.body.byteStream())
-
-            if (leftBitmap != null && rightBitmap != null) {
-                val combinedWidth = leftBitmap.width + rightBitmap.width
-                val maxHeight = maxOf(leftBitmap.height, rightBitmap.height)
-
-                val combinedBitmap = Bitmap.createBitmap(combinedWidth, maxHeight, Bitmap.Config.ARGB_8888)
-                val canvas = Canvas(combinedBitmap)
-                canvas.drawBitmap(rightBitmap, 0f, 0f, null)
-                canvas.drawBitmap(leftBitmap, rightBitmap.width.toFloat(), 0f, null)
-
-                val stream = ByteArrayOutputStream()
-                combinedBitmap.compress(Bitmap.CompressFormat.JPEG, 90, stream)
-                val bytes = stream.toByteArray()
-
-                Response.Builder()
-                    .request(request)
-                    .protocol(Protocol.HTTP_1_1)
-                    .code(200)
-                    .message("OK")
-                    .body(bytes.toResponseBody("image/jpeg".toMediaType()))
-                    .build()
-            } else {
-                leftResp
+            fun decode(req: Request): Bitmap = chain.proceed(req).use { response ->
+                if (!response.isSuccessful) throw IOException("Hijala split image HTTP ${response.code}")
+                BitmapFactory.decodeStream(response.body.byteStream()) ?: throw IOException("Hijala split image invalid")
             }
+            val leftBitmap = decode(leftReq)
+            try {
+                val rightBitmap = decode(rightReq)
+                try {
+                    val combined = Bitmap.createBitmap(leftBitmap.width + rightBitmap.width,
+                        maxOf(leftBitmap.height, rightBitmap.height), Bitmap.Config.ARGB_8888)
+                    try {
+                        val canvas = Canvas(combined)
+                        canvas.drawBitmap(rightBitmap, 0f, 0f, null)
+                        canvas.drawBitmap(leftBitmap, rightBitmap.width.toFloat(), 0f, null)
+                        val stream = ByteArrayOutputStream()
+                        if (!combined.compress(Bitmap.CompressFormat.JPEG, 90, stream)) throw IOException("Hijala image stitching failed")
+                        Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(200).message("OK")
+                            .body(stream.toByteArray().toResponseBody("image/jpeg".toMediaType())).build()
+                    } finally { combined.recycle() }
+                } finally { rightBitmap.recycle() }
+            } finally { leftBitmap.recycle() }
         } else {
             chain.proceed(request)
         }
     }
 
-    override val client: OkHttpClient get() {
+    override val client: OkHttpClient by lazy {
         val base = customClient ?: network.client
-        return base.newBuilder().addInterceptor(stitchingInterceptor).build()
+        base.newBuilder().addInterceptor(stitchingInterceptor).build()
     }
 
     override fun headersBuilder(): Headers.Builder = Headers.Builder()
@@ -186,10 +180,7 @@ class Hijala(
         if (titleText.isBlank()) return null
 
         val imgElement = element.selectFirst("img")
-        val thumbnailUrl = imgElement?.attr("abs:data-src")
-            ?.ifBlank { imgElement.attr("data-src") }
-            ?.ifBlank { imgElement.attr("abs:src") }
-            ?.ifBlank { imgElement.attr("src") }
+        val thumbnailUrl = HtmlMangaIntegrity.image(imgElement, element.baseUri().ifBlank { baseUrl })
 
         return SManga.create().apply {
             url = relativeUrl
@@ -209,10 +200,14 @@ class Hijala(
         val document = response.asJsoup()
         SourceValidationUtil.checkCloudflareOrError(document)
 
+        HtmlMangaIntegrity.details(document, "h1.entry-title", ".thumb, #chapterlist", false)
         val updatedManga = if (fetchDetails) parseMangaDetails(document, manga) else manga
         val updatedChapters = if (fetchChapters) {
-            val parsed = eu.kanade.tachiyomi.source.internal.util.ChapterPagination.collect(this, document, manga.url, ::parseChapters)
-            if (parsed.isEmpty()) {
+            val parsed = if (HtmlMangaIntegrity.count(document) == 0) {
+                if (parseChapters(document).isNotEmpty()) throw IOException("Hijala zero total conflicts with rows")
+                emptyList()
+            } else eu.kanade.tachiyomi.source.internal.util.ChapterPagination.collect(this, document, manga.url, ::parseChapters)
+            if (parsed.isEmpty() && HtmlMangaIntegrity.count(document) != 0) {
                 throw IOException("Hijala returned 0 chapters for ${manga.title}")
             }
             parsed
@@ -220,29 +215,23 @@ class Hijala(
             chapters
         }
 
-        return SMangaUpdate(updatedManga, updatedChapters)
+        val declared = HtmlMangaIntegrity.count(document)
+        if (fetchChapters && declared != null && declared != updatedChapters.size) throw IOException("Hijala chapter total mismatch")
+        return SMangaUpdate(updatedManga, updatedChapters,
+            if (fetchChapters && declared == updatedChapters.size) eu.kanade.tachiyomi.source.model.ChapterFetchCompleteness.COMPLETE
+            else eu.kanade.tachiyomi.source.model.ChapterFetchCompleteness.DEGRADED)
     }
 
     fun parseMangaDetails(document: Document, manga: SManga): SManga {
+        HtmlMangaIntegrity.details(document, "h1.entry-title", ".thumb, #chapterlist", false)
         return manga.apply {
             val titleText = document.selectFirst("h1.entry-title")?.text()?.trim()
             if (!titleText.isNullOrBlank()) {
                 title = titleText
             }
 
-            val imgElement = document.selectFirst("div.thumb img")
-            if (imgElement != null) {
-                val coverUrl = imgElement.attr("abs:data-src")
-                    .ifBlank { imgElement.attr("data-src") }
-                    .ifBlank { imgElement.attr("abs:data-lazy-src") }
-                    .ifBlank { imgElement.attr("data-lazy-src") }
-                    .ifBlank { imgElement.attr("abs:src") }
-                    .ifBlank { imgElement.attr("src") }
-
-                if (coverUrl.isNotBlank() && !coverUrl.startsWith("data:")) {
-                    thumbnail_url = coverUrl
-                }
-            }
+            document.select("div.thumb img, meta[property=og:image]").firstNotNullOfOrNull { HtmlMangaIntegrity.image(it, document.baseUri().ifBlank { baseUrl }) }
+                ?.let { thumbnail_url = it }
 
             description = document.select("div.entry-content, div.desc p").text().trim()
             val text = document.text()
@@ -258,15 +247,15 @@ class Hijala(
     fun parseChapters(document: Document): List<SChapter> {
         val elements = document.select("div#chapterlist ul li")
         return elements.mapNotNull { element ->
-            val linkElement = element.selectFirst("a") ?: return@mapNotNull null
+            val linkElement = element.selectFirst("a") ?: throw IOException("Chapter row missing link")
             val href = linkElement.attr("href")
-            if (href.isBlank() || href.contains("#/chapter-")) return@mapNotNull null
+            if (href.isBlank() || href.contains("#/chapter-")) throw IOException("Hijala invalid chapter link")
 
             val relativeUrl = getRelativeUrl(href)
             val chapNumText = element.selectFirst("span.chapternum")?.text()?.trim()
                 ?: linkElement.text().trim()
 
-            if (chapNumText.isBlank()) return@mapNotNull null
+            if (chapNumText.isBlank()) throw IOException("Chapter row missing name")
 
             val num = parseChapterNumber(chapNumText, element.attr("data-num"))
 
@@ -285,7 +274,10 @@ class Hijala(
     }
 
     override fun pageListParse(response: Response): List<Page> {
-        val document = response.asJsoup()
+        val document = response.use {
+            if (it.request.url.encodedPath.trim('/').isBlank()) throw IOException("Hijala Reader redirected to homepage")
+            it.asJsoup()
+        }
         return parsePagesFromDocument(document)
     }
 
@@ -295,35 +287,24 @@ class Hijala(
         val pages = mutableListOf<Page>()
 
         elements.forEachIndexed { index, element ->
-            val url = element.attr("abs:data-src")
-                .ifBlank { element.attr("data-src") }
-                .ifBlank { element.attr("abs:src") }
-                .ifBlank { element.attr("src") }
+            val url = HtmlMangaIntegrity.image(element, document.baseUri().ifBlank { baseUrl })
+                ?: throw IOException("Reader image missing valid URL")
 
             if (url.isNotBlank() && !url.contains("placeholder") && !url.startsWith("data:")) {
                 pages.add(Page(index, "", url))
             }
         }
 
-        if (pages.isEmpty() || pages.size != elements.size) throw IOException("Hijala returned an empty or incomplete page list")
+        if (pages.isEmpty() || pages.size != elements.size || pages.map { it.imageUrl }.toSet().size != pages.size) throw IOException("Hijala returned an empty or incomplete page list")
         return pages
     }
 
     private fun getRelativeUrl(url: String): String {
-        return try {
-            val uri = URI(url)
-            val path = uri.rawPath
-            val query = uri.rawQuery
-            val fragment = uri.rawFragment
-
-            buildString {
-                append(path)
-                if (query != null) append("?$query")
-                if (fragment != null) append("#$fragment")
-            }
-        } catch (_: Exception) {
-            url
-        }
+        val base = baseUrl.toHttpUrl()
+        val resolved = base.resolve(url.trim()) ?: throw IOException("Invalid source URL")
+        if (resolved.host != base.host || resolved.encodedPath == "/") throw IOException("Source URL lost identity")
+        return resolved.encodedPath + (resolved.encodedQuery?.let { "?$it" } ?: "") +
+            (resolved.encodedFragment?.let { "#$it" } ?: "")
     }
 
     private fun parseChapterNumber(text: String, dataNum: String?): Float {

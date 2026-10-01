@@ -5,6 +5,7 @@ import eu.kanade.tachiyomi.network.POST
 import eu.kanade.tachiyomi.network.awaitSuccess
 import eu.kanade.tachiyomi.network.interceptor.CloudflareInterceptor
 import eu.kanade.tachiyomi.source.internal.util.SourceValidationUtil
+import eu.kanade.tachiyomi.source.internal.util.HtmlMangaIntegrity
 import kotlinx.coroutines.CancellationException
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
@@ -15,6 +16,7 @@ import eu.kanade.tachiyomi.source.model.SMangaUpdate
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
 import okhttp3.FormBody
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Headers
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -159,15 +161,16 @@ class MangaLek(
         if (titleText.isBlank()) return null
 
         val imgElement = element.selectFirst("div.item-thumb img, div.tab-thumb img, img")
-        val thumbnailUrl = imgElement?.attr("abs:data-src")
-            ?.ifBlank { imgElement.attr("abs:src") }
-            ?.ifBlank { imgElement.attr("src") }
-            ?.ifBlank { imgElement.attr("data-src") }
+        val thumbnailUrl = HtmlMangaIntegrity.image(imgElement, element.baseUri().ifBlank { baseUrl })
 
         return SManga.create().apply {
             url = finalUrl
             title = titleText
             thumbnail_url = thumbnailUrl
+            val prefix = url.substringBefore('#').trimEnd('/') + "/"
+            if (element.select("a[href]").any { link ->
+                runCatching { getRelativeUrl(link.attr("href")).startsWith(prefix) }.getOrDefault(false)
+            }) eu.kanade.tachiyomi.source.internal.util.DiscoveryChapterGate.positive(id, url)
         }
     }
 
@@ -189,6 +192,7 @@ class MangaLek(
             val response = directClient.newCall(request).awaitSuccess()
             val document = response.asJsoup()
             SourceValidationUtil.checkCloudflareOrError(document)
+            HtmlMangaIntegrity.details(document, "div.post-title h1, h1.entry-title", ".summary_image, #manga-chapters-holder, .listing-chapters_wrap, li.wp-manga-chapter", true)
             doc = document
         } catch (e: CancellationException) {
             throw e
@@ -238,30 +242,28 @@ class MangaLek(
             if (!usedFullEndpoint && doc != null && updatedChapters.isNotEmpty()) {
                 updatedChapters = eu.kanade.tachiyomi.source.internal.util.ChapterPagination.collect(this, doc, cleanUrl, ::parseChapters)
             }
-            if (updatedChapters.isEmpty()) {
+            if (updatedChapters.isEmpty() && doc?.let(HtmlMangaIntegrity::count) != 0) {
                 throw IOException("MangaLek returned 0 chapters for manga ${manga.title}")
             }
         }
 
-        return SMangaUpdate(updatedManga, updatedChapters)
+        val declared = doc?.let(HtmlMangaIntegrity::count)
+        if (fetchChapters && declared != null && declared != updatedChapters.size) throw IOException("MangaLek chapter total mismatch")
+        return SMangaUpdate(updatedManga, updatedChapters,
+            if (fetchChapters && declared == updatedChapters.size) eu.kanade.tachiyomi.source.model.ChapterFetchCompleteness.COMPLETE
+            else eu.kanade.tachiyomi.source.model.ChapterFetchCompleteness.DEGRADED)
     }
 
     fun parseMangaDetails(document: Document, manga: SManga): SManga {
+        HtmlMangaIntegrity.details(document, "div.post-title h1, h1.entry-title", ".summary_image, #manga-chapters-holder, .listing-chapters_wrap, li.wp-manga-chapter", true)
         return manga.apply {
             val titleText = document.selectFirst("div.post-title h1, h1.entry-title")?.text()?.trim()
             if (!titleText.isNullOrBlank()) {
                 title = titleText
             }
 
-            val imgElement = document.selectFirst("div.summary_image img, div.thumb img")
-            if (imgElement != null) {
-                val coverUrl = imgElement.attr("abs:data-src")
-                    .ifBlank { imgElement.attr("abs:src") }
-                    .ifBlank { imgElement.attr("src") }
-                if (coverUrl.isNotBlank()) {
-                    thumbnail_url = coverUrl
-                }
-            }
+            document.select("div.summary_image img, div.thumb img, meta[property=og:image]").firstNotNullOfOrNull { HtmlMangaIntegrity.image(it, document.baseUri().ifBlank { baseUrl }) }
+                ?.let { thumbnail_url = it }
 
             author = document.select("div.author-content a, div.manga-authors a").joinToString(", ") { it.text().trim() }.ifBlank { null }
             artist = document.select("div.artist-content a, div.manga-artists a").joinToString(", ") { it.text().trim() }.ifBlank { null }
@@ -281,13 +283,14 @@ class MangaLek(
     fun parseChapters(document: Document): List<SChapter> {
         val elements = document.select("li.wp-manga-chapter")
         return elements.mapNotNull { element ->
-            val linkElement = element.selectFirst("a") ?: return@mapNotNull null
+            val linkElement = element.selectFirst("a") ?: throw IOException("Chapter row missing link")
             val href = linkElement.attr("href")
-            if (href.isBlank()) return@mapNotNull null
+            if (href.isBlank()) throw IOException("Chapter row missing URL")
 
             val relativeUrl = getRelativeUrl(href)
+            if (!Regex("/manga/[^/]+/[^/]+/?").matches(relativeUrl.substringBefore('?').substringBefore('#'))) throw IOException("MangaLek invalid chapter route")
             val chapName = linkElement.text().trim()
-            if (chapName.isBlank()) return@mapNotNull null
+            if (chapName.isBlank()) throw IOException("Chapter row missing name")
 
             val num = parseChapterNumber(chapName, relativeUrl)
 
@@ -302,8 +305,10 @@ class MangaLek(
     override suspend fun getPageList(chapter: SChapter): List<Page> {
         val request = GET(baseUrl + chapter.url, headers)
         val response = client.newCall(request).awaitSuccess()
-        val document = response.asJsoup()
-        SourceValidationUtil.checkCloudflareOrError(document)
+        val document = response.use {
+            if (!Regex("/manga/[^/]+/[^/]+/?").matches(it.request.url.encodedPath)) throw IOException("MangaLek Reader redirected outside chapter")
+            it.asJsoup()
+        }
         return parsePagesFromDocument(document)
     }
 
@@ -318,35 +323,24 @@ class MangaLek(
         val pages = mutableListOf<Page>()
 
         elements.forEachIndexed { index, element ->
-            val url = element.attr("abs:data-src")
-                .ifBlank { element.attr("abs:src") }
-                .ifBlank { element.attr("src") }
-                .ifBlank { element.attr("data-src") }
+            val url = HtmlMangaIntegrity.image(element, document.baseUri().ifBlank { baseUrl })
+                ?: throw IOException("Reader image missing valid URL")
 
             if (url.isNotBlank() && !url.contains("placeholder") && !url.startsWith("data:")) {
                 pages.add(Page(index, "", url.trim()))
             }
         }
 
-        if (pages.isEmpty() || pages.size != elements.size) throw IOException("MangaLek returned an empty or incomplete page list")
+        if (pages.isEmpty() || pages.size != elements.size || pages.map { it.imageUrl }.toSet().size != pages.size) throw IOException("MangaLek returned an empty or incomplete page list")
         return pages
     }
 
     private fun getRelativeUrl(url: String): String {
-        return try {
-            val uri = URI(url)
-            val path = uri.rawPath
-            val query = uri.rawQuery
-            val fragment = uri.rawFragment
-
-            buildString {
-                append(path)
-                if (query != null) append("?$query")
-                if (fragment != null) append("#$fragment")
-            }
-        } catch (_: Exception) {
-            url
-        }
+        val base = baseUrl.toHttpUrl()
+        val resolved = base.resolve(url.trim()) ?: throw IOException("Invalid source URL")
+        if (resolved.host != base.host || resolved.encodedPath == "/") throw IOException("Source URL lost identity")
+        return resolved.encodedPath + (resolved.encodedQuery?.let { "?$it" } ?: "") +
+            (resolved.encodedFragment?.let { "#$it" } ?: "")
     }
 
     private fun parseChapterNumber(name: String, url: String): Float {

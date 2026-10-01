@@ -4,6 +4,7 @@ import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.awaitSuccess
 import eu.kanade.tachiyomi.source.MangaDarPageResolver
 import eu.kanade.tachiyomi.source.internal.util.SourceValidationUtil
+import eu.kanade.tachiyomi.source.internal.util.HtmlMangaIntegrity
 import eu.kanade.tachiyomi.source.model.ChapterFetchCompleteness
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.Filter
@@ -184,27 +185,23 @@ class MangaDar(
         val container = anchor.parent()?.takeIf { it.selectFirst("img") != null } ?: anchor
 
         val imgElement = anchor.selectFirst("img") ?: container.selectFirst("img")
-        val titleText = anchor.attr("title").ifBlank {
-            imgElement?.attr("alt")
-                ?: anchor.selectFirst("h3, h2, h1, .title, .tt, div.post-title")?.text()
-                ?: container.selectFirst("h3, h2, h1, .title, .tt, div.post-title")?.text()
-                ?: anchor.text()
-        }.trim()
+        val titleText = sequenceOf(anchor.attr("title"), imgElement?.attr("alt"),
+            anchor.selectFirst("h3, h2, h1, .title, .tt, div.post-title")?.text(),
+            container.selectFirst("h3, h2, h1, .title, .tt, div.post-title")?.text(), anchor.text())
+            .filterNotNull().map { it.trim() }.firstOrNull { it.isNotBlank() }.orEmpty()
 
         if (titleText.isBlank()) return null
 
-        val thumbnailUrl = imgElement?.attr("abs:data-src")
-            ?.ifBlank { imgElement.attr("data-src") }
-            ?.ifBlank { imgElement.attr("abs:data-lazy-src") }
-            ?.ifBlank { imgElement.attr("data-lazy-src") }
-            ?.ifBlank { imgElement.attr("abs:src") }
-            ?.ifBlank { imgElement.attr("src") }
-            ?.takeIf { !it.startsWith("data:") }
+        val thumbnailUrl = HtmlMangaIntegrity.image(imgElement, anchor.baseUri().ifBlank { baseUrl })
 
         return SManga.create().apply {
             url = relativeUrl
             title = titleText
             thumbnail_url = thumbnailUrl
+            val prefix = url.substringBefore('#').trimEnd('/') + "/"
+            if (container.select("a[href]").any { link ->
+                runCatching { getRelativeUrl(link.attr("href")).startsWith(prefix) }.getOrDefault(false)
+            }) eu.kanade.tachiyomi.source.internal.util.DiscoveryChapterGate.positive(id, url)
         }
     }
 
@@ -219,11 +216,14 @@ class MangaDar(
         val document = response.asJsoup()
         SourceValidationUtil.checkCloudflareOrError(document)
 
-        if (document.select("h1").isEmpty()) throw IOException("MangaDar details missing manga identity")
+        HtmlMangaIntegrity.details(document, "h1.entry-title, h1.title, div.post-title h1, main h1", ".thumb, .summary_image, div[x-data], .chapter-card, .chapter-item", true)
         val updatedManga = if (fetchDetails) parseMangaDetails(document, manga) else manga
         val updatedChapters = if (fetchChapters) {
-            val parsed = parseChapters(document)
-            if (parsed.isEmpty()) {
+            val parsed = if (HtmlMangaIntegrity.count(document) == 0) {
+                if (parseChapters(document).isNotEmpty()) throw IOException("MangaDar zero total conflicts with rows")
+                emptyList()
+            } else eu.kanade.tachiyomi.source.internal.util.ChapterPagination.collect(this, document, manga.url, ::parseChapters)
+            if (parsed.isEmpty() && HtmlMangaIntegrity.count(document) != 0) {
                 throw IOException("MangaDar returned 0 chapters for manga ${manga.title}")
             }
             parsed
@@ -231,10 +231,13 @@ class MangaDar(
             chapters
         }
 
+        if (fetchChapters) HtmlMangaIntegrity.count(document)?.let {
+            if (it != updatedChapters.size) throw IOException("MangaDar chapter total mismatch")
+        }
         return SMangaUpdate(
             updatedManga,
             updatedChapters,
-            if (fetchChapters && document.select("div[x-data]").any { it.attr("x-data").contains("rows:") }) {
+            if (fetchChapters && HtmlMangaIntegrity.count(document) == updatedChapters.size) {
                 ChapterFetchCompleteness.COMPLETE
             } else {
                 ChapterFetchCompleteness.DEGRADED
@@ -243,22 +246,15 @@ class MangaDar(
     }
 
     fun parseMangaDetails(document: Document, manga: SManga): SManga {
+        HtmlMangaIntegrity.details(document, "h1.entry-title, h1.title, div.post-title h1, main h1", ".thumb, .summary_image, div[x-data], .chapter-card, .chapter-item", true)
         return manga.apply {
             val titleText = document.selectFirst("h1.entry-title, h1.title, div.post-title h1, main h1")?.text()?.trim()
             if (!titleText.isNullOrBlank()) {
                 title = titleText
             }
 
-            val imgElement = document.selectFirst("div.thumb img, div.summary_image img, meta[property=og:image]")
-            if (imgElement != null) {
-                val coverUrl = imgElement.attr("content").ifBlank { imgElement.attr("abs:data-src") }
-                    .ifBlank { imgElement.attr("data-src") }
-                    .ifBlank { imgElement.attr("abs:src") }
-                    .ifBlank { imgElement.attr("src") }
-                if (coverUrl.isNotBlank() && !coverUrl.startsWith("data:")) {
-                    thumbnail_url = coverUrl
-                }
-            }
+            document.select("div.thumb img, div.summary_image img, meta[property=og:image]").firstNotNullOfOrNull { HtmlMangaIntegrity.image(it, document.baseUri().ifBlank { baseUrl }) }
+                ?.let { thumbnail_url = it }
 
             document.selectFirst("meta[name=description]")?.attr("content")
                 ?.takeIf { it.isNotBlank() }?.let { description = it }
@@ -285,6 +281,7 @@ class MangaDar(
                 val row = element as? JsonArray ?: throw IOException("MangaDar invalid chapter row")
                 if (row.size < 4) throw IOException("MangaDar incomplete chapter row")
                 val id = row[0].jsonPrimitive.content
+                if (id.isBlank()) throw IOException("MangaDar missing remote chapter ID")
                 val number = row[1].jsonPrimitive.content
                 val path = getRelativeUrl(row[2].jsonPrimitive.content)
                 if (!path.startsWith("/manga/") || path.trim('/').split('/').size != 3) {
@@ -298,22 +295,22 @@ class MangaDar(
                     memo = buildJsonObject { put("mangadar.id", id) }
                 }
             }
-            if (parsed.isEmpty() || parsed.distinctBy { it.url }.size != parsed.size) {
+            if (parsed.distinctBy { it.url }.size != parsed.size || parsed.map { it.memo["mangadar.id"] }.toSet().size != parsed.size) {
                 throw IOException("MangaDar empty or duplicate chapter rows")
             }
             return parsed
         }
         val elements = document.select("div.chapter-card, li.wp-manga-chapter, div.chapter-item, div#chapterlist ul li")
         return elements.mapNotNull { element ->
-            val linkElement = element.selectFirst("a") ?: return@mapNotNull null
+            val linkElement = element.selectFirst("a") ?: throw IOException("Chapter row missing link")
             val href = linkElement.attr("href")
-            if (href.isBlank()) return@mapNotNull null
+            if (href.isBlank()) throw IOException("Chapter row missing URL")
 
             val relativeUrl = getRelativeUrl(href)
             val chapName = element.selectFirst("span.chapter-title, span.chapternum")?.text()?.trim()
                 ?: linkElement.text().trim()
 
-            if (chapName.isBlank()) return@mapNotNull null
+            if (chapName.isBlank()) throw IOException("Chapter row missing name")
 
             val num = parseChapterNumber(chapName, relativeUrl)
 

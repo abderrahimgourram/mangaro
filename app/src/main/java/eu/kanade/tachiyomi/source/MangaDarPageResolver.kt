@@ -22,7 +22,10 @@ internal object MangaDarPageResolver {
             .url(source.getChapterUrl(chapter))
             .headers(source.headers)
             .build()
-        val html = source.client.newCall(request).awaitSuccess().use { it.body.string() }
+        val html = source.client.newCall(request).awaitSuccess().use {
+            if (!Regex("/manga/[^/]+/[^/]+/?").matches(it.request.url.encodedPath)) throw IOException("MangaDar Reader redirected outside chapter")
+            it.body.string()
+        }
         return parseImageUrls(html).mapIndexed { index, url -> Page(index, imageUrl = url) }
     }
 
@@ -31,7 +34,7 @@ internal object MangaDarPageResolver {
         SourceValidationUtil.checkCloudflareOrError(document)
         val images = document.select(".reader-page img")
         if (images.isEmpty()) throw IOException("MangaDar chapter contains no reader images")
-        return images.map { image ->
+        val urls = images.map { image ->
             val encoded = image.attr("data-mds")
             if (encoded.isBlank() || encoded.length > 4096) {
                 throw IOException("MangaDar reader image is missing a signed URL")
@@ -46,5 +49,7 @@ internal object MangaDarPageResolver {
             }
             url
         }
+        if (urls.toSet().size != urls.size) throw IOException("MangaDar repeated reader images")
+        return urls
     }
 }
