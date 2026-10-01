@@ -3,6 +3,7 @@ package eu.kanade.tachiyomi.source.internal.teamx
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.awaitSuccess
 import eu.kanade.tachiyomi.source.internal.util.SourceValidationUtil
+import eu.kanade.tachiyomi.source.model.ChapterFetchCompleteness
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
@@ -14,6 +15,7 @@ import eu.kanade.tachiyomi.util.asJsoup
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import okhttp3.Headers
@@ -104,11 +106,13 @@ class TeamX(
     override fun getFilterList(): FilterList = FilterList()
 
     fun parseMangaListFromDocument(document: Document): MangasPage {
+        SourceValidationUtil.checkCloudflareOrError(document)
         val elements = document.select("div.listupd div.bsx, a.tx-card, div.bsx, div.last-chapter div.box")
         val mangas = elements.mapNotNull { element ->
             parseMangaFromElement(element)
         }.distinctBy { it.url }
 
+        if (mangas.isEmpty()) throw IOException("TeamX catalogue contained no validated manga cards")
         val hasNextPage = document.select("ul.pagination a[rel=next]").first() != null ||
             document.select("ul.pagination li.page-item:not(.disabled) a[href*=?page=]").any {
                 it.text().trim() == ">" || it.text().trim() == "›" || it.attr("rel") == "next"
@@ -153,9 +157,9 @@ class TeamX(
         val document = response.asJsoup()
 
         val updatedManga = if (fetchDetails) parseMangaDetails(document, manga) else manga
-        val updatedChapters = if (fetchChapters) parseChapters(document, manga.url) else chapters
+        val chapterResult = if (fetchChapters) fetchVerifiedChapters(document, manga.url) else Pair(chapters, ChapterFetchCompleteness.DEGRADED)
 
-        return SMangaUpdate(updatedManga, updatedChapters)
+        return SMangaUpdate(updatedManga, chapterResult.first, chapterResult.second)
     }
 
     fun parseMangaDetails(document: Document, manga: SManga): SManga {
@@ -196,44 +200,54 @@ class TeamX(
         }
     }
 
-    suspend fun parseChapters(initialDocument: Document, mangaUrl: String): List<SChapter> = coroutineScope {
-        SourceValidationUtil.checkCloudflareOrError(initialDocument)
-        val page1Chapters = parseChaptersFromDocument(initialDocument)
-        val additionalPageUrls = getAdditionalChapterPageUrls(initialDocument, mangaUrl)
+    suspend fun parseChapters(initialDocument: Document, mangaUrl: String): List<SChapter> = fetchVerifiedChapters(initialDocument, mangaUrl).first
 
-        if (additionalPageUrls.isEmpty()) {
-            val chapters = page1Chapters.distinctBy { it.url }
-            if (chapters.isEmpty() && initialDocument.select("h1, .entry-title, .post-title").isNotEmpty()) {
-                throw IOException("TeamX returned 0 chapters for $mangaUrl")
-            }
-            return@coroutineScope chapters
-        }
-
-        val deferredPages = additionalPageUrls.map { pageUrl ->
-            async {
-                chapterPaginationSemaphore.withPermit {
-                    val req = GET(baseUrl + pageUrl, headers)
-                    val resp = client.newCall(req).awaitSuccess()
-                    val doc = resp.asJsoup()
-                    SourceValidationUtil.checkCloudflareOrError(doc)
-                    parseChaptersFromDocument(doc)
+    private suspend fun fetchVerifiedChapters(initialDocument: Document, mangaUrl: String): Pair<List<SChapter>, ChapterFetchCompleteness> = withTimeout(180_000) {
+        coroutineScope {
+            SourceValidationUtil.checkCloudflareOrError(initialDocument)
+            val allChapters = verifiedChapterPage(initialDocument, mangaUrl).toMutableList()
+            var allRowsMapped = allChapters.size == initialDocument.select("div.chapter-card").size
+            if (allChapters.isEmpty()) throw IOException("TeamX returned no chapters for $mangaUrl")
+            val completed = mutableSetOf<String>()
+            val pending = getAdditionalChapterPageUrls(initialDocument, mangaUrl).toMutableSet()
+            while (pending.isNotEmpty()) {
+                val batch = pending.take(CHAPTER_PAGINATION_CONCURRENCY_LIMIT)
+                pending.removeAll(batch.toSet())
+                val documents = batch.map { path ->
+                    async {
+                        chapterPaginationSemaphore.withPermit {
+                            client.newCall(GET(baseUrl + path, headers)).awaitSuccess().use { it.asJsoup() }
+                        }
+                    }
+                }.awaitAll()
+                for ((index, document) in documents.withIndex()) {
+                    SourceValidationUtil.checkCloudflareOrError(document)
+                    val parsed = verifiedChapterPage(document, mangaUrl)
+                    allRowsMapped = allRowsMapped && parsed.size == document.select("div.chapter-card").size
+                    val previousUrls = allChapters.map { it.url }.toHashSet()
+                    if (parsed.isEmpty() || parsed.none { it.url !in previousUrls }) {
+                        throw IOException("TeamX chapter page ${batch[index]} was empty or repeated")
+                    }
+                    allChapters.addAll(parsed)
+                    completed.add(batch[index])
+                    pending.addAll(getAdditionalChapterPageUrls(document, mangaUrl).filter { it !in completed })
                 }
+                pending.removeAll(completed)
             }
+            Pair(allChapters.distinctBy { it.url }, if (allRowsMapped) ChapterFetchCompleteness.COMPLETE else ChapterFetchCompleteness.DEGRADED)
         }
+    }
 
-        val additionalChapterLists = deferredPages.awaitAll()
-
-        val allChapters = mutableListOf<SChapter>()
-        allChapters.addAll(page1Chapters)
-        for (list in additionalChapterLists) {
-            allChapters.addAll(list)
+    private fun verifiedChapterPage(document: Document, mangaUrl: String): List<SChapter> {
+        val cards = document.select("div.chapter-card")
+        val accessible = cards.count {
+            it.select("i.fa-lock, a[data-bs-target='#buyModel'], a[data-bs-toggle='modal']").isEmpty()
         }
-
-        val result = allChapters.distinctBy { it.url }
-        if (result.isEmpty() && initialDocument.select("h1, .entry-title, .post-title").isNotEmpty()) {
-            throw IOException("TeamX returned 0 chapters for $mangaUrl")
+        val parsed = parseChaptersFromDocument(document)
+        if (parsed.size != accessible || parsed.any { !it.url.startsWith(mangaUrl.substringBefore('?').trimEnd('/') + "/") }) {
+            throw IOException("TeamX chapter page contains malformed or unrelated rows")
         }
-        result
+        return parsed
     }
 
     fun parseChaptersFromDocument(document: Document): List<SChapter> {
@@ -286,6 +300,7 @@ class TeamX(
         if (pageNumbers.isEmpty()) return emptyList()
 
         val maxPage = pageNumbers.maxOrNull() ?: return emptyList()
+        if (maxPage > 500) throw IOException("TeamX chapter pagination exceeds safety bound")
         return (2..maxPage).map { pageNum -> "$cleanMangaUrl?page=$pageNum" }
     }
 
@@ -301,20 +316,22 @@ class TeamX(
     }
 
     fun parsePagesFromDocument(document: Document): List<Page> {
+        SourceValidationUtil.checkCloudflareOrError(document)
         val elements = document.select("div.image_list img, div.image_list canvas, img.manga-chapter-img")
         val pages = mutableListOf<Page>()
 
         elements.forEach { element ->
-            val url = element.attr("abs:src")
-                .ifBlank { element.attr("src") }
-                .ifBlank { element.attr("abs:data-src") }
+            val url = element.attr("abs:data-src")
                 .ifBlank { element.attr("data-src") }
+                .ifBlank { element.attr("abs:src") }
+                .ifBlank { element.attr("src") }
 
             if (url.isNotBlank() && !url.startsWith("data:") && !url.contains("btn_close")) {
                 pages.add(Page(pages.size, "", url))
             }
         }
 
+        if (pages.isEmpty()) throw IOException("TeamX returned an empty or incomplete page list")
         return pages
     }
 
