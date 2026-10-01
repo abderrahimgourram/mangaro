@@ -24,7 +24,13 @@ object GroupDiscoveryItems {
     }
 
     fun group(items: List<HomeDiscoveryItem>): List<HomeDiscoveryItem> {
-        // Presentation must never collapse separate source/manga identities.
-        return items.distinctBy { it.sourceId to it.mangaId }.map { it.copy(availableVersions = emptyList()) }
+        val variants = items.flatMap { listOf(it.copy(alternatives = emptyList())) + it.alternatives }
+            .distinctBy { it.sourceId to it.mangaId }
+        return variants.groupBy { normalizeTitle(it.title).ifBlank { "${it.sourceId}:${it.mangaId}" } }.values.mapNotNull { group ->
+            val winner = group.filter { mihon.domain.source.health.SourceHealthMonitor.shared.discoverable(it.sourceId) }
+                .maxWithOrNull { a, b -> PreferredMangaVariants.compare(a.sourceId, a.mangaId, a.coverData.url, b.sourceId, b.mangaId, b.coverData.url) }
+                ?: return@mapNotNull null
+            winner.copy(availableVersions = emptyList(), alternatives = group.filterNot { it.sourceId == winner.sourceId && it.mangaId == winner.mangaId })
+        }
     }
 }

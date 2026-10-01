@@ -63,9 +63,12 @@ class DiscoveryCategoryGridViewModel(
 
     init {
         viewModelScope.launch {
+            PreferredMangaVariants.changes.collectLatest { _state.update { it.copy(items=GroupDiscoveryItems.group(it.items)) } }
+        }
+        viewModelScope.launch {
             var failed = emptySet<Long>()
             mihon.domain.source.health.SourceHealthMonitor.shared.states.collectLatest { states ->
-                _state.update { current -> current.copy(items = current.items.filter { item -> mihon.domain.source.health.SourceHealthMonitor.shared.discoverable(item.sourceId) }) }
+                _state.update { current -> current.copy(items = GroupDiscoveryItems.group(current.items)) }
                 val nowFailed = states.filterValues { it.failures > 0 || it.state == mihon.domain.source.health.SourceHealthMonitor.State.UNAVAILABLE }.keys
                 if ((failed - nowFailed).isNotEmpty() && sourcesList.isNotEmpty()) loadInitialPage(isRefresh = true, hasSeedItems = _state.value.items.isNotEmpty())
                 failed = nowFailed
@@ -210,7 +213,7 @@ class DiscoveryCategoryGridViewModel(
                     HomeDiscoveryItem(
                         mangaId = manga.id,
                         title = manga.title,
-                        coverData = manga.asMangaCover(),
+                        coverData = manga.also { PreferredMangaVariants.remember(it) }.asMangaCover(),
                         sourceId = res.sourceId,
                         sourceName = res.sourceName,
                         url = res.items.getOrNull(idx)?.url ?: manga.url,

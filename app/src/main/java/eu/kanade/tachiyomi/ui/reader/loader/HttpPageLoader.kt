@@ -209,10 +209,12 @@ internal class HttpPageLoader(
             }
 
             page.stream = { chapterCache.getImageFile(imageUrl).inputStream() }
+            chapter.chapter.manga_id?.let { eu.kanade.tachiyomi.ui.home.PreferredMangaVariants.reader(it, true) }
             page.status = Page.State.Ready
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            chapter.chapter.manga_id?.let { eu.kanade.tachiyomi.ui.home.PreferredMangaVariants.reader(it, false) }
             page.status = Page.State.Error(e)
         }
     }

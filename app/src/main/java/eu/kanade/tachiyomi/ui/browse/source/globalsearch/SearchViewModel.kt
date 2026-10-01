@@ -61,6 +61,14 @@ abstract class SearchViewModel(
 
     init {
         viewModelScope.launch {
+            kotlinx.coroutines.flow.merge(
+                mihon.domain.source.health.SourceHealthMonitor.shared.states,
+                eu.kanade.tachiyomi.ui.home.PreferredMangaVariants.changes,
+            ).collectLatest {
+                mutableState.update { current -> current.copy(healthRevision = current.healthRevision + 1) }
+            }
+        }
+        viewModelScope.launch {
             preferences.globalSearchFilterState.changes().collectLatest { state ->
                 mutableState.update { it.copy(onlyShowHasResults = state) }
             }
@@ -177,6 +185,7 @@ abstract class SearchViewModel(
     }
 
     private fun updateItem(source: Source, result: SearchItemResult) {
+        if (result is SearchItemResult.Success) result.result.forEach(eu.kanade.tachiyomi.ui.home.PreferredMangaVariants::remember)
         updateItems(state.value.items + (source to result))
     }
 
@@ -193,6 +202,7 @@ abstract class SearchViewModel(
 
     @Immutable
     data class State(
+        val healthRevision: Long = 0,
         val from: Manga? = null,
         val searchQuery: String? = null,
         val sourceFilter: SourceFilter = SourceFilter.PinnedOnly,
@@ -202,7 +212,12 @@ abstract class SearchViewModel(
     ) {
         val progress: Int = items.count { it.value !is SearchItemResult.Loading }
         val total: Int = items.size
-        val filteredItems = items.filter { (_, result) -> result.isVisible(onlyShowHasResults) }
+        val filteredItems: Map<Source, SearchItemResult> get() {
+            val winners = eu.kanade.tachiyomi.ui.home.PreferredMangaVariants.preferred(items.values.filterIsInstance<SearchItemResult.Success>().flatMap { it.result })
+            return items.mapValues { (_, result) ->
+                if (result is SearchItemResult.Success) SearchItemResult.Success(result.result.filter { it.id in winners }) else result
+            }.filter { (source, result) -> mihon.domain.source.health.SourceHealthMonitor.shared.discoverable(source.id) && result.isVisible(onlyShowHasResults) }
+        }
     }
 
     sealed interface Dialog {

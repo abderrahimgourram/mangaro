@@ -48,7 +48,7 @@ class GlobalSearchScreen(
             LoadingScreen()
 
             LaunchedEffect(state.items) {
-                when (val result = state.items.values.singleOrNull()) {
+                when (val result = state.filteredItems.values.singleOrNull()) {
                     SearchItemResult.Loading -> return@LaunchedEffect
                     is SearchItemResult.Success -> {
                         val manga = result.result.singleOrNull()

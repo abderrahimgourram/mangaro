@@ -70,16 +70,28 @@ class HomeViewModel(
 
     init {
         viewModelScope.launch {
+            PreferredMangaVariants.changes.collectLatest {
+                _state.update { current ->
+                    val combined = GroupDiscoveryItems.group(current.popularManga + listOfNotNull(current.discoveryFeatured))
+                    val title = current.discoveryFeatured?.title?.let(GroupDiscoveryItems::normalizeTitle)
+                    val featured = combined.firstOrNull { GroupDiscoveryItems.normalizeTitle(it.title) == title } ?: combined.firstOrNull()
+                    current.copy(discoveryFeatured=featured, popularManga=combined.filterNot { it.mangaId == featured?.mangaId },
+                        latestManga=GroupDiscoveryItems.group(current.latestManga), newManga=GroupDiscoveryItems.group(current.newManga),
+                        completedManga=GroupDiscoveryItems.group(current.completedManga), discoveryLatest=GroupDiscoveryItems.group(current.discoveryLatest))
+                }
+            }
+        }
+        viewModelScope.launch {
             var unavailable = emptySet<Long>()
             mihon.domain.source.health.SourceHealthMonitor.shared.states.collectLatest { health ->
                 val hidden = health.filterValues { it.state == mihon.domain.source.health.SourceHealthMonitor.State.UNAVAILABLE }.keys
                 _state.update { current -> current.copy(
-                    discoveryFeatured = current.discoveryFeatured?.takeUnless { it.sourceId in hidden },
-                    popularManga = current.popularManga.filterNot { it.sourceId in hidden },
-                    latestManga = current.latestManga.filterNot { it.sourceId in hidden },
-                    newManga = current.newManga.filterNot { it.sourceId in hidden },
-                    completedManga = current.completedManga.filterNot { it.sourceId in hidden },
-                    discoveryLatest = current.discoveryLatest.filterNot { it.sourceId in hidden },
+                    discoveryFeatured = GroupDiscoveryItems.group(listOfNotNull(current.discoveryFeatured)).firstOrNull(),
+                    popularManga = GroupDiscoveryItems.group(current.popularManga + listOfNotNull(current.discoveryFeatured)).filterNot { it.mangaId == GroupDiscoveryItems.group(listOfNotNull(current.discoveryFeatured)).firstOrNull()?.mangaId },
+                    latestManga = GroupDiscoveryItems.group(current.latestManga),
+                    newManga = GroupDiscoveryItems.group(current.newManga),
+                    completedManga = GroupDiscoveryItems.group(current.completedManga),
+                    discoveryLatest = GroupDiscoveryItems.group(current.discoveryLatest),
                 ) }
                 allDiscoveryItems.removeAll { it.sourceId in hidden }
                 val failed = health.filterValues { it.failures > 0 || it.state == mihon.domain.source.health.SourceHealthMonitor.State.UNAVAILABLE }.keys
@@ -223,7 +235,7 @@ class HomeViewModel(
                     HomeDiscoveryItem(
                         mangaId = manga.id,
                         title = manga.title,
-                        coverData = manga.asMangaCover(),
+                        coverData = manga.also { PreferredMangaVariants.remember(it) }.asMangaCover(),
                         sourceId = res.sourceId,
                         sourceName = res.sourceName,
                         url = res.items.getOrNull(idx)?.url ?: manga.url,
@@ -243,7 +255,7 @@ class HomeViewModel(
                     HomeDiscoveryItem(
                         mangaId = manga.id,
                         title = manga.title,
-                        coverData = manga.asMangaCover(),
+                        coverData = manga.also { PreferredMangaVariants.remember(it) }.asMangaCover(),
                         sourceId = res.sourceId,
                         sourceName = res.sourceName,
                         url = res.items.getOrNull(idx)?.url ?: manga.url,
@@ -263,7 +275,7 @@ class HomeViewModel(
                     HomeDiscoveryItem(
                         mangaId = manga.id,
                         title = manga.title,
-                        coverData = manga.asMangaCover(),
+                        coverData = manga.also { PreferredMangaVariants.remember(it) }.asMangaCover(),
                         sourceId = res.sourceId,
                         sourceName = res.sourceName,
                         url = res.items.getOrNull(idx)?.url ?: manga.url,
@@ -283,7 +295,7 @@ class HomeViewModel(
                     HomeDiscoveryItem(
                         mangaId = manga.id,
                         title = manga.title,
-                        coverData = manga.asMangaCover(),
+                        coverData = manga.also { PreferredMangaVariants.remember(it) }.asMangaCover(),
                         sourceId = res.sourceId,
                         sourceName = res.sourceName,
                         url = res.items.getOrNull(idx)?.url ?: manga.url,
@@ -313,12 +325,12 @@ class HomeViewModel(
         if (result.items.isEmpty() || !mihon.domain.source.health.SourceHealthMonitor.shared.discoverable(result.sourceId)) return
         val local = networkToLocalManga(result.items.map { it.toDomainManga() })
         val incoming = local.map { manga ->
-            HomeDiscoveryItem(mangaId = manga.id, title = manga.title, coverData = manga.asMangaCover(),
+            HomeDiscoveryItem(mangaId = manga.id, title = manga.title, coverData = manga.also { PreferredMangaVariants.remember(it) }.asMangaCover(),
                 sourceId = result.sourceId, sourceName = result.sourceName, url = manga.url)
         }
         _state.update { current ->
-            val combined = (current.popularManga + listOfNotNull(current.discoveryFeatured) + incoming).distinctBy { "${it.sourceId}_${it.mangaId}" }
-            val featured = current.discoveryFeatured ?: combined.firstOrNull()
+            val combined = GroupDiscoveryItems.group(current.popularManga + listOfNotNull(current.discoveryFeatured) + incoming)
+            val featured = combined.firstOrNull { it.mangaId == current.discoveryFeatured?.mangaId } ?: combined.firstOrNull()
             val popular = combined.filterNot { it.sourceId == featured?.sourceId && it.mangaId == featured.mangaId }
             current.copy(discoveryFeatured = featured, popularManga = popular, discoveryLatest = popular, isDiscoveryLoading = false)
         }
@@ -332,8 +344,9 @@ class HomeViewModel(
         fun preserve(incoming: List<HomeDiscoveryItem>, previous: List<HomeDiscoveryItem>): List<HomeDiscoveryItem> {
             val health = mihon.domain.source.health.SourceHealthMonitor.shared
             val present = incoming.map { it.sourceId }.toSet()
-            return (incoming + previous.filter { it.sourceId !in present && health.health(it.sourceId).state == mihon.domain.source.health.SourceHealthMonitor.State.DEGRADED })
-                .filter { health.discoverable(it.sourceId) }.distinctBy { "${it.sourceId}_${it.mangaId}" }
+            return GroupDiscoveryItems.group(incoming + previous.filter {
+                it.sourceId !in present && health.health(it.sourceId).state == mihon.domain.source.health.SourceHealthMonitor.State.DEGRADED
+            })
         }
         val old = _state.value
         val popularList = preserve(batchResult.popularItems, old.popularManga + listOfNotNull(old.discoveryFeatured))
@@ -406,7 +419,7 @@ class HomeViewModel(
                             HomeDiscoveryItem(
                                 mangaId = manga.id,
                                 title = manga.title,
-                                coverData = manga.asMangaCover(),
+                                coverData = manga.also { PreferredMangaVariants.remember(it) }.asMangaCover(),
                                 sourceId = source.id,
                                 sourceName = source.name,
                             )
@@ -558,6 +571,7 @@ data class HomeDiscoveryItem(
     val sourceName: String,
     val url: String = "",
     val availableVersions: List<HomeSourceVersion> = emptyList(),
+    val alternatives: List<HomeDiscoveryItem> = emptyList(),
 )
 
 data class HomeSourceItem(
