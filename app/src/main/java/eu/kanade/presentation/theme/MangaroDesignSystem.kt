@@ -11,7 +11,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import eu.kanade.presentation.home.MangaroVisualTokens
 
 /**
  * Unified Mangaro Design System tokens & visual specs for Phase 05.
@@ -20,23 +19,23 @@ import eu.kanade.presentation.home.MangaroVisualTokens
  */
 object MangaroDesignSystem {
 
-    // Surfaces
-    val BackgroundDark = Color(0xFF0F0B13)
-    val SurfaceDark = Color(0xFF18121D)
-    val SurfaceHigh = Color(0xFF231B2A)
+    // Surfaces (Deep violet-black depth with clear card/container hierarchy)
+    val BackgroundDark = Color(0xFF0A070F)
+    val SurfaceDark = Color(0xFF140E1B)
+    val SurfaceHigh = Color(0xFF22172B)
     val SurfaceCardGradient = Brush.verticalGradient(
         colors = listOf(
-            Color(0xFF231B2A),
-            Color(0xFF18121D),
+            Color(0xFF22172B),
+            Color(0xFF140E1B),
         ),
     )
 
     // Brand Accents
     val GoldPrimary = Color(0xFFFFB800)
     val LavenderPrimary = Color(0xFFA78BFA)
-    val BorderSubtle = Color(0x33A78BFA)
-    val BorderHighlight = Color(0x66A78BFA)
-    val GoldBorder = Color(0x80FFB800)
+    val BorderSubtle = Color(0x28A78BFA)
+    val BorderHighlight = Color(0x55A78BFA)
+    val GoldBorder = Color(0x66FFB800)
 
     // Shapes
     val ShapeCard = RoundedCornerShape(14.dp)
