@@ -5,7 +5,9 @@ import android.content.Intent
 import android.os.Bundle
 import android.util.Log
 import eu.kanade.domain.chapter.interactor.SyncChaptersWithSource
+import eu.kanade.domain.chapter.model.copyFromSChapter
 import eu.kanade.domain.chapter.model.toSChapter
+import eu.kanade.domain.manga.model.toSManga
 import eu.kanade.domain.manga.model.copyFrom
 import eu.kanade.tachiyomi.data.download.DownloadManager
 import eu.kanade.tachiyomi.data.download.DownloadProvider
@@ -53,6 +55,7 @@ import uy.kohesive.injekt.api.get
  * Raw public responses and screenshots stay in the instrumented app's private files directory.
  */
 class SourceAuditInstrumentation : Instrumentation() {
+    private var integrity: String? = null
     private var productDownload: String? = null
     private var selected: String? = null
     private var full = false
@@ -68,6 +71,7 @@ class SourceAuditInstrumentation : Instrumentation() {
     private var publisherEngine: String? = null
     override fun onCreate(arguments: Bundle?) {
         super.onCreate(arguments)
+        integrity = arguments?.getString("integrity")
         productDownload = arguments?.getString("productDownload")
         selected = arguments?.getString("source")
         productionFeed = arguments?.getString("productionFeed")
@@ -550,12 +554,196 @@ class SourceAuditInstrumentation : Instrumentation() {
         } finally { runOnMainSync { reader.finish() }; removeMonitor(monitor) }
     }
 
+    private suspend fun verifyIntegrity(manager: SourceManager, mode: String) {
+        val repo = Injekt.get<ChapterRepository>()
+        if (mode == "downloadRecovery") {
+            val repository = Injekt.get<tachiyomi.domain.manga.repository.MangaRepository>()
+            val manga = repository.getMangaByUrlAndSourceId("/manga/the-beginning-after-the-end/",3975276517041363504L)!!
+            val source = manager.get(manga.source) as HttpSource
+            val original = repo.getChapterByMangaId(manga.id).sortedBy { it.chapterNumber }[1]
+            val downloads = Injekt.get<DownloadManager>()
+            val stale = original.copy(url="/manga/the-beginning-after-the-end/integrity-download-old-route/")
+            try {
+                eu.kanade.domain.chapter.interactor.MigrateChapterIdentity(repo,downloads).await(source,manga,original,stale)
+                downloads.downloadChapters(manga,listOf(stale))
+                withTimeout(180_000) {
+                    while (true) {
+                        val current = repo.getChapterById(original.id)!!
+                        if (downloads.isChapterDownloaded(current.name,current.scanlator,current.url,manga.title,manga.source,true)) break
+                        delay(1000)
+                    }
+                }
+                val saved = repo.getChapterById(original.id)!!
+                check(saved.url==original.url && saved.read==original.read && saved.bookmark==original.bookmark && saved.lastPageRead==original.lastPageRead)
+                record("INTEGRITY Downloader stale 404 -> one source refresh -> same row id=${saved.id} -> normal download completed")
+                verifyOfflineReader(manga,saved)
+            } finally {
+                val current=repo.getChapterById(original.id)!!
+                if(current.url!=original.url) eu.kanade.domain.chapter.interactor.MigrateChapterIdentity(repo,downloads).await(source,manga,current,original)
+            }
+            return
+        }
+        if (mode == "cover") {
+            val repository = Injekt.get<tachiyomi.domain.manga.repository.MangaRepository>()
+            val original = repository.getMangaById(68)
+            val oldChapters = repo.getChapterByMangaId(original.id).map { it.id }.toSet()
+            for (bad in listOf("", "data:image/gif;base64,AA==", "https://mangatime.org/placeholder.png")) {
+                val returned = Injekt.get<NetworkToLocalManga>().invoke(original.copy(thumbnailUrl=bad,author="",description="",genre=emptyList(),initialized=true))
+                check(returned.thumbnailUrl == original.thumbnailUrl && returned.author == original.author && returned.description == original.description && returned.genre == original.genre)
+            }
+            record("INTEGRITY SQL empty/data/placeholder covers and optional metadata preserved valid Blue Lock fields")
+            val stale = "https://mangatime.org/uploads/cover/integrity-expired-cover.jpg"
+            repository.update(tachiyomi.domain.manga.model.MangaUpdate(original.id, thumbnailUrl=stale))
+            try {
+                val loader = coil3.SingletonImageLoader.get(targetContext)
+                val failed = repository.getMangaById(original.id)
+                val result = loader.execute(coil3.request.ImageRequest.Builder(targetContext).data(failed).memoryCachePolicy(coil3.request.CachePolicy.DISABLED).diskCachePolicy(coil3.request.CachePolicy.DISABLED).build())
+                check(result is coil3.request.SuccessResult) { "Cover recovery failed: $result" }
+                val recovered = repository.getMangaById(original.id)
+                check(recovered.thumbnailUrl != stale && recovered.thumbnailUrl == original.thumbnailUrl)
+                check(result.image.width > 1 && result.image.height > 1)
+                check(repo.getChapterByMangaId(original.id).map { it.id }.toSet() == oldChapters)
+                val cached = loader.execute(coil3.request.ImageRequest.Builder(targetContext).data(recovered).build())
+                check(cached is coil3.request.SuccessResult)
+                record("INTEGRITY SIMULATED stale Blue Lock cover 404 -> real source details -> image verified -> SQL replacement -> Coil rendered ${result.image.width}x${result.image.height}")
+            } finally {
+                val current = repository.getMangaById(original.id)
+                if (current.thumbnailUrl == stale) repository.update(tachiyomi.domain.manga.model.MangaUpdate(original.id,thumbnailUrl=original.thumbnailUrl))
+            }
+            return
+        }
+        if (mode == "identity") {
+            val mangas = Injekt.get<tachiyomi.domain.manga.repository.MangaRepository>()
+            val downloads = Injekt.get<DownloadManager>()
+            val original = repo.getChapterById(970)!!
+            val manga = mangas.getMangaById(original.mangaId)
+            val source = manager.get(manga.source) as HttpSource
+            val history = Injekt.get<tachiyomi.domain.history.repository.HistoryRepository>()
+            val beforeHistory = history.getHistoryByMangaId(manga.id)
+            val beforeIds = repo.getChapterByMangaId(manga.id).map { it.id }.toSet()
+            val remote = source.getMangaUpdate(manga.toSManga(), emptyList(), false, true)
+            check(remote.chapterCompleteness == eu.kanade.tachiyomi.source.model.ChapterFetchCompleteness.COMPLETE)
+            val moved = original.copy(url=original.url.replace("/chapter/", "-legacy/chapter/"))
+            try {
+                eu.kanade.domain.chapter.interactor.MigrateChapterIdentity(repo, downloads).await(source, manga, original, moved)
+                Injekt.get<SyncChaptersWithSource>().await(remote.chapters, manga, source, completeness=remote.chapterCompleteness)
+                val saved = repo.getChapterById(original.id)!!
+                check(saved.url == original.url && saved.memo == original.memo)
+                check(saved.read == original.read && saved.bookmark == original.bookmark && saved.lastPageRead == original.lastPageRead && saved.dateFetch == original.dateFetch)
+                check(history.getHistoryByMangaId(manga.id) == beforeHistory)
+                check(repo.getChapterByMangaId(manga.id).map { it.id }.toSet() == beforeIds)
+                check(downloads.isChapterDownloaded(saved.name,saved.scanlator,saved.url,manga.title,manga.source,true))
+                record("INTEGRITY Blue Lock live=${remote.chapters.size} stored=${beforeIds.size} COMPLETE moved URL retained chapterId=${saved.id} read/bookmark/lastPage/date/history/download same; no duplicates")
+                verifyOfflineReader(manga, saved)
+            } finally {
+                val current = repo.getChapterById(original.id)!!
+                if (current.url != original.url) eu.kanade.domain.chapter.interactor.MigrateChapterIdentity(repo, downloads).await(source,manga,current,original)
+            }
+            withTimeout(20_000) { while (targetContext.getSystemService(android.net.ConnectivityManager::class.java).activeNetwork == null) delay(250) }
+            val dar = manager.get(3975276517041363504L) as HttpSource
+            val darManga = mangas.getMangaByUrlAndSourceId("/manga/the-beginning-after-the-end/", dar.id)!!
+            val old = repo.getChapterByMangaId(darManga.id).sortedBy { it.chapterNumber }[1]
+            val stale = old.copy(url="/manga/the-beginning-after-the-end/integrity-old-route/")
+            try {
+                eu.kanade.domain.chapter.interactor.MigrateChapterIdentity(repo,downloads).await(dar,darManga,old,stale)
+                auditRuleReader(darManga, stale)
+                val saved = repo.getChapterById(old.id)!!
+                check(saved.url == old.url && saved.memo == old.memo)
+                check(repo.getChapterByMangaId(darManga.id).size == 270)
+                record("INTEGRITY actual Reader stale 404 -> chapter refresh -> same remote ID -> URL restored in place id=${old.id}; stored=270")
+            } finally {
+                val current = repo.getChapterById(old.id)!!
+                if (current.url != old.url) eu.kanade.domain.chapter.interactor.MigrateChapterIdentity(repo,downloads).await(dar,darManga,current,old)
+            }
+            return
+        }
+        if (mode == "persistence") {
+            val manga = Injekt.get<tachiyomi.domain.manga.repository.MangaRepository>().getMangaByUrlAndSourceId("1702436", 7657007209499352344L)!!
+            val rows = repo.getChapterByMangaId(manga.id)
+            check(rows.size == 256 && rows.map { it.id }.toSet().size == 256)
+            record("INTEGRITY restart MangaSwat TBATE stored=256 uniqueLocalIds=256")
+            check(targetContext.applicationInfo.loadLabel(targetContext.packageManager).toString() == "Mangaro")
+            val coverManga = Injekt.get<tachiyomi.domain.manga.repository.MangaRepository>().getMangaById(68)
+            check(!coverManga.thumbnailUrl.orEmpty().contains("integrity-expired"))
+            val cover = coil3.SingletonImageLoader.get(targetContext).execute(coil3.request.ImageRequest.Builder(targetContext).data(coverManga).build())
+            check(cover is coil3.request.SuccessResult)
+            record("INTEGRITY restart verified current Blue Lock cover renders; launcher label Mangaro")
+            val recoveredDownload = repo.getChapterById(3131)!!
+            verifyOfflineReader(Injekt.get<tachiyomi.domain.manga.repository.MangaRepository>().getMangaById(recoveredDownload.mangaId), recoveredDownload)
+            val existing = repo.getChapterById(970)!!
+            verifyOfflineReader(Injekt.get<tachiyomi.domain.manga.repository.MangaRepository>().getMangaById(existing.mangaId), existing)
+            return
+        }
+        if (mode == "raw") {
+            val source = manager.get(7657007209499352344L) as HttpSource
+            var next: String? = "${source.baseUrl}/v2/api/v2/chapters/?serie=1702436&order_by=-order&page_size=200"
+            val all = mutableListOf<kotlinx.serialization.json.JsonObject>()
+            var pages = 0
+            while (next != null && pages < 5) {
+                val body = source.client.newCall(GET(next, source.headers)).awaitSuccess().use { it.body.string() }
+                targetContext.openFileOutput("integrity-swat-raw-$pages.json", 0).use { it.write(body.toByteArray()) }
+                val root = kotlinx.serialization.json.Json.parseToJsonElement(body).jsonObject
+                val rows = root["results"]!!.jsonArray.map { it.jsonObject }; all.addAll(rows); pages++
+                record("INTEGRITY RAW MangaSwat page=$pages total=${root["count"]} rows=${rows.size} nullSlug=${rows.count { it["slug"] == kotlinx.serialization.json.JsonNull || it["slug"] == null }} sample=${rows.firstOrNull { it["slug"] == kotlinx.serialization.json.JsonNull || it["slug"] == null }}")
+                next = (root["next"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.takeUnless { it == "null" }
+            }
+            record("INTEGRITY RAW MangaSwat rows=${all.size} uniqueIds=${all.map { it["id"] }.toSet().size} pages=$pages")
+            return
+        }
+        for (source in manager.getOnlineSources().filter { selected == null || it.id.toString() == selected }) {
+            try {
+                val result = withTimeout(45_000) { source.getSearchManga(1, "The Beginning After", FilterList()) }
+                val matches = result.mangas.filter { it.title.contains("Beginning", true) && it.title.contains("End", true) }
+                record("INTEGRITY search source=${source.id} ${source.name} results=${result.mangas.size} matches=${matches.size}")
+                for (remote in matches.take(2)) {
+                    record("INTEGRITY catalogue source=${source.id} title=${remote.title} url=${remote.url} memo=${remote.memo} cover=${remote.thumbnail_url}")
+                    val update = withTimeout(120_000) { source.getMangaUpdate(remote, emptyList(), true, true) }
+                    val manga = Injekt.get<NetworkToLocalManga>().invoke(Manga.create().copy(source=source.id, url=remote.url, title=remote.title).copyFrom(update.manga))
+                    val before = repo.getChapterByMangaId(manga.id)
+                    Injekt.get<SyncChaptersWithSource>().await(update.chapters, manga, source, completeness=update.chapterCompleteness)
+                    val stored = repo.getChapterByMangaId(manga.id)
+                    record("INTEGRITY chapters source=${source.id} mangaId=${manga.id} parsed=${update.chapters.size} urls=${update.chapters.map { it.url }.toSet().size} remoteIds=${update.chapters.flatMap { tachiyomi.domain.chapter.service.ChapterIdentity.remoteIds(tachiyomi.domain.chapter.model.Chapter.create().copyFromSChapter(it), source.id) }.toSet().size} before=${before.size} stored=${stored.size} completeness=${update.chapterCompleteness} cover=${manga.thumbnailUrl}")
+                    targetContext.openFileOutput("integrity-${source.id}.txt", 0).use { out ->
+                        out.write(("${remote.title}\n${remote.url}\n${remote.memo}\n"+update.chapters.joinToString("\n") { "${it.url} | ${it.memo} | ${it.name}" }).toByteArray())
+                    }
+                    if (mode == "verify") {
+                        targetContext.startActivity(Intent(targetContext, eu.kanade.tachiyomi.ui.main.MainActivity::class.java).setAction("eu.kanade.tachiyomi.SHOW_MANGA").putExtra("manga", manga.id).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                        waitForText(manga.title); delay(2000); saveScreenshot("integrity-details-${source.id}.png")
+                        record("INTEGRITY details UI rendered ${manga.title} stored=${stored.size}")
+                        auditRuleReader(manga, stored.minBy { it.chapterNumber })
+                        record("INTEGRITY old Reader rendered source=${source.id}")
+                        auditRuleReader(manga, stored.maxBy { it.chapterNumber })
+                        record("INTEGRITY recent Reader rendered source=${source.id}")
+                        if (source.id == 7657007209499352344L) {
+                            val slugless = stored.single { it.memo["id"].toString() == "1743844" }
+                            check(source.getPageList(slugless.toSChapter()).isNotEmpty())
+                            record("INTEGRITY slugless chapter 235 ID=1743844 valid pages")
+                            val snapshot = repo.getChapterByMangaId(manga.id)
+                            Injekt.get<SyncChaptersWithSource>().await(update.chapters.take(12), manga, source, completeness=eu.kanade.tachiyomi.source.model.ChapterFetchCompleteness.PARTIAL)
+                            check(repo.getChapterByMangaId(manga.id).map { it.id }.toSet() == snapshot.map { it.id }.toSet())
+                            record("INTEGRITY PARTIAL 12/256 retained all 256 same local IDs")
+                        }
+                    }
+                    manga.thumbnailUrl?.let { cover ->
+                        try { source.client.newCall(GET(cover, source.headers)).awaitSuccess().use { response -> record("INTEGRITY cover source=${source.id} status=${response.code} type=${response.header("Content-Type")} bytes=${response.body.bytes().size}") } }
+                        catch (e: Exception) { record("INTEGRITY BROKEN COVER source=${source.id} ${e.message}") }
+                    }
+                }
+            } catch (e: Exception) { record("INTEGRITY source=${source.id} ERROR ${e.message}") }
+        }
+    }
+
     override fun onStart() {
         super.onStart()
         waitForIdleSync()
         runBlocking {
             val manager = Injekt.get<SourceManager>()
             withTimeout(30_000) { manager.isInitialized.first { it } }
+            if (integrity != null) {
+                try { withTimeout(600_000) { verifyIntegrity(manager, integrity!!) } }
+                catch (e: Exception) { failures++; record("Integrity ERROR ${e.stackTraceToString()}") }
+                return@runBlocking
+            }
             if (productDownload != null) {
                 try { withTimeout(240_000) { verifyProductDownload(manager, productDownload!!) } }
                 catch (e: Exception) { failures++; record("Product download ERROR ${e.javaClass.simpleName}: ${e.message}") }
