@@ -6,6 +6,9 @@ import io.kotest.matchers.shouldNotBe
 import org.jsoup.Jsoup
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
+import okhttp3.ResponseBody.Companion.toResponseBody
+import java.io.IOException
 
 class MangaLekParserTest {
 
@@ -22,6 +25,15 @@ class MangaLekParserTest {
         mangaLek.name shouldBe "مانجا ليك"
         mangaLek.lang shouldBe "ar"
         mangaLek.versionId shouldBe 1
+    }
+
+    @Test
+    fun `HTTP 200 homepage redirect cannot become a successful archive page`() {
+        val response = okhttp3.Response.Builder()
+            .request(okhttp3.Request.Builder().url("${mangaLek.baseUrl}/").build())
+            .protocol(okhttp3.Protocol.HTTP_1_1).code(200).message("OK")
+            .body("<a href='/manga/sample'>Sample</a>".toResponseBody()).build()
+        assertThrows<IOException> { mangaLek.parseArchiveResponse(response) }
     }
 
     @Test

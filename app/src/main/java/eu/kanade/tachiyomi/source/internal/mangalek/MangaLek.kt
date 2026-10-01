@@ -65,9 +65,14 @@ class MangaLek(
         return GET("$baseUrl/manga/page/$page/?m_orderby=views", headers)
     }
 
-    override fun popularMangaParse(response: Response): MangasPage {
-        val document = response.asJsoup()
-        return parseMangaListFromDocument(document)
+    override fun popularMangaParse(response: Response): MangasPage = parseArchiveResponse(response)
+
+    fun parseArchiveResponse(response: Response): MangasPage = response.use {
+        val path = it.request.url.encodedPath
+        if (path != "/manga/" && !Regex("/manga/page/[0-9]+/").matches(path)) {
+            throw IOException("MangaLek catalogue redirected outside archive: $path")
+        }
+        parseMangaListFromDocument(it.asJsoup())
     }
 
     override suspend fun getLatestUpdates(page: Int): MangasPage {
@@ -80,10 +85,7 @@ class MangaLek(
         return GET("$baseUrl/manga/page/$page/?m_orderby=latest", headers)
     }
 
-    override fun latestUpdatesParse(response: Response): MangasPage {
-        val document = response.asJsoup()
-        return parseMangaListFromDocument(document)
-    }
+    override fun latestUpdatesParse(response: Response): MangasPage = parseArchiveResponse(response)
 
     override suspend fun getSearchManga(page: Int, query: String, filters: FilterList): MangasPage {
         val request = searchMangaRequest(page, query, filters)
