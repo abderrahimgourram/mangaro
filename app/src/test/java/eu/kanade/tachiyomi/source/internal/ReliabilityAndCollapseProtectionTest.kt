@@ -7,6 +7,9 @@ import eu.kanade.tachiyomi.data.download.DownloadManager
 import eu.kanade.tachiyomi.data.download.DownloadProvider
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.internal.util.SourceValidationUtil
+import eu.kanade.tachiyomi.source.model.ChapterFetchCompleteness
+import eu.kanade.tachiyomi.source.model.SManga
+import eu.kanade.tachiyomi.source.model.SMangaUpdate
 import eu.kanade.tachiyomi.source.model.SChapter
 import io.kotest.matchers.shouldBe
 import io.mockk.coEvery
@@ -147,9 +150,49 @@ class ReliabilityAndCollapseProtectionTest {
             rawSourceChapters = remoteChapters,
             manga = manga,
             source = source,
+            completeness = ChapterFetchCompleteness.COMPLETE,
         )
 
         // Verify chapterRepository.removeChaptersWithIds is called for chapter 10 ID (10L)
         coVerify(exactly = 1) { chapterRepository.removeChaptersWithIds(listOf(10L)) }
     }
+    @Test
+    fun `a ninety percent partial list cannot delete chapters above the old collapse threshold`() = runTest {
+        val manga = Manga.create().copy(id = 100L, title = "Test Manga")
+        val source: Source = mockk(relaxed = true)
+        coEvery { source.id } returns 100L
+        coEvery { getChaptersByMangaId.await(100L) } returns (1..100).map {
+            Chapter.create().copy(id = it.toLong(), mangaId = 100L, url = "/chapter-$it", name = "Chapter $it", chapterNumber = it.toDouble())
+        }
+        val remote = (1..90).map { SChapter.create().apply { url = "/chapter-$it"; name = "Chapter $it" } }
+        for (state in listOf(ChapterFetchCompleteness.PARTIAL, ChapterFetchCompleteness.DEGRADED)) {
+            syncChaptersWithSource.await(remote, manga, source, completeness = state)
+        }
+        assertThrows<IOException> {
+            syncChaptersWithSource.await(remote, manga, source, completeness = ChapterFetchCompleteness.FAILED)
+        }
+        coVerify(exactly = 0) { chapterRepository.removeChaptersWithIds(any()) }
+    }
+
+    @Test
+    fun `legacy two argument update is explicitly unverified`() {
+        SMangaUpdate(SManga.create(), emptyList()).chapterCompleteness shouldBe ChapterFetchCompleteness.DEGRADED
+    }
+
+    @Test
+    fun `same chapter number cannot transfer identity state to a new URL`() = runTest {
+        val manga = Manga.create().copy(id = 100L, title = "Test Manga")
+        val source: Source = mockk(relaxed = true)
+        coEvery { source.id } returns 100L
+        coEvery { getChaptersByMangaId.await(100L) } returns listOf(
+            Chapter.create().copy(id = 7L, mangaId = 100L, url = "/old", name = "Chapter 1", chapterNumber = 1.0, read = true, bookmark = true),
+        )
+        coEvery { chapterRepository.addAll(any()) } answers { firstArg() }
+        val remote = SChapter.create().apply { url = "/other-remote-id"; name = "Chapter 1"; chapter_number = 1f }
+        val added = syncChaptersWithSource.await(listOf(remote), manga, source, completeness = ChapterFetchCompleteness.COMPLETE)
+        added.single().read shouldBe false
+        added.single().bookmark shouldBe false
+    }
+
+
 }

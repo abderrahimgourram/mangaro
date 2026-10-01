@@ -8,6 +8,10 @@ import eu.kanade.tachiyomi.data.cache.CoverCache
 import eu.kanade.tachiyomi.data.download.DownloadManager
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.model.SManga
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withTimeoutOrNull
+import eu.kanade.tachiyomi.source.model.ChapterFetchCompleteness
+import java.io.IOException
 import logcat.LogPriority
 import mihon.domain.source.models.RemoteMangaUpdate
 import tachiyomi.core.common.util.lang.withIOContext
@@ -45,6 +49,7 @@ class UpdateMangaFromRemote(
             fetchDetails = fetchDetails,
             fetchChapters = fetchChapters,
             manualFetch = manualFetch,
+            fetchWindow = fetchWindow,
         )
     }
 
@@ -60,24 +65,32 @@ class UpdateMangaFromRemote(
             val chapters = chapterRepository.getChapterByMangaId(manga.id)
                 .sortedBy { it.sourceOrder }
             val update = withIOContext {
-                source.getMangaUpdate(
-                    manga = manga.toSManga(),
-                    chapters = chapters.map(Chapter::toSChapter),
-                    fetchDetails = fetchDetails,
-                    fetchChapters = fetchChapters,
-                )
+                withTimeoutOrNull(180_000) {
+                    source.getMangaUpdate(
+                        manga = manga.toSManga(),
+                        chapters = chapters.map(Chapter::toSChapter),
+                        fetchDetails = fetchDetails,
+                        fetchChapters = fetchChapters,
+                    )
+                } ?: throw IOException("Source refresh timed out")
+            }
+            if (fetchChapters && update.chapterCompleteness == ChapterFetchCompleteness.FAILED) {
+                throw IOException("Source chapter fetch failed; existing chapters preserved")
             }
             awaitUpdateFromSource(manga, update.manga, manualFetch)
-            val newChapters = syncChaptersWithSource.await(
+            val newChapters = if (fetchChapters) syncChaptersWithSource.await(
                 rawSourceChapters = update.chapters,
                 manga = manga,
                 source = source,
                 manualFetch = manualFetch,
                 fetchWindow = fetchWindow,
-            )
+                completeness = update.chapterCompleteness,
+            ) else emptyList()
             val updatedManga = mangaRepository.getMangaById(manga.id)
 
             Result.success(RemoteMangaUpdate(manga = updatedManga, newChapters = newChapters))
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, e)
             Result.failure(e)
@@ -125,14 +138,14 @@ class UpdateMangaFromRemote(
                 id = localManga.id,
                 title = title,
                 coverLastModified = coverLastModified,
-                author = remoteManga.author,
-                artist = remoteManga.artist,
-                description = remoteManga.description,
-                genre = remoteManga.getGenres(),
+                author = remoteManga.author?.takeIf { it.isNotBlank() },
+                artist = remoteManga.artist?.takeIf { it.isNotBlank() },
+                description = remoteManga.description?.takeIf { it.isNotBlank() },
+                genre = remoteManga.getGenres()?.takeIf { it.isNotEmpty() },
                 thumbnailUrl = thumbnailUrl,
-                status = remoteManga.status.toLong(),
+                status = remoteManga.status.takeIf { it != SManga.UNKNOWN }?.toLong(),
                 updateStrategy = remoteManga.update_strategy,
-                initialized = true,
+                initialized = remoteManga.initialized,
                 memo = remoteManga.memo,
             ),
         )
