@@ -41,18 +41,21 @@ class AzoraParserTest {
                 {
                   "id": 2794,
                   "slug": "world-destruction-war",
+                  "seriesType": "MANHWA",
                   "postTitle": "World Destruction War",
                   "featuredImage": "https://storage.azorafly.com/upload/series/featured/wdw.png"
                 },
                 {
                   "id": 2817,
                   "slug": "daddy-daddy1",
+                  "seriesType": "MANHWA",
                   "postTitle": "Daddy? Daddy!",
                   "featuredImage": "https://storage.azorafly.com/upload/series/featured/daddy.jpg"
                 },
                 {
                   "id": 2820,
                   "slug": "i-bought-the-villains-with-money",
+                  "seriesType": "MANHWA",
                   "postTitle": "I Bought the Villains With Money",
                   "featuredImage": "https://storage.azorafly.com/upload/series/featured/villains.jpg"
                 }
@@ -166,7 +169,7 @@ class AzoraParserTest {
     }
     @Test
     fun `complete oversized response cannot advertise an endless next page`() {
-        val posts = (1..200).joinToString(",") { """{"id":$it,"slug":"sample-$it","postTitle":"Sample $it"}""" }
+        val posts = (1..200).joinToString(",") { """{"id":$it,"slug":"sample-$it","seriesType":"MANHWA","postTitle":"Sample $it"}""" }
         val page = azora.parsePostsResponse("""{"posts":[$posts],"totalCount":200}""")
         page.mangas.size shouldBe 200
         page.hasNextPage shouldBe false
@@ -175,7 +178,7 @@ class AzoraParserTest {
 
     @Test
     fun `total count keeps pagination open when API returns fewer than requested entries`() {
-        val response = """{"posts":[{"id":702,"slug":"sample","postTitle":"Sample"}],"totalCount":1935}"""
+        val response = """{"posts":[{"id":702,"slug":"sample","seriesType":"MANHWA","postTitle":"Sample"}],"totalCount":1935}"""
         azora.parsePostsResponse(response, 1).hasNextPage shouldBe true
         azora.parsePostsResponse(response, 81).hasNextPage shouldBe false
     }
@@ -206,6 +209,46 @@ class AzoraParserTest {
         assertThrows<IOException> { azora.parseChaptersResponse("""{"post":null}""", "rebirth") }
         assertThrows<IOException> { azora.parseChapterPagesResponse("""{"chapter":null}""") }
         assertThrows<IOException> { azora.parseChaptersResponse("""{"chapters":[null]}""", "rebirth") }
+    }
+
+    @Test
+    fun `live catalogue novel without isNovel is excluded and Nano remains`() {
+        val novels = azora.parsePostsResponse(javaClass.getResource("/azora-types/novel.json")!!.readText())
+        novels.mangas shouldBe emptyList()
+        novels.hasNextPage shouldBe false
+        val popular = azora.parsePostsResponse(javaClass.getResource("/azora-types/popular.json")!!.readText())
+        popular.mangas.size shouldBe 23
+        popular.mangas.first().url shouldBe "nano-machine-s#425"
+        popular.mangas.any { it.title == "The Forgotten Fields" } shouldBe false
+        popular.hasNextPage shouldBe true
+    }
+
+    @Test
+    fun `mixed server pages preserve continuation based on raw count and server metadata`() {
+        val posts = (1..24).joinToString(",") {
+            val type = if (it <= 15) "MANHWA" else "NOVEL"
+            """{"id":$it,"slug":"entry-$it","postTitle":"Novel in the title is not a type","seriesType":"$type"}"""
+        }
+        azora.parsePostsResponse("""{"posts":[$posts],"totalCount":48}""", 1).let {
+            it.mangas.size shouldBe 15
+            it.hasNextPage shouldBe true
+        }
+        azora.parsePostsResponse("""{"posts":[$posts],"totalCount":48}""", 2).hasNextPage shouldBe false
+        azora.parsePostsResponse("""{"posts":[$posts],"totalCount":48,"hasMore":false}""", 1).hasNextPage shouldBe false
+        azora.parsePostsResponse("""{"posts":[{"seriesType":"NOVEL"}],"totalCount":48}""", 1).let {
+            it.mangas shouldBe emptyList()
+            it.hasNextPage shouldBe true
+        }
+    }
+
+    @Test
+    fun `only verified image types enter discovery without title heuristics`() {
+        val types = listOf("MANGA", "MANHWA", "MANHUA", "NOVEL", "UNKNOWN", null)
+        val posts = types.mapIndexed { index, type ->
+            """{"id":$index,"slug":"sample-$index","postTitle":"A novel title","seriesType":${type?.let { "\"$it\"" } ?: "null"}}"""
+        }.joinToString(",")
+        azora.parsePostsResponse("""{"posts":[$posts],"hasMore":false}""").mangas.map { it.url } shouldBe
+            listOf("sample-0#0", "sample-1#1", "sample-2#2")
     }
 
 }

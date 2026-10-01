@@ -116,6 +116,10 @@ class Azora(
         val selected: String get() = arrayOf("lastChapterAddedAt", "totalViews", "createdAt", "postTitle")[state]
     }
 
+    private companion object {
+        val IMAGE_SERIES_TYPES = setOf("MANGA", "MANHWA", "MANHUA")
+    }
+
     fun parsePostsResponse(responseBody: String, page: Int = 1): MangasPage {
         val jsonElement = json.parseToJsonElement(responseBody)
         val rootObj = (jsonElement as? JsonObject) ?: throw IOException("Azora catalogue is not an object")
@@ -127,7 +131,9 @@ class Azora(
 
         val mangas = postsArray.mapNotNull { element ->
             val obj = element.requireObject("Azora entry")
-            if (obj["isNovel"]?.jsonPrimitiveOrNull?.booleanOrNull == true) return@mapNotNull null
+            // Catalogue records expose seriesType, not the details-only isNovel flag.
+            // Fail closed for text, unknown or absent types without changing server paging.
+            if (obj["seriesType"]?.jsonPrimitiveOrNull?.contentOrNull !in IMAGE_SERIES_TYPES) return@mapNotNull null
             val id = obj["id"]?.jsonPrimitiveOrNull?.contentOrNull ?: throw IOException("Azora catalogue missing ID")
             val slug = obj["postSlug"]?.jsonPrimitiveOrNull?.contentOrNull
                 ?: obj["slug"]?.jsonPrimitiveOrNull?.contentOrNull ?: throw IOException("Azora catalogue missing slug")

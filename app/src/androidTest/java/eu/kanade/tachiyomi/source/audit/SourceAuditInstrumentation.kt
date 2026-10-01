@@ -204,6 +204,30 @@ class SourceAuditInstrumentation : Instrumentation() {
                         record("${source.javaClass.simpleName} $name ERROR ${e.javaClass.simpleName}: ${e.message}")
                     }
                 }
+                if (source is Azora) step("image-type-discovery") {
+                    val orders = listOf("totalViews", "lastChapterAddedAt", "createdAt", "postTitle")
+                    for (order in orders) for (page in 1..3) {
+                        val url = source.baseUrl + "/api/query?page=$page&perPage=24&searchTerm=&orderBy=$order&orderDirection=desc"
+                        source.client.newCall(GET(url, source.headers)).awaitSuccess().use { response ->
+                            val body = response.peekBody(2_000_000).string()
+                            val root = kotlinx.serialization.json.Json.parseToJsonElement(body).jsonObject
+                            val posts = root["posts"] as kotlinx.serialization.json.JsonArray
+                            val images = posts.filter { it.jsonObject["seriesType"]!!.jsonPrimitive.content in setOf("MANGA", "MANHWA", "MANHUA") }
+                            val method = source.javaClass.getDeclaredMethod("popularMangaParse", okhttp3.Response::class.java).apply { isAccessible = true }
+                            val parsed = method.invoke(source, response) as eu.kanade.tachiyomi.source.model.MangasPage
+                            val expected = images.map { it.jsonObject["id"]!!.jsonPrimitive.content }.toSet()
+                            check(parsed.mangas.map { it.url.substringAfter('#') }.toSet() == expected)
+                            check(parsed.hasNextPage) { "Filtered count ended catalogue early" }
+                            targetContext.openFileOutput("Azora-types-$order-$page.json", 0).use { it.write(body.toByteArray()) }
+                            record("Azora Android type filter order=$order page=$page raw=${posts.size} images=${parsed.mangas.size} novels=${posts.size - images.size} next=${parsed.hasNextPage}")
+                        }
+                    }
+                    val novel = source.getSearchManga(1, "child prodigy", source.getFilterList())
+                    check(novel.mangas.isEmpty() && !novel.hasNextPage) { "Reported novel leaked into search" }
+                    val nano = source.getSearchManga(1, "Nano", source.getFilterList())
+                    check(nano.mangas.any { it.url == "nano-machine-s#425" }) { "Known manga disappeared" }
+                    record("Azora Android search child prodigy supported=0 next=false; Nano manga present")
+                }
                 if (source is MangaDar) step("representation") {
                     source.client.newCall(source.popularMangaRequest(1)).awaitSuccess().use { response ->
                         val body = response.body.string()
@@ -252,6 +276,28 @@ class SourceAuditInstrumentation : Instrumentation() {
                         record("${source.javaClass.simpleName} UI pagination page=2 title=$secondTitle visible swipes=$swipes")
                         if (!catalogueOnly) openCatalogueUi(source, first!!.title)
                     }
+                }
+                if (source is Azora && full) step("novel-search-ui") {
+                    check(clickText("بحث"))
+                    delay(500)
+                    uiAutomation.executeShellCommand("input text child%sprodigy").use { android.os.ParcelFileDescriptor.AutoCloseInputStream(it).readBytes() }
+                    delay(500)
+                    val screen = uiAutomation.takeScreenshot() ?: error("Keyboard screenshot unavailable")
+                    val x = screen.width * 0.92f
+                    val y = screen.height * 0.91f
+                    screen.recycle()
+                    val time = android.os.SystemClock.uptimeMillis()
+                    for (action in listOf(android.view.MotionEvent.ACTION_DOWN, android.view.MotionEvent.ACTION_UP)) {
+                        val event = android.view.MotionEvent.obtain(time, android.os.SystemClock.uptimeMillis(), action, x, y, 0)
+                        event.source = android.view.InputDevice.SOURCE_TOUCHSCREEN
+                        check(uiAutomation.injectInputEvent(event, true))
+                        event.recycle()
+                    }
+                    waitForText("لم يُعثر على أيِّ نتائج")
+                    check(textNodes("The child prodigy actress wants to find her father!").isEmpty())
+                    saveScreenshot("Azora-novel-search-empty.png")
+                    record("Azora UI fresh child prodigy search has no results; unsupported novel absent")
+                    openCatalogueUi(source, first!!.title)
                 }
                 if (source is MangaSwat && full) step("latest-search-ui") {
                     check(clickText("الأحدث")) { "Latest UI action unavailable" }
