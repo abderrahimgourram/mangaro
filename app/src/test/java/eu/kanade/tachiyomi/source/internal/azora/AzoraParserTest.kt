@@ -5,6 +5,8 @@ import io.kotest.matchers.shouldBe
 import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
+import java.io.IOException
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.fullType
 
@@ -162,4 +164,17 @@ class AzoraParserTest {
         pages[0].imageUrl shouldBe "https://storage.azorafly.com/upload/p1.jpg"
         pages[1].imageUrl shouldBe "https://storage.azorafly.com/upload/p2.jpg"
     }
+    @Test
+    fun `total count keeps pagination open when API returns fewer than requested entries`() {
+        val response = """{"posts":[{"id":702,"slug":"sample","postTitle":"Sample"}],"totalCount":1935}"""
+        azora.parsePostsResponse(response, 1).hasNextPage shouldBe true
+        azora.parsePostsResponse(response, 81).hasNextPage shouldBe false
+    }
+
+    @Test
+    fun `unexpected successful JSON envelope is a clean error`() {
+        assertThrows<IOException> { azora.parsePostsResponse("""{"error":"unavailable"}""") }
+        assertThrows<IOException> { azora.parsePostsResponse("""{"posts":[]}""") }
+    }
+
 }

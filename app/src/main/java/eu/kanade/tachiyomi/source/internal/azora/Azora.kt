@@ -2,7 +2,12 @@ package eu.kanade.tachiyomi.source.internal.azora
 
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.awaitSuccess
+import eu.kanade.tachiyomi.source.model.ChapterFetchCompleteness
 import eu.kanade.tachiyomi.source.model.FilterList
+import eu.kanade.tachiyomi.source.model.Filter
+import okhttp3.HttpUrl.Companion.toHttpUrl
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
@@ -60,11 +65,11 @@ class Azora(
     }
 
     override fun popularMangaRequest(page: Int): Request {
-        return GET("$baseUrl/api/posts?page=$page&limit=24&sort=popular", headers)
+        return GET(queryUrl(page, "", "totalViews"), headers)
     }
 
     override fun popularMangaParse(response: Response): MangasPage {
-        return parsePostsResponse(response.body.string())
+        return response.use { parsePostsResponse(it.body.string(), it.request.url.queryParameter("page")?.toIntOrNull() ?: 1) }
     }
 
     override suspend fun getLatestUpdates(page: Int): MangasPage {
@@ -74,11 +79,11 @@ class Azora(
     }
 
     override fun latestUpdatesRequest(page: Int): Request {
-        return GET("$baseUrl/api/posts?page=$page&limit=24&sort=latest", headers)
+        return GET(queryUrl(page, "", "lastChapterAddedAt"), headers)
     }
 
     override fun latestUpdatesParse(response: Response): MangasPage {
-        return parsePostsResponse(response.body.string())
+        return response.use { parsePostsResponse(it.body.string(), it.request.url.queryParameter("page")?.toIntOrNull() ?: 1) }
     }
 
     override suspend fun getSearchManga(page: Int, query: String, filters: FilterList): MangasPage {
@@ -88,31 +93,43 @@ class Azora(
     }
 
     override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
-        val trimmed = query.trim()
-        val encoded = URLEncoder.encode(trimmed, "UTF-8")
-        return GET("$baseUrl/api/posts?page=$page&limit=24&search=$encoded", headers)
+        val order = filters.filterIsInstance<OrderFilter>().firstOrNull()?.selected ?: "lastChapterAddedAt"
+        return GET(queryUrl(page, query.trim(), order), headers)
     }
+
+    private fun queryUrl(page: Int, query: String, order: String): String = "$baseUrl/api/query".toHttpUrl().newBuilder()
+        .addQueryParameter("page", page.toString())
+        .addQueryParameter("perPage", "24")
+        .addQueryParameter("searchTerm", query)
+        .addQueryParameter("orderBy", order)
+        .addQueryParameter("orderDirection", "desc")
+        .build().toString()
 
     override fun searchMangaParse(response: Response): MangasPage {
-        return parsePostsResponse(response.body.string())
+        return response.use { parsePostsResponse(it.body.string(), it.request.url.queryParameter("page")?.toIntOrNull() ?: 1) }
     }
 
-    override fun getFilterList(): FilterList = FilterList()
+    override fun getFilterList(): FilterList = FilterList(OrderFilter())
 
-    fun parsePostsResponse(responseBody: String): MangasPage {
+    class OrderFilter : Filter.Select<String>("الترتيب", arrayOf("آخر فصل", "الأكثر مشاهدة", "تاريخ الإضافة", "عدد الفصول", "العنوان")) {
+        val selected: String get() = arrayOf("lastChapterAddedAt", "totalViews", "createdAt", "chaptersCount", "postTitle")[state]
+    }
+
+    fun parsePostsResponse(responseBody: String, page: Int = 1): MangasPage {
         val jsonElement = json.parseToJsonElement(responseBody)
-        val rootObj = jsonElement.jsonObject
+        val rootObj = (jsonElement as? JsonObject) ?: throw IOException("Azora catalogue is not an object")
 
         val postsArray = rootObj["posts"]?.jsonArray
             ?: rootObj["data"]?.jsonArray
             ?: (if (jsonElement is JsonArray) jsonElement else null)
-            ?: return MangasPage(emptyList(), false)
+            ?: throw IOException("Azora catalogue missing posts")
 
         val mangas = postsArray.mapNotNull { element ->
             val obj = element.jsonObject
-            val id = obj["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+            if (obj["isNovel"]?.jsonPrimitive?.booleanOrNull == true) return@mapNotNull null
+            val id = obj["id"]?.jsonPrimitive?.contentOrNull ?: throw IOException("Azora catalogue missing ID")
             val slug = obj["postSlug"]?.jsonPrimitive?.contentOrNull
-                ?: obj["slug"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                ?: obj["slug"]?.jsonPrimitive?.contentOrNull ?: throw IOException("Azora catalogue missing slug")
             val titleText = obj["postTitle"]?.jsonPrimitive?.contentOrNull
                 ?: obj["title"]?.jsonPrimitive?.contentOrNull
                 ?: obj["name"]?.jsonPrimitive?.contentOrNull
@@ -130,8 +147,11 @@ class Azora(
             }
         }
 
+        val total = rootObj["totalCount"]?.jsonPrimitive?.intOrNull
         val hasMore = rootObj["hasMore"]?.jsonPrimitive?.booleanOrNull
-            ?: (mangas.size >= 24)
+            ?: total?.let { page * 24 < it }
+            ?: throw IOException("Azora catalogue missing pagination metadata")
+
 
         return MangasPage(mangas, hasMore)
     }
@@ -146,10 +166,17 @@ class Azora(
         var postId = manga.url.substringAfter("#", "")
 
         var updatedManga = manga
-        if (fetchDetails || (fetchChapters && postId.isEmpty())) {
+        var expectedChapterCount: Int? = null
+        if (fetchDetails || fetchChapters) {
             val req = GET("$baseUrl/api/post?postSlug=$postSlug", headers)
             val resp = client.newCall(req).awaitSuccess()
-            updatedManga = parsePostDetailsResponse(resp.body.string(), manga, postSlug, postId)
+            val body = resp.use { it.body.string() }
+            val root = json.parseToJsonElement(body).jsonObject
+            val post = root["post"]?.jsonObject ?: throw IOException("Azora details missing post")
+            if (post["isNovel"]?.jsonPrimitive?.booleanOrNull == true) throw IOException("Azora novels are not supported by the image Reader")
+            expectedChapterCount = post["totalChapterCount"]?.jsonPrimitive?.intOrNull
+                ?: post["_count"]?.jsonObject?.get("chapters")?.jsonPrimitive?.intOrNull
+            updatedManga = parsePostDetailsResponse(body, manga, postSlug, postId)
             postId = updatedManga.url.substringAfter("#", postId)
         }
 
@@ -162,13 +189,20 @@ class Azora(
                 if (body.contains(""""error":""") || (body.contains(""""message":""") && !body.contains(""""chapters":""""))) {
                     throw IOException("Azora chapters API error for post $postId")
                 }
+                val chapterRoot = json.parseToJsonElement(body) as? JsonObject
+                expectedChapterCount = chapterRoot?.get("totalChapterCount")?.jsonPrimitive?.intOrNull ?: expectedChapterCount
                 updatedChapters = parseChaptersResponse(body, postSlug)
             } else {
                 throw IOException("Unable to determine post ID for Azora manga $postSlug")
             }
         }
 
-        return SMangaUpdate(updatedManga, updatedChapters)
+        if (fetchChapters && expectedChapterCount != null && updatedChapters.size != expectedChapterCount) {
+            throw IOException("Azora incomplete chapters: expected $expectedChapterCount, received ${updatedChapters.size}")
+        }
+        return SMangaUpdate(updatedManga, updatedChapters,
+            if (fetchChapters && expectedChapterCount == updatedChapters.size) ChapterFetchCompleteness.COMPLETE else ChapterFetchCompleteness.DEGRADED,
+        )
     }
 
     fun parsePostDetailsResponse(responseBody: String, manga: SManga, postSlug: String, existingPostId: String): SManga {
@@ -232,11 +266,11 @@ class Azora(
             ?: rootObj?.get("chapters")?.jsonArray
             ?: rootObj?.get("data")?.jsonArray
             ?: (if (rootElement is JsonArray) rootElement.jsonArray else null)
-            ?: return emptyList()
+            ?: throw IOException("Azora chapters missing array")
 
-        return chaptersArray.mapNotNull { element ->
+        val parsed = chaptersArray.map { element ->
             val obj = element.jsonObject
-            val chapterId = obj["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+            val chapterId = obj["id"]?.jsonPrimitive?.contentOrNull ?: throw IOException("Azora chapter missing remote ID")
             val chapterSlug = obj["slug"]?.jsonPrimitive?.contentOrNull
                 ?: obj["chapterSlug"]?.jsonPrimitive?.contentOrNull ?: "chapter-$chapterId"
             val rawName = obj["name"]?.jsonPrimitive?.contentOrNull
@@ -262,13 +296,16 @@ class Azora(
                 url = "/series/$postSlug/$chapterSlug#$chapterId"
                 name = formattedName
                 chapter_number = number
+                memo = buildJsonObject { put("azora.id", chapterId); put("id", chapterId); put("slug", chapterSlug) }
             }
         }.sortedByDescending { it.chapter_number }
+        if (parsed.isEmpty() || parsed.distinctBy { it.url }.size != parsed.size) throw IOException("Azora empty or duplicate chapter list")
+        return parsed
     }
 
     override suspend fun getPageList(chapter: SChapter): List<Page> {
         val chapterId = chapter.url.substringAfter("#", "")
-        if (chapterId.isEmpty()) return emptyList()
+        if (chapterId.isEmpty()) throw IOException("Azora chapter missing remote ID; refresh chapters")
 
         val req = GET("$baseUrl/api/chapter?chapterId=$chapterId", headers)
         val response = client.newCall(req).awaitSuccess()
@@ -293,15 +330,16 @@ class Azora(
         val pagesArray = chapterObj["images"]?.jsonArray
             ?: chapterObj["pages"]?.jsonArray
             ?: chapterObj["data"]?.jsonArray
-            ?: return emptyList()
+            ?: throw IOException("Azora pages missing array")
 
-        return pagesArray.mapIndexedNotNull { index, element ->
+        if (pagesArray.isEmpty()) throw IOException("Azora returned no pages")
+        return pagesArray.sortedBy { (it as? JsonObject)?.get("order")?.jsonPrimitive?.intOrNull ?: Int.MAX_VALUE }.mapIndexedNotNull { index, element ->
             val pageObj = if (element is JsonObject) element.jsonObject else null
             val pageUrl = pageObj?.get("url")?.jsonPrimitive?.contentOrNull
                 ?: pageObj?.get("pageUrl")?.jsonPrimitive?.contentOrNull
                 ?: pageObj?.get("image")?.jsonPrimitive?.contentOrNull
                 ?: (if (element is JsonPrimitive) element.jsonPrimitive.contentOrNull else null)
-            if (pageUrl.isNullOrBlank()) null else Page(index, "", if (pageUrl.startsWith("http")) pageUrl else "$baseUrl$pageUrl")
+            if (pageUrl.isNullOrBlank()) throw IOException("Azora returned an incomplete page list") else Page(index, "", if (pageUrl.startsWith("http")) pageUrl else "$baseUrl$pageUrl")
         }
     }
 
