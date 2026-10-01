@@ -14,6 +14,8 @@ data class SourceRules(
     val baseUrl: String,
     val operations: Map<String, OperationRule>,
     val headers: Map<String, String> = emptyMap(),
+    val validationQuery: String = "",
+    val validationMangaId: String = "",
 )
 
 @Serializable
@@ -52,12 +54,13 @@ object RulesFormat {
     fun validate(r: SourceRules) {
         require(r.schema == 1 && r.revision > 0 && r.sourceId > 0) { "Unsupported schema or revision" }
         publicHttps(r.baseUrl)
+        require(r.validationQuery.length <= 256 && r.validationMangaId.length <= 128 && r.validationQuery.isBlank() == r.validationMangaId.isBlank()) { "Validation search requires both query and identity" }
         require(r.operations.keys.containsAll(setOf("popular", "search", "details", "chapters", "pages"))) { "Incomplete rule set" }
         require(r.operations.size <= 6 && r.operations.keys.all { it in operations })
         require(r.headers.size <= 12 && r.headers.keys.all { it.lowercase() in setOf("referer", "origin", "user-agent", "accept", "accept-language") })
         require(r.headers.values.all { it.length <= 1024 && '\n' !in it && '\r' !in it })
         r.operations.forEach { (name, o) ->
-            require(o.endpoint.startsWith('/') && !o.endpoint.startsWith("//") && o.endpoint.length <= 1024)
+            require((o.endpoint.startsWith('/') || o.endpoint == "{path}" || o.endpoint.startsWith("{path}/")) && !o.endpoint.startsWith("//") && o.endpoint.length <= 1024)
             require(o.bodyEncoding in setOf("FORM", "JSON"))
             require(o.method in setOf("GET", "POST") && o.format in setOf("JSON", "HTML"))
             if (o.format == "HTML") require((listOf(o.rows, o.pagination?.nextSelector.orEmpty()) + o.fields.values.map { it.path }).none { ":matches" in it.lowercase() || ":has(" in it.lowercase() }) { "Unbounded selector operators are unsupported" }

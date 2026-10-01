@@ -37,15 +37,20 @@ class RuleInterpreter(private val client: OkHttpClient, val rules: SourceRules) 
             node?.let { if (field.attribute.isBlank()) it.text() else it.attr(field.attribute) }?.takeIf { it.isNotBlank() }
         }
     }
-    private fun variables(url: String, memo: JsonObject, page: Int, query: String): Map<String, String> = mapOf(
-        "url" to url, "slug" to url.substringBefore('#').trim('/'),
-        "id" to ((memo["id"] as? JsonPrimitive)?.contentOrNull ?: url.substringAfter('#', "")),
-        "page" to page.toString(), "query" to query, "mangaSlug" to url.substringBefore('#').trim('/'),
-    )
+    private fun variables(url: String, memo: JsonObject, page: Int, query: String): Map<String, String> {
+        val parsed = rules.baseUrl.toHttpUrl().resolve(url.substringBefore('#'))
+        val path = parsed?.encodedPath?.trimEnd('/')?.ifBlank { "/" } ?: "/"
+        val slug = parsed?.pathSegments?.lastOrNull { it.isNotBlank() }.orEmpty()
+        return mapOf("url" to url, "path" to path, "slug" to slug, "mangaSlug" to slug,
+            "id" to (memo.entries.filter { it.key == "id" || it.key == "chapterId" || it.key == "remoteId" || it.key.endsWith(".id") }
+                .mapNotNull { (it.value as? JsonPrimitive)?.contentOrNull?.takeIf(String::isNotBlank) }.distinct().singleOrNull()
+                ?: url.substringAfter('#', "").ifBlank { url.trim('/').takeIf { it.matches(Regex("[A-Za-z0-9_-]{1,128}")) }.orEmpty() }),
+            "page" to page.toString(), "query" to query) + (0..5).associate { "segment$it" to parsed?.pathSegments?.getOrNull(it).orEmpty() }
+    }
     private fun expand(value: String, variables: Map<String, String>, encode: Boolean = false): String {
-        return Regex("\\{([A-Za-z]+)\\}").replace(value) { match ->
+        return Regex("\\{([A-Za-z][A-Za-z0-9]*)\\}").replace(value) { match ->
             val v = variables[match.groupValues[1]] ?: throw IOException("Unknown rule placeholder")
-            if (encode) URLEncoder.encode(v, "UTF-8").replace("+", "%20") else v
+            if (encode && match.groupValues[1] != "path") URLEncoder.encode(v, "UTF-8").replace("+", "%20") else v
         }
     }
     private fun absolute(value: String): String {
@@ -136,9 +141,19 @@ class RuleInterpreter(private val client: OkHttpClient, val rules: SourceRules) 
     }
     suspend fun details(manga: SManga): SManga {
         val v = rows("details", manga.url, manga.memo).values.singleOrNull() ?: throw IOException("Unexpected manga details")
-        val expected = (manga.memo["id"] as? JsonPrimitive)?.contentOrNull ?: manga.url.substringAfter('#', "")
-        if (expected.isBlank() || v["id"] != expected) throw IOException("Details identity mismatch")
+        val expected = variables(manga.url, manga.memo, 1, "").getValue("id")
+        if (expected.isNotBlank()) {
+            if (v["id"] != expected) throw IOException("Details identity mismatch")
+        } else {
+            // Older HTML manga have only a stored route. Require a returned canonical route,
+            // never title similarity, to verify the payload before learning its remote ID.
+            val canonical = v["url"] ?: throw IOException("Legacy details require canonical identity")
+            val returned = rules.baseUrl.toHttpUrl().resolve(canonical) ?: throw IOException("Invalid canonical identity")
+            val requested = rules.baseUrl.toHttpUrl().resolve(manga.url) ?: throw IOException("Invalid requested identity")
+            if (returned.encodedPath.trimEnd('/') != requested.encodedPath.trimEnd('/') || returned.encodedQuery != requested.encodedQuery) throw IOException("Canonical details identity mismatch")
+        }
         return manga.copy().apply {
+            memo = JsonObject(memo + ("id" to JsonPrimitive(v.getValue("id"))))
             title = v.getValue("title").takeIf { it.isNotBlank() } ?: throw IOException("Missing details title")
             v["cover"]?.takeIf { it.isNotBlank() }?.let { thumbnail_url = it }
             v["description"]?.takeIf { it.isNotBlank() }?.let { description = it }

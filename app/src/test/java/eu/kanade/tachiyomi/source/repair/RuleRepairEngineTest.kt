@@ -234,4 +234,78 @@ class RuleRepairEngineTest {
         assertEquals(2, engine.store.active(44)?.revision)
     }
 
+    @Test fun `signed small search sample validates without narrowing real Popular catalogue`() = runBlocking<Unit> {
+        val requests = mutableListOf<Request>()
+        val client = client(requests = requests, mutate = { request, body -> if (request.url.encodedPath == "/catalogue") body.replace("m1", "large-m1") else body })
+        val profile = rules().copy(validationQuery = "Small validation series", validationMangaId = "m1")
+        val engine = RuleRepairEngine(store(), RuleTransport { signed(profile) }, mihon.domain.source.health.SourceHealthMonitor())
+        assertTrue(engine.check(source(client)))
+        assertTrue(requests.any { it.url.encodedPath == "/search-new" && it.url.queryParameter("q") == "Small validation series" })
+        assertTrue(requests.filter { it.url.encodedPath == "/details" }.all { it.url.queryParameter("id") == "m1" })
+        assertEquals("/large-m1", RepairableSource(source(client), engine).getPopularManga(1).mangas.first().url)
+    }
+
+    @Test fun `HTML details POST chapters and Reader preserve paths and move stored old domain`() = runBlocking<Unit> {
+        val requests = mutableListOf<Request>()
+        val htmlClient = client(requests = requests).newBuilder().addInterceptor { chain -> chain.proceed(chain.request()) }.build()
+        // Prepend the HTML representation interceptor; all requests still use the same OkHttp path.
+        val client = htmlClient.newBuilder().apply { interceptors().add(0) { chain ->
+            val request = chain.request()
+            val html = when (request.url.encodedPath) {
+                "/m1" -> "<div class='series' data-id='m1'><span class='title'>Manga 1</span></div><span class='total'>1</span>"
+                "/m1/ajax" -> "<div class='chapters'><a data-id='c1' href='/chapter-1'>Chapter one</a></div><span class='total'>1</span>"
+                "/chapter-1" -> "<div class='reader'><img src='/image.jpg'></div>"
+                else -> null
+            }
+            if (html == null) chain.proceed(request) else {
+                requests += request
+                Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(200).message("HTML simulation").body(html.toResponseBody()).build()
+            }
+        } }.build()
+        val profile = rules().let { r -> r.copy(operations = r.operations + mapOf(
+            "details" to OperationRule("{path}", format = "HTML", rows = ".series", fields = mapOf(
+                "id" to FieldRule(attribute = "data-id"), "title" to FieldRule(".title"), "chapterTotal" to FieldRule(".total", root = true))),
+            "chapters" to OperationRule("{path}/ajax", method = "POST", bodyEncoding = "JSON", parameters = mapOf("postId" to "{id}"), format = "HTML", rows = ".chapters a",
+                fields = mapOf("id" to FieldRule(attribute = "data-id"), "url" to FieldRule(attribute = "href"), "name" to FieldRule()), pagination = PaginationRule("p", 24, total = ".total")),
+            "pages" to OperationRule("{path}", format = "HTML", rows = ".reader img", fields = mapOf("image" to FieldRule(attribute = "src"))),
+        )) }
+        val engine = RuleRepairEngine(store(), RuleTransport { signed(profile) }, mihon.domain.source.health.SourceHealthMonitor())
+        assertTrue(engine.check(source(client)))
+        val adapter = RepairableSource(source(client), engine)
+        val produced = adapter.getPopularManga(1).mangas.single()
+        val legacy = produced.copy().apply { url = "https://old.example/m1#legacy" }
+        val update = adapter.getMangaUpdate(legacy, emptyList(), true, true)
+        assertEquals(ChapterFetchCompleteness.COMPLETE, update.chapterCompleteness)
+        assertEquals(legacy.url, update.manga.url)
+        assertEquals(1, adapter.getPageList(update.chapters.single()).size)
+        assertTrue(requests.any { it.url.host == "new.example" && it.url.encodedPath == "/m1" })
+        assertTrue(requests.any { it.method == "POST" && it.url.encodedPath == "/m1/ajax" && it.body?.contentType().toString() == "application/json; charset=utf-8" })
+        assertFalse(requests.any { "%2F" in it.url.encodedPath })
+    }
+
+    @Test fun `legacy bare manga ID and namespaced chapter memo bind stable remote requests`() = runBlocking<Unit> {
+        val requests = mutableListOf<Request>()
+        val client = client(requests = requests)
+        val profile = rules().let { r -> r.copy(operations = r.operations + ("pages" to r.operations.getValue("pages").copy(parameters = mapOf("id" to "{id}", "type" to "{segment0}")))) }
+        val interpreter = RuleInterpreter(client, profile)
+        val manga = SManga.create().apply { url = "m1"; title = "Manga 1" }
+        assertEquals("Manga 1", interpreter.details(manga).title)
+        val chapter = SChapter.create().apply {
+            url = "/manga/foo/chapter/1"; name = "Chapter 1"
+            memo = kotlinx.serialization.json.buildJsonObject { put("mangatime.id", kotlinx.serialization.json.JsonPrimitive("remote-c1")) }
+        }
+        interpreter.pages(chapter)
+        assertTrue(requests.any { it.url.encodedPath == "/details" && it.url.queryParameter("id") == "m1" })
+        assertTrue(requests.any { it.url.encodedPath == "/pages" && it.url.queryParameter("id") == "remote-c1" && it.url.queryParameter("type") == "manga" })
+    }
+    @Test fun `legacy route only manga requires canonical route verification before learning remote ID`() = runBlocking<Unit> {
+        val profile = rules().let { r -> r.copy(operations = r.operations + ("details" to r.operations.getValue("details").copy(fields = r.operations.getValue("details").fields + ("url" to FieldRule("url"))))) }
+        val client = client(mutate = { request, body -> if (request.url.encodedPath == "/details") "{\"post\":{\"id\":\"m1\",\"url\":\"/manga/foo\",\"postTitle\":\"Manga 1\",\"featuredImage\":\"https://new.example/cover.jpg\"}}" else body })
+        val manga = SManga.create().apply { url = "https://old.example/manga/foo"; title = "Manga 1" }
+        val updated = RuleInterpreter(client, profile).details(manga)
+        assertEquals(manga.url, updated.url)
+        assertEquals("m1", updated.memo["id"]?.toString()?.trim('"'))
+        try { RuleInterpreter(client, profile).details(manga.copy().apply { url = "/manga/unrelated" }); fail<Unit>("Must reject wrong canonical route") } catch (_: IOException) { }
+    }
+
 }

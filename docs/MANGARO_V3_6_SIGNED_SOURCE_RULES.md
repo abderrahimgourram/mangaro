@@ -38,12 +38,14 @@ network validation failures and cancellation do not burn the candidate revision.
 ## Schema 1
 
 `SourceRules`: schema=1, existing sourceId, independent positive revision, HTTPS baseUrl,
-headers, operations. Required operations: popular/search/details/chapters/pages; latest is
+headers, operations, optional validationQuery/validationMangaId. The signed validation search
+selects a genuinely produced small series by stable ID without changing Popular/Latest requests.
+Required operations: popular/search/details/chapters/pages; latest is
 required for a source that supports it. Unknown JSON keys/schema versions are rejected.
 
 Each operation defines:
 
-- endpoint beginning `/`, GET/POST, FORM/JSON POST body encoding, named parameters;
+- endpoint beginning `/`, or `{path}` / `{path}/suffix`, GET/POST, FORM/JSON POST body encoding, named parameters;
 - JSON or HTML response; `rows` is a dotted JSON path or a CSS selector;
 - named fields with path, HTML attribute, optional flag, ROOT/ROW scope (`root` boolean),
   and fixed NONE/BASE64 transform;
@@ -51,12 +53,17 @@ Each operation defines:
 - explicit pagination: page parameter, page size, declared total path and/or boolean next path
   or HTML next selector, max pages (at most 25).
 
-Placeholders: `{page}`, `{query}`, `{url}`, `{slug}`, `{id}`, `{mangaSlug}`; identity templates
-can also use extracted fields. Endpoint substitutions are encoded; parameters are encoded
+Placeholders: `{page}`, `{query}`, `{url}`, `{path}`, `{slug}`, `{id}`, `{mangaSlug}`, `{segment0}`..`{segment5}`; identity templates
+can also use extracted fields. `{path}` preserves the encoded path separators of an existing URL and uses the new base
+host (even for stored absolute old-domain URLs). Slugs are the last decoded path segment.
+Other endpoint substitutions are encoded; parameters are encoded
 by OkHttp. Pagination uses server metadata, never filtered catalogue count.
 
 Catalogue fields: required id/url/title; optional cover/description/author/artist/genre.
-Details: required id/title, same ID as requested manga; existing URL/memo and non-empty
+Details: required id/title, same ID as requested manga; namespaced existing ID memos and bare
+ID manga URLs are supported. Legacy route-only manga additionally require a returned canonical
+URL matching the requested route before learning the remote ID; titles are never identity.
+Existing URL/memo and non-empty
 metadata survive. Optional `chapterTotal` can extract an independent declared details count
 (including from ROOT). Chapters: required id/url/name; number, scanlator, epoch-millisecond
 date and `memo.*` values optional. Stable ID is stored in memo. Pages: required image;
@@ -85,8 +92,9 @@ If a live active version fails structurally and repair fails, rollback restores 
 returns a clean error. Invalid candidates leave the previous active/LKG untouched. Feed outage
 alone never marks a source unhealthy or discards a working active version.
 
-Validation makes at most ten logical source requests (fewer without latest or catalogue page 2):
-popular 1/2, latest 1, search of produced title, same produced manga details, up to three
+Validation makes at most eleven logical source requests (fewer without latest or catalogue page 2):
+popular 1/2, latest 1, optional signed small-series search, search of produced title, same
+produced manga details, up to three
 chapter pages, one produced chapter's page list and one image. Original-operation replay is
 one additional operation, subject to the same per-request and chapter-page bounds.
 Candidate validation is bounded to 90 seconds, response bodies to 2 MiB (feed envelope 384 KiB),
@@ -136,7 +144,7 @@ SQL path, Browse UI and real Reader. Test fixture data/key are in androidTest on
 fixture manga is removed afterwards, and the registered production source is restored.
 No real provider-rule feed is claimed or activated in this unconfigured release.
 
-Final verification: 75 domain / 189 app unit tests, zero failures/skips; 14 focused repair tests.
+Final verification: 75 domain / 193 app unit tests, zero failures/skips; 18 focused repair tests.
 Offline publisher OpenSSL signature round-trip passed with an ephemeral test key.
 Emulator-5554 audit passed with zero failures: live native Popular counts TeamX 10,
 MangaTime 24, MangaLek 10, Azora 23, Hijala 5, MangaDar 30, MangaSwat 20; unique 30-minute

@@ -138,7 +138,11 @@ class RuleRepairEngine(
 
     private suspend fun validate(source: HttpSource, candidate: RuleInterpreter) {
         val first = candidate.catalogue("popular", 1)
-        val sample = first.mangas.firstOrNull() ?: throw IOException("Candidate has no validation manga")
+        val sample = if (candidate.rules.validationQuery.isNotBlank()) {
+            val produced = candidate.catalogue("search", 1, candidate.rules.validationQuery)
+            produced.mangas.singleOrNull { (it.memo["id"] as? JsonPrimitive)?.content == candidate.rules.validationMangaId }
+                ?: throw IOException("Signed validation sample identity not found")
+        } else first.mangas.firstOrNull() ?: throw IOException("Candidate has no validation manga")
         if (first.hasNextPage) {
             val second = candidate.catalogue("popular", 2)
             if (second.mangas.isEmpty() || second.mangas.map { it.url }.toSet().intersect(first.mangas.map { it.url }.toSet()).isNotEmpty()) throw IOException("Repeated or missing catalogue page")
