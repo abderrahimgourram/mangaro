@@ -111,8 +111,8 @@ class Azora(
 
     override fun getFilterList(): FilterList = FilterList(OrderFilter())
 
-    class OrderFilter : Filter.Select<String>("الترتيب", arrayOf("آخر فصل", "الأكثر مشاهدة", "تاريخ الإضافة", "عدد الفصول", "العنوان")) {
-        val selected: String get() = arrayOf("lastChapterAddedAt", "totalViews", "createdAt", "chaptersCount", "postTitle")[state]
+    class OrderFilter : Filter.Select<String>("الترتيب", arrayOf("آخر فصل", "الأكثر مشاهدة", "تاريخ الإضافة", "العنوان")) {
+        val selected: String get() = arrayOf("lastChapterAddedAt", "totalViews", "createdAt", "postTitle")[state]
     }
 
     fun parsePostsResponse(responseBody: String, page: Int = 1): MangasPage {
@@ -149,7 +149,7 @@ class Azora(
 
         val total = rootObj["totalCount"]?.jsonPrimitive?.intOrNull
         val hasMore = rootObj["hasMore"]?.jsonPrimitive?.booleanOrNull
-            ?: total?.let { page * 24 < it }
+            ?: total?.let { page.toLong() * maxOf(24, postsArray.size) < it }
             ?: throw IOException("Azora catalogue missing pagination metadata")
 
 

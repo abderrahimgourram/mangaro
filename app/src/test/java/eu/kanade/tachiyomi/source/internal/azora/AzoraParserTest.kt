@@ -165,6 +165,15 @@ class AzoraParserTest {
         pages[1].imageUrl shouldBe "https://storage.azorafly.com/upload/p2.jpg"
     }
     @Test
+    fun `complete oversized response cannot advertise an endless next page`() {
+        val posts = (1..200).joinToString(",") { """{"id":$it,"slug":"sample-$it","postTitle":"Sample $it"}""" }
+        val page = azora.parsePostsResponse("""{"posts":[$posts],"totalCount":200}""")
+        page.mangas.size shouldBe 200
+        page.hasNextPage shouldBe false
+        azora.getFilterList().filterIsInstance<Azora.OrderFilter>().single().values.contains("عدد الفصول") shouldBe false
+    }
+
+    @Test
     fun `total count keeps pagination open when API returns fewer than requested entries`() {
         val response = """{"posts":[{"id":702,"slug":"sample","postTitle":"Sample"}],"totalCount":1935}"""
         azora.parsePostsResponse(response, 1).hasNextPage shouldBe true
