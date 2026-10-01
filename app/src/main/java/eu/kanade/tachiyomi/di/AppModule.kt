@@ -27,6 +27,7 @@ import eu.kanade.tachiyomi.source.internal.mangadar.MangaDar
 import eu.kanade.tachiyomi.source.internal.mangalek.MangaLek
 import eu.kanade.tachiyomi.source.internal.mangatime.MangaTime
 import eu.kanade.tachiyomi.source.internal.teamx.TeamX
+import eu.kanade.tachiyomi.source.internal.mangaswat.MangaSwat
 import mihon.domain.source.registry.DefaultInternalSourceRegistry
 import mihon.domain.source.registry.DefaultSourceCollisionPolicy
 import mihon.domain.source.registry.InternalSourceRegistry
@@ -134,6 +135,7 @@ class AppModule(val app: Application) : InjektModule {
                     Hijala(),
                     MangaLek(),
                     MangaDar(),
+                    MangaSwat(),
                 ),
             )
         }
