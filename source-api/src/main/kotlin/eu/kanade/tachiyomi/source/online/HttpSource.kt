@@ -415,6 +415,9 @@ abstract class HttpSource : CatalogueSource {
      *
      * @param page the chapter whose page list has to be fetched
      */
+    /** Preserve source-specific image headers when an internal declarative adapter is installed. */
+    fun repairImageRequest(page: Page): Request = imageRequest(page)
+
     protected open fun imageRequest(page: Page): Request {
         return GET(page.imageUrl!!, headers)
     }
