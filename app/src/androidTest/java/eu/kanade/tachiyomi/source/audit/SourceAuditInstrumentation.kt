@@ -63,9 +63,11 @@ class SourceAuditInstrumentation : Instrumentation() {
     private var paginationUi = false
     private var azoraChapters: String? = null
     private var reliability = false
+    private var ruleRepair = false
     override fun onCreate(arguments: Bundle?) {
         super.onCreate(arguments)
         selected = arguments?.getString("source")
+        ruleRepair = arguments?.getString("ruleRepair") == "true"
         reliability = arguments?.getString("reliability") == "true"
         azoraChapters = arguments?.getString("azoraChapters")
         full = arguments?.getString("full") == "true"
@@ -408,16 +410,98 @@ class SourceAuditInstrumentation : Instrumentation() {
 
     private fun tachiyomi.domain.chapter.model.Chapter.toChapterUpdateForAudit() = tachiyomi.domain.chapter.model.ChapterUpdate(id, url = url, memo = memo, read = read, bookmark = bookmark, lastPageRead = lastPageRead)
 
+    private suspend fun auditRules(manager: SourceManager) {
+        val health = mihon.domain.source.health.SourceHealthMonitor.shared
+        val registered = manager.getOnlineSources().filterIsInstance<eu.kanade.tachiyomi.source.repair.RepairableSource>()
+        check(registered.size == 7) { "Expected seven existing registered internal adapters" }
+        for (source in registered) {
+            health.success(source.id)
+            val popular = withTimeout(60_000) { source.getPopularManga(1) }
+            check(popular.mangas.isNotEmpty())
+            record("Rules native fallback ${source.name} id=${source.id} popular=${popular.mangas.size}")
+        }
+        val work = androidx.work.WorkManager.getInstance(targetContext)
+        check(work.getWorkInfosForUniqueWork("source-rule-maintenance").get().count { !it.state.isFinished } == 1)
+        record("Rules unique 30-minute WorkManager maintenance registered")
+        val fixture = RuleAuditFixture(targetContext, Injekt.get<eu.kanade.tachiyomi.network.NetworkHelper>().client)
+        val source = fixture.source
+        val field = manager.javaClass.getDeclaredField("sourcesMapFlow").apply { isAccessible = true }
+        @Suppress("UNCHECKED_CAST")
+        val flow = field.get(manager) as kotlinx.coroutines.flow.MutableStateFlow<java.util.concurrent.ConcurrentHashMap<Long, eu.kanade.tachiyomi.source.Source>>
+        val previous = flow.value[source.id]!!
+        var created: Manga? = null
+        try {
+            flow.value[source.id] = source
+            val produced = source.getPopularManga(1).mangas.single()
+            check(fixture.nativeFailures == 1 && fixture.feedCalls == 1 && fixture.engine.store.active(source.id)?.revision == 1L)
+            check(source.getPopularManga(2).mangas.single().url != produced.url)
+            record("Rules native 404 -> signed feed -> validation -> ACTIVE -> retry succeeded; calls=${fixture.feedCalls}")
+            val restarted = eu.kanade.tachiyomi.source.repair.RuleRepairEngine(
+                eu.kanade.tachiyomi.source.repair.RuleStore(fixture.directory, fixture.verifier),
+                eu.kanade.tachiyomi.source.repair.RuleTransport { throw java.io.IOException("offline feed") })
+            val cached = eu.kanade.tachiyomi.source.repair.RepairableSource(Azora(fixture.client), restarted)
+            check(cached.getPopularManga(1).mangas.single().url == produced.url)
+            record("Rules restart with offline feed preserved active identity")
+            openCatalogueUi(source, produced.title)
+            val local = Injekt.get<NetworkToLocalManga>().invoke(Manga.create().copy(source = source.id, url = produced.url, title = produced.title).copyFrom(produced))
+            created = local
+            val update = Injekt.get<mihon.domain.source.interactor.UpdateMangaFromRemote>()(local, fetchDetails = true, fetchChapters = true).getOrThrow()
+            val chapter = Injekt.get<ChapterRepository>().getChapterByMangaId(local.id).single()
+            check(source.getMangaUpdate(produced, emptyList(), true, true).chapterCompleteness == eu.kanade.tachiyomi.source.model.ChapterFetchCompleteness.COMPLETE)
+            check(chapter.url == "/__rule_audit_chapter_1")
+            record("Rules produced manga URL/memo -> production details/update -> COMPLETE SQL chapter")
+            auditRuleReader(local, chapter)
+        } finally {
+            flow.value[source.id] = previous
+            health.degrade(source.id); health.success(source.id)
+            created?.let { local ->
+                // Only this test-created fixture row, cascading its own test chapter/history.
+                Injekt.get<app.cash.sqldelight.db.SqlDriver>().execute(null,
+                    "DELETE FROM mangas WHERE _id = ? AND url = ?", 2) { bindLong(0, local.id); bindString(1, "/__rule_audit_m1") }.await()
+            }
+            fixture.directory.deleteRecursively()
+        }
+    }
+
+    private suspend fun auditRuleReader(manga: Manga, chapter: tachiyomi.domain.chapter.model.Chapter) {
+        val monitor = addMonitor(ReaderActivity::class.java.name, null, false)
+        targetContext.startActivity(ReaderActivity.newIntent(targetContext, manga.id, chapter.id).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        val reader = monitor.waitForActivityWithTimeout(20_000) as? ReaderActivity ?: error("Rule Reader did not open")
+        try {
+            var vm: eu.kanade.tachiyomi.ui.reader.ReaderViewModel? = null
+            runOnMainSync { vm = reader.viewModel }
+            withTimeout(60_000) {
+                while (true) {
+                    vm!!.state.value.initError?.let { throw it }
+                    val current = vm!!.state.value.currentChapter
+                    (current?.state as? ReaderChapter.State.Error)?.let { throw it.error }
+                    var rendered = false
+                    runOnMainSync { rendered = hasRenderedImage(reader.window.decorView) }
+                    if (current?.chapter?.id == chapter.id && rendered) break
+                    delay(250)
+                }
+            }
+            saveScreenshot("rules-repaired-reader.png")
+            record("Rules real Reader RENDERED same produced chapter pages=${vm!!.state.value.currentChapter!!.pages!!.size}")
+        } finally { runOnMainSync { reader.finish() }; removeMonitor(monitor) }
+    }
+
     override fun onStart() {
         super.onStart()
         waitForIdleSync()
         runBlocking {
             val manager = Injekt.get<SourceManager>()
             withTimeout(30_000) { manager.isInitialized.first { it } }
+            if (ruleRepair) {
+                try { withTimeout(480_000) { auditRules(manager) } }
+                catch (e: Exception) { failures++; record("Rules ERROR ${e.javaClass.simpleName}: ${e.message}; ${e.stackTrace.take(3).joinToString()}") }
+                return@runBlocking
+            }
             val sources = listOf(TeamX(), MangaTime(), MangaLek(), Azora(), Hijala(), MangaDar(), MangaSwat()).map {
                 val registered = manager.get(it.id) as? HttpSource ?: error("Source not registered: ${it.name}")
-                check(registered.javaClass == it.javaClass) { "UI uses another implementation: ${registered.javaClass}" }
-                registered
+                val native = (registered as? eu.kanade.tachiyomi.source.repair.RepairableSource)?.original ?: registered
+                check(native.javaClass == it.javaClass) { "UI uses another implementation: ${registered.javaClass}" }
+                native
             }
             if (reliability) {
                 try { withTimeout(480_000) { auditReliability(sources) } }
