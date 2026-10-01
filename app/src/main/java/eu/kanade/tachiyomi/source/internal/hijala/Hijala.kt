@@ -108,7 +108,7 @@ class Hijala(
         return if (page == 1) {
             GET("$baseUrl/manga/?order=popular", headers)
         } else {
-            GET("$baseUrl/manga/page/$page/?order=popular", headers)
+            GET("$baseUrl/manga/?page=$page&order=popular", headers)
         }
     }
 
@@ -127,7 +127,7 @@ class Hijala(
         return if (page == 1) {
             GET("$baseUrl/manga/?order=update", headers)
         } else {
-            GET("$baseUrl/manga/page/$page/?order=update", headers)
+            GET("$baseUrl/manga/?page=$page&order=update", headers)
         }
     }
 
@@ -166,6 +166,7 @@ class Hijala(
             parseMangaFromElement(element)
         }.distinctBy { it.url }
 
+        if (mangas.isEmpty()) throw IOException("Hijala catalogue contained no validated manga cards")
         val hasNextPage = document.select("a.r, a.next, ul.pagination a[rel=next]").first() != null ||
             document.select("div.hpage a.r").first() != null
 
@@ -211,7 +212,7 @@ class Hijala(
         val updatedManga = if (fetchDetails) parseMangaDetails(document, manga) else manga
         val updatedChapters = if (fetchChapters) {
             val parsed = parseChapters(document)
-            if (parsed.isEmpty() && document.select("div#chapterlist").isNotEmpty()) {
+            if (parsed.isEmpty()) {
                 throw IOException("Hijala returned 0 chapters for ${manga.title}")
             }
             parsed
@@ -289,20 +290,22 @@ class Hijala(
     }
 
     fun parsePagesFromDocument(document: Document): List<Page> {
+        SourceValidationUtil.checkCloudflareOrError(document)
         val elements = document.select("div#readerarea img")
         val pages = mutableListOf<Page>()
 
         elements.forEachIndexed { index, element ->
-            val url = element.attr("abs:src")
-                .ifBlank { element.attr("src") }
-                .ifBlank { element.attr("abs:data-src") }
+            val url = element.attr("abs:data-src")
                 .ifBlank { element.attr("data-src") }
+                .ifBlank { element.attr("abs:src") }
+                .ifBlank { element.attr("src") }
 
             if (url.isNotBlank() && !url.contains("placeholder") && !url.startsWith("data:")) {
                 pages.add(Page(index, "", url))
             }
         }
 
+        if (pages.isEmpty() || pages.size != elements.size) throw IOException("Hijala returned an empty or incomplete page list")
         return pages
     }
 

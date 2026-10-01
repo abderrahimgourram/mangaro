@@ -30,7 +30,7 @@ class HijalaParserTest {
         req1.url.toString() shouldBe "https://hijala.com/manga/?order=popular"
 
         val req2 = hijala.popularMangaRequest(2)
-        req2.url.toString() shouldBe "https://hijala.com/manga/page/2/?order=popular"
+        req2.url.toString() shouldBe "https://hijala.com/manga/?page=2&order=popular"
     }
 
     @Test
@@ -130,4 +130,9 @@ class HijalaParserTest {
         pages[0].imageUrl shouldBe "https://hijala.com/pages/01.jpg"
         pages[1].imageUrl shouldBe "https://hijala.com/pages/02.jpg"
     }
+    @Test
+    fun `search retains WordPress path pagination independently of catalogue query pagination`() {
+        hijala.searchMangaRequest(2, "ma", eu.kanade.tachiyomi.source.model.FilterList()).url.toString() shouldBe "https://hijala.com/page/2/?s=ma"
+    }
+
 }
