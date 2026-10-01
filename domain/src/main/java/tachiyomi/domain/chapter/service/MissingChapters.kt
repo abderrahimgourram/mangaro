@@ -1,49 +1,23 @@
 package tachiyomi.domain.chapter.service
 
 import tachiyomi.domain.chapter.model.Chapter
-import kotlin.math.floor
 
-fun List<Double>.missingChaptersCount(): Int {
-    if (this.isEmpty()) {
-        return 0
-    }
+/** Numbers are labels, not proof that the provider ever published an intervening chapter. */
+@Suppress("UNUSED_PARAMETER")
+fun List<Double>.missingChaptersCount(): Int = 0
 
-    val chapters = this
-        // Ignore unknown chapter numbers
-        .filterNot { it == -1.0 }
-        // Convert to integers, as we cannot check if 16.5 is missing
-        .map(Double::toInt)
-        // Only keep unique chapters so that -1 or 16 are not counted multiple times
-        .distinct()
-        .sorted()
-
-    if (chapters.isEmpty()) {
-        return 0
-    }
-
-    var missingChaptersCount = 0
-    var previousChapter = chapters.first() // Do not invent chapters preceding the earliest available entry
-
-    // We go from 0 to lastChapter - Make sure to use the current index instead of the value
-    for (i in 1 until chapters.size) {
-        val currentChapter = chapters[i]
-        if (currentChapter > previousChapter + 1) {
-            // Add the amount of missing chapters
-            missingChaptersCount += currentChapter - previousChapter - 1
-        }
-        previousChapter = currentChapter
-    }
-
-    return missingChaptersCount
+/** An authoritative identity manifest may explicitly advertise absent chapter identities.
+ * Callers must supply that source-scoped evidence and a verified COMPLETE list. No current
+ * internal source advertises such gaps, so existing numeric-only callers return zero. */
+fun List<Chapter>.missingChaptersCount(verifiedComplete: Boolean, expectedRemoteIds: Set<String>): Int {
+    if (!verifiedComplete || isEmpty() || map { it.mangaId }.distinct().size != 1) return 0
+    val actual = flatMap { ChapterIdentity.remoteIds(it) }.toSet()
+    if (actual.isEmpty() || expectedRemoteIds.any { it.isBlank() } || !expectedRemoteIds.containsAll(actual)) return 0
+    return (expectedRemoteIds - actual).size
 }
 
-fun calculateChapterGap(higherChapter: Chapter?, lowerChapter: Chapter?): Int {
-    if (higherChapter == null || lowerChapter == null) return 0
-    if (!higherChapter.isRecognizedNumber || !lowerChapter.isRecognizedNumber) return 0
-    return calculateChapterGap(higherChapter.chapterNumber, lowerChapter.chapterNumber)
-}
+@Suppress("UNUSED_PARAMETER")
+fun calculateChapterGap(higherChapter: Chapter?, lowerChapter: Chapter?): Int = 0
 
-fun calculateChapterGap(higherChapterNumber: Double, lowerChapterNumber: Double): Int {
-    if (higherChapterNumber < 0.0 || lowerChapterNumber < 0.0) return 0
-    return floor(higherChapterNumber).toInt() - floor(lowerChapterNumber).toInt() - 1
-}
+@Suppress("UNUSED_PARAMETER")
+fun calculateChapterGap(higherChapterNumber: Double, lowerChapterNumber: Double): Int = 0
