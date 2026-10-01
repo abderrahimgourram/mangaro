@@ -1,6 +1,6 @@
 package eu.kanade.tachiyomi.ui.home
 
-import io.kotest.matchers.collections.shouldContainExactly
+import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
 import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.manga.model.MangaCover
@@ -17,15 +17,15 @@ class GroupDiscoveryItemsTest {
     }
 
     @Test
-    fun `verify identical titles from different sources remain separate source identities`() {
+    fun `preferred identical-title card retains separate hidden source identity`() {
         val itemA = HomeDiscoveryItem(mangaId = 10L, title = "Solo Leveling", coverData = MangaCover(10L, 1L, false, "http://coverA.jpg", 0L), sourceId = 100L, sourceName = "Azora")
         val itemB = HomeDiscoveryItem(mangaId = 20L, title = "solo leveling", coverData = MangaCover(20L, 1L, false, "http://coverB.jpg", 0L), sourceId = 200L, sourceName = "MangaDar")
 
         val grouped = GroupDiscoveryItems.group(listOf(itemA, itemB))
 
-        grouped.size shouldBe 2
+        grouped.size shouldBe 1
         grouped.first().availableVersions.size shouldBe 0
-        grouped.map { it.sourceId } shouldContainExactly listOf(100L, 200L)
+        (listOf(grouped.first()) + grouped.first().alternatives).map { it.sourceId } shouldContainExactlyInAnyOrder listOf(100L, 200L)
     }
 
     @Test
@@ -58,9 +58,9 @@ class GroupDiscoveryItemsTest {
         val page1Grouped = GroupDiscoveryItems.group(listOf(page1Item))
         val page2Combined = GroupDiscoveryItems.group(page1Grouped + listOf(page2Duplicate))
 
-        page2Combined.size shouldBe 2
+        page2Combined.size shouldBe 1
         page2Combined.first().availableVersions.size shouldBe 0
-        page2Combined.map { it.mangaId } shouldContainExactly listOf(10L, 20L)
+        (listOf(page2Combined.first()) + page2Combined.first().alternatives).map { it.mangaId } shouldContainExactlyInAnyOrder listOf(10L, 20L)
     }
 
     @Test

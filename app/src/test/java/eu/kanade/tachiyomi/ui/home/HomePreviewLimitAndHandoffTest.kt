@@ -81,9 +81,8 @@ class HomePreviewLimitAndHandoffTest {
 
         val retrieved = DiscoverySnapshotStore.getSnapshot(DiscoveryCategory.LATEST)
 
-        retrieved.size shouldBe 2
-        retrieved[0].sourceId shouldBe 100L
-        retrieved[1].sourceId shouldBe 200L
-        (retrieved[0] == retrieved[1]) shouldBe false
+        retrieved.size shouldBe 1
+        setOf(retrieved[0].sourceId, retrieved[0].alternatives.single().sourceId) shouldBe setOf(100L, 200L)
+        (retrieved[0].mangaId == retrieved[0].alternatives.single().mangaId) shouldBe false
     }
 }

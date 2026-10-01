@@ -112,7 +112,7 @@ class MangaLekParserTest {
             </ul>
         """.trimIndent()
 
-        val detailsDoc = Jsoup.parse(detailsHtml, "https://mangalik.net")
+        val detailsDoc = Jsoup.parse(detailsHtml, "https://mangalik.net" + catalogueManga.url.substringBefore('#'))
         val updatedManga = mangaLek.parseMangaDetails(detailsDoc, catalogueManga)
 
         updatedManga.title shouldBe "Tales of Demons and Gods"
@@ -139,7 +139,7 @@ class MangaLekParserTest {
             <span>مستمر</span>
         """.trimIndent()
 
-        val doc = Jsoup.parse(html, "https://mangalik.net")
+        val doc = Jsoup.parse(html, "https://mangalik.net" + initialManga.url.substringBefore('#'))
         val updated = mangaLek.parseMangaDetails(doc, initialManga)
 
         updated.title shouldBe "Otherworldly Evil Monarch"

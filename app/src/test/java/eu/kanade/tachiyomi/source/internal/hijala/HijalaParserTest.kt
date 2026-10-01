@@ -74,7 +74,7 @@ class HijalaParserTest {
             <span>Ongoing</span>
         """.trimIndent()
 
-        val doc = Jsoup.parse(html, "https://hijala.com")
+        val doc = Jsoup.parse(html, "https://hijala.com" + initialManga.url.substringBefore('#'))
         val updated = hijala.parseMangaDetails(doc, initialManga)
 
         updated.title shouldBe "The Bully In Charge"

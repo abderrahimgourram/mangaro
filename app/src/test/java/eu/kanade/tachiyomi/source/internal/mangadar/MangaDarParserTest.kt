@@ -82,6 +82,7 @@ class MangaDarParserTest {
 
     @Test
     fun `verify live Popular page parsing produces non-empty manga list`() {
+        org.junit.jupiter.api.Assumptions.assumeTrue(System.getenv("MANGARO_LIVE_TESTS") == "1", "Provider integration probe is explicit opt-in")
         val client = OkHttpClient()
         val req = Request.Builder()
             .url("https://mangadar.com/manga/?sort=popular")
@@ -114,7 +115,7 @@ class MangaDarParserTest {
             <span>مستمر</span>
         """.trimIndent()
 
-        val doc = Jsoup.parse(html, "https://mangadar.com")
+        val doc = Jsoup.parse(html, "https://mangadar.com" + initialManga.url.substringBefore('#'))
         val updated = mangaDar.parseMangaDetails(doc, initialManga)
 
         updated.title shouldBe "Kingdom"
