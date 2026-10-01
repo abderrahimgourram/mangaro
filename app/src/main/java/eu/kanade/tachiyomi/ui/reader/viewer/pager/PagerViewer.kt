@@ -278,6 +278,12 @@ abstract class PagerViewer(val activity: ReaderActivity) : Viewer {
         // Remove listener so the change in item doesn't trigger it
         pager.removeOnPageChangeListener(pagerListener)
 
+        // Preloading changes the numeric positions, particularly after reversing an RTL list.
+        // Keep the selected page when updating the same active chapter, including before the
+        // first ViewPager layout has instantiated its holders.
+        val pageToPreserve = (currentPage as? ReaderPage)?.takeIf {
+            adapter.currentChapter == chapters.currChapter && it.chapter == chapters.currChapter
+        }
         val forceTransition = config.alwaysShowChapterTransition ||
             adapter.items.getOrNull(pager.currentItem) is ChapterTransition
         adapter.setChapters(chapters, forceTransition)
@@ -288,6 +294,11 @@ abstract class PagerViewer(val activity: ReaderActivity) : Viewer {
             val pages = chapters.currChapter.pages ?: return
             moveToPage(pages[min(chapters.currChapter.requestedPage, pages.lastIndex)])
             pager.isVisible = true
+        }
+
+        pageToPreserve?.let { page ->
+            val position = adapter.items.indexOf(page)
+            if (position >= 0) pager.setCurrentItem(position, false)
         }
 
         pager.addOnPageChangeListener(pagerListener)
