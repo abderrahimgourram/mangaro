@@ -37,25 +37,44 @@ class MangaDarParserTest {
     }
 
     @Test
-    fun `verify parseMangaListFromDocument extracts manga entries from template elements`() {
+    fun `verify parseMangaListFromDocument extracts manga entries across structural variants`() {
         val html = """
-            <template x-if="view === 'grid'">
-              <a href="https://mangadar.com/manga/kingdom/" class="group block">
-                <div class="relative">
-                  <img src="https://mangadar.com/wp-content/uploads/2026/04/cover-8-300x420.webp" alt="Kingdom"/>
-                </div>
+            <!-- 1. Normal DOM card without group class -->
+            <div class="custom-card">
+              <a href="https://mangadar.com/manga/one-piece/">
+                <img src="https://mangadar.com/covers/op.jpg" alt="One Piece"/>
               </a>
+            </div>
+
+            <!-- 2. Grid template card -->
+            <template x-if="view === 'grid'">
+              <a href="https://mangadar.com/manga/kingdom/" class="custom-link">
+                <img src="https://mangadar.com/covers/kingdom.jpg" alt="Kingdom"/>
+              </a>
+            </template>
+
+            <!-- 3. List template card -->
+            <template x-if="view === 'list'">
+              <div class="list-item">
+                <a href="https://mangadar.com/manga/solo-leveling/">
+                  <img src="https://mangadar.com/covers/solo.jpg" alt="Solo Leveling"/>
+                </a>
+              </div>
             </template>
         """.trimIndent()
 
         val doc = Jsoup.parse(html, "https://mangadar.com")
         val mangasPage = mangaDar.parseMangaListFromDocument(doc)
 
-        mangasPage.mangas.size shouldBe 1
-        val manga = mangasPage.mangas.first()
-        manga.title shouldBe "Kingdom"
-        manga.url shouldBe "/manga/kingdom/"
-        manga.thumbnail_url shouldBe "https://mangadar.com/wp-content/uploads/2026/04/cover-8-300x420.webp"
+        mangasPage.mangas.size shouldBe 3
+        mangasPage.mangas[0].title shouldBe "One Piece"
+        mangasPage.mangas[0].url shouldBe "/manga/one-piece/"
+
+        mangasPage.mangas[1].title shouldBe "Kingdom"
+        mangasPage.mangas[1].url shouldBe "/manga/kingdom/"
+
+        mangasPage.mangas[2].title shouldBe "Solo Leveling"
+        mangasPage.mangas[2].url shouldBe "/manga/solo-leveling/"
     }
 
     @Test

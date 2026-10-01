@@ -16,6 +16,7 @@ import okhttp3.Headers
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
+import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import java.io.IOException
@@ -96,63 +97,80 @@ class MangaDar(
     fun parseMangaListFromDocument(document: Document): MangasPage {
         SourceValidationUtil.checkCloudflareOrError(document)
 
-        val selector = "a.group, div.manga-card, div.bsx, div.page-item-detail, div.manga-item, div.bs div.bsx"
-        val elements = mutableListOf<Element>()
-        elements.addAll(document.select(selector))
+        val candidateAnchors = mutableListOf<Element>()
 
+        // 1. Direct document anchors
+        candidateAnchors.addAll(document.select("a[href]"))
+
+        // 2. Anchors inside <template> elements (DOM children + parsed HTML string fragments)
         document.select("template").forEach { template ->
-            elements.addAll(template.select(selector))
-            template.children().forEach { child ->
-                if (child.tagName() == "a" && child.hasClass("group")) {
-                    elements.add(child)
-                } else {
-                    elements.addAll(child.select(selector))
-                }
+            candidateAnchors.addAll(template.children().select("a[href]"))
+            candidateAnchors.addAll(template.select("a[href]"))
+            val innerHtml = template.html()
+            if (innerHtml.isNotBlank()) {
+                val fragment = Jsoup.parseBodyFragment(innerHtml, baseUrl)
+                candidateAnchors.addAll(fragment.select("a[href]"))
             }
         }
 
-        val mangas = elements.mapNotNull { element ->
-            parseMangaFromElement(element)
+        // 3. Filter anchors that satisfy valid MangaDar manga detail URL identity
+        val validMangaAnchors = candidateAnchors.filter { anchor ->
+            val href = anchor.attr("href")
+            href.isNotBlank() && isMangaDetailUrl(getRelativeUrl(href))
+        }
+
+        // 4. Map each valid anchor to an SManga object
+        val mangas = validMangaAnchors.mapNotNull { anchor ->
+            parseMangaFromAnchor(anchor)
         }.distinctBy { it.url }
 
         if (mangas.isEmpty()) {
-            throw IOException("MangaDar returned 0 manga cards")
+            throw IOException("MangaDar card discovery found 0 valid manga anchors (inspected ${candidateAnchors.size} total anchors)")
         }
 
         val hasNextPage = document.select("a.r, a.next, ul.pagination a[rel=next], a.page-numbers").first() != null ||
             document.select("div.hpage a.r").first() != null ||
             document.select("template").any { t ->
+                val frag = Jsoup.parseBodyFragment(t.html(), baseUrl)
+                frag.select("a.r, a.next, ul.pagination a[rel=next], a.page-numbers").first() != null ||
                 t.select("a.r, a.next, ul.pagination a[rel=next], a.page-numbers").first() != null
             }
 
         return MangasPage(mangas, hasNextPage)
     }
 
-    private fun isMangaUrl(url: String): Boolean {
+    private fun isMangaDetailUrl(url: String): Boolean {
         val clean = url.trim().substringBefore("?").substringBefore("#").trim('/')
         val parts = clean.split('/')
-        return parts.size == 2 && parts[0] == "manga"
+        if (parts.size != 2 || parts[0] != "manga") return false
+        val slug = parts[1].trim()
+        return slug.isNotEmpty() && slug != "page" && slug != "category" && slug != "genres" && slug != "filter"
     }
 
-    fun parseMangaFromElement(element: Element): SManga? {
-        val linkElement = if (element.tagName() == "a") element else element.selectFirst("a[href]") ?: return null
-        val href = linkElement.attr("href")
-        if (href.isBlank() || !isMangaUrl(getRelativeUrl(href))) return null
+    fun parseMangaFromAnchor(anchor: Element): SManga? {
+        val href = anchor.attr("href")
+        if (href.isBlank() || !isMangaDetailUrl(getRelativeUrl(href))) return null
 
         val relativeUrl = getRelativeUrl(href)
-        val titleText = linkElement.attr("title").ifBlank {
-            element.selectFirst("img")?.attr("alt")
-                ?: element.selectFirst("h3, h2, .title, .tt, div.post-title")?.text()
-                ?: linkElement.text()
+        val container = anchor.parent()?.takeIf { it.selectFirst("img") != null } ?: anchor
+
+        val imgElement = anchor.selectFirst("img") ?: container.selectFirst("img")
+        val titleText = anchor.attr("title").ifBlank {
+            imgElement?.attr("alt")
+                ?: anchor.selectFirst("h3, h2, h1, .title, .tt, div.post-title")?.text()
+                ?: container.selectFirst("h3, h2, h1, .title, .tt, div.post-title")?.text()
+                ?: anchor.text()
         }.trim()
 
         if (titleText.isBlank()) return null
 
-        val imgElement = element.selectFirst("img")
         val thumbnailUrl = imgElement?.attr("abs:data-src")
             ?.ifBlank { imgElement.attr("data-src") }
+            ?.ifBlank { imgElement.attr("abs:data-lazy-src") }
+            ?.ifBlank { imgElement.attr("data-lazy-src") }
             ?.ifBlank { imgElement.attr("abs:src") }
             ?.ifBlank { imgElement.attr("src") }
+            ?.takeIf { !it.startsWith("data:") }
 
         return SManga.create().apply {
             url = relativeUrl
