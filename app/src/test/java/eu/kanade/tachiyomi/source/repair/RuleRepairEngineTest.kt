@@ -276,6 +276,8 @@ class RuleRepairEngineTest {
         val legacy = produced.copy().apply { url = "https://old.example/m1#legacy" }
         val update = adapter.getMangaUpdate(legacy, emptyList(), true, true)
         assertEquals(ChapterFetchCompleteness.COMPLETE, update.chapterCompleteness)
+        assertEquals(1, update.declaredChapterCount)
+        assertTrue(requests.filter { it.url.encodedPath == "/m1/ajax" }.all { it.header("Cache-Control") == "no-cache" })
         assertEquals(legacy.url, update.manga.url)
         assertEquals(1, adapter.getPageList(update.chapters.single()).size)
         assertTrue(requests.any { it.url.host == "new.example" && it.url.encodedPath == "/m1" })

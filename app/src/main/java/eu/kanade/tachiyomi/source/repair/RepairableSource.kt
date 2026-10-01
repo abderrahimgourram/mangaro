@@ -55,6 +55,7 @@ class RepairableSource(val original: HttpSource, private val engine: RuleRepairE
             val result = if (fetchChapters) interpreter.chapters(details) else chapters
             if (fetchChapters) engine.verifyExisting(id, manga.url, result)
             SMangaUpdate(details, result, if (fetchChapters) ChapterFetchCompleteness.COMPLETE else ChapterFetchCompleteness.DEGRADED)
+                .withDeclaredChapterCount(if (fetchChapters) interpreter.verifiedChapterCount else null)
         }.also { if (fetchChapters && it.chapterCompleteness == ChapterFetchCompleteness.COMPLETE) engine.remember(id, manga, it.chapters) }
     }
     override suspend fun getPageList(chapter: SChapter) = engine.execute(original, { original.getPageList(chapter).also { if (it.isEmpty()) throw java.io.IOException("Missing reader image field") } }) { it.pages(chapter) }

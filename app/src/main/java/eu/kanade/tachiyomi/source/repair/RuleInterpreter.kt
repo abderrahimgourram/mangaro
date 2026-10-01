@@ -17,6 +17,10 @@ import java.net.URLEncoder
 
 /** Executes only the bounded, compiled-in JSON/HTML extraction language. */
 class RuleInterpreter(private val client: OkHttpClient, val rules: SourceRules) {
+    /** Set only after all chapter pages and the provider total have been verified. */
+    var verifiedChapterCount: Int? = null
+        private set
+
     private data class Document(val json: JsonElement?, val html: Element?)
     data class Rows(val values: List<Map<String, String>>, val next: Boolean, val total: Int?)
 
@@ -67,6 +71,7 @@ class RuleInterpreter(private val client: OkHttpClient, val rules: SourceRules) 
         o.pagination?.let { params[it.pageParameter] = page.toString() }
         val request = Request.Builder()
         rules.headers.forEach { (k, v) -> request.header(k, expand(v, vars)) }
+        if (operation == "chapters") request.cacheControl(okhttp3.CacheControl.FORCE_NETWORK)
         if (o.method == "GET") params.forEach { (k, v) -> builder.addQueryParameter(k, v) }
         request.url(builder.build())
         if (o.method == "POST") request.post(if (o.bodyEncoding == "JSON") {
@@ -168,6 +173,7 @@ class RuleInterpreter(private val client: OkHttpClient, val rules: SourceRules) 
         }
     }
     suspend fun chapters(manga: SManga, maxPages: Int = 25): List<SChapter> {
+        verifiedChapterCount = null
         val detailTotal = (manga.memo["rules.chapterTotal"] as? JsonPrimitive)?.intOrNull
         val all = mutableListOf<SChapter>()
         val seenPages = mutableSetOf<List<String>>()
@@ -193,6 +199,7 @@ class RuleInterpreter(private val client: OkHttpClient, val rules: SourceRules) 
                 if (total == null) throw IOException("Chapter completeness has no verified total")
                 if (all.size != total) throw IOException("Incomplete chapter total")
                 if (all.isEmpty() && total != 0) throw IOException("Unconfirmed empty chapters")
+                verifiedChapterCount = total
                 return all
             }
         }
