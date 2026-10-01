@@ -154,7 +154,7 @@ class MangaRepositoryImpl(
                 // must not erase a previously initialized manga when rediscovered.
                 val existing = database.mangasQueries.getMangaByUrlAndSource(remote.url, remote.source, MangaMapper::mapManga).awaitAsOneOrNull()
                 val it = remote.copy(
-                    thumbnailUrl = tachiyomi.domain.manga.model.CoverUrl.valid(remote.thumbnailUrl) ?: existing?.thumbnailUrl,
+                    thumbnailUrl = tachiyomi.domain.manga.model.CoverUrl.best(existing?.thumbnailUrl, remote.thumbnailUrl),
                     author = remote.author?.takeIf { it.isNotBlank() } ?: existing?.author,
                     artist = remote.artist?.takeIf { it.isNotBlank() } ?: existing?.artist,
                     description = remote.description?.takeIf { it.isNotBlank() } ?: existing?.description,

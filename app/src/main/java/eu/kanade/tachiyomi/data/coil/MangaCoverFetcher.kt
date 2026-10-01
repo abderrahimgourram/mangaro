@@ -182,12 +182,31 @@ class MangaCoverFetcher(
         val id = mangaId ?: return null
         val response = eu.kanade.domain.manga.interactor.RecoverMangaCover(uy.kohesive.injekt.Injekt.get())
             .await(source, id, url) ?: return null
-        // The original key describes a missing/stale URL. SQL observers request the
-        // verified replacement under its new key; never cache bytes under the old one.
-        return SourceFetchResult(
-            source = ImageSource(source = response.body.source(), fileSystem = FileSystem.SYSTEM),
-            mimeType = response.header("Content-Type"), dataSource = DataSource.NETWORK,
-        )
+        try {
+            val manga = uy.kohesive.injekt.Injekt.get<tachiyomi.domain.manga.repository.MangaRepository>().getMangaById(id)
+            // If another refresh changed SQL, or the image redirected, don't assign
+            // those bytes to a different identity. Normal loading still caches it.
+            if (manga.thumbnailUrl != response.request.url.toString()) {
+                return SourceFetchResult(source = ImageSource(source = response.body.source(), fileSystem = FileSystem.SYSTEM),
+                    mimeType = response.header("Content-Type"), dataSource = DataSource.NETWORK)
+            }
+            val key = imageLoader.components.key(manga, options)
+            if (key == null) { response.close(); return null }
+            val cacheFile = if (manga.favorite) uy.kohesive.injekt.Injekt.get<CoverCache>().getCoverFile(manga.thumbnailUrl) else null
+            writeResponseToCoverCache(response, cacheFile)?.let { file ->
+                response.close()
+                return SourceFetchResult(source = ImageSource(file = file.toOkioPath(), fileSystem = FileSystem.SYSTEM,
+                    diskCacheKey = key), mimeType = "image/*", dataSource = DataSource.NETWORK)
+            }
+            writeToDiskCache(response, key)?.let { snapshot ->
+                response.close()
+                return SourceFetchResult(source = snapshot.toImageSource(key), mimeType = "image/*", dataSource = DataSource.NETWORK)
+            }
+            return SourceFetchResult(
+                source = ImageSource(source = response.body.source(), fileSystem = FileSystem.SYSTEM),
+                mimeType = response.header("Content-Type"), dataSource = DataSource.NETWORK,
+            )
+        } catch (error: Exception) { response.close(); throw error }
     }
 
     private class InvalidCoverResponse : IOException("Cover response is not an image")
@@ -282,9 +301,11 @@ class MangaCoverFetcher(
 
     private fun writeToDiskCache(
         response: Response,
+        key: String = diskCacheKey,
     ): DiskCache.Snapshot? {
+        if (!options.diskCachePolicy.writeEnabled) return null
         val diskCache = imageLoader.diskCache
-        val editor = diskCache?.openEditor(diskCacheKey) ?: return null
+        val editor = diskCache?.openEditor(key) ?: return null
         try {
             diskCache.fileSystem.write(editor.data) {
                 response.body.source().readAll(this)
@@ -299,11 +320,11 @@ class MangaCoverFetcher(
         }
     }
 
-    private fun DiskCache.Snapshot.toImageSource(): ImageSource {
+    private fun DiskCache.Snapshot.toImageSource(key: String = diskCacheKey): ImageSource {
         return ImageSource(
             file = data,
             fileSystem = FileSystem.SYSTEM,
-            diskCacheKey = diskCacheKey,
+            diskCacheKey = key,
             closeable = this,
         )
     }
