@@ -40,6 +40,16 @@ class MangaSwatTest {
         """{"results":[${ids.joinToString(",") { chapter(it) }}],${count?.let { "\"count\":$it," } ?: ""}"next":${next?.let { "\"$it\"" } ?: "null"}}"""
 
     @Test
+    fun `live TBATE chapter 235 empty slug retains remote ID and resolves by ID`() {
+        val source = MangaSwat()
+        val row = source.parseChapterBatch("""{"count":1,"next":null,"results":[{"id":1743844,"slug":"","chapter":"235","title":"قصيدة البطل المرتقب","created_at":"2026-05-14T19:19:57.939679Z"}]}""").chapters.single()
+        row.url shouldBe "/chapters/1743844/"
+        row.memo["id"].toString() shouldBe "1743844"
+        row.name shouldBe "235"
+        source.getChapterUrl(row) shouldBe "https://meshmanga.com/chapter/1743844"
+    }
+
+    @Test
     fun `pinned extension identity and collision fallback remain compatible`() {
         val internal = MangaSwat()
         internal.id shouldBe 7657007209499352344L

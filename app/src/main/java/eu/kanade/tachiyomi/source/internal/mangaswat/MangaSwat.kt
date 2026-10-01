@@ -122,10 +122,11 @@ class MangaSwat(private val customClient: OkHttpClient? = null) : HttpSource() {
         val chapters = root.results().map { element ->
             val obj = element.requireObject("MangaSwat chapter")
             val id = obj.requiredText("id").toIntOrNull() ?: throw IOException("MangaSwat invalid chapter ID")
-            val slug = obj.requiredText("slug")
+            // Live TBATE chapter 1743844 has an empty slug; the API resolves by ID.
+            val slug = obj.text("slug").orEmpty()
             SChapter.create().apply {
                 name = obj.requiredText("chapter")
-                url = "/chapters/$id/$slug/"
+                url = if (slug.isEmpty()) "/chapters/$id/" else "/chapters/$id/$slug/"
                 memo = buildJsonObject { put("id", id); put("slug", slug) }
                 date_upload = obj.text("created_at")?.let { runCatching { Instant.parse(it).toEpochMilli() }.getOrNull() } ?: 0L
             }
