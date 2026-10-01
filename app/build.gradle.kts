@@ -40,6 +40,13 @@ android {
         buildConfigField("String", "BUILD_TIME", "\"${getBuildTime(useLatestCommitTime = false)}\"")
         buildConfigField("boolean", "TELEMETRY_INCLUDED", "false")
         buildConfigField("boolean", "UPDATER_ENABLED", "false")
+        // Independent static signed source-rule feed. No deployment endpoint or private key in the APK.
+        val ruleFeed = providers.gradleProperty("sourceRulesUrl").orElse("").get()
+        val rulePublicKey = providers.gradleProperty("sourceRulesPublicKey").orElse("").get()
+        require(ruleFeed.none { it == '"' || it == '\\' || it == '\n' || it == '\r' })
+        require(rulePublicKey.matches(Regex("[A-Za-z0-9+/=]*")))
+        buildConfigField("String", "SOURCE_RULES_URL", "\"$ruleFeed\"")
+        buildConfigField("String", "SOURCE_RULES_PUBLIC_KEY", "\"$rulePublicKey\"")
 
         testInstrumentationRunner = if (providers.gradleProperty("sourceAudit").orNull == "true") {
             "eu.kanade.tachiyomi.source.audit.SourceAuditInstrumentation"

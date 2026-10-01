@@ -15,7 +15,7 @@ import java.util.Base64
 internal object MangaDarPageResolver {
     private const val SOURCE_ID = 3975276517041363504L
 
-    fun supports(source: HttpSource): Boolean = source.id == SOURCE_ID
+    fun supports(source: HttpSource): Boolean = source.id == SOURCE_ID && source !is eu.kanade.tachiyomi.source.repair.RepairableSource
 
     suspend fun getPages(source: HttpSource, chapter: SChapter): List<Page> {
         val request = Request.Builder()

@@ -113,8 +113,13 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
 
         val scope = ProcessLifecycleOwner.get().lifecycleScope
+        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val engine = Injekt.get<eu.kanade.tachiyomi.source.repair.RuleRepairEngine>()
+            Injekt.get<mihon.domain.source.registry.InternalSourceRegistry>().getSources().forEach { engine.initialize(it.id) }
+        }
         eu.kanade.tachiyomi.data.library.SourceHealthPersistence.initialize(this, scope)
         eu.kanade.tachiyomi.data.library.SourceHealthJob.schedule(this)
+        eu.kanade.tachiyomi.source.repair.RuleMaintenanceJob.schedule(this)
         // Enable this newly requested automatic reliability feature once; later user choices remain intact.
         val reliabilityPrefs = getSharedPreferences("source-reliability", MODE_PRIVATE)
         if (!reliabilityPrefs.getBoolean("library-initialized", false)) {
@@ -245,10 +250,12 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
 
     override fun onStart(owner: LifecycleOwner) {
         SecureActivityDelegate.onApplicationStart()
+        eu.kanade.tachiyomi.source.repair.RuleMaintenanceJob.enqueue(this)
     }
 
     override fun onStop(owner: LifecycleOwner) {
         SecureActivityDelegate.onApplicationStopped()
+        eu.kanade.tachiyomi.source.repair.RuleMaintenanceJob.enqueue(this)
     }
 
     override fun getPackageName(): String {

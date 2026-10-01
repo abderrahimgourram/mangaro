@@ -126,6 +126,20 @@ class AppModule(val app: Application) : InjektModule {
         addSingletonFactory { NetworkHelper(app, get()) }
         addSingletonFactory { JavaScriptEngine(app) }
 
+        addSingletonFactory<eu.kanade.tachiyomi.source.repair.RuleRepairEngine> {
+            val verifier = eu.kanade.tachiyomi.source.repair.RuleVerifier(eu.kanade.tachiyomi.BuildConfig.SOURCE_RULES_PUBLIC_KEY)
+            val store = eu.kanade.tachiyomi.source.repair.RuleStore(java.io.File(app.filesDir, "source-rules"), verifier)
+            val url = eu.kanade.tachiyomi.BuildConfig.SOURCE_RULES_URL
+            val transport = if (url.isBlank() || eu.kanade.tachiyomi.BuildConfig.SOURCE_RULES_PUBLIC_KEY.isBlank()) {
+                eu.kanade.tachiyomi.source.repair.RuleTransport { null }
+            } else eu.kanade.tachiyomi.source.repair.HttpsRuleTransport(url, get<NetworkHelper>().client)
+            eu.kanade.tachiyomi.source.repair.RuleRepairEngine(store, transport, existingChapters = { sourceId, manga ->
+                val local = get<tachiyomi.domain.manga.repository.MangaRepository>().getMangaByUrlAndSourceId(manga.url, sourceId)
+                if (local == null) emptyList() else get<tachiyomi.domain.chapter.repository.ChapterRepository>().getChapterByMangaId(local.id).map { chapter ->
+                    eu.kanade.tachiyomi.source.model.SChapter.create().apply { this.url = chapter.url; name = chapter.name; memo = chapter.memo }
+                }
+            })
+        }
         addSingletonFactory<InternalSourceRegistry> {
             DefaultInternalSourceRegistry(
                 listOf(
@@ -136,7 +150,10 @@ class AppModule(val app: Application) : InjektModule {
                     MangaLek(),
                     MangaDar(),
                     MangaSwat(),
-                ),
+                ).map { source ->
+                    val engine = get<eu.kanade.tachiyomi.source.repair.RuleRepairEngine>()
+                    eu.kanade.tachiyomi.source.repair.RepairableSource(source, engine)
+                },
             )
         }
         addSingletonFactory<SourceCollisionPolicy> { DefaultSourceCollisionPolicy() }
