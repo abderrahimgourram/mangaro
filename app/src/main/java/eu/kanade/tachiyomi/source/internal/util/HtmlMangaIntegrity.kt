@@ -15,8 +15,8 @@ object HtmlMangaIntegrity {
         }
     }
     fun count(document: Document): Int? {
-        val values = document.select("[data-total-chapters], [data-chapter-count]").flatMap { element ->
-            listOf("data-total-chapters", "data-chapter-count").mapNotNull { attr ->
+        val values = document.select("[data-total-chapters]").flatMap { element ->
+            listOf("data-total-chapters").mapNotNull { attr ->
                 element.attr(attr).takeIf { it.isNotBlank() }?.let { value ->
                     value.toIntOrNull()?.takeIf { it >= 0 } ?: throw IOException("Invalid declared chapter total")
                 }

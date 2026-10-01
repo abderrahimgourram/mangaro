@@ -32,6 +32,11 @@ object DiscoveryChapterGate {
         withTimeoutOrNull(20_000) {
             mangas.map { manga -> async {
                 if (manga.source !in sources || manga.favorite) { accepted += manga.id; return@async }
+                if (tachiyomi.domain.chapter.service.ChapterListIntegrity.count(manga) > 0) {
+                    positive(manga.source, manga.url)
+                    accepted += manga.id
+                    return@async
+                }
                 val key = manga.source to manga.url
                 locks[(key.hashCode() and Int.MAX_VALUE) % locks.size].withLock {
                     val now = System.currentTimeMillis()

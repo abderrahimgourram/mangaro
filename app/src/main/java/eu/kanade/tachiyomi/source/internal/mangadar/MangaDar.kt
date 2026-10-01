@@ -281,8 +281,9 @@ class MangaDar(
                 val row = element as? JsonArray ?: throw IOException("MangaDar invalid chapter row")
                 if (row.size < 4) throw IOException("MangaDar incomplete chapter row")
                 val id = row[0].jsonPrimitive.content
-                if (id.isBlank()) throw IOException("MangaDar missing remote chapter ID")
+                if (id.toLongOrNull()?.takeIf { it > 0 } == null) throw IOException("MangaDar missing remote chapter ID")
                 val number = row[1].jsonPrimitive.content
+                if (number.toFloatOrNull()?.takeIf { it.isFinite() && it >= 0 } == null) throw IOException("MangaDar invalid chapter number")
                 val path = getRelativeUrl(row[2].jsonPrimitive.content)
                 if (!path.startsWith("/manga/") || path.trim('/').split('/').size != 3) {
                     throw IOException("MangaDar invalid chapter URL")

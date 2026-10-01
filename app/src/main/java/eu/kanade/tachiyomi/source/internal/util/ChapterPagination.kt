@@ -28,7 +28,14 @@ object ChapterPagination {
             val rows = parse(document)
             if (rows.isEmpty() || rows.map { it.url }.toSet().size != rows.size) throw IOException("Empty or repeated chapter page")
             if (chapters.isNotEmpty() && rows.none { it.url !in chapters }) throw IOException("Chapter pagination repeated a page")
-            rows.forEach { chapters.putIfAbsent(it.url, it) }
+            rows.forEach { row ->
+                val previous = chapters[row.url]
+                if (previous != null && (previous.memo != row.memo ||
+                        previous.chapter_number >= 0 && row.chapter_number >= 0 && previous.chapter_number != row.chapter_number)) {
+                    throw IOException("Chapter pagination changed identity for an existing URL")
+                }
+                chapters.putIfAbsent(row.url, row)
+            }
             val links = document.select(".chapter-pagination a[href], .chapters-pagination a[href], .listing-chapters_wrap a[rel=next], #chapterlist a[rel=next]")
             for (link in links) {
                 if (link.text().trim() == "1" && !link.attr("rel").contains("next")) continue
@@ -36,6 +43,7 @@ object ChapterPagination {
                 if (target.scheme != manga.scheme || target.host != manga.host || target.encodedPath.trim('/') != manga.encodedPath.trim('/')) {
                     throw IOException("Chapter continuation lost manga identity")
                 }
+                if (target.toString() in visited && link.attr("rel").contains("next")) throw IOException("Chapter next-page loop")
                 if (target == manga) continue
                 if (visited.add(target.toString())) requests.add(target.toString())
                 if (visited.size > 100) throw IOException("Excessive chapter pagination")
