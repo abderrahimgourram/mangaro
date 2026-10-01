@@ -188,7 +188,7 @@ class MangaLek(
 
         var doc: Document? = null
         try {
-            val request = GET(baseUrl + cleanUrl, headers)
+            val request = GET(baseUrl + cleanUrl, headers).let { request -> if (fetchChapters) request.newBuilder().cacheControl(okhttp3.CacheControl.FORCE_NETWORK).build() else request }
             val response = directClient.newCall(request).awaitSuccess()
             val document = response.asJsoup()
             SourceValidationUtil.checkCloudflareOrError(document)
@@ -226,7 +226,7 @@ class MangaLek(
                         .add("action", "manga_get_chapters")
                         .add("manga", mangaId)
                         .build()
-                    val ajaxReq = POST("$baseUrl/wp-admin/admin-ajax.php", headers, formBody)
+                    val ajaxReq = POST("$baseUrl/wp-admin/admin-ajax.php", headers, formBody, cache = okhttp3.CacheControl.FORCE_NETWORK)
                     try {
                         val ajaxDoc = directClient.newCall(ajaxReq).awaitSuccess().use { it.asJsoup() }
                         SourceValidationUtil.checkCloudflareOrError(ajaxDoc)
@@ -251,7 +251,7 @@ class MangaLek(
         if (fetchChapters && declared != null && declared != updatedChapters.size) throw IOException("MangaLek chapter total mismatch")
         return SMangaUpdate(updatedManga, updatedChapters,
             if (fetchChapters && declared == updatedChapters.size) eu.kanade.tachiyomi.source.model.ChapterFetchCompleteness.COMPLETE
-            else eu.kanade.tachiyomi.source.model.ChapterFetchCompleteness.DEGRADED)
+            else eu.kanade.tachiyomi.source.model.ChapterFetchCompleteness.DEGRADED).withDeclaredChapterCount(if (fetchChapters) declared else null)
     }
 
     fun parseMangaDetails(document: Document, manga: SManga): SManga {

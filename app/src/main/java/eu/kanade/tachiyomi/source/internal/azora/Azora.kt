@@ -175,7 +175,7 @@ class Azora(
         var updatedManga = manga
         var expectedChapterCount: Int? = null
         if (fetchDetails || fetchChapters) {
-            val req = GET("$baseUrl/api/post?postSlug=$postSlug", headers)
+            val req = GET("$baseUrl/api/post?postSlug=$postSlug", headers).let { request -> if (fetchChapters) request.newBuilder().cacheControl(okhttp3.CacheControl.FORCE_NETWORK).build() else request }
             val resp = client.newCall(req).awaitSuccess()
             val body = resp.use { it.body.string() }
             val root = json.parseToJsonElement(body).requireObject("Azora details")
@@ -195,7 +195,7 @@ class Azora(
         var updatedChapters = chapters
         if (fetchChapters) {
             if (postId.isNotEmpty()) {
-                val req = GET("$baseUrl/api/chapters?postId=$postId", headers)
+                val req = GET("$baseUrl/api/chapters?postId=$postId", headers).let { request -> if (fetchChapters) request.newBuilder().cacheControl(okhttp3.CacheControl.FORCE_NETWORK).build() else request }
                 val resp = client.newCall(req).awaitSuccess()
                 val body = resp.use { it.body.string() }
                 val chapterRoot = json.parseToJsonElement(body).requireObject("Azora chapters")
@@ -217,7 +217,7 @@ class Azora(
         }
         return SMangaUpdate(updatedManga, updatedChapters,
             if (fetchChapters && expectedChapterCount == updatedChapters.size) ChapterFetchCompleteness.COMPLETE else ChapterFetchCompleteness.DEGRADED,
-        )
+        ).withDeclaredChapterCount(if (fetchChapters) expectedChapterCount else null)
     }
 
     fun parsePostDetailsResponse(responseBody: String, manga: SManga, postSlug: String, existingPostId: String): SManga {

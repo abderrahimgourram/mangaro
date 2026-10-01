@@ -18,6 +18,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Headers
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -152,14 +153,16 @@ class TeamX(
         fetchDetails: Boolean,
         fetchChapters: Boolean,
     ): SMangaUpdate {
-        val request = GET(baseUrl + manga.url, headers)
+        val request = GET(baseUrl + manga.url, headers).let { request -> if (fetchChapters) request.newBuilder().cacheControl(okhttp3.CacheControl.FORCE_NETWORK).build() else request }
         val response = client.newCall(request).awaitSuccess()
         val document = response.asJsoup()
 
         val updatedManga = if (fetchDetails) parseMangaDetails(document, manga) else manga
         val chapterResult = if (fetchChapters) fetchVerifiedChapters(document, manga.url) else Pair(chapters, ChapterFetchCompleteness.DEGRADED)
 
-        return SMangaUpdate(updatedManga, chapterResult.first, chapterResult.second)
+        return SMangaUpdate(updatedManga, chapterResult.first, chapterResult.second).withDeclaredChapterCount(
+            if (fetchChapters) eu.kanade.tachiyomi.source.internal.util.HtmlMangaIntegrity.count(document) else null,
+        )
     }
 
     fun parseMangaDetails(document: Document, manga: SManga): SManga {
@@ -205,9 +208,10 @@ class TeamX(
     private suspend fun fetchVerifiedChapters(initialDocument: Document, mangaUrl: String): Pair<List<SChapter>, ChapterFetchCompleteness> = withTimeout(180_000) {
         coroutineScope {
             SourceValidationUtil.checkCloudflareOrError(initialDocument)
+            var declared = eu.kanade.tachiyomi.source.internal.util.HtmlMangaIntegrity.count(initialDocument)
             val allChapters = verifiedChapterPage(initialDocument, mangaUrl).toMutableList()
             var allRowsMapped = allChapters.size == initialDocument.select("div.chapter-card").size
-            if (allChapters.isEmpty()) throw IOException("TeamX returned no chapters for $mangaUrl")
+            if (allChapters.isEmpty() && declared != 0) throw IOException("TeamX unverified empty chapters for $mangaUrl")
             val completed = mutableSetOf<String>()
             val pending = getAdditionalChapterPageUrls(initialDocument, mangaUrl).toMutableSet()
             while (pending.isNotEmpty()) {
@@ -216,12 +220,15 @@ class TeamX(
                 val documents = batch.map { path ->
                     async {
                         chapterPaginationSemaphore.withPermit {
-                            client.newCall(GET(baseUrl + path, headers)).awaitSuccess().use { it.asJsoup() }
+                            client.newCall(GET(baseUrl + path, headers, cache = okhttp3.CacheControl.FORCE_NETWORK)).awaitSuccess().use { it.asJsoup() }
                         }
                     }
                 }.awaitAll()
                 for ((index, document) in documents.withIndex()) {
                     SourceValidationUtil.checkCloudflareOrError(document)
+                    val pageTotal = eu.kanade.tachiyomi.source.internal.util.HtmlMangaIntegrity.count(document)
+                    if (pageTotal != null && declared != null && pageTotal != declared) throw IOException("TeamX chapter total changed during pagination")
+                    declared = pageTotal ?: declared
                     val parsed = verifiedChapterPage(document, mangaUrl)
                     allRowsMapped = allRowsMapped && parsed.size == document.select("div.chapter-card").size
                     val previousUrls = allChapters.map { it.url }.toHashSet()
@@ -234,7 +241,17 @@ class TeamX(
                 }
                 pending.removeAll(completed)
             }
-            Pair(allChapters.distinctBy { it.url }, if (allRowsMapped) ChapterFetchCompleteness.COMPLETE else ChapterFetchCompleteness.DEGRADED)
+            val unique = allChapters.groupBy { it.url }.map { (_, rows) ->
+                if (rows.any { it.memo != rows.first().memo || it.name != rows.first().name || it.chapter_number != rows.first().chapter_number }) {
+                    throw IOException("TeamX conflicting repeated chapter identity")
+                }
+                rows.first() // Proven identical overlap at a pagination boundary.
+            }
+            Pair(unique, when {
+                !allRowsMapped || declared == null -> ChapterFetchCompleteness.DEGRADED
+                declared == unique.size -> ChapterFetchCompleteness.COMPLETE
+                else -> ChapterFetchCompleteness.PARTIAL
+            })
         }
     }
 
@@ -289,19 +306,20 @@ class TeamX(
 
     fun getAdditionalChapterPageUrls(document: Document, mangaUrl: String): List<String> {
         val cleanMangaUrl = getRelativeUrl(mangaUrl).substringBefore("?")
-        val pageLinks = document.select("ul.pagination a[href*=?page=]")
-
-        val pageNumbers = pageLinks.mapNotNull { link ->
-            val href = link.attr("href")
-            val pageParam = href.substringAfter("page=", "").substringBefore("&")
-            pageParam.toIntOrNull() ?: link.text().trim().toIntOrNull()
-        }.filter { it > 1 }
-
-        if (pageNumbers.isEmpty()) return emptyList()
-
-        val maxPage = pageNumbers.maxOrNull() ?: return emptyList()
-        if (maxPage > 500) throw IOException("TeamX chapter pagination exceeds safety bound")
-        return (2..maxPage).map { pageNum -> "$cleanMangaUrl?page=$pageNum" }
+        val manga = baseUrl.toHttpUrl().resolve(cleanMangaUrl) ?: throw IOException("Invalid TeamX manga route")
+        val advertised = document.select("ul.pagination a[href]").mapNotNull { link ->
+            val target = manga.resolve(link.attr("href")) ?: return@mapNotNull null
+            val page = target.queryParameter("page")?.toIntOrNull() ?: return@mapNotNull null
+            if (target.host != manga.host || target.encodedPath.trim('/') != manga.encodedPath.trim('/')) throw IOException("TeamX pagination lost manga identity")
+            if (page > 1) page to target else null
+        }
+        val last = advertised.maxByOrNull { it.first } ?: return emptyList()
+        if (last.first > 500) throw IOException("TeamX chapter pagination exceeds safety bound")
+        // Traverse middle pages even when the page bar abbreviates them. Preserve all
+        // advertised query parameters; page need not be the first query parameter.
+        return (2..last.first).map { page ->
+            getRelativeUrl(last.second.newBuilder().setQueryParameter("page", page.toString()).build().toString())
+        }
     }
 
     override suspend fun getPageList(chapter: SChapter): List<Page> {

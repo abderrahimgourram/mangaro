@@ -211,7 +211,9 @@ class MangaDar(
         fetchDetails: Boolean,
         fetchChapters: Boolean,
     ): SMangaUpdate {
-        val request = GET(baseUrl + manga.url, headers)
+        val request = GET(baseUrl + manga.url, headers).let { request ->
+            if (fetchChapters) request.newBuilder().cacheControl(okhttp3.CacheControl.FORCE_NETWORK).build() else request
+        }
         val response = client.newCall(request).awaitSuccess()
         val document = response.asJsoup()
         SourceValidationUtil.checkCloudflareOrError(document)
@@ -242,7 +244,7 @@ class MangaDar(
             } else {
                 ChapterFetchCompleteness.DEGRADED
             },
-        )
+        ).withDeclaredChapterCount(if (fetchChapters) HtmlMangaIntegrity.count(document) else null)
     }
 
     fun parseMangaDetails(document: Document, manga: SManga): SManga {

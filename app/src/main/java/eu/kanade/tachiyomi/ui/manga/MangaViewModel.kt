@@ -225,7 +225,9 @@ class MangaViewModel(
             }
 
             val needRefreshInfo = !manga.initialized
-            val needRefreshChapter = chapters.isEmpty()
+            val needRefreshChapter = chapters.isEmpty() || !tachiyomi.domain.chapter.service.ChapterListIntegrity.verified(
+                manga, getMangaAndChapters.awaitChapters(mangaId, applyScanlatorFilter = false),
+            )
 
             // Show what we have earlier
             mutableState.update {

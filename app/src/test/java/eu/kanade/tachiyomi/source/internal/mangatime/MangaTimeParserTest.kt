@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.source.internal.mangatime
 
+import okhttp3.ResponseBody.Companion.toResponseBody
 import eu.kanade.tachiyomi.source.model.SManga
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
@@ -189,6 +190,28 @@ class MangaTimeParserTest {
             org.junit.jupiter.api.assertThrows<java.io.IOException> { mangaTime.parseChapterPagesResponse(body) }
         }
         org.junit.jupiter.api.assertThrows<java.io.IOException> { mangaTime.parseSeriesSearchResponse("""{"result":{"data":{"json":{"results":[{"id":null,"slug":"sample"}]}}}}""") }
+    }
+
+    @Test fun `legacy initialized URL resolves its missing remote ID before chapters`() = kotlinx.coroutines.test.runTest {
+        val requests = mutableListOf<String>()
+        val client = okhttp3.OkHttpClient.Builder().addInterceptor { chain ->
+            requests += chain.request().url.encodedPath
+            chain.request().header("Cache-Control") shouldBe "no-cache"
+            val body = if (chain.request().url.encodedPath.endsWith("getSeriesBySlug")) {
+                """{"result":{"data":{"json":{"id":"series-42","title":"Sample"}}}}"""
+            } else {
+                """{"result":{"data":{"json":{"chapters":[{"id":"chapter-1","number":1}],"hasMore":false,"nextCursor":null,"totalChapterCount":1}}}}"""
+            }
+            okhttp3.Response.Builder().request(chain.request()).protocol(okhttp3.Protocol.HTTP_1_1).code(200).message("OK")
+                .body(body.toResponseBody()).build()
+        }.build()
+        val manga = SManga.create().apply { url="/manhwa/sample"; title="Sample"; initialized=true }
+        val result = MangaTime(client).getMangaUpdate(manga, emptyList(), false, true)
+        requests.size shouldBe 2
+        requests.first().endsWith("getSeriesBySlug") shouldBe true
+        result.chapters.size shouldBe 1
+        result.manga.memo["mangatime.seriesId"]?.jsonPrimitive?.content shouldBe "series-42"
+        result.chapterCompleteness shouldBe eu.kanade.tachiyomi.source.model.ChapterFetchCompleteness.COMPLETE
     }
 
 }

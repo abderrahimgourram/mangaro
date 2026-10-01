@@ -366,4 +366,15 @@ class TeamXParserTest {
             }
         }
     }
+    @Test fun `chapter pagination preserves parameters when page is not first`() {
+        val source = TeamX()
+        val document = Jsoup.parse("<ul class='pagination'><a href='?order=latest&amp;page=4'>4</a></ul>", source.baseUrl + "/sample/")
+        val pages = source.getAdditionalChapterPageUrls(document, "/sample/")
+        pages.size shouldBe 3
+        pages.forEachIndexed { index, path ->
+            path.contains("order=latest") shouldBe true
+            path.contains("page=${index+2}") shouldBe true
+        }
+    }
+
 }

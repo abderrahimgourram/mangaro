@@ -15,6 +15,7 @@ object ChapterPagination {
     suspend fun collect(source: HttpSource, initial: Document, mangaUrl: String, parse: (Document) -> List<SChapter>): List<SChapter> = withTimeout(120_000) {
         val base = source.baseUrl.toHttpUrl()
         val manga = base.resolve(mangaUrl.substringBefore('#')) ?: throw IOException("Invalid manga route")
+        var declared = HtmlMangaIntegrity.count(initial)
         val chapters = linkedMapOf<String, SChapter>()
         val visited = mutableSetOf(manga.toString())
         val pending = ArrayDeque<Document>().apply { add(initial) }
@@ -22,9 +23,12 @@ object ChapterPagination {
         while (pending.isNotEmpty() || requests.isNotEmpty()) {
             val document = if (pending.isNotEmpty()) pending.removeFirst() else {
                 val url = requests.removeFirst()
-                source.client.newCall(GET(url, source.headers)).awaitSuccess().use { it.asJsoup() }
+                source.client.newCall(GET(url, source.headers, cache = okhttp3.CacheControl.FORCE_NETWORK)).awaitSuccess().use { it.asJsoup() }
             }
             SourceValidationUtil.checkCloudflareOrError(document)
+            val pageTotal = HtmlMangaIntegrity.count(document)
+            if (declared != null && pageTotal != null && declared != pageTotal) throw IOException("Chapter total changed during pagination")
+            declared = pageTotal ?: declared
             val rows = parse(document)
             if (rows.isEmpty() || rows.map { it.url }.toSet().size != rows.size) throw IOException("Empty or repeated chapter page")
             if (chapters.isNotEmpty() && rows.none { it.url !in chapters }) throw IOException("Chapter pagination repeated a page")
@@ -49,6 +53,7 @@ object ChapterPagination {
                 if (visited.size > 100) throw IOException("Excessive chapter pagination")
             }
         }
+        if (declared != null && declared != chapters.size) throw IOException("Incomplete chapter pagination: declared $declared, received ${chapters.size}")
         chapters.values.toList()
     }
 }

@@ -23,7 +23,6 @@ import tachiyomi.domain.chapter.interactor.UpdateChapter
 import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.chapter.model.ChapterUpdate
 import tachiyomi.domain.chapter.service.ChapterIdentity
-import tachiyomi.domain.chapter.model.NoChaptersException
 import tachiyomi.domain.chapter.repository.ChapterRepository
 import tachiyomi.domain.chapter.service.ChapterRecognition
 import tachiyomi.domain.library.service.LibraryPreferences
@@ -59,6 +58,7 @@ class SyncChaptersWithSource(
         manualFetch: Boolean = false,
         fetchWindow: Pair<Long, Long> = Pair(0, 0),
         completeness: ChapterFetchCompleteness = ChapterFetchCompleteness.DEGRADED,
+        declaredChapterCount: Int? = null,
     ): List<Chapter> {
         require(source.id == manga.source) { "Chapter source identity mismatch" }
         // Invalidate proof before any write; failure/cancellation cannot leave a falsely verified list.
@@ -71,7 +71,14 @@ class SyncChaptersWithSource(
             throw java.io.IOException("Chapter fetch failed; existing chapters preserved")
         }
         if (rawSourceChapters.isEmpty() && !source.isLocal()) {
-            throw NoChaptersException()
+            if (completeness != ChapterFetchCompleteness.COMPLETE || declaredChapterCount != 0) {
+                throw java.io.IOException("Unverified empty chapter response; stored chapters preserved. Refresh to retry.")
+            }
+            // A confirmed zero initializes a genuinely empty manga. Old reading/history/download
+            // rows are retained even if a provider later removes all its content.
+            val existing = chapterRepository.getChapterByMangaId(manga.id)
+            recordIntegrity(if (existing.isEmpty()) ChapterFetchCompleteness.COMPLETE else ChapterFetchCompleteness.DEGRADED)
+            return emptyList()
         }
 
         val timeZone = TimeZone.currentSystemDefault()
@@ -90,9 +97,8 @@ class SyncChaptersWithSource(
         if (sourceChapters.any { it.url.isBlank() || it.name.isBlank() } || sourceChapters.map { it.url }.toSet().size != sourceChapters.size) {
             throw java.io.IOException("Invalid or duplicate chapter URLs; existing chapters preserved")
         }
-        val effectiveCompleteness = if (completeness == ChapterFetchCompleteness.COMPLETE &&
-            sourceChapters.size == 1 && ChapterRecognition.parseChapterNumber(manga.title, sourceChapters.single().name, sourceChapters.single().chapterNumber) > 1.0 && !source.isLocal()
-        ) ChapterFetchCompleteness.DEGRADED else completeness
+        val effectiveCompleteness = if (declaredChapterCount != null && declaredChapterCount != sourceChapters.size &&
+            completeness == ChapterFetchCompleteness.COMPLETE) ChapterFetchCompleteness.PARTIAL else completeness
         val ids = sourceChapters.flatMap { ChapterIdentity.remoteIds(it, source.id) }
         if (ids.toSet().size != ids.size) throw java.io.IOException("Duplicate remote chapter identities; existing chapters preserved")
         val dbChapters = getChaptersByMangaId.await(manga.id)

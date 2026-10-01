@@ -153,13 +153,14 @@ class MangaTime(
         fetchDetails: Boolean,
         fetchChapters: Boolean,
     ): SMangaUpdate {
-        val (type, slug, seriesId) = parseMangaUrl(manga.url)
+        val (type, slug, urlSeriesId) = parseMangaUrl(manga.url)
+        val seriesId = urlSeriesId.ifBlank { manga.memo["mangatime.seriesId"]?.jsonPrimitiveOrNull?.contentOrNull.orEmpty() }
 
         var updatedManga = manga
-        if (fetchDetails) {
+        if (fetchDetails || fetchChapters && seriesId.isEmpty()) {
             val input = """{"json":{"slug":"$slug","type":"$type"}}"""
             val encoded = URLEncoder.encode(input, "UTF-8")
-            val req = GET("$baseUrl/api/trpc/content.getSeriesBySlug?input=$encoded", headers)
+            val req = GET("$baseUrl/api/trpc/content.getSeriesBySlug?input=$encoded", headers).let { request -> if (fetchChapters) request.newBuilder().cacheControl(okhttp3.CacheControl.FORCE_NETWORK).build() else request }
             val resp = client.newCall(req).awaitSuccess()
             val body = resp.body.string()
             if (body.contains(""""error":""")) {
@@ -170,6 +171,7 @@ class MangaTime(
 
         var updatedChapters = chapters
         var completeness = ChapterFetchCompleteness.DEGRADED
+        var declaredCount: Int? = null
         if (fetchChapters) {
             val effectiveSeriesId = seriesId.ifEmpty {
                 parseSeriesIdFromUrl(updatedManga.url)
@@ -178,7 +180,7 @@ class MangaTime(
             if (effectiveSeriesId.isNotEmpty()) {
                 val input = """{"json":{"seriesId":"$effectiveSeriesId","limit":-1}}"""
                 val encoded = URLEncoder.encode(input, "UTF-8")
-                val req = GET("$baseUrl/api/trpc/content.getChapters?input=$encoded", headers)
+                val req = GET("$baseUrl/api/trpc/content.getChapters?input=$encoded", headers).let { request -> if (fetchChapters) request.newBuilder().cacheControl(okhttp3.CacheControl.FORCE_NETWORK).build() else request }
                 val resp = client.newCall(req).awaitSuccess()
                 val body = resp.body.string()
                 if (body.contains(""""error":""")) {
@@ -189,6 +191,8 @@ class MangaTime(
                 val root = if (envelope is JsonArray) envelope.firstOrNull()?.jsonObjectOrNull ?: throw IOException("MangaTime empty envelope") else envelope.requireObject("MangaTime response")
                 val data = root["result"]?.jsonObjectOrNull?.get("data")?.jsonObjectOrNull?.get("json")?.jsonObjectOrNull
                     ?: throw IOException("MangaTime chapters missing result")
+                declaredCount = data["totalChapterCount"]?.jsonPrimitiveOrNull?.intOrNull
+                if (declaredCount != null && declaredCount != updatedChapters.size) throw IOException("MangaTime chapter total mismatch")
                 if (data["hasMore"]?.jsonPrimitiveOrNull?.booleanOrNull == true || !data["nextCursor"]?.jsonPrimitiveOrNull?.contentOrNull.isNullOrEmpty()) {
                     throw IOException("MangaTime unlimited chapter request returned a partial result")
                 }
@@ -198,7 +202,7 @@ class MangaTime(
             }
         }
 
-        return SMangaUpdate(updatedManga, updatedChapters, completeness)
+        return SMangaUpdate(updatedManga, updatedChapters, completeness).withDeclaredChapterCount(declaredCount)
     }
 
     fun parseMangaDetailsResponse(
@@ -223,6 +227,8 @@ class MangaTime(
 
         return manga.apply {
             url = "/$type/$slug#$realSeriesId"
+            if (realSeriesId.isNotBlank()) memo = kotlinx.serialization.json.JsonObject(memo +
+                ("mangatime.seriesId" to kotlinx.serialization.json.JsonPrimitive(realSeriesId)))
             title = titleText
             description = descriptionText
             coverUrl?.let { thumbnail_url = if (it.startsWith("http")) it else "$baseUrl$it" }
@@ -270,7 +276,7 @@ class MangaTime(
                 }
             }
         }.sortedByDescending { it.chapter_number }
-        if (parsed.isEmpty() || parsed.distinctBy { it.url }.size != parsed.size) throw IOException("MangaTime empty or ambiguous chapter list")
+        if (parsed.distinctBy { it.url }.size != parsed.size) throw IOException("MangaTime empty or ambiguous chapter list")
         return parsed
     }
 

@@ -139,7 +139,7 @@ class MangaSwat(private val customClient: OkHttpClient? = null) : HttpSource() {
 
     override suspend fun getMangaUpdate(manga: SManga, chapters: List<SChapter>, fetchDetails: Boolean, fetchChapters: Boolean): SMangaUpdate = withTimeoutOrNull(180_000) {
         if (manga.url.toLongOrNull() == null) throw IOException("MangaSwat manga missing remote ID")
-        val updated = if (fetchDetails) client.newCall(GET("$apiUrl/series/${manga.url}/", headers)).awaitSuccess()
+        val updated = if (fetchDetails) client.newCall(GET("$apiUrl/series/${manga.url}/", headers).let { request -> if (fetchChapters) request.newBuilder().cacheControl(okhttp3.CacheControl.FORCE_NETWORK).build() else request }).awaitSuccess()
             .use { parseDetails(it.body.string(), manga) } else manga
         if (!fetchChapters) return@withTimeoutOrNull SMangaUpdate(updated, chapters, ChapterFetchCompleteness.DEGRADED)
         var next: String? = "$apiUrl/chapters/?serie=${manga.url}&order_by=-order&page_size=200"
@@ -152,7 +152,7 @@ class MangaSwat(private val customClient: OkHttpClient? = null) : HttpSource() {
             if (!visited.add(next) || visited.size > 100) throw IOException("MangaSwat repeated or excessive chapter pagination")
             val requestUrl = next.toHttpUrl()
             if (requestUrl.queryParameter("serie") != manga.url) throw IOException("MangaSwat chapter continuation lost series identity")
-            val batch = client.newCall(GET(next, headers)).awaitSuccess().use { parseChapterBatch(it.body.string()) }
+            val batch = client.newCall(GET(next, headers).let { request -> if (fetchChapters) request.newBuilder().cacheControl(okhttp3.CacheControl.FORCE_NETWORK).build() else request }).awaitSuccess().use { parseChapterBatch(it.body.string()) }
             if (batch.count == null) everyCountVerified = false
             if (total != null && batch.count != null && total != batch.count) throw IOException("MangaSwat chapter count changed during retrieval")
             total = batch.count ?: total
@@ -165,8 +165,8 @@ class MangaSwat(private val customClient: OkHttpClient? = null) : HttpSource() {
             next = batch.next
         }
         if (total != null && total != all.size) throw IOException("MangaSwat incomplete chapters: expected $total, received ${all.size}")
-        if (all.isEmpty()) throw IOException("MangaSwat returned no chapters")
-        SMangaUpdate(updated, all, if (everyCountVerified && total == all.size) ChapterFetchCompleteness.COMPLETE else ChapterFetchCompleteness.DEGRADED)
+        if (all.isEmpty() && (total != 0 || !everyCountVerified)) throw IOException("MangaSwat returned unverified empty chapters")
+        SMangaUpdate(updated, all, if (everyCountVerified && total == all.size) ChapterFetchCompleteness.COMPLETE else ChapterFetchCompleteness.DEGRADED).withDeclaredChapterCount(total)
     } ?: throw IOException("MangaSwat refresh timed out; existing chapters preserved")
     override suspend fun getPageList(chapter: SChapter): List<Page> = client.newCall(GET("$apiUrl/chapters/${chapterId(chapter)}/", headers))
         .awaitSuccess().use { parsePages(it.body.string()) }

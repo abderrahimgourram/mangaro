@@ -195,7 +195,7 @@ class Hijala(
         fetchDetails: Boolean,
         fetchChapters: Boolean,
     ): SMangaUpdate {
-        val request = GET(baseUrl + manga.url, headers)
+        val request = GET(baseUrl + manga.url, headers).let { request -> if (fetchChapters) request.newBuilder().cacheControl(okhttp3.CacheControl.FORCE_NETWORK).build() else request }
         val response = client.newCall(request).awaitSuccess()
         val document = response.asJsoup()
         SourceValidationUtil.checkCloudflareOrError(document)
@@ -219,7 +219,7 @@ class Hijala(
         if (fetchChapters && declared != null && declared != updatedChapters.size) throw IOException("Hijala chapter total mismatch")
         return SMangaUpdate(updatedManga, updatedChapters,
             if (fetchChapters && declared == updatedChapters.size) eu.kanade.tachiyomi.source.model.ChapterFetchCompleteness.COMPLETE
-            else eu.kanade.tachiyomi.source.model.ChapterFetchCompleteness.DEGRADED)
+            else eu.kanade.tachiyomi.source.model.ChapterFetchCompleteness.DEGRADED).withDeclaredChapterCount(if (fetchChapters) declared else null)
     }
 
     fun parseMangaDetails(document: Document, manga: SManga): SManga {
@@ -249,6 +249,8 @@ class Hijala(
         return elements.mapNotNull { element ->
             val linkElement = element.selectFirst("a") ?: throw IOException("Chapter row missing link")
             val href = linkElement.attr("href")
+            // Unresolved client-side template is not a published chapter row.
+            if (href.contains("#/chapter-") && href.contains("{{") && href.contains("}}")) return@mapNotNull null
             if (href.isBlank() || href.contains("#/chapter-")) throw IOException("Hijala invalid chapter link")
 
             val relativeUrl = getRelativeUrl(href)

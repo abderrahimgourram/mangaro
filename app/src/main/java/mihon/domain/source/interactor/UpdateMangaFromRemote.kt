@@ -88,6 +88,7 @@ class UpdateMangaFromRemote(
             require(source.id == manga.source) { "Manga source identity mismatch" }
             val chapters = chapterRepository.getChapterByMangaId(manga.id)
                 .sortedBy { it.sourceOrder }
+            if (manualFetch) mihon.domain.source.health.SourceHealthMonitor.shared.requestProbe(source.id)
             val update = withIOContext {
                 mihon.domain.source.health.SourceHealthMonitor.shared.run(source.id, 180_000, healthy = {
                     !fetchChapters || it.chapterCompleteness !in setOf(ChapterFetchCompleteness.PARTIAL, ChapterFetchCompleteness.FAILED)
@@ -97,7 +98,15 @@ class UpdateMangaFromRemote(
                         chapters = chapters.map(Chapter::toSChapter),
                         fetchDetails = fetchDetails,
                         fetchChapters = fetchChapters,
-                    )
+                    ).also { result ->
+                        if (fetchChapters && result.chapterCompleteness == ChapterFetchCompleteness.COMPLETE && result.declaredChapterCount != null && result.declaredChapterCount != result.chapters.size) {
+                            throw IOException("Incomplete chapter response: declared ${result.declaredChapterCount}, received ${result.chapters.size}")
+                        }
+                        if (fetchChapters && result.chapters.isEmpty() &&
+                            (result.chapterCompleteness != ChapterFetchCompleteness.COMPLETE || result.declaredChapterCount != 0)) {
+                            throw IOException("Unverified empty chapter response; stored chapters preserved")
+                        }
+                    }
                 }
             }
             if (fetchChapters && update.chapterCompleteness == ChapterFetchCompleteness.DEGRADED) mihon.domain.source.health.SourceHealthMonitor.shared.degrade(source.id)
@@ -112,6 +121,7 @@ class UpdateMangaFromRemote(
                 manualFetch = manualFetch,
                 fetchWindow = fetchWindow,
                 completeness = update.chapterCompleteness,
+                declaredChapterCount = update.declaredChapterCount,
             ) else emptyList()
             val updatedManga = mangaRepository.getMangaById(manga.id)
 

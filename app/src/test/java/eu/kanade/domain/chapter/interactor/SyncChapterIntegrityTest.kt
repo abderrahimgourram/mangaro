@@ -27,12 +27,13 @@ class SyncChapterIntegrityTest {
     private val source = mockk<Source> { every { id } returns 44 }
     private val manga = Manga.create().copy(id = 10, source = 44, title = "Manga")
     private val old = Chapter.create().copy(id = 7, mangaId = 10, url = "/old", name = "Chapter 1", chapterNumber = 1.0, read = true, bookmark = true, lastPageRead = 12, dateFetch = 123, memo = buildJsonObject { put("id", 99) })
+    private val updates = mockk<UpdateManga>(relaxed = true)
     private fun sync(): SyncChaptersWithSource {
         val excluded = mockk<GetExcludedScanlators>(); coEvery { excluded.await(any()) } returns emptySet()
         coEvery { repo.getChapterByMangaId(any(), any()) } returns listOf(old)
         coEvery { repo.getChapterById(7) } returns old
         val preferences = mockk<LibraryPreferences>(); every { preferences.markDuplicateReadChapterAsRead.get() } returns emptySet()
-        return SyncChaptersWithSource(downloads, mockk<DownloadProvider>(relaxed = true), repo, ShouldUpdateDbChapter(), mockk<UpdateManga>(relaxed = true), UpdateChapter(repo), GetChaptersByMangaId(repo), excluded, preferences)
+        return SyncChaptersWithSource(downloads, mockk<DownloadProvider>(relaxed = true), repo, ShouldUpdateDbChapter(), updates, UpdateChapter(repo), GetChaptersByMangaId(repo), excluded, preferences)
     }
     @Test fun `complete moved identity updates same row and never deletes it`() = runTest {
         sync().await(listOf(old.copy(url = "/new").toSChapter()), manga, source, completeness = ChapterFetchCompleteness.COMPLETE) shouldBe emptyList()
@@ -50,4 +51,34 @@ class SyncChapterIntegrityTest {
         coVerify(exactly=0) { repo.addAll(any()) }
         coVerify(exactly=0) { repo.removeChaptersWithIds(any()) }
     }
+    @Test fun `previous COMPLETE list survives an unverified temporary zero`() = runTest {
+        val complete = manga.copy(memo = tachiyomi.domain.chapter.service.ChapterListIntegrity.memo(manga, "COMPLETE", listOf(old)))
+        assertThrows<IOException> { sync().await(emptyList(), complete, source, completeness=ChapterFetchCompleteness.COMPLETE) }
+        coVerify(exactly=0) { repo.removeChaptersWithIds(any()) }
+        coVerify(exactly=0) { repo.update(any()) }
+        coVerify(exactly=0) { repo.addAll(any()) }
+    }
+    @Test fun `declared total mismatch cannot authorize destructive COMPLETE reconciliation`() = runTest {
+        sync().await(listOf(old.toSChapter()), manga, source, completeness=ChapterFetchCompleteness.COMPLETE, declaredChapterCount=20)
+        coVerify(exactly=0) { repo.removeChaptersWithIds(any()) }
+        coVerify { updates.awaitChapterIntegrity(any(), "PARTIAL", any()) }
+    }
+    @Test fun `explicit zero preserves existing reading and history rows`() = runTest {
+        sync().await(emptyList(), manga, source, completeness=ChapterFetchCompleteness.COMPLETE, declaredChapterCount=0) shouldBe emptyList()
+        coVerify(exactly=0) { repo.removeChaptersWithIds(any()) }
+        coVerify(exactly=0) { repo.update(any()) }
+        old.id shouldBe 7
+        old.read shouldBe true
+        old.bookmark shouldBe true
+        old.lastPageRead shouldBe 12
+    }
+
+    @Test fun `verified zero can initialize an empty manga and remains refreshable`() = runTest {
+        val sut = sync()
+        coEvery { repo.getChapterByMangaId(any(), any()) } returns emptyList()
+        sut.await(emptyList(), manga, source, completeness=ChapterFetchCompleteness.COMPLETE, declaredChapterCount=0) shouldBe emptyList()
+        coVerify { updates.awaitChapterIntegrity(any(), "COMPLETE", match { it.isEmpty() }) }
+        coVerify(exactly=0) { repo.removeChaptersWithIds(any()) }
+    }
+
 }

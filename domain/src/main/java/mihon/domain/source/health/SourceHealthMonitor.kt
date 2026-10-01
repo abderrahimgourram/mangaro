@@ -25,6 +25,8 @@ class SourceHealthMonitor(private val clock: () -> Long = System::currentTimeMil
     fun due(id: Long) = clock() >= health(id).nextProbeAt
     @Synchronized fun restore(values: Map<Long, Health>) { mutable.value = values }
     @Synchronized fun degrade(id: Long) { mutable.value = mutable.value + (id to health(id).copy(state = State.DEGRADED)) }
+    /** Explicit user refresh permits one bounded probe without erasing failure history. */
+    @Synchronized fun requestProbe(id: Long) { mutable.value = mutable.value + (id to health(id).copy(nextProbeAt = 0)) }
     @Synchronized fun success(id: Long) { mutable.value = mutable.value + (id to Health()) }
     @Synchronized fun failure(id: Long, semantic: Boolean) {
         val old = health(id)
