@@ -7,6 +7,7 @@ import eu.kanade.tachiyomi.source.online.HttpSource
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Request
 import org.jsoup.Jsoup
+import eu.kanade.tachiyomi.source.internal.util.SourceValidationUtil
 import java.io.IOException
 import java.util.Base64
 
@@ -26,7 +27,9 @@ internal object MangaDarPageResolver {
     }
 
     fun parseImageUrls(html: String): List<String> {
-        val images = Jsoup.parse(html).select(".reader-page img")
+        val document = Jsoup.parse(html)
+        SourceValidationUtil.checkCloudflareOrError(document)
+        val images = document.select(".reader-page img")
         if (images.isEmpty()) throw IOException("MangaDar chapter contains no reader images")
         return images.map { image ->
             val encoded = image.attr("data-mds")

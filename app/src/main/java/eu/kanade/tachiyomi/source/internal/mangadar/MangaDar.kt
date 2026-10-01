@@ -4,7 +4,17 @@ import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.awaitSuccess
 import eu.kanade.tachiyomi.source.MangaDarPageResolver
 import eu.kanade.tachiyomi.source.internal.util.SourceValidationUtil
+import eu.kanade.tachiyomi.source.model.ChapterFetchCompleteness
 import eu.kanade.tachiyomi.source.model.FilterList
+import eu.kanade.tachiyomi.source.model.Filter
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
+import kotlinx.serialization.json.put
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
@@ -21,7 +31,6 @@ import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import java.io.IOException
 import java.net.URI
-import java.net.URLEncoder
 
 class MangaDar(
     private val customClient: OkHttpClient? = null,
@@ -47,52 +56,78 @@ class MangaDar(
 
     override suspend fun getPopularManga(page: Int): MangasPage {
         val request = popularMangaRequest(page)
+        return fetchCatalogue(request, ::popularMangaParse)
+    }
+
+    private suspend fun fetchCatalogue(request: Request, parser: (Response) -> MangasPage): MangasPage {
         val response = client.newCall(request).awaitSuccess()
-        return popularMangaParse(response)
+        val cached = response.cacheResponse != null
+        try {
+            return parser(response)
+        } catch (error: IOException) {
+            // One fresh request only when an unusable cached representation was observed.
+            // Do not retry live challenge pages or add another HTTP stack.
+            if (!cached) throw error
+            val fresh = request.newBuilder().header("Cache-Control", "no-cache, no-store").build()
+            return parser(client.newCall(fresh).awaitSuccess())
+        }
     }
 
     public override fun popularMangaRequest(page: Int): Request {
-        return GET("$baseUrl/manga/?sort=popular&page=$page", headers)
+        return GET("${catalogueUrl(page)}?sort=popular", headers)
     }
 
     override fun popularMangaParse(response: Response): MangasPage {
-        val document = response.asJsoup()
-        return parseMangaListFromDocument(document)
+        return SourceValidationUtil.parseCatalogueResponse(response, ::parseMangaListFromDocument)
     }
 
     override suspend fun getLatestUpdates(page: Int): MangasPage {
         val request = latestUpdatesRequest(page)
-        val response = client.newCall(request).awaitSuccess()
-        return latestUpdatesParse(response)
+        return fetchCatalogue(request, ::latestUpdatesParse)
     }
 
     public override fun latestUpdatesRequest(page: Int): Request {
-        return GET("$baseUrl/manga/?sort=latest&page=$page", headers)
+        return GET(catalogueUrl(page), headers)
     }
 
     override fun latestUpdatesParse(response: Response): MangasPage {
-        val document = response.asJsoup()
-        return parseMangaListFromDocument(document)
+        return SourceValidationUtil.parseCatalogueResponse(response, ::parseMangaListFromDocument)
     }
 
     override suspend fun getSearchManga(page: Int, query: String, filters: FilterList): MangasPage {
         val request = searchMangaRequest(page, query, filters)
-        val response = client.newCall(request).awaitSuccess()
-        return searchMangaParse(response)
+        return fetchCatalogue(request, ::searchMangaParse)
     }
 
     public override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
-        val trimmed = query.trim()
-        val encoded = URLEncoder.encode(trimmed, "UTF-8")
-        return GET("$baseUrl/manga/?s=$encoded&page=$page", headers)
+        val url = catalogueUrl(page).toHttpUrl().newBuilder().apply {
+            if (query.isNotBlank()) {
+                addQueryParameter("s", query.trim())
+            } else {
+                filters.filterIsInstance<ChoiceFilter>().forEach { filter ->
+                    filter.selected.takeIf { it.isNotEmpty() }?.let { addQueryParameter(filter.key, it) }
+                }
+            }
+        }
+        return GET(url.build().toString(), headers)
     }
 
-    override fun searchMangaParse(response: Response): MangasPage {
-        val document = response.asJsoup()
-        return parseMangaListFromDocument(document)
+    override fun searchMangaParse(response: Response): MangasPage = popularMangaParse(response)
+
+    private fun catalogueUrl(page: Int): String {
+        require(page > 0)
+        return if (page == 1) "$baseUrl/manga/" else "$baseUrl/manga/page/$page/"
     }
 
-    override fun getFilterList(): FilterList = FilterList()
+    override fun getFilterList(): FilterList = FilterList(
+        ChoiceFilter("الترتيب", "sort", arrayOf("الأحدث", "الأكثر مشاهدة", "التقييم", "أبجدي"), arrayOf("", "popular", "rating", "az")),
+        ChoiceFilter("الحالة", "status", arrayOf("الكل", "مستمر", "مكتمل", "متوقف", "ملغية"), arrayOf("", "17", "7", "31", "82")),
+    )
+
+    class ChoiceFilter(name: String, val key: String, values: Array<String>, private val queries: Array<String>) :
+        Filter.Select<String>(name, values) {
+        val selected: String get() = queries[state]
+    }
 
     fun parseMangaListFromDocument(document: Document): MangasPage {
         SourceValidationUtil.checkCloudflareOrError(document)
@@ -128,13 +163,7 @@ class MangaDar(
             throw IOException("MangaDar card discovery found 0 valid manga anchors (inspected ${candidateAnchors.size} total anchors)")
         }
 
-        val hasNextPage = document.select("a.r, a.next, ul.pagination a[rel=next], a.page-numbers").first() != null ||
-            document.select("div.hpage a.r").first() != null ||
-            document.select("template").any { t ->
-                val frag = Jsoup.parseBodyFragment(t.html(), baseUrl)
-                frag.select("a.r, a.next, ul.pagination a[rel=next], a.page-numbers").first() != null ||
-                t.select("a.r, a.next, ul.pagination a[rel=next], a.page-numbers").first() != null
-            }
+        val hasNextPage = document.select("a[rel=next], link[rel=next], nav a[title=الصفحة التالية]").isNotEmpty()
 
         return MangasPage(mangas, hasNextPage)
     }
@@ -190,10 +219,11 @@ class MangaDar(
         val document = response.asJsoup()
         SourceValidationUtil.checkCloudflareOrError(document)
 
+        if (document.select("h1").isEmpty()) throw IOException("MangaDar details missing manga identity")
         val updatedManga = if (fetchDetails) parseMangaDetails(document, manga) else manga
         val updatedChapters = if (fetchChapters) {
             val parsed = parseChapters(document)
-            if (parsed.isEmpty() && document.select("h1.entry-title, h1.title, div.post-title h1").isNotEmpty()) {
+            if (parsed.isEmpty()) {
                 throw IOException("MangaDar returned 0 chapters for manga ${manga.title}")
             }
             parsed
@@ -201,19 +231,27 @@ class MangaDar(
             chapters
         }
 
-        return SMangaUpdate(updatedManga, updatedChapters)
+        return SMangaUpdate(
+            updatedManga,
+            updatedChapters,
+            if (fetchChapters && document.select("div[x-data]").any { it.attr("x-data").contains("rows:") }) {
+                ChapterFetchCompleteness.COMPLETE
+            } else {
+                ChapterFetchCompleteness.DEGRADED
+            },
+        )
     }
 
     fun parseMangaDetails(document: Document, manga: SManga): SManga {
         return manga.apply {
-            val titleText = document.selectFirst("h1.entry-title, h1.title, div.post-title h1")?.text()?.trim()
+            val titleText = document.selectFirst("h1.entry-title, h1.title, div.post-title h1, main h1")?.text()?.trim()
             if (!titleText.isNullOrBlank()) {
                 title = titleText
             }
 
-            val imgElement = document.selectFirst("div.thumb img, div.summary_image img")
+            val imgElement = document.selectFirst("div.thumb img, div.summary_image img, meta[property=og:image]")
             if (imgElement != null) {
-                val coverUrl = imgElement.attr("abs:data-src")
+                val coverUrl = imgElement.attr("content").ifBlank { imgElement.attr("abs:data-src") }
                     .ifBlank { imgElement.attr("data-src") }
                     .ifBlank { imgElement.attr("abs:src") }
                     .ifBlank { imgElement.attr("src") }
@@ -222,7 +260,10 @@ class MangaDar(
                 }
             }
 
-            description = document.select("div.description, div.summary__content, div.entry-content").text().trim()
+            document.selectFirst("meta[name=description]")?.attr("content")
+                ?.takeIf { it.isNotBlank() }?.let { description = it }
+            document.select("div.description, div.summary__content, div.entry-content").text().trim()
+                .takeIf { it.isNotBlank() }?.let { description = it }
             val text = document.text()
             status = when {
                 text.contains("مستمر") || text.contains("Ongoing") -> SManga.ONGOING
@@ -234,6 +275,34 @@ class MangaDar(
     }
 
     fun parseChapters(document: Document): List<SChapter> {
+        SourceValidationUtil.checkCloudflareOrError(document)
+        val data = document.select("div[x-data]").map { it.attr("x-data") }
+            .firstOrNull { it.contains("rows:") }
+        if (data != null) {
+            val start = data.indexOf('[', data.indexOf("rows:"))
+            val rows = extractRows(data, start)
+            val parsed = Json.parseToJsonElement(rows).jsonArray.map { element ->
+                val row = element as? JsonArray ?: throw IOException("MangaDar invalid chapter row")
+                if (row.size < 4) throw IOException("MangaDar incomplete chapter row")
+                val id = row[0].jsonPrimitive.content
+                val number = row[1].jsonPrimitive.content
+                val path = getRelativeUrl(row[2].jsonPrimitive.content)
+                if (!path.startsWith("/manga/") || path.trim('/').split('/').size != 3) {
+                    throw IOException("MangaDar invalid chapter URL")
+                }
+                SChapter.create().apply {
+                    url = path
+                    name = "الفصل $number"
+                    chapter_number = number.toFloatOrNull() ?: -1f
+                    date_upload = (row[3].jsonPrimitive.longOrNull ?: throw IOException("MangaDar invalid chapter date")) * 1000
+                    memo = buildJsonObject { put("mangadar.id", id) }
+                }
+            }
+            if (parsed.isEmpty() || parsed.distinctBy { it.url }.size != parsed.size) {
+                throw IOException("MangaDar empty or duplicate chapter rows")
+            }
+            return parsed
+        }
         val elements = document.select("div.chapter-card, li.wp-manga-chapter, div.chapter-item, div#chapterlist ul li")
         return elements.mapNotNull { element ->
             val linkElement = element.selectFirst("a") ?: return@mapNotNull null
@@ -254,6 +323,26 @@ class MangaDar(
                 chapter_number = num
             }
         }.sortedByDescending { it.chapter_number }
+    }
+
+    private fun extractRows(data: String, start: Int): String {
+        if (start < 0) throw IOException("MangaDar chapter rows missing")
+        var depth = 0
+        var quoted = false
+        var escaped = false
+        for (i in start until data.length) {
+            val ch = data[i]
+            if (quoted) {
+                if (escaped) escaped = false else if (ch == '\\') escaped = true else if (ch == '"') quoted = false
+            } else {
+                when (ch) {
+                    '"' -> quoted = true
+                    '[' -> depth++
+                    ']' -> if (--depth == 0) return data.substring(start, i + 1)
+                }
+            }
+        }
+        throw IOException("MangaDar chapter rows truncated")
     }
 
     override suspend fun getPageList(chapter: SChapter): List<Page> {

@@ -9,6 +9,9 @@ import okhttp3.Request
 import org.jsoup.Jsoup
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
+import java.io.IOException
+import kotlinx.serialization.json.jsonPrimitive
 
 class MangaDarParserTest {
 
@@ -30,10 +33,10 @@ class MangaDarParserTest {
     @Test
     fun `verify searchMangaRequest and popularMangaRequest build valid routes without 404`() {
         val popularReq = mangaDar.popularMangaRequest(1)
-        popularReq.url.toString() shouldBe "https://mangadar.com/manga/?sort=popular&page=1"
+        popularReq.url.toString() shouldBe "https://mangadar.com/manga/?sort=popular"
 
         val searchReq = mangaDar.searchMangaRequest(1, "solo", FilterList())
-        searchReq.url.toString() shouldBe "https://mangadar.com/manga/?s=solo&page=1"
+        searchReq.url.toString() shouldBe "https://mangadar.com/manga/?s=solo"
     }
 
     @Test
@@ -81,7 +84,7 @@ class MangaDarParserTest {
     fun `verify live Popular page parsing produces non-empty manga list`() {
         val client = OkHttpClient()
         val req = Request.Builder()
-            .url("https://mangadar.com/manga/?sort=popular&page=1")
+            .url("https://mangadar.com/manga/?sort=popular")
             .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
             .addHeader("Referer", "https://mangadar.com/")
             .addHeader("Cache-Control", "no-cache")
@@ -138,4 +141,33 @@ class MangaDarParserTest {
         chapters[0].url shouldBe "/manga/kingdom/800/"
         chapters[0].chapter_number shouldBe 800.0f
     }
+    @Test
+    fun `embedded chapter rows preserve every remote identity including fractional chapters`() {
+        val html = """<div x-data='{
+            rows: [[191944,"889","https://mangadar.com/manga/kingdom/889/",1790633152,889],
+                   [113726,"885.5","https://mangadar.com/manga/kingdom/885.5/",1787085234,885.5]],
+            visible: 15
+        }'></div>"""
+        val chapters = mangaDar.parseChapters(Jsoup.parse(html))
+        chapters.size shouldBe 2
+        chapters[0].memo["mangadar.id"]!!.jsonPrimitive.content shouldBe "191944"
+        chapters[1].chapter_number shouldBe 885.5f
+        chapters[1].date_upload shouldBe 1787085234000L
+    }
+
+    @Test
+    fun `truncated and malformed rows fail instead of silently returning a partial list`() {
+        for (rows in listOf("[[1,\"1\",\"/manga/kingdom/1/\",1],", "[[1]]")) {
+            assertThrows<Exception> { mangaDar.parseChapters(Jsoup.parse("<div x-data='rows: $rows'></div>")) }
+        }
+    }
+
+    @Test
+    fun `WordPress head next link exposes later catalogue pages and terminal page ends`() {
+        val card = "<a href='/manga/kingdom/'><img alt='Kingdom' src='/cover.webp'></a>"
+        mangaDar.parseMangaListFromDocument(Jsoup.parse("<head><link rel='next' href='/manga/page/2/'></head><body>$card</body>")).hasNextPage shouldBe true
+        mangaDar.parseMangaListFromDocument(Jsoup.parse("$card<a class='page-numbers' href='/manga/page/64/'>64</a>")).hasNextPage shouldBe false
+        mangaDar.popularMangaRequest(2).url.encodedPath shouldBe "/manga/page/2/"
+    }
+
 }
