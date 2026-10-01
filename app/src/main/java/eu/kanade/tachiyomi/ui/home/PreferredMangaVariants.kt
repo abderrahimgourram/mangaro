@@ -12,8 +12,13 @@ object PreferredMangaVariants {
     private data class Quality(val complete: Boolean, val metadata: Boolean, val count: Int)
     val changes = kotlinx.coroutines.flow.MutableStateFlow(0L)
     private val qualities = ConcurrentHashMap<Long, Quality>()
+    private val invalid = ConcurrentHashMap.newKeySet<Long>()
+    fun eligible(id: Long): Boolean = id !in invalid
     private val readers = ConcurrentHashMap<Long, Boolean>()
     fun remember(manga: Manga) {
+        val allowed = tachiyomi.domain.manga.model.DiscoveryEligibility.valid(manga.title, manga.url)
+        val changed = if (allowed) invalid.remove(manga.id) else invalid.add(manga.id)
+        if (changed) changes.update { it + 1 }
         val quality = Quality(ChapterListIntegrity.complete(manga),
             manga.initialized && CoverUrl.valid(manga.thumbnailUrl) != null, ChapterListIntegrity.count(manga))
         if (qualities.put(manga.id, quality) != quality) changes.update { it + 1 }
@@ -36,7 +41,7 @@ object PreferredMangaVariants {
     }
     fun preferred(mangas: List<Manga>): Set<Long> {
         return mangas.groupBy { GroupDiscoveryItems.normalizeTitle(it.title).ifBlank { "${it.source}:${it.id}" } }
-            .values.mapNotNull { variants -> variants.filter { health(it.source) > 0 }.maxWithOrNull { a,b ->
+            .values.mapNotNull { variants -> variants.filter { health(it.source) > 0 && eligible(it.id) && tachiyomi.domain.manga.model.DiscoveryEligibility.valid(it.title, it.url) }.maxWithOrNull { a,b ->
                 compare(a.source,a.id,a.thumbnailUrl,b.source,b.id,b.thumbnailUrl)
             }?.id }.toSet()
     }

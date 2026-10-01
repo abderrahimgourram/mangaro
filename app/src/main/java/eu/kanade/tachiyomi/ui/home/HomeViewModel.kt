@@ -422,6 +422,7 @@ class HomeViewModel(
                                 coverData = manga.also { PreferredMangaVariants.remember(it) }.asMangaCover(),
                                 sourceId = source.id,
                                 sourceName = source.name,
+                                url = manga.url,
                             )
                         })
                     }

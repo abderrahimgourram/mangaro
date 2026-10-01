@@ -27,7 +27,11 @@ object GroupDiscoveryItems {
         val variants = items.flatMap { listOf(it.copy(alternatives = emptyList())) + it.alternatives }
             .distinctBy { it.sourceId to it.mangaId }
         return variants.groupBy { normalizeTitle(it.title).ifBlank { "${it.sourceId}:${it.mangaId}" } }.values.mapNotNull { group ->
-            val winner = group.filter { mihon.domain.source.health.SourceHealthMonitor.shared.discoverable(it.sourceId) }
+            val winner = group.filter {
+                mihon.domain.source.health.SourceHealthMonitor.shared.discoverable(it.sourceId) &&
+                    PreferredMangaVariants.eligible(it.mangaId) && it.title.isNotBlank() &&
+                    (it.url.isBlank() && it.mangaId > 0 || tachiyomi.domain.manga.model.DiscoveryEligibility.valid(it.title, it.url))
+            }
                 .maxWithOrNull { a, b -> PreferredMangaVariants.compare(a.sourceId, a.mangaId, a.coverData.url, b.sourceId, b.mangaId, b.coverData.url) }
                 ?: return@mapNotNull null
             winner.copy(availableVersions = emptyList(), alternatives = group.filterNot { it.sourceId == winner.sourceId && it.mangaId == winner.mangaId })
