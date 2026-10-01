@@ -20,6 +20,7 @@ import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -35,6 +36,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import eu.kanade.presentation.theme.MangaroDesignSystem
 import eu.kanade.tachiyomi.R
 
 @Composable
@@ -45,80 +47,87 @@ fun MangaroHomeHeader(
     onSettingsClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(
+    Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.background)
-            .statusBarsPadding()
-            .padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 8.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
+            .background(MangaroDesignSystem.SurfaceDark),
     ) {
-        // Brand Group: Official Full-color Logo + Application Name + Arabic Subtitle
         Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            modifier = Modifier.weight(1f, fill = false),
         ) {
-            Image(
-                painter = painterResource(R.drawable.ic_splash_logo),
-                contentDescription = "MANGARO Logo",
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(RoundedCornerShape(10.dp)),
-            )
+            // Brand Group: Official Full-color Logo + Application Name + Arabic Subtitle
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.weight(1f, fill = false),
+            ) {
+                Image(
+                    painter = painterResource(R.drawable.ic_splash_logo),
+                    contentDescription = "MANGARO Logo",
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(RoundedCornerShape(10.dp)),
+                )
 
-            Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                Text(
-                    text = "MANGARO",
-                    style = MaterialTheme.typography.titleLarge.copy(
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 18.5.sp,
-                        letterSpacing = 0.5.sp,
-                    ),
-                    color = Color.White,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = "عالمك الخاص للقراءة",
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        fontWeight = FontWeight.Medium,
-                        fontSize = 11.sp,
-                    ),
-                    color = MangaroVisualTokens.PurplePrimary.copy(alpha = 0.85f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                    Text(
+                        text = "MANGARO",
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 18.sp,
+                            letterSpacing = 0.5.sp,
+                        ),
+                        color = Color.White,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = "عالمك الخاص للقراءة",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontWeight = FontWeight.Medium,
+                            fontSize = 10.5.sp,
+                        ),
+                        color = MangaroDesignSystem.LavenderPrimary.copy(alpha = 0.85f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
-        }
 
-        // Action Group: Search, Downloads (if active), Settings
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            HeaderActionButton(
-                icon = Icons.Outlined.Search,
-                contentDescription = "بحث",
-                onClick = onSearchClick,
-            )
-
-            if (activeDownloadsCount > 0) {
+            // Action Group: Search, Downloads (if active), Settings
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 HeaderActionButton(
-                    icon = Icons.Outlined.Download,
-                    contentDescription = "التنزيلات",
-                    onClick = onDownloadsClick,
-                    badgeCount = activeDownloadsCount,
+                    icon = Icons.Outlined.Search,
+                    contentDescription = "بحث",
+                    onClick = onSearchClick,
+                )
+
+                if (activeDownloadsCount > 0) {
+                    HeaderActionButton(
+                        icon = Icons.Outlined.Download,
+                        contentDescription = "التنزيلات",
+                        onClick = onDownloadsClick,
+                        badgeCount = activeDownloadsCount,
+                    )
+                }
+
+                HeaderActionButton(
+                    icon = Icons.Outlined.Settings,
+                    contentDescription = "الإعدادات",
+                    onClick = onSettingsClick,
                 )
             }
-
-            HeaderActionButton(
-                icon = Icons.Outlined.Settings,
-                contentDescription = "الإعدادات",
-                onClick = onSettingsClick,
-            )
         }
+
+        HorizontalDivider(color = Color(0x1DA78BFA))
     }
 }
 
@@ -129,33 +138,38 @@ private fun HeaderActionButton(
     onClick: () -> Unit,
     badgeCount: Int = 0,
 ) {
+    val actionIconColor = Color(0xFFD4C9E3)
+
     Box(
-        modifier = Modifier.size(44.dp),
+        modifier = Modifier.size(40.dp),
         contentAlignment = Alignment.Center,
     ) {
         Box(
             modifier = Modifier
-                .size(38.dp)
+                .size(36.dp)
                 .clip(CircleShape)
-                .background(MangaroVisualTokens.SurfaceHigh)
+                .background(Color(0x1AA78BFA))
                 .border(
-                    BorderStroke(1.dp, MangaroVisualTokens.CardBorderColor),
+                    BorderStroke(1.dp, Color(0x28A78BFA)),
                     CircleShape,
                 ),
             contentAlignment = Alignment.Center,
         ) {
             IconButton(
                 onClick = onClick,
-                modifier = Modifier.size(38.dp),
+                modifier = Modifier.size(36.dp),
             ) {
                 if (badgeCount > 0) {
                     BadgedBox(
                         badge = {
-                            Badge(containerColor = MangaroVisualTokens.PurplePrimary) {
+                            Badge(
+                                containerColor = MangaroDesignSystem.GoldPrimary,
+                                contentColor = Color.Black,
+                            ) {
                                 Text(
                                     text = badgeCount.toString(),
-                                    color = Color.Black,
                                     fontWeight = FontWeight.Bold,
+                                    fontSize = 10.sp,
                                 )
                             }
                         },
@@ -163,16 +177,16 @@ private fun HeaderActionButton(
                         Icon(
                             imageVector = icon,
                             contentDescription = contentDescription,
-                            tint = Color.White,
-                            modifier = Modifier.size(19.dp),
+                            tint = actionIconColor,
+                            modifier = Modifier.size(18.dp),
                         )
                     }
                 } else {
                     Icon(
                         imageVector = icon,
                         contentDescription = contentDescription,
-                        tint = Color.White,
-                        modifier = Modifier.size(19.dp),
+                        tint = actionIconColor,
+                        modifier = Modifier.size(18.dp),
                     )
                 }
             }
