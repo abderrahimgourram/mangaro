@@ -65,10 +65,14 @@ class SourceAuditInstrumentation : Instrumentation() {
     private var reliability = false
     private var ruleRepair = false
     private var productionFeed: String? = null
+    private var publisherNative = false
+    private var publisherEngine: String? = null
     override fun onCreate(arguments: Bundle?) {
         super.onCreate(arguments)
         selected = arguments?.getString("source")
         productionFeed = arguments?.getString("productionFeed")
+        publisherNative = arguments?.getString("publisherNative") == "true"
+        publisherEngine = arguments?.getString("publisherEngine")
         ruleRepair = arguments?.getString("ruleRepair") == "true"
         reliability = arguments?.getString("reliability") == "true"
         azoraChapters = arguments?.getString("azoraChapters")
@@ -494,6 +498,16 @@ class SourceAuditInstrumentation : Instrumentation() {
         runBlocking {
             val manager = Injekt.get<SourceManager>()
             withTimeout(30_000) { manager.isInitialized.first { it } }
+            if (publisherEngine != null) {
+                try { withTimeout(180_000) { PublisherEngineAudit.run(targetContext, publisherEngine!!, ::record) } }
+                catch (e: Exception) { failures++; record("Publisher engine ERROR ${e.javaClass.simpleName}: ${e.message}") }
+                return@runBlocking
+            }
+            if (publisherNative) {
+                try { withTimeout(1_200_000) { PublisherNativeAudit.run(targetContext, selected, ::record) } }
+                catch (e: Exception) { failures++; record("Publisher native fatal ${e.javaClass.simpleName}") }
+                return@runBlocking
+            }
             if (productionFeed != null) {
                 try { withTimeout(180_000) { ProductionFeedAudit.run(targetContext, productionFeed!!, ::record) } }
                 catch (e: Exception) { failures++; record("Production feed ERROR ${e.javaClass.simpleName}: ${e.message}; ${e.stackTrace.take(4).joinToString()}") }
