@@ -1,0 +1,532 @@
+package eu.kanade.tachiyomi.source.audit
+
+import android.app.Instrumentation
+import android.content.Intent
+import android.os.Bundle
+import android.util.Log
+import eu.kanade.domain.chapter.interactor.SyncChaptersWithSource
+import eu.kanade.domain.manga.model.copyFrom
+import eu.kanade.tachiyomi.data.download.DownloadManager
+import eu.kanade.tachiyomi.data.download.DownloadProvider
+import eu.kanade.tachiyomi.data.download.model.Download
+import eu.kanade.tachiyomi.network.GET
+import eu.kanade.tachiyomi.network.awaitSuccess
+import eu.kanade.tachiyomi.source.internal.azora.Azora
+import eu.kanade.tachiyomi.source.internal.hijala.Hijala
+import eu.kanade.tachiyomi.source.internal.mangadar.MangaDar
+import eu.kanade.tachiyomi.source.internal.mangalek.MangaLek
+import eu.kanade.tachiyomi.source.internal.mangatime.MangaTime
+import eu.kanade.tachiyomi.source.internal.teamx.TeamX
+import eu.kanade.tachiyomi.source.model.FilterList
+import eu.kanade.tachiyomi.source.model.Page
+import eu.kanade.tachiyomi.source.online.HttpSource
+import eu.kanade.tachiyomi.ui.reader.ReaderActivity
+import eu.kanade.tachiyomi.ui.reader.loader.DownloadPageLoader
+import eu.kanade.tachiyomi.ui.reader.model.ReaderChapter
+import java.net.URLEncoder
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import mihon.core.archive.archiveReader
+import org.jsoup.Jsoup
+import tachiyomi.domain.chapter.repository.ChapterRepository
+import tachiyomi.domain.manga.interactor.NetworkToLocalManga
+import tachiyomi.domain.manga.model.Manga
+import tachiyomi.domain.source.service.SourceManager
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.get
+
+/**
+ * Opt-in device audit using registered production sources and the initialized NetworkHelper.
+ * Build with -PsourceAudit=true; run only on emulator-5554 (see repair report).
+ * full: catalogue/details/Reader screens and normal Downloader; matrix: filters/search/terminal
+ * pages and independent large chapter counts; paginationUi: scroll the real catalogue pager.
+ * Raw public responses and screenshots stay in the instrumented app's private files directory.
+ */
+class SourceAuditInstrumentation : Instrumentation() {
+    private var selected: String? = null
+    private var full = false
+    private var failures = 0
+    private var matrix = false
+    private var catalogueOnly = false
+    private var paginationUi = false
+    override fun onCreate(arguments: Bundle?) {
+        super.onCreate(arguments)
+        selected = arguments?.getString("source")
+        full = arguments?.getString("full") == "true"
+        matrix = arguments?.getString("matrix") == "true"
+        catalogueOnly = arguments?.getString("catalogueOnly") == "true"
+        paginationUi = arguments?.getString("paginationUi") == "true"
+        start()
+    }
+    private fun record(message: String) {
+        Log.i("SourceAudit", message)
+        sendStatus(0, Bundle().apply { putString("stream", "$message\n") })
+    }
+    private fun hasRenderedImage(view: android.view.View): Boolean {
+        val visible = android.graphics.Rect()
+        if (!view.isShown || !view.getGlobalVisibleRect(visible)) return false
+        val substantiallyVisible = visible.width() >= view.rootView.width / 3 && visible.height() >= view.rootView.height / 3
+        if (view is com.davemorrissey.labs.subscaleview.SubsamplingScaleImageView && substantiallyVisible && view.isImageLoaded) return true
+        if (view is com.github.chrisbanes.photoview.PhotoView && substantiallyVisible && view.drawable != null) return true
+        if (view is android.view.ViewGroup) {
+            for (index in 0 until view.childCount) if (hasRenderedImage(view.getChildAt(index))) return true
+        }
+        return false
+    }
+    private fun textNodes(text: String): List<android.view.accessibility.AccessibilityNodeInfo> {
+        val found = mutableListOf<android.view.accessibility.AccessibilityNodeInfo>()
+        fun visit(node: android.view.accessibility.AccessibilityNodeInfo) {
+            if (node.isVisibleToUser && (node.text?.toString()?.contains(text) == true || node.contentDescription?.toString()?.contains(text) == true)) found.add(node)
+            for (index in 0 until node.childCount) node.getChild(index)?.let(::visit)
+        }
+        uiAutomation.rootInActiveWindow?.let(::visit)
+        return found
+    }
+    private fun clickText(text: String): Boolean {
+        for (node in textNodes(text)) {
+            if (node.text?.toString() != text && node.contentDescription?.toString() != text) continue
+            var candidate: android.view.accessibility.AccessibilityNodeInfo? = node
+            repeat(5) {
+                val current = candidate ?: return@repeat
+                if (current.isClickable && current.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK)) return true
+                candidate = current.parent
+            }
+        }
+        return false
+    }
+
+    private suspend fun waitForText(text: String) = withTimeout(30_000) {
+        while (textNodes(text).isEmpty()) delay(250)
+    }
+
+    private fun saveScreenshot(name: String) {
+        val screenshot = uiAutomation.takeScreenshot() ?: error("Screenshot unavailable")
+        targetContext.openFileOutput(name, 0).use { screenshot.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+        screenshot.recycle()
+    }
+
+    private suspend fun swipeCatalogue() {
+        val metrics = targetContext.resources.displayMetrics
+        val x = metrics.widthPixels * 0.5f
+        val from = metrics.heightPixels * 0.8f
+        val to = metrics.heightPixels * 0.3f
+        val down = android.os.SystemClock.uptimeMillis()
+        fun event(action: Int, y: Float) {
+            val motion = android.view.MotionEvent.obtain(down, android.os.SystemClock.uptimeMillis(), action, x, y, 0)
+            motion.source = android.view.InputDevice.SOURCE_TOUCHSCREEN
+            check(uiAutomation.injectInputEvent(motion, true)) { "Catalogue swipe failed" }
+            motion.recycle()
+        }
+        event(android.view.MotionEvent.ACTION_DOWN, from)
+        for (index in 1..15) {
+            delay(15)
+            event(android.view.MotionEvent.ACTION_MOVE, from + (to - from) * index / 15)
+        }
+        event(android.view.MotionEvent.ACTION_UP, to)
+        delay(750)
+    }
+
+    private suspend fun openCatalogueUi(source: HttpSource, firstTitle: String) {
+        targetContext.startActivity(Intent(targetContext, eu.kanade.tachiyomi.ui.main.MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
+        withTimeout(30_000) {
+            while (uiAutomation.rootInActiveWindow?.packageName?.toString() != targetContext.packageName) delay(250)
+        }
+        waitForText("الاستكشاف")
+        delay(750)
+        check(clickText("الاستكشاف")) { "Explore navigation unavailable" }
+        waitForText(source.name)
+        delay(500)
+        check(clickText(source.name)) { "Source UI entry unavailable" }
+        waitForText(firstTitle)
+        delay(750)
+        saveScreenshot("${source.javaClass.simpleName}-catalogue.png")
+        record("${source.javaClass.simpleName} UI catalogue first=$firstTitle visible")
+    }
+
+    override fun onStart() {
+        super.onStart()
+        waitForIdleSync()
+        runBlocking {
+            val manager = Injekt.get<SourceManager>()
+            withTimeout(30_000) { manager.isInitialized.first { it } }
+            val sources = listOf(TeamX(), MangaTime(), MangaLek(), Azora(), Hijala(), MangaDar()).map {
+                val registered = manager.get(it.id) as? HttpSource ?: error("Source not registered: ${it.name}")
+                check(registered.javaClass == it.javaClass) { "UI uses another implementation: ${registered.javaClass}" }
+                registered
+            }
+            for (source in sources.filter { selected == null || it.javaClass.simpleName == selected }) {
+                suspend fun step(name: String, action: suspend () -> Unit) {
+                    try { withTimeout(180_000) { action() } } catch (e: Exception) {
+                        failures++
+                        record("${source.javaClass.simpleName} $name ERROR ${e.javaClass.simpleName}: ${e.message}")
+                    }
+                }
+                if (source is MangaDar) step("representation") {
+                    source.client.newCall(source.popularMangaRequest(1)).awaitSuccess().use { response ->
+                        val body = response.body.string()
+                        val doc = Jsoup.parse(body, response.request.url.toString())
+                        record("MangaDar response status=${response.code} url=${response.request.url} type=${response.header("Content-Type")} bytes=${body.toByteArray().size} vary=${response.header("Vary")} cache=${response.header("X-Cache")} title=${doc.title()} templates=${doc.select("template").size} scripts=${doc.select("script").size}")
+                        record("MangaDar routes=${doc.select("a[href]").map { it.attr("href").substringBefore("?") }.distinct().take(45)}")
+                        targetContext.openFileOutput("mangadar-audit.html", 0).use { it.write(body.toByteArray()) }
+                    }
+                }
+                step("raw-catalogue") {
+                    val method = source.javaClass.getDeclaredMethod("popularMangaRequest", Int::class.javaPrimitiveType)
+                    method.isAccessible = true
+                    val request = method.invoke(source, 1) as okhttp3.Request
+                    source.client.newCall(request).awaitSuccess().use { response ->
+                        val body = response.body.string()
+                        targetContext.openFileOutput("${source.javaClass.simpleName}-catalogue.txt", 0).use { it.write(body.toByteArray()) }
+                        record("${source.javaClass.simpleName} raw status=${response.code} url=${response.request.url} type=${response.header("Content-Type")} bytes=${body.toByteArray().size}")
+                    }
+                }
+                var first: eu.kanade.tachiyomi.source.model.SManga? = null
+                for (mode in listOf("popular", "latest")) step(mode) {
+                    val seen = mutableSetOf<String>()
+                    for (page in 1..3) {
+                        val result = if (mode == "popular") source.getPopularManga(page) else source.getLatestUpdates(page)
+                        val fresh = result.mangas.count { it.url !in seen }
+                        seen.addAll(result.mangas.map { it.url })
+                        if (first == null) first = result.mangas.firstOrNull()
+                        record("${source.javaClass.simpleName} $mode page=$page count=${result.mangas.size} fresh=$fresh next=${result.hasNextPage} first=${result.mangas.firstOrNull()?.url}")
+                    }
+                }
+                step("search") {
+                    val query = first?.title?.split(' ')?.firstOrNull() ?: "solo"
+                    val result = source.getSearchManga(1, query, FilterList())
+                    record("${source.javaClass.simpleName} search query=$query count=${result.mangas.size} filters=${source.getFilterList().size}")
+                }
+                if (full) step("catalogue-ui") {
+                    openCatalogueUi(source, first?.title ?: error("No catalogue manga"))
+                    if (paginationUi) {
+                        val secondTitle = source.getPopularManga(2).mangas.firstOrNull()?.title ?: error("Page two is empty")
+                        var swipes = 0
+                        while (textNodes(secondTitle).isEmpty()) {
+                            check(++swipes <= 30) { "Page two manga never appeared in UI" }
+                            swipeCatalogue()
+                        }
+                        saveScreenshot("${source.javaClass.simpleName}-catalogue-page2.png")
+                        record("${source.javaClass.simpleName} UI pagination page=2 title=$secondTitle visible swipes=$swipes")
+                        if (!catalogueOnly) openCatalogueUi(source, first!!.title)
+                    }
+                }
+                if (matrix) {
+                    if (source is TeamX) step("large-chapter-pagination") {
+                        val manga = eu.kanade.tachiyomi.source.model.SManga.create().apply { url = "/series/god-of-martial-arts" }
+                        val update = source.getMangaUpdate(manga, emptyList(), true, true)
+                        val queue = java.util.ArrayDeque<String>().apply { add(source.baseUrl + manga.url) }
+                        val seen = mutableSetOf<String>()
+                        val liveUrls = mutableSetOf<String>()
+                        while (queue.isNotEmpty()) {
+                            val url = queue.removeFirst()
+                            if (!seen.add(url)) continue
+                            check(seen.size <= 50) { "Unexpected large audit chapter graph" }
+                            source.client.newCall(GET(url, source.headers)).awaitSuccess().use { response ->
+                                val doc = Jsoup.parse(response.body.string(), response.request.url.toString())
+                                val links = doc.select("div.chapter-card a.chapter-link[href]")
+                                liveUrls.addAll(links.map { it.absUrl("href") })
+                                record("TeamX large raw page=${response.request.url.queryParameter("page") ?: "1"} chapterLinks=${links.size}")
+                                doc.select("ul.pagination a[href]").map { it.absUrl("href") }
+                                    .filter { it.substringBefore('?') == source.baseUrl + manga.url }
+                                    .filterNot { it in seen }.forEach(queue::add)
+                            }
+                        }
+                        check(liveUrls.size == update.chapters.size) { "Large live chapter count mismatch" }
+                        record("TeamX large live=${liveUrls.size} internal=${update.chapters.size} fetchedPages=${seen.size} completeness=${update.chapterCompleteness}")
+                    }
+                    if (source is MangaDar) step("representation-variants") {
+                        val variants = listOf(
+                            "Android-WebView" to android.webkit.WebSettings.getDefaultUserAgent(targetContext),
+                            "desktop" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+                        )
+                        val parser = source.javaClass.getDeclaredMethod("popularMangaParse", okhttp3.Response::class.java).apply { isAccessible = true }
+                        for ((label, userAgent) in variants) {
+                            val request = source.popularMangaRequest(1).newBuilder()
+                                .header("User-Agent", userAgent).header("Cache-Control", "no-cache, no-store").build()
+                            source.client.newCall(request).awaitSuccess().use { response ->
+                                val body = response.peekBody(1_048_576).string()
+                                val doc = Jsoup.parse(body, response.request.url.toString())
+                                val parsed = parser.invoke(source, response) as eu.kanade.tachiyomi.source.model.MangasPage
+                                record("MangaDar variant=$label status=${response.code} type=${response.header("Content-Type")} bytes=${body.toByteArray().size} anchors=${doc.select("a[href]").size} templates=${doc.select("template").size} cards=${parsed.mangas.size}")
+                            }
+                        }
+                    }
+                    step("broad-search") {
+                        val seen = mutableSetOf<String>()
+                        for (page in 1..3) {
+                            val result = source.getSearchManga(page, "ma", FilterList())
+                            val fresh = result.mangas.count { it.url !in seen }
+                            seen.addAll(result.mangas.map { it.url })
+                            record("${source.javaClass.simpleName} broad search page=$page count=${result.mangas.size} fresh=$fresh next=${result.hasNextPage}")
+                            if (!result.hasNextPage) break
+                        }
+                    }
+                    if (source is TeamX) step("full-search-pagination") {
+                        val method = source.javaClass.getDeclaredMethod("searchMangaRequest", Int::class.javaPrimitiveType, String::class.java, FilterList::class.java).apply { isAccessible = true }
+                        val request = method.invoke(source, 1, "ma", FilterList()) as okhttp3.Request
+                        var liveTotal = 0
+                        var livePages = 0
+                        source.client.newCall(request).awaitSuccess().use { response ->
+                            val body = response.body.string()
+                            val doc = Jsoup.parse(body, response.request.url.toString())
+                            liveTotal = Regex("[0-9]+").find(doc.select(".tx-count").text())!!.value.toInt()
+                            livePages = Regex("[0-9]+").findAll(doc.select(".tx-pager-info").text()).last().value.toInt()
+                            targetContext.openFileOutput("TeamX-search-ma.txt", 0).use { it.write(body.toByteArray()) }
+                            record("TeamX Android search advertisedResults=$liveTotal advertisedPages=$livePages")
+                        }
+                        val urls = mutableSetOf<String>()
+                        for (page in 1..livePages) {
+                            val result = source.getSearchManga(page, "ma", FilterList())
+                            urls.addAll(result.mangas.map { it.url })
+                            check(result.hasNextPage == (page < livePages)) { "TeamX search continuation incorrect" }
+                            record("TeamX full search page=$page count=${result.mangas.size} next=${result.hasNextPage}")
+                        }
+                        check(urls.size == liveTotal) { "TeamX search missed live results" }
+                        record("TeamX Android full search live=$liveTotal internal=${urls.size}")
+                    }
+                    if (source is MangaTime || source is MangaLek || source is Hijala) step("catalogue-boundary") {
+                        suspend fun probe(page: Int): eu.kanade.tachiyomi.source.model.MangasPage? {
+                            return try {
+                                if (source is MangaLek) {
+                                    val method = source.javaClass.getDeclaredMethod("popularMangaRequest", Int::class.javaPrimitiveType).apply { isAccessible = true }
+                                    val request = method.invoke(source, page) as okhttp3.Request
+                                    source.client.newCall(request).awaitSuccess().use { response ->
+                                        val body = response.body.string()
+                                        val doc = Jsoup.parse(body, response.request.url.toString())
+                                        targetContext.openFileOutput("MangaLek-boundary-$page.txt", 0).use { it.write(body.toByteArray()) }
+                                        record("MangaLek raw boundary page=$page status=${response.code} final=${response.request.url} bytes=${body.toByteArray().size} canonical=${doc.select("link[rel=canonical]").attr("href")} next=${doc.select("div.nav-previous a[href],a.next[href]").map { it.attr("href") }}")
+                                    }
+                                }
+                                source.getPopularManga(page).also {
+                                    record("${source.javaClass.simpleName} boundary probe page=$page count=${it.mangas.size} next=${it.hasNextPage} first=${it.mangas.firstOrNull()?.url}")
+                                }.takeIf { it.mangas.isNotEmpty() }
+                            } catch (error: java.io.IOException) {
+                                if (error.message?.contains("404") == true || error.message?.contains("catalogue contained no validated manga cards") == true || error.message?.contains("catalogue redirected outside archive") == true) {
+                                    record("${source.javaClass.simpleName} boundary probe page=$page empty clean error")
+                                    null
+                                } else throw error
+                            }
+                        }
+                        var low = 3
+                        var high = 16
+                        var terminal: Int? = null
+                        while (high <= 8192) {
+                            val result = probe(high) ?: break
+                            if (!result.hasNextPage) { terminal = high; break }
+                            low = high
+                            high *= 2
+                        }
+                        check(high <= 8192) { "Catalogue boundary exceeds audit bound" }
+                        if (terminal == null) {
+                            while (high - low > 1) {
+                                val middle = (high + low) / 2
+                                val result = probe(middle)
+                                if (result == null) high = middle
+                                else if (!result.hasNextPage) { terminal = middle; break }
+                                else low = middle
+                            }
+                        }
+                        val page = terminal ?: low
+                        val result = source.getPopularManga(page)
+                        if (result.hasNextPage) {
+                            val end = source.getPopularManga(page + 1)
+                            check(end.mangas.isEmpty() && !end.hasNextPage) { "Catalogue has no valid terminal signal" }
+                        }
+                        record("${source.javaClass.simpleName} last catalogue page=$page count=${result.mangas.size} next=${result.hasNextPage}")
+                    }
+                    step("supported-filters") {
+                        for (filterIndex in source.getFilterList().indices) {
+                            val filters = source.getFilterList()
+                            val filter = filters[filterIndex] as? eu.kanade.tachiyomi.source.model.Filter.Select<*> ?: continue
+                            for (value in 1 until filter.values.size) {
+                                filter.state = value
+                                val result = source.getSearchManga(1, "", filters)
+                                record("${source.javaClass.simpleName} filter=${filter.name} value=${filter.values[value]} count=${result.mangas.size} next=${result.hasNextPage} first=${result.mangas.firstOrNull()?.url}")
+                                if (result.hasNextPage) {
+                                    val second = source.getSearchManga(2, "", filters)
+                                    record("${source.javaClass.simpleName} filter=${filter.values[value]} page=2 count=${second.mangas.size} fresh=${second.mangas.count { candidate -> result.mangas.none { it.url == candidate.url } }} next=${second.hasNextPage}")
+                                }
+                                if (source is Azora && result.mangas.size > 24) {
+                                    val method = source.javaClass.getDeclaredMethod("searchMangaRequest", Int::class.javaPrimitiveType, String::class.java, FilterList::class.java)
+                                    method.isAccessible = true
+                                    val request = method.invoke(source, 1, "", filters) as okhttp3.Request
+                                    source.client.newCall(request).awaitSuccess().use { response ->
+                                        targetContext.openFileOutput("Azora-large-filter.txt", 0).use { it.write(response.body.bytes()) }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    step("terminal-page") {
+                        val method = source.javaClass.getDeclaredMethod("popularMangaRequest", Int::class.javaPrimitiveType)
+                        method.isAccessible = true
+                        val request = method.invoke(source, 1) as okhttp3.Request
+                        val lastPage = source.client.newCall(request).awaitSuccess().use { response ->
+                            val body = response.body.string()
+                            if (body.trimStart().startsWith("{")) {
+                                val root = kotlinx.serialization.json.Json.parseToJsonElement(body).jsonObject
+                                val data = root["result"]?.jsonObject?.get("data")?.jsonObject?.get("json")?.jsonObject ?: root
+                                data["totalPages"]?.jsonPrimitive?.intOrNull
+                                    ?: data["totalCount"]?.jsonPrimitive?.intOrNull?.let { (it + 23) / 24 }
+                            } else {
+                                val doc = Jsoup.parse(body)
+                                val links = doc.select(".pagination a[href], .hpage a[href], .wp-pagenavi a[href], nav[aria-label] a[href]")
+                                links.mapNotNull { link ->
+                                    Regex("(?:/page/|[?&]page=)([0-9]+)").find(link.attr("href"))?.groupValues?.get(1)?.toIntOrNull()
+                                }.maxOrNull()
+                            }
+                        }
+                        if (lastPage == null) record("${source.javaClass.simpleName} terminal page not advertised")
+                        else {
+                            val result = source.getPopularManga(lastPage)
+                            record("${source.javaClass.simpleName} pagination probe page=$lastPage count=${result.mangas.size} next=${result.hasNextPage}")
+                            if (source is MangaTime && result.hasNextPage) {
+                                val beyond = source.getPopularManga(lastPage + 1)
+                                record("MangaTime beyond advertised total page=${lastPage + 1} count=${beyond.mangas.size} fresh=${beyond.mangas.count { candidate -> result.mangas.none { it.url == candidate.url } }} next=${beyond.hasNextPage}")
+                            }
+                        }
+                    }
+                }
+                if (catalogueOnly) continue
+                first?.let { manga -> step("details-chapters-reader") {
+                    val update = source.getMangaUpdate(manga, emptyList(), true, true)
+                    if (source is MangaDar) source.client.newCall(GET(source.baseUrl + manga.url, source.headers)).awaitSuccess().use { response ->
+                        targetContext.openFileOutput("MangaDar-details.txt", 0).use { it.write(response.body.bytes()) }
+                    }
+                    record("${source.javaClass.simpleName} completeness=${update.chapterCompleteness}")
+                    record("${source.javaClass.simpleName} details url=${update.manga.url} title=${update.manga.title} cover=${!update.manga.thumbnail_url.isNullOrBlank()} initialized=${update.manga.initialized} chapters=${update.chapters.size}")
+                    val evidenceUrl = when (source) {
+                        is MangaTime -> source.baseUrl + "/api/trpc/content.getChapters?input=" + URLEncoder.encode("""{"json":{"seriesId":"${manga.url.substringAfter('#')}","limit":-1}}""", "UTF-8")
+                        is Azora -> source.baseUrl + "/api/chapters?postId=" + manga.url.substringAfter('#')
+                        else -> source.baseUrl + manga.url.substringBefore('#')
+                    }
+                    source.client.newCall(GET(evidenceUrl, source.headers)).awaitSuccess().use { response ->
+                        targetContext.openFileOutput("${source.javaClass.simpleName}-chapters.txt", 0).use { it.write(response.body.bytes()) }
+                    }
+                    if (source is Hijala) {
+                        val newest = update.chapters.first()
+                        source.client.newCall(GET(source.getChapterUrl(newest), source.headers)).awaitSuccess().use { response ->
+                            val body = response.body.string()
+                            val doc = Jsoup.parse(body)
+                            record("Hijala newest chapter=${newest.url} splitMarker=${doc.selectFirst("#chapter-pages-js-before") != null} rawImages=${doc.select("#readerarea img").size}")
+                            targetContext.openFileOutput("Hijala-newest-reader.html", 0).use { it.write(body.toByteArray()) }
+                        }
+                        val newestPages = source.getPageList(newest)
+                        record("Hijala newest production pages=${newestPages.size}")
+                        source.getImage(newestPages.first()).use { response ->
+                            val bytes = response.body.bytes()
+                            val bitmap = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                                ?: error("Hijala newest image cannot decode")
+                            record("Hijala newest decoded width=${bitmap.width} height=${bitmap.height}")
+                            bitmap.recycle()
+                        }
+                    }
+                    val chapter = update.chapters.lastOrNull() ?: error("No chapters")
+                    val pages = source.getPageList(chapter)
+                    record("${source.javaClass.simpleName} reader chapter=${chapter.url} pages=${pages.size}")
+                    check(!pages.firstOrNull()?.imageUrl.isNullOrBlank()) { "No image URL" }
+                    source.getImage(pages.first()).use { response ->
+                        val bytes = response.body.bytes()
+                        val bitmap = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                        record("${source.javaClass.simpleName} image type=${response.header("Content-Type")} bytes=${bytes.size} decoded=${bitmap != null}")
+                        bitmap?.recycle()
+                    }
+                    if (full) {
+                        val local = Injekt.get<NetworkToLocalManga>().invoke(
+                            Manga.create().copy(source = source.id, url = update.manga.url, title = update.manga.title).copyFrom(update.manga),
+                        )
+                        Injekt.get<SyncChaptersWithSource>().await(update.chapters, local, source, completeness = update.chapterCompleteness)
+                        val dbChapter = Injekt.get<ChapterRepository>().getChapterByMangaId(local.id).first { it.url == chapter.url }
+                        record("${source.javaClass.simpleName} UI ids manga=${local.id} chapter=${dbChapter.id}")
+                        check(clickText(update.manga.title)) { "Catalogue detail card unavailable" }
+                        waitForText(update.chapters.size.toString())
+                        delay(500)
+                        saveScreenshot("${source.javaClass.simpleName}-details.png")
+                        record("${source.javaClass.simpleName} UI details chapterCount=${update.chapters.size} visible")
+                        val downloads = Injekt.get<DownloadManager>()
+                        val localChapters = Injekt.get<ChapterRepository>().getChapterByMangaId(local.id).associateBy { it.url }
+                        val readerChapter = update.chapters.asReversed().firstOrNull {
+                            val stored = localChapters[it.url]
+                            it.url != chapter.url && stored?.read == false && stored.lastPageRead == 0L &&
+                                !downloads.isChapterDownloaded(it.name, it.scanlator, it.url, local.title, source.id, true)
+                        } ?: chapter
+                        val expectedReaderPages = source.getPageList(readerChapter)
+                        val dbReaderChapter = Injekt.get<ChapterRepository>().getChapterByMangaId(local.id).first { it.url == readerChapter.url }
+                        record("${source.javaClass.simpleName} UI Reader network chapter=${readerChapter.url} expectedPages=${expectedReaderPages.size}")
+                        val monitor = addMonitor(ReaderActivity::class.java.name, null, false)
+                        targetContext.startActivity(ReaderActivity.newIntent(targetContext, local.id, dbReaderChapter.id).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                        val reader = monitor.waitForActivityWithTimeout(20_000) as? ReaderActivity ?: error("Reader activity did not open")
+                        try {
+                            var vm: eu.kanade.tachiyomi.ui.reader.ReaderViewModel? = null
+                            runOnMainSync { vm = reader.viewModel }
+                            withTimeout(90_000) {
+                                while (true) {
+                                    val state = vm!!.state.value
+                                    state.initError?.let { throw it }
+                                    val current = state.currentChapter
+                                    (current?.state as? ReaderChapter.State.Error)?.let { throw it.error }
+                                    if (current?.chapter?.id == dbReaderChapter.id && current.pages?.firstOrNull()?.status == Page.State.Ready) break
+                                    delay(250)
+                                }
+                            }
+                            withTimeout(30_000) {
+                                var visibleImage = false
+                                while (!visibleImage) {
+                                    runOnMainSync { visibleImage = hasRenderedImage(reader.window.decorView) }
+                                    if (!visibleImage) delay(250)
+                                }
+                            }
+                            delay(1_000)
+                            waitForIdleSync()
+                            check(vm!!.state.value.currentChapter?.chapter?.id == dbReaderChapter.id) {
+                                "Reader preload changed selected chapter without interaction"
+                            }
+                            val rendered = vm!!.state.value.currentChapter!!.pages!!
+                            check(rendered.size == expectedReaderPages.size) { "Reader page count mismatch expected=${expectedReaderPages.size} actual=${rendered.size} requested=${readerChapter.url} current=${vm!!.state.value.currentChapter?.chapter?.url} loader=${vm!!.state.value.currentChapter?.pageLoader?.javaClass?.simpleName}" }
+                            val screenshot = uiAutomation.takeScreenshot() ?: error("Reader screenshot unavailable")
+                            targetContext.openFileOutput("${source.javaClass.simpleName}-reader.png", 0).use { screenshot.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+                            screenshot.recycle()
+                            record("${source.javaClass.simpleName} UI Reader image RENDERED total=${rendered.size}")
+                        } finally {
+                            runOnMainSync { reader.finish() }
+                            removeMonitor(monitor)
+                        }
+                        downloads.downloadChapters(local, listOf(dbChapter))
+                        withTimeout(120_000) {
+                            while (!downloads.isChapterDownloaded(dbChapter.name, dbChapter.scanlator, dbChapter.url, local.title, source.id, true)) {
+                                val queued = downloads.getQueuedDownloadOrNull(dbChapter.id)
+                                if (queued?.status == Download.State.ERROR) error("Normal Downloader failed")
+                                delay(500)
+                            }
+                        }
+                        val loader = DownloadPageLoader(ReaderChapter(dbChapter), local, source, downloads, Injekt.get<DownloadProvider>())
+                        try {
+                            val downloadedPages = loader.getPages()
+                            val file = Injekt.get<DownloadProvider>().findChapterDir(dbChapter.name, dbChapter.scanlator, dbChapter.url, local.title, source)
+                                ?: error("Downloaded chapter missing")
+                            val names = if (file.isFile) {
+                                file.archiveReader(targetContext).use { archive -> archive.useEntries { entries -> entries.filter { it.isFile }.map { it.name }.toList() } }
+                            } else file.listFiles().orEmpty().mapNotNull { it.name }
+                            val imageNames = names.mapNotNull { Regex("^(\\d+)(?:__(\\d+))?\\.[^.]+$").matchEntire(it) }
+                            val originalGroups = imageNames.groupBy { it.groupValues[1].toInt() }
+                            check(originalGroups.keys == (1..pages.size).toSet()) { "Downloaded original page sequence mismatch: ${originalGroups.keys}" }
+                            for (parts in originalGroups.values) {
+                                val split = parts.mapNotNull { it.groupValues[2].toIntOrNull() }.sorted()
+                                if (split.isNotEmpty()) check(split == (1..split.last()).toList()) { "Missing middle image part" }
+                            }
+                            record("${source.javaClass.simpleName} DOWNLOAD complete originals=${originalGroups.size} storedImages=${downloadedPages.size}")
+                        } finally { loader.recycle() }
+                    }
+
+                } }
+            }
+        }
+        finish(if (failures == 0) -1 else 0, Bundle().apply { putString("stream", "Source audit finished failures=$failures\n") })
+    }
+}

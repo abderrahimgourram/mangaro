@@ -41,7 +41,11 @@ android {
         buildConfigField("boolean", "TELEMETRY_INCLUDED", "false")
         buildConfigField("boolean", "UPDATER_ENABLED", "false")
 
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner = if (providers.gradleProperty("sourceAudit").orNull == "true") {
+            "eu.kanade.tachiyomi.source.audit.SourceAuditInstrumentation"
+        } else {
+            "androidx.test.runner.AndroidJUnitRunner"
+        }
     }
 
     if (System.getenv("MIHON_GITHUB_RELEASE").toBoolean()) {
