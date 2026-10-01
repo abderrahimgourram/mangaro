@@ -326,6 +326,30 @@ class Downloader(
      * @param download the chapter to be downloaded.
      */
     private suspend fun downloadChapter(download: Download) {
+        // Recovery takes the same identity lock: resolve before locking filesystem writes.
+        val repository = Injekt.get<tachiyomi.domain.chapter.repository.ChapterRepository>()
+        val before = repository.getChapterById(download.chapter.id) ?: return
+        if (before.url != download.chapter.url || before.memo != download.chapter.memo) download.pages = null
+        download.chapter = before
+        if (download.pages == null) {
+            try {
+                val pages = try { download.source.getPageList(before.toSChapter()) }
+                catch (error: Exception) {
+                    if (error is CancellationException) throw error
+                    val recovered = eu.kanade.domain.chapter.interactor.RecoverStaleChapter(repository, Injekt.get())
+                        .await(download.source, download.manga, before, error) ?: throw error
+                    download.chapter = recovered.chapter
+                    recovered.pages
+                }
+                if (pages.isEmpty()) throw java.io.IOException("Chapter has no pages")
+                download.pages = pages.mapIndexed { index, page -> Page(index, page.url, page.imageUrl, page.uri) }
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                download.status = Download.State.ERROR
+                notifier.onError(error.message, download.chapter.name, download.manga.title, download.manga.id)
+                return
+            }
+        }
         val lock = tachiyomi.domain.chapter.service.ChapterIdentityLocks.forChapter(download.chapter.id)
         lock.lock()
         try {

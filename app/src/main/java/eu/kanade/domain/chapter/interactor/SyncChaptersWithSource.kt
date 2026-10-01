@@ -72,7 +72,6 @@ class SyncChaptersWithSource(
         val nowMillis = now.toInstant(timeZone).toEpochMilliseconds()
 
         val sourceChapters = rawSourceChapters
-            .distinctBy { it.url }
             .mapIndexed { i, sChapter ->
                 Chapter.create()
                     .copyFromSChapter(sChapter)
@@ -80,6 +79,10 @@ class SyncChaptersWithSource(
                     .copy(mangaId = manga.id, sourceOrder = i.toLong())
             }
 
+        // A URL collision may contain different remote IDs. Never silently drop a row.
+        if (sourceChapters.any { it.url.isBlank() } || sourceChapters.map { it.url }.toSet().size != sourceChapters.size) {
+            throw java.io.IOException("Invalid or duplicate chapter URLs; existing chapters preserved")
+        }
         val ids = sourceChapters.flatMap { ChapterIdentity.remoteIds(it, source.id) }
         if (ids.toSet().size != ids.size) throw java.io.IOException("Duplicate remote chapter identities; existing chapters preserved")
         val dbChapters = getChaptersByMangaId.await(manga.id)
@@ -98,11 +101,10 @@ class SyncChaptersWithSource(
             this.logcat(LogPriority.WARN) { "Degraded chapter reconciliation for manga ${manga.id}; unresolved rows preserved" }
         }
         val mayRemoveChapters = source.isLocal() || completeness == ChapterFetchCompleteness.COMPLETE && !identityPlan.unresolved
-        val removedChapters = if (!mayRemoveChapters) emptyList() else dbChapters.filterNot { dbChapter ->
-            sourceChapters.any { sourceChapter ->
-                dbChapter.url == sourceChapter.url
-            }
-        }
+        // Retain matched local IDs, including rows whose remote URL will change below.
+        // Comparing the old URL snapshot schedules in-place migrations for deletion.
+        val retainedIds = identityPlan.matches.values.map { it.id }.toSet()
+        val removedChapters = if (!mayRemoveChapters) emptyList() else dbChapters.filterNot { it.id in retainedIds }
 
         // Used to not set upload date of older chapters
         // to a higher value than newer chapters

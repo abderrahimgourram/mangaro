@@ -1,0 +1,53 @@
+package eu.kanade.domain.chapter.interactor
+
+import eu.kanade.domain.chapter.model.toSChapter
+import eu.kanade.domain.manga.interactor.GetExcludedScanlators
+import eu.kanade.domain.manga.interactor.UpdateManga
+import eu.kanade.tachiyomi.data.download.DownloadManager
+import eu.kanade.tachiyomi.data.download.DownloadProvider
+import eu.kanade.tachiyomi.source.Source
+import eu.kanade.tachiyomi.source.model.ChapterFetchCompleteness
+import io.kotest.matchers.shouldBe
+import io.mockk.*
+import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
+import tachiyomi.domain.chapter.interactor.*
+import tachiyomi.domain.chapter.model.Chapter
+import tachiyomi.domain.chapter.repository.ChapterRepository
+import tachiyomi.domain.library.service.LibraryPreferences
+import tachiyomi.domain.manga.model.Manga
+import java.io.IOException
+
+class SyncChapterIntegrityTest {
+    private val repo = mockk<ChapterRepository>(relaxed = true)
+    private val downloads = mockk<DownloadManager>(relaxed = true)
+    private val source = mockk<Source> { every { id } returns 44 }
+    private val manga = Manga.create().copy(id = 10, source = 44, title = "Manga")
+    private val old = Chapter.create().copy(id = 7, mangaId = 10, url = "/old", name = "Chapter 1", chapterNumber = 1.0, read = true, bookmark = true, lastPageRead = 12, dateFetch = 123, memo = buildJsonObject { put("id", 99) })
+    private fun sync(): SyncChaptersWithSource {
+        val excluded = mockk<GetExcludedScanlators>(); coEvery { excluded.await(any()) } returns emptySet()
+        coEvery { repo.getChapterByMangaId(any(), any()) } returns listOf(old)
+        coEvery { repo.getChapterById(7) } returns old
+        val preferences = mockk<LibraryPreferences>(); every { preferences.markDuplicateReadChapterAsRead.get() } returns emptySet()
+        return SyncChaptersWithSource(downloads, mockk<DownloadProvider>(relaxed = true), repo, ShouldUpdateDbChapter(), mockk<UpdateManga>(relaxed = true), UpdateChapter(repo), GetChaptersByMangaId(repo), excluded, preferences)
+    }
+    @Test fun `complete moved identity updates same row and never deletes it`() = runTest {
+        sync().await(listOf(old.copy(url = "/new").toSChapter()), manga, source, completeness = ChapterFetchCompleteness.COMPLETE) shouldBe emptyList()
+        coVerify(exactly = 1) { repo.update(match { it.id == 7L && it.url == "/new" && it.read == null && it.bookmark == null && it.lastPageRead == null && it.dateFetch == null }) }
+        coVerify(exactly = 0) { repo.removeChaptersWithIds(any()) }
+        coVerify(exactly = 0) { repo.addAll(any()) }
+    }
+    @Test fun `partial fetch retains unmatched existing rows`() = runTest {
+        sync().await(listOf(old.copy(url="/new", memo=buildJsonObject { put("id", 100) }).toSChapter()), manga, source, completeness=ChapterFetchCompleteness.PARTIAL)
+        coVerify(exactly=0) { repo.removeChaptersWithIds(any()) }
+    }
+    @Test fun `URL collision with different remote IDs fails before database changes`() = runTest {
+        assertThrows<IOException> { sync().await(listOf(old.toSChapter(), old.copy(memo=buildJsonObject { put("id", 100) }).toSChapter()), manga, source, completeness=ChapterFetchCompleteness.COMPLETE) }
+        coVerify(exactly=0) { repo.update(any()) }
+        coVerify(exactly=0) { repo.addAll(any()) }
+        coVerify(exactly=0) { repo.removeChaptersWithIds(any()) }
+    }
+}
