@@ -84,7 +84,7 @@ class ReliabilityAndCollapseProtectionTest {
 
     @Test
     fun `verify chapter collapse protection prevents deleting existing DB chapters when remote returns partial list`() = runTest {
-        val manga = Manga.create().copy(id = 100L, title = "Test Manga")
+        val manga = Manga.create().copy(id = 100L, source = 100L, title = "Test Manga")
         val source: Source = mockk(relaxed = true)
         coEvery { source.id } returns 100L
 
@@ -120,8 +120,8 @@ class ReliabilityAndCollapseProtectionTest {
     }
 
     @Test
-    fun `verify normal sync deletes removed chapters when remote list is complete`() = runTest {
-        val manga = Manga.create().copy(id = 100L, title = "Test Manga")
+    fun `complete list preserves unmatched old chapters without removal proof`() = runTest {
+        val manga = Manga.create().copy(id = 100L, source = 100L, title = "Test Manga")
         val source: Source = mockk(relaxed = true)
         coEvery { source.id } returns 100L
 
@@ -153,12 +153,12 @@ class ReliabilityAndCollapseProtectionTest {
             completeness = ChapterFetchCompleteness.COMPLETE,
         )
 
-        // Verify chapterRepository.removeChaptersWithIds is called for chapter 10 ID (10L)
-        coVerify(exactly = 1) { chapterRepository.removeChaptersWithIds(listOf(10L)) }
+        // Absence alone cannot distinguish removal from a URL move without stable identity.
+        coVerify(exactly = 0) { chapterRepository.removeChaptersWithIds(any()) }
     }
     @Test
     fun `a ninety percent partial list cannot delete chapters above the old collapse threshold`() = runTest {
-        val manga = Manga.create().copy(id = 100L, title = "Test Manga")
+        val manga = Manga.create().copy(id = 100L, source = 100L, title = "Test Manga")
         val source: Source = mockk(relaxed = true)
         coEvery { source.id } returns 100L
         coEvery { getChaptersByMangaId.await(100L) } returns (1..100).map {
@@ -181,7 +181,7 @@ class ReliabilityAndCollapseProtectionTest {
 
     @Test
     fun `same chapter number cannot transfer identity state to a new URL`() = runTest {
-        val manga = Manga.create().copy(id = 100L, title = "Test Manga")
+        val manga = Manga.create().copy(id = 100L, source = 100L, title = "Test Manga")
         val source: Source = mockk(relaxed = true)
         coEvery { source.id } returns 100L
         coEvery { getChaptersByMangaId.await(100L) } returns listOf(
@@ -195,4 +195,33 @@ class ReliabilityAndCollapseProtectionTest {
     }
 
 
+
+    @Test
+    fun `stable remote identity updates only URL and memo without inserting deleting or rewriting reading state`() = runTest {
+        val manga = Manga.create().copy(id = 100, source = 100, title = "Test Manga")
+        val source = mockk<Source>(relaxed = true)
+        coEvery { source.id } returns 100
+        val memo = kotlinx.serialization.json.buildJsonObject { put("id", kotlinx.serialization.json.JsonPrimitive("88")) }
+        val old = Chapter.create().copy(id = 7, mangaId = 100, url = "/old", memo = memo, read = true, bookmark = true, lastPageRead = 6, dateFetch = 123, name = "Chapter 1")
+        coEvery { getChaptersByMangaId.await(100) } returns listOf(old)
+        coEvery { chapterRepository.getChapterById(7) } returns old
+        val remote = SChapter.create().apply { url = "/new"; name = "Chapter 1"; this.memo = memo }
+        syncChaptersWithSource.await(listOf(remote), manga, source, completeness = ChapterFetchCompleteness.PARTIAL)
+        coVerify(exactly = 1) { chapterRepository.update(tachiyomi.domain.chapter.model.ChapterUpdate(7, url = "/new", memo = memo)) }
+        coVerify(exactly = 0) { chapterRepository.addAll(any()) }
+        coVerify(exactly = 0) { chapterRepository.removeChaptersWithIds(any()) }
+    }
+
+    @Test
+    fun `ambiguous descriptive fingerprint is retained without automatic merge or duplicate insertion`() = runTest {
+        val manga = Manga.create().copy(id = 100, source = 100, title = "Test Manga")
+        val source = mockk<Source>(relaxed = true)
+        coEvery { source.id } returns 100
+        coEvery { getChaptersByMangaId.await(100) } returns (1L..2L).map { Chapter.create().copy(id = it, mangaId = 100, url = "/old-$it", name = "Chapter 1: Beginning", chapterNumber = 1.0) }
+        val remote = SChapter.create().apply { url = "/new"; name = "Chapter 1: Beginning"; chapter_number = 1f }
+        syncChaptersWithSource.await(listOf(remote), manga, source, completeness = ChapterFetchCompleteness.COMPLETE)
+        coVerify(exactly = 0) { chapterRepository.addAll(any()) }
+        coVerify(exactly = 0) { chapterRepository.updateAll(any()) }
+        coVerify(exactly = 0) { chapterRepository.removeChaptersWithIds(any()) }
+    }
 }

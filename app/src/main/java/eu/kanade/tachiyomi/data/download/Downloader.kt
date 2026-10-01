@@ -322,6 +322,18 @@ class Downloader(
      * @param download the chapter to be downloaded.
      */
     private suspend fun downloadChapter(download: Download) {
+        val lock = tachiyomi.domain.chapter.service.ChapterIdentityLocks.forChapter(download.chapter.id)
+        lock.lock()
+        try {
+            val current = Injekt.get<tachiyomi.domain.chapter.repository.ChapterRepository>().getChapterById(download.chapter.id)
+            if (current == null) { download.status = Download.State.ERROR; return }
+            if (current.url != download.chapter.url || current.memo != download.chapter.memo) download.pages = null
+            download.chapter = current
+            downloadChapterWithIdentityLocked(download)
+        } finally { lock.unlock() }
+    }
+
+    private suspend fun downloadChapterWithIdentityLocked(download: Download) {
         val mangaDir = provider.getMangaDir(download.manga.title, download.source).getOrElse { e ->
             download.status = Download.State.ERROR
             notifier.onError(e.message, download.chapter.name, download.manga.title, download.manga.id)

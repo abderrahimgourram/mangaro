@@ -68,17 +68,29 @@ internal class HttpPageLoader(
      * otherwise fallbacks to network.
      */
     override suspend fun getPages(): List<ReaderPage> {
-        val pages = if (MangaDarPageResolver.supports(source)) {
-            // MangaDar signs image URLs per chapter load; cached URLs can expire.
-            MangaDarPageResolver.getPages(source, chapter.chapter)
-        } else {
-            try {
-                chapterCache.getPageListFromCache(chapter.chapter.toDomainChapter()!!)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: Exception) {
-                source.getPageList(chapter.chapter)
+        val pages = try {
+            if (MangaDarPageResolver.supports(source)) {
+                MangaDarPageResolver.getPages(source, chapter.chapter)
+            } else {
+                try {
+                    chapterCache.getPageListFromCache(chapter.chapter.toDomainChapter()!!)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    source.getPageList(chapter.chapter)
+                }
             }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            val repository = Injekt.get<tachiyomi.domain.chapter.repository.ChapterRepository>()
+            val stored = chapter.chapter.toDomainChapter() ?: throw error
+            val manga = Injekt.get<tachiyomi.domain.manga.repository.MangaRepository>().getMangaById(stored.mangaId)
+            val recovered = eu.kanade.domain.chapter.interactor.RecoverStaleChapter(repository, Injekt.get())
+                .await(source, manga, stored, error) ?: throw error
+            chapter.chapter.url = recovered.chapter.url
+            chapter.chapter.memo = recovered.chapter.memo
+            recovered.pages
         }
         return pages.mapIndexed { index, page ->
             // Don't trust sources and use our own indexing

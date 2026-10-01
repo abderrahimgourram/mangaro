@@ -22,7 +22,7 @@ import kotlin.time.Duration.Companion.milliseconds
 data class Download(
     val source: HttpSource,
     val manga: Manga,
-    val chapter: Chapter,
+    var chapter: Chapter,
 ) {
     var pages: List<Page>? = null
 

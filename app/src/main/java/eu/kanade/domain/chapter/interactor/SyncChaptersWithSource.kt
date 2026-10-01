@@ -21,8 +21,9 @@ import tachiyomi.domain.chapter.interactor.GetChaptersByMangaId
 import tachiyomi.domain.chapter.interactor.ShouldUpdateDbChapter
 import tachiyomi.domain.chapter.interactor.UpdateChapter
 import tachiyomi.domain.chapter.model.Chapter
+import tachiyomi.domain.chapter.model.ChapterUpdate
+import tachiyomi.domain.chapter.service.ChapterIdentity
 import tachiyomi.domain.chapter.model.NoChaptersException
-import tachiyomi.domain.chapter.model.toChapterUpdate
 import tachiyomi.domain.chapter.repository.ChapterRepository
 import tachiyomi.domain.chapter.service.ChapterRecognition
 import tachiyomi.domain.library.service.LibraryPreferences
@@ -79,11 +80,21 @@ class SyncChaptersWithSource(
                     .copy(mangaId = manga.id, sourceOrder = i.toLong())
             }
 
+        val ids = sourceChapters.flatMap { ChapterIdentity.remoteIds(it, source.id) }
+        if (ids.toSet().size != ids.size) throw java.io.IOException("Duplicate remote chapter identities; existing chapters preserved")
         val dbChapters = getChaptersByMangaId.await(manga.id)
 
         val newChapters = mutableListOf<Chapter>()
         val updatedChapters = mutableListOf<Chapter>()
-        val mayRemoveChapters = source.isLocal() || completeness == ChapterFetchCompleteness.COMPLETE
+        val identityUpdates = mutableListOf<ChapterUpdate>()
+        var identityPlan = ChapterIdentity.reconcile(source.id, manga.source, manga.id, dbChapters, sourceChapters)
+        if (source is HttpSource && identityPlan.unresolved) {
+            val matched = identityPlan.matches.values.map { it.id }.toSet()
+            val redirects = ResolveChapterRedirects().await(source, dbChapters.filterNot { it.id in matched }, sourceChapters)
+            if (redirects.isNotEmpty()) identityPlan = ChapterIdentity.reconcile(source.id, manga.source, manga.id, dbChapters, sourceChapters, redirects)
+        }
+        if (identityPlan.unresolved) this.logcat(LogPriority.WARN) { "Degraded chapter reconciliation for manga ${manga.id}; unresolved rows preserved" }
+        val mayRemoveChapters = source.isLocal() || completeness == ChapterFetchCompleteness.COMPLETE && !identityPlan.unresolved
         val removedChapters = if (!mayRemoveChapters) emptyList() else dbChapters.filterNot { dbChapter ->
             sourceChapters.any { sourceChapter ->
                 dbChapter.url == sourceChapter.url
@@ -94,7 +105,7 @@ class SyncChaptersWithSource(
         // to a higher value than newer chapters
         var maxSeenUploadDate = 0L
 
-        for (sourceChapter in sourceChapters) {
+        for ((index, sourceChapter) in sourceChapters.withIndex()) {
             var chapter = sourceChapter
 
             // Update metadata from source if necessary.
@@ -109,9 +120,10 @@ class SyncChaptersWithSource(
             val chapterNumber = ChapterRecognition.parseChapterNumber(manga.title, chapter.name, chapter.chapterNumber)
             chapter = chapter.copy(chapterNumber = chapterNumber)
 
-            val dbChapter = dbChapters.find { it.url == chapter.url }
+            val dbChapter = identityPlan.matches[index]
 
             if (dbChapter == null) {
+                if (index in identityPlan.blocked) continue
                 val toAddChapter = if (chapter.dateUpload == 0L) {
                     val altDateUpload = if (maxSeenUploadDate == 0L) nowMillis else maxSeenUploadDate
                     chapter.copy(dateUpload = altDateUpload)
@@ -120,6 +132,12 @@ class SyncChaptersWithSource(
                     chapter
                 }
                 newChapters.add(toAddChapter)
+            } else if (dbChapter.url != chapter.url) {
+                // Rename URL-hashed downloads first, then write only identity fields. Concurrent reading
+                // state, history foreign keys, bookmark, dates and local ID remain untouched.
+                val moved = dbChapter.copy(url = chapter.url, memo = kotlinx.serialization.json.JsonObject(dbChapter.memo + chapter.memo))
+                MigrateChapterIdentity(chapterRepository, downloadManager).await(source, manga, dbChapter, moved)
+                identityUpdates += ChapterUpdate(dbChapter.id, url = moved.url, memo = moved.memo)
             } else {
                 if (shouldUpdateDbChapter.await(dbChapter, chapter)) {
                     val shouldRenameChapter = downloadProvider.isChapterDirNameChanged(dbChapter, chapter) &&
@@ -152,7 +170,7 @@ class SyncChaptersWithSource(
         }
 
         // Return if there's nothing to add, delete, or update to avoid unnecessary db transactions.
-        if (newChapters.isEmpty() && removedChapters.isEmpty() && updatedChapters.isEmpty()) {
+        if (newChapters.isEmpty() && removedChapters.isEmpty() && updatedChapters.isEmpty() && identityUpdates.isEmpty()) {
             if (manualFetch || manga.fetchInterval == 0 || manga.nextUpdate < fetchWindow.first) {
                 updateManga.awaitUpdateFetchInterval(
                     manga,
@@ -208,7 +226,10 @@ class SyncChaptersWithSource(
         }
 
         if (updatedChapters.isNotEmpty()) {
-            val chapterUpdates = updatedChapters.map { it.toChapterUpdate() }
+            val chapterUpdates = updatedChapters.map {
+                ChapterUpdate(it.id, name = it.name, chapterNumber = it.chapterNumber, scanlator = it.scanlator,
+                    sourceOrder = it.sourceOrder, dateUpload = it.dateUpload, memo = it.memo)
+            }
             updateChapter.awaitAll(chapterUpdates)
         }
         updateManga.awaitUpdateFetchInterval(manga, timeZone, now, fetchWindow)
