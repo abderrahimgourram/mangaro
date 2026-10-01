@@ -24,7 +24,7 @@ import org.junit.jupiter.api.Test
 class HomeDiscoveryAggregationTest {
 
     private val getSourceCapabilities = GetSourceCapabilities()
-    private val getSourceDiscovery = GetSourceDiscovery(getSourceCapabilities, Dispatchers.Unconfined)
+    private val getSourceDiscovery = GetSourceDiscovery(getSourceCapabilities, Dispatchers.Unconfined, mihon.domain.source.health.SourceHealthMonitor())
 
     @Test
     fun `verify Popular aggregation preserves deterministic source interleaving`() = runTest {

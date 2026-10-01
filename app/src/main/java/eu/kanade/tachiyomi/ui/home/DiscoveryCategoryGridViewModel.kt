@@ -62,6 +62,15 @@ class DiscoveryCategoryGridViewModel(
     private var paginationJob: Job? = null
 
     init {
+        viewModelScope.launch {
+            var failed = emptySet<Long>()
+            mihon.domain.source.health.SourceHealthMonitor.shared.states.collectLatest { states ->
+                _state.update { current -> current.copy(items = current.items.filter { item -> mihon.domain.source.health.SourceHealthMonitor.shared.discoverable(item.sourceId) }) }
+                val nowFailed = states.filterValues { it.failures > 0 || it.state == mihon.domain.source.health.SourceHealthMonitor.State.UNAVAILABLE }.keys
+                if ((failed - nowFailed).isNotEmpty() && sourcesList.isNotEmpty()) loadInitialPage(isRefresh = true, hasSeedItems = _state.value.items.isNotEmpty())
+                failed = nowFailed
+            }
+        }
         val seedItems = DiscoverySnapshotStore.getSnapshot(category)
         if (seedItems.isNotEmpty()) {
             _state.update {
@@ -119,8 +128,10 @@ class DiscoveryCategoryGridViewModel(
             sourcePageMap.putAll(batchResult.pageMap)
             sourceHasMoreMap.putAll(batchResult.hasMoreMap)
 
-            val currentItems = if (isRefresh) emptyList() else _state.value.items
-            val combinedItems = GroupDiscoveryItems.group(currentItems + batchResult.items)
+            val currentItems = if (isRefresh) _state.value.items.filter {
+                mihon.domain.source.health.SourceHealthMonitor.shared.health(it.sourceId).state == mihon.domain.source.health.SourceHealthMonitor.State.DEGRADED
+            } else _state.value.items
+            val combinedItems = GroupDiscoveryItems.group(currentItems + batchResult.items).filter { mihon.domain.source.health.SourceHealthMonitor.shared.discoverable(it.sourceId) }
             val hasMoreAny = sourceHasMoreMap.values.any { it }
 
             _state.update {

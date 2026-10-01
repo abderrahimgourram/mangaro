@@ -87,13 +87,16 @@ class SyncChaptersWithSource(
         val newChapters = mutableListOf<Chapter>()
         val updatedChapters = mutableListOf<Chapter>()
         val identityUpdates = mutableListOf<ChapterUpdate>()
-        var identityPlan = ChapterIdentity.reconcile(source.id, manga.source, manga.id, dbChapters, sourceChapters)
+        var identityPlan = ChapterIdentity.reconcile(source.id, manga.source, manga.id, dbChapters, sourceChapters, allowFingerprint = completeness == ChapterFetchCompleteness.COMPLETE || source.isLocal())
         if (source is HttpSource && identityPlan.unresolved) {
             val matched = identityPlan.matches.values.map { it.id }.toSet()
             val redirects = ResolveChapterRedirects().await(source, dbChapters.filterNot { it.id in matched }, sourceChapters)
-            if (redirects.isNotEmpty()) identityPlan = ChapterIdentity.reconcile(source.id, manga.source, manga.id, dbChapters, sourceChapters, redirects)
+            if (redirects.isNotEmpty()) identityPlan = ChapterIdentity.reconcile(source.id, manga.source, manga.id, dbChapters, sourceChapters, redirects, allowFingerprint = completeness == ChapterFetchCompleteness.COMPLETE || source.isLocal())
         }
-        if (identityPlan.unresolved) this.logcat(LogPriority.WARN) { "Degraded chapter reconciliation for manga ${manga.id}; unresolved rows preserved" }
+        if (identityPlan.unresolved) {
+            mihon.domain.source.health.SourceHealthMonitor.shared.degrade(source.id)
+            this.logcat(LogPriority.WARN) { "Degraded chapter reconciliation for manga ${manga.id}; unresolved rows preserved" }
+        }
         val mayRemoveChapters = source.isLocal() || completeness == ChapterFetchCompleteness.COMPLETE && !identityPlan.unresolved
         val removedChapters = if (!mayRemoveChapters) emptyList() else dbChapters.filterNot { dbChapter ->
             sourceChapters.any { sourceChapter ->

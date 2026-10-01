@@ -21,6 +21,7 @@ import tachiyomi.domain.chapter.repository.ChapterRepository
 import tachiyomi.domain.manga.model.Manga
 
 class RecoverStaleChapterTest {
+    private val health = mihon.domain.source.health.SourceHealthMonitor()
     private val old = Chapter.create().copy(id = 7, mangaId = 10, url = "/old#11", name = "chapter 1", chapterNumber = 1.0,
         read = true, bookmark = true, lastPageRead = 8, dateFetch = 500, memo = buildJsonObject { put("id", "11") })
     private val manga = Manga.create().copy(id = 10, source = 44, title = "manga")
@@ -37,7 +38,7 @@ class RecoverStaleChapterTest {
     }
     @Test fun `Reader 404 retries moved URL once and writes only identity preserving history FK and states`() = runTest {
         prepare()
-        val result = RecoverStaleChapter(repository, downloads).await(source, manga, old, HttpException(404))!!
+        val result = RecoverStaleChapter(repository, downloads, health).await(source, manga, old, HttpException(404))!!
         result.chapter.id shouldBe 7
         result.chapter.read shouldBe true
         result.chapter.bookmark shouldBe true
@@ -52,18 +53,18 @@ class RecoverStaleChapterTest {
     }
     @Test fun `permanent failure is never refreshed and failed retry never updates stored identity`() = runTest {
         prepare()
-        RecoverStaleChapter(repository, downloads).await(source, manga, old, HttpException(500)) shouldBe null
+        RecoverStaleChapter(repository, downloads, health).await(source, manga, old, HttpException(500)) shouldBe null
         coVerify(exactly = 0) { source.getMangaUpdate(any(), any(), any(), any()) }
         coEvery { source.getPageList(any()) } throws HttpException(404)
-        assertThrows<HttpException> { RecoverStaleChapter(repository, downloads).await(source, manga, old, HttpException(404)) }
+        assertThrows<HttpException> { RecoverStaleChapter(repository, downloads, health).await(source, manga, old, HttpException(404)) }
         coVerify(exactly = 1) { source.getPageList(any()) }
         coVerify(exactly = 0) { repository.update(any()) }
     }
     @Test fun `failed completeness never recovers and another source cannot touch this row`() = runTest {
         prepare()
         coEvery { source.getMangaUpdate(any(), any(), any(), any()) } returns SMangaUpdate(SManga.create(), listOf(moved.toSChapter()), ChapterFetchCompleteness.FAILED)
-        RecoverStaleChapter(repository, downloads).await(source, manga, old, HttpException(404)) shouldBe null
-        RecoverStaleChapter(repository, downloads).await(source, manga.copy(source = 55), old, HttpException(404)) shouldBe null
+        RecoverStaleChapter(repository, downloads, health).await(source, manga, old, HttpException(404)) shouldBe null
+        RecoverStaleChapter(repository, downloads, health).await(source, manga.copy(source = 55), old, HttpException(404)) shouldBe null
         coVerify(exactly = 0) { repository.update(any()) }
     }
 }

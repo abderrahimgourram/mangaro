@@ -13,7 +13,7 @@ import tachiyomi.domain.chapter.model.Chapter
 import java.net.InetSocketAddress
 
 class ResolveChapterRedirectsTest {
-    @Test fun `actual HTTP redirect is verified against produced target and a valid page list`() = runBlocking {
+    @Test fun `actual HTTP redirect is verified against produced target and a valid page list`() = runBlocking<Unit> {
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         server.createContext("/old") { exchange -> exchange.responseHeaders.add("Location", "/new"); exchange.sendResponseHeaders(302, -1); exchange.close() }
         server.createContext("/new") { exchange -> exchange.sendResponseHeaders(200, 0); exchange.responseBody.use { it.write("chapter".toByteArray()) } }

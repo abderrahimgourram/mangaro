@@ -29,6 +29,7 @@ object ChapterIdentity {
         existing: List<Chapter>,
         incoming: List<Chapter>,
         verifiedRedirects: Map<String, String> = emptyMap(),
+        allowFingerprint: Boolean = true,
     ): Plan {
         require(sourceId == mangaSourceId && existing.all { it.mangaId == mangaId } && incoming.all { it.mangaId == mangaId })
         val matches = mutableMapOf<Int, Chapter>()
@@ -57,7 +58,15 @@ object ChapterIdentity {
             val oldIds = remoteIds(old, sourceId)
             val newIds = remoteIds(new, sourceId)
             // Conflicting remote identities are stronger evidence than a similar title/number.
-            (oldIds.isEmpty() || newIds.isEmpty()) && fingerprint(old)?.let { it == fingerprint(new) } == true
+            allowFingerprint && (oldIds.isEmpty() || newIds.isEmpty()) && fingerprint(old)?.let { it == fingerprint(new) } == true
+        }
+        for (index in incoming.indices.filterNot { it in matches }) {
+            val new = incoming[index]
+            if (existing.any { old -> old.id !in used &&
+                (remoteIds(old, sourceId).isEmpty() || remoteIds(new, sourceId).isEmpty()) &&
+                old.chapterNumber >= 0 && old.chapterNumber == new.chapterNumber &&
+                old.name.trim().equals(new.name.trim(), ignoreCase = true) && old.scanlator.orEmpty() == new.scanlator.orEmpty()
+            }) blocked += index
         }
         // An absent old row can be a moved chapter. Without proof, retain it even for COMPLETE lists.
         return Plan(matches, ambiguous || existing.any { it.id !in used }, blocked - matches.keys)

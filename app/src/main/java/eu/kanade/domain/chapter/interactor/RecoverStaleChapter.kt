@@ -19,6 +19,7 @@ import java.io.IOException
 class RecoverStaleChapter(
     private val chapters: ChapterRepository,
     private val downloads: DownloadManager,
+    private val health: mihon.domain.source.health.SourceHealthMonitor = mihon.domain.source.health.SourceHealthMonitor.shared,
 ) {
     data class Recovery(val chapter: Chapter, val pages: List<Page>)
 
@@ -27,15 +28,17 @@ class RecoverStaleChapter(
         return withTimeoutOrNull(90_000) {
             val existing = chapters.getChapterByMangaId(manga.id)
             val current = existing.singleOrNull { it.id == stored.id } ?: return@withTimeoutOrNull null
-            val update = source.getMangaUpdate(manga.toSManga(), existing.map { it.toSChapter() }, false, true)
+            val update = health.run(source.id, 60_000, healthy = {
+                it.chapterCompleteness !in setOf(eu.kanade.tachiyomi.source.model.ChapterFetchCompleteness.PARTIAL, eu.kanade.tachiyomi.source.model.ChapterFetchCompleteness.FAILED)
+            }) { source.getMangaUpdate(manga.toSManga(), existing.map { it.toSChapter() }, false, true) }
             if (update.chapterCompleteness == eu.kanade.tachiyomi.source.model.ChapterFetchCompleteness.FAILED) return@withTimeoutOrNull null
             val incoming = update.chapters.map { Chapter.create().copyFromSChapter(it).copy(mangaId = manga.id) }
-            var plan = ChapterIdentity.reconcile(source.id, manga.source, manga.id, existing, incoming)
+            var plan = ChapterIdentity.reconcile(source.id, manga.source, manga.id, existing, incoming, allowFingerprint = update.chapterCompleteness == eu.kanade.tachiyomi.source.model.ChapterFetchCompleteness.COMPLETE)
             var index = plan.matches.entries.singleOrNull { it.value.id == current.id }?.key
             if (index == null) {
                 val redirects = ResolveChapterRedirects().await(source, listOf(current), incoming)
                 if (redirects.isNotEmpty()) {
-                    plan = ChapterIdentity.reconcile(source.id, manga.source, manga.id, existing, incoming, redirects)
+                    plan = ChapterIdentity.reconcile(source.id, manga.source, manga.id, existing, incoming, redirects, allowFingerprint = update.chapterCompleteness == eu.kanade.tachiyomi.source.model.ChapterFetchCompleteness.COMPLETE)
                     index = plan.matches.entries.singleOrNull { it.value.id == current.id }?.key
                 }
             }

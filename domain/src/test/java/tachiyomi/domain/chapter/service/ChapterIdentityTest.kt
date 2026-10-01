@@ -45,4 +45,10 @@ class ChapterIdentityTest {
     @Test fun `redirect to a different numbered chapter is not equivalence`() {
         ChapterIdentity.reconcile(4, 4, 10, listOf(row(1, "/old", "1")), listOf(row(-1, "/new", "2").copy(chapterNumber = 2.0)), mapOf("/old" to "/new")).matches.size shouldBe 0
     }
+    @Test fun `partial results cannot prove fingerprint uniqueness`() {
+        val plan = ChapterIdentity.reconcile(4, 4, 10, listOf(row(1, "/old")), listOf(row(-1, "/new")), allowFingerprint = false)
+        plan.matches.isEmpty() shouldBe true
+        plan.blocked shouldBe setOf(0)
+        plan.unresolved shouldBe true
+    }
 }

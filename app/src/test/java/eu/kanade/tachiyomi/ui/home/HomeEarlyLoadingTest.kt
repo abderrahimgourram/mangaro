@@ -19,7 +19,7 @@ import org.junit.jupiter.api.Test
 class HomeEarlyLoadingTest {
 
     private val getSourceCapabilities = GetSourceCapabilities()
-    private val getSourceDiscovery = GetSourceDiscovery(getSourceCapabilities, Dispatchers.Unconfined)
+    private val getSourceDiscovery = GetSourceDiscovery(getSourceCapabilities, Dispatchers.Unconfined, mihon.domain.source.health.SourceHealthMonitor())
 
     @Test
     fun `verify early batch fetches deterministic first wave sources`() = runTest {

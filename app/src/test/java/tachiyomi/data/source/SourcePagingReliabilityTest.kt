@@ -21,7 +21,7 @@ class SourcePagingReliabilityTest {
         every { source.id } returns 123L
         val local = mockk<NetworkToLocalManga>()
         coEvery { local.invoke(any<List<Manga>>()) } answers { firstArg() }
-        return object : BaseSourcePagingSource(source, local) {
+        return object : BaseSourcePagingSource(source, local, mihon.domain.source.health.SourceHealthMonitor()) {
             override suspend fun requestNextPage(currentPage: Int) = fetch(currentPage)
         }
     }

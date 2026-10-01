@@ -101,6 +101,9 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
         Injekt.importModule(PreferenceModule(this))
         Injekt.importModule(AppModule(this))
         Injekt.importModule(DomainModule())
+        Injekt.get<mihon.domain.source.registry.InternalSourceRegistry>().getSources().forEach {
+            mihon.domain.source.health.SourceHealthMonitor.shared.expectCatalogue(it.id)
+        }
 
         // Enforce Arabic as the sole application language
         AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags("ar"))
@@ -110,6 +113,16 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
 
         val scope = ProcessLifecycleOwner.get().lifecycleScope
+        eu.kanade.tachiyomi.data.library.SourceHealthPersistence.initialize(this, scope)
+        eu.kanade.tachiyomi.data.library.SourceHealthJob.schedule(this)
+        // Enable this newly requested automatic reliability feature once; later user choices remain intact.
+        val reliabilityPrefs = getSharedPreferences("source-reliability", MODE_PRIVATE)
+        if (!reliabilityPrefs.getBoolean("library-initialized", false)) {
+            val libraryPrefs = Injekt.get<tachiyomi.domain.library.service.LibraryPreferences>()
+            if (libraryPrefs.autoUpdateInterval.get() == 0) libraryPrefs.autoUpdateInterval.set(24)
+            eu.kanade.tachiyomi.data.library.LibraryUpdateJob.setupTask(this)
+            reliabilityPrefs.edit().putBoolean("library-initialized", true).apply()
+        }
 
         // Show notification to disable Incognito Mode when it's enabled
         basePreferences.incognitoMode.changes()

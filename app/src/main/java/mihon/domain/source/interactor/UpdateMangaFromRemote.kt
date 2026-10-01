@@ -9,7 +9,6 @@ import eu.kanade.tachiyomi.data.download.DownloadManager
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.model.SManga
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.withTimeoutOrNull
 import eu.kanade.tachiyomi.source.model.ChapterFetchCompleteness
 import java.io.IOException
 import logcat.LogPriority
@@ -65,15 +64,18 @@ class UpdateMangaFromRemote(
             val chapters = chapterRepository.getChapterByMangaId(manga.id)
                 .sortedBy { it.sourceOrder }
             val update = withIOContext {
-                withTimeoutOrNull(180_000) {
+                mihon.domain.source.health.SourceHealthMonitor.shared.run(source.id, 180_000, healthy = {
+                    !fetchChapters || it.chapterCompleteness !in setOf(ChapterFetchCompleteness.PARTIAL, ChapterFetchCompleteness.FAILED)
+                }) {
                     source.getMangaUpdate(
                         manga = manga.toSManga(),
                         chapters = chapters.map(Chapter::toSChapter),
                         fetchDetails = fetchDetails,
                         fetchChapters = fetchChapters,
                     )
-                } ?: throw IOException("Source refresh timed out")
+                }
             }
+            if (fetchChapters && update.chapterCompleteness == ChapterFetchCompleteness.DEGRADED) mihon.domain.source.health.SourceHealthMonitor.shared.degrade(source.id)
             if (fetchChapters && update.chapterCompleteness == ChapterFetchCompleteness.FAILED) {
                 throw IOException("Source chapter fetch failed; existing chapters preserved")
             }

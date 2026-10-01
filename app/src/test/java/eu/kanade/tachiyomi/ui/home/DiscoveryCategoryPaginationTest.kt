@@ -18,7 +18,7 @@ import org.junit.jupiter.api.Test
 class DiscoveryCategoryPaginationTest {
 
     private val getSourceCapabilities = GetSourceCapabilities()
-    private val getSourceDiscovery = GetSourceDiscovery(getSourceCapabilities, Dispatchers.Unconfined)
+    private val getSourceDiscovery = GetSourceDiscovery(getSourceCapabilities, Dispatchers.Unconfined, mihon.domain.source.health.SourceHealthMonitor())
 
     @Test
     fun `verify screen category argument maps correctly to discovery category`() {

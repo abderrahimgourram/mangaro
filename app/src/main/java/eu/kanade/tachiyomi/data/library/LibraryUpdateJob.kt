@@ -242,11 +242,11 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
         val timeZone = TimeZone.currentSystemDefault()
         val fetchWindow = fetchInterval.getWindow(Clock.System.now().toLocalDateTime(timeZone).date, timeZone)
 
-        coroutineScope {
+        kotlinx.coroutines.supervisorScope {
             mangaToUpdate.groupBy { it.manga.source }.values
                 .map { mangaInSource ->
                     async {
-                        semaphore.withPermit {
+                        try { semaphore.withPermit {
                             mangaInSource.forEach { libraryManga ->
                                 val manga = libraryManga.manga
                                 ensureActive()
@@ -278,7 +278,9 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
                                             // Convert to the manga that contains new chapters
                                             newUpdates.add(manga to newChapters.toTypedArray())
                                         }
-                                    } catch (e: Throwable) {
+                                    } catch (e: CancellationException) {
+                                        throw e
+                                    } catch (e: Exception) {
                                         val errorMessage = when (e) {
                                             is NoChaptersException -> context.stringResource(
                                                 MR.strings.no_chapters_error,
@@ -293,6 +295,10 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
                                     }
                                 }
                             }
+                        } } catch (e: CancellationException) { throw e }
+                        catch (e: Exception) {
+                            failedUpdates.add(mangaInSource.first().manga to e.message)
+                            logcat(LogPriority.ERROR, e) { "Source update group failed; other sources continue" }
                         }
                     }
                 }
@@ -452,10 +458,11 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
                     10,
                     TimeUnit.MINUTES,
                 )
+                    .setInitialDelay(interval.toLong(), TimeUnit.HOURS)
                     .addTag(TAG)
                     .addTag(WORK_NAME_AUTO)
                     .setConstraints(constraints)
-                    .setBackoffCriteria(BackoffPolicy.LINEAR, 10, TimeUnit.MINUTES)
+                    .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 10, TimeUnit.MINUTES)
                     .build()
 
                 context.workManager.enqueueUniquePeriodicWork(

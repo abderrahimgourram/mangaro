@@ -14,7 +14,7 @@ object DiscoverySnapshotStore {
     }
 
     fun getSnapshot(category: DiscoveryCategory): List<HomeDiscoveryItem> {
-        return snapshotMap[category] ?: emptyList()
+        return snapshotMap[category]?.filter { mihon.domain.source.health.SourceHealthMonitor.shared.discoverable(it.sourceId) } ?: emptyList()
     }
 
     fun clear() {

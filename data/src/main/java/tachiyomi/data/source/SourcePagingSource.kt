@@ -5,7 +5,6 @@ import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.withTimeoutOrNull
 import mihon.domain.manga.model.toDomainManga
 import tachiyomi.core.common.util.lang.withIOContext
 import tachiyomi.domain.manga.interactor.NetworkToLocalManga
@@ -40,6 +39,7 @@ class SourceLatestPagingSource(source: Source) : BaseSourcePagingSource(source) 
 abstract class BaseSourcePagingSource(
     protected val source: Source,
     private val networkToLocalManga: NetworkToLocalManga = Injekt.get(),
+    private val health: mihon.domain.source.health.SourceHealthMonitor = mihon.domain.source.health.SourceHealthMonitor.shared,
 ) : SourcePagingSource() {
 
     private val seenManga = hashSetOf<String>()
@@ -52,7 +52,7 @@ abstract class BaseSourcePagingSource(
 
         return try {
             var currentPage = page.toInt()
-            val mangasPage = withTimeoutOrNull(120_000) {
+            val mangasPage = health.run(source.id, 120_000) {
                 withIOContext {
                     var result = requestNextPage(currentPage)
                     // Sources can filter unsupported content (for example novels) from a page.
@@ -61,9 +61,10 @@ abstract class BaseSourcePagingSource(
                         if (++skipped > 8) throw IOException("Source returned too many empty catalogue pages")
                         result = requestNextPage(++currentPage)
                     }
+                    if (result.mangas.isNotEmpty() && result.mangas.all { it.url in seenManga }) throw IOException("Source repeated a catalogue page")
                     result
                 }
-            } ?: throw IOException("Source catalogue request timed out")
+            }
             if (mangasPage.mangas.isEmpty() && page == 1L) throw NoResultsException()
             if (mangasPage.mangas.isNotEmpty() && mangasPage.mangas.all { it.url in seenManga }) {
                 throw IOException("Source repeated a catalogue page")

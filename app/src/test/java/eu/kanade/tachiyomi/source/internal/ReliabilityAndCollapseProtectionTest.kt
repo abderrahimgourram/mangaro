@@ -190,8 +190,9 @@ class ReliabilityAndCollapseProtectionTest {
         coEvery { chapterRepository.addAll(any()) } answers { firstArg() }
         val remote = SChapter.create().apply { url = "/other-remote-id"; name = "Chapter 1"; chapter_number = 1f }
         val added = syncChaptersWithSource.await(listOf(remote), manga, source, completeness = ChapterFetchCompleteness.COMPLETE)
-        added.single().read shouldBe false
-        added.single().bookmark shouldBe false
+        added shouldBe emptyList()
+        coVerify(exactly = 0) { chapterRepository.addAll(any()) }
+        coVerify(exactly = 0) { chapterRepository.removeChaptersWithIds(any()) }
     }
 
 

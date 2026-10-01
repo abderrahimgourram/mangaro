@@ -69,6 +69,26 @@ class HomeViewModel(
     private var paginationJob: Job? = null
 
     init {
+        viewModelScope.launch {
+            var unavailable = emptySet<Long>()
+            mihon.domain.source.health.SourceHealthMonitor.shared.states.collectLatest { health ->
+                val hidden = health.filterValues { it.state == mihon.domain.source.health.SourceHealthMonitor.State.UNAVAILABLE }.keys
+                _state.update { current -> current.copy(
+                    discoveryFeatured = current.discoveryFeatured?.takeUnless { it.sourceId in hidden },
+                    popularManga = current.popularManga.filterNot { it.sourceId in hidden },
+                    latestManga = current.latestManga.filterNot { it.sourceId in hidden },
+                    newManga = current.newManga.filterNot { it.sourceId in hidden },
+                    completedManga = current.completedManga.filterNot { it.sourceId in hidden },
+                    discoveryLatest = current.discoveryLatest.filterNot { it.sourceId in hidden },
+                ) }
+                allDiscoveryItems.removeAll { it.sourceId in hidden }
+                val failed = health.filterValues { it.failures > 0 || it.state == mihon.domain.source.health.SourceHealthMonitor.State.UNAVAILABLE }.keys
+                if ((unavailable - failed).isNotEmpty()) {
+                    loadDiscoveryContent(_state.value.installedSources.mapNotNull { sourceManager.get(it.id) as? CatalogueSource }, isRefresh = true)
+                }
+                unavailable = failed
+            }
+        }
         // Collect history
         viewModelScope.launch {
             getHistory.subscribe("").collectLatest { history ->
@@ -155,94 +175,40 @@ class HomeViewModel(
                 return@launch
             }
 
-            // STAGE A: Deterministic Early Wave (first 2 sources)
-            val earlySources = eligibleSources.take(2)
-            val remainingSources = eligibleSources.drop(2)
-
-            val earlyPayload = fetchSourceBatch(earlySources)
-            if (earlyPayload.popularItems.isNotEmpty() ||
-                earlyPayload.latestItems.isNotEmpty() ||
-                earlyPayload.completedItems.isNotEmpty() ||
-                earlyPayload.newItems.isNotEmpty()
-            ) {
-                updateDiscoveryState(earlyPayload, isFinal = remainingSources.isEmpty())
-            }
-
-            // STAGE B: Remaining Wave (remaining sources)
-            if (remainingSources.isNotEmpty()) {
-                val remainingPayload = fetchSourceBatch(remainingSources)
-                val combinedPopular = (earlyPayload.popularItems + remainingPayload.popularItems).distinctBy { "${it.sourceId}_${it.mangaId}" }
-                val combinedLatest = (earlyPayload.latestItems + remainingPayload.latestItems).distinctBy { "${it.sourceId}_${it.mangaId}" }
-                val combinedNew = (earlyPayload.newItems + remainingPayload.newItems).distinctBy { "${it.sourceId}_${it.mangaId}" }
-                val combinedCompleted = (earlyPayload.completedItems + remainingPayload.completedItems).distinctBy { "${it.sourceId}_${it.mangaId}" }
-                val combinedPageMaps = earlyPayload.pageMapUpdates + remainingPayload.pageMapUpdates
-                val combinedHasMoreMaps = earlyPayload.hasMoreMapUpdates + remainingPayload.hasMoreMapUpdates
-
-                val finalPayload = DiscoveryBatchResultPayload(
-                    pageMapUpdates = combinedPageMaps,
-                    hasMoreMapUpdates = combinedHasMoreMaps,
-                    popularItems = combinedPopular,
-                    latestItems = combinedLatest,
-                    newItems = combinedNew,
-                    completedItems = combinedCompleted,
-                )
-                updateDiscoveryState(finalPayload, isFinal = true)
-            } else if (earlyPayload.popularItems.isEmpty() &&
-                earlyPayload.latestItems.isEmpty() &&
-                earlyPayload.newItems.isEmpty() &&
-                earlyPayload.completedItems.isEmpty()
-            ) {
-                _state.update { it.copy(isDiscoveryLoading = false) }
-            }
+            val payload = fetchSourceBatch(eligibleSources)
+            updateDiscoveryState(payload, isFinal = true)
         }
     }
 
     private suspend fun fetchSourceBatch(batchSources: List<CatalogueSource>): DiscoveryBatchResultPayload {
-        return withContext(Dispatchers.IO) {
+        return withContext(Dispatchers.IO) { kotlinx.coroutines.supervisorScope {
             val semaphore = Semaphore(2)
 
-            val popularDeferreds = batchSources.map { source ->
+            val results = batchSources.map { source ->
                 async {
-                    semaphore.withPermit {
-                        getSourceDiscovery(source, DiscoveryCategory.POPULAR, page = 1)
-                    }
+                    try {
+                        semaphore.withPermit {
+                            val capabilities = getSourceCapabilities(source)
+                            val categories = buildList {
+                                add(DiscoveryCategory.POPULAR)
+                                if (capabilities.supportsLatest == CapabilitySupport.SUPPORTED) add(DiscoveryCategory.LATEST)
+                                if (capabilities.supportsCompletedFilter == CapabilitySupport.SUPPORTED) add(DiscoveryCategory.COMPLETED)
+                                if (capabilities.supportsNewFilter == CapabilitySupport.SUPPORTED) add(DiscoveryCategory.NEW)
+                            }
+                            categories.map { category ->
+                                getSourceDiscovery(source, category, page = 1).also {
+                                    if (category == DiscoveryCategory.POPULAR) publishEarlyPopular(it)
+                                }
+                            }
+                        }
+                    } catch (e: CancellationException) { throw e }
+                    catch (_: Exception) { emptyList() }
                 }
-            }
-
-            val latestDeferreds = batchSources.filter {
-                getSourceCapabilities(it).supportsLatest == CapabilitySupport.SUPPORTED
-            }.map { source ->
-                async {
-                    semaphore.withPermit {
-                        getSourceDiscovery(source, DiscoveryCategory.LATEST, page = 1)
-                    }
-                }
-            }
-
-            val completedDeferreds = batchSources.filter {
-                getSourceCapabilities(it).supportsCompletedFilter == CapabilitySupport.SUPPORTED
-            }.map { source ->
-                async {
-                    semaphore.withPermit {
-                        getSourceDiscovery(source, DiscoveryCategory.COMPLETED, page = 1)
-                    }
-                }
-            }
-
-            val newDeferreds = batchSources.filter {
-                getSourceCapabilities(it).supportsNewFilter == CapabilitySupport.SUPPORTED
-            }.map { source ->
-                async {
-                    semaphore.withPermit {
-                        getSourceDiscovery(source, DiscoveryCategory.NEW, page = 1)
-                    }
-                }
-            }
-
-            val popularResults = popularDeferreds.awaitAll()
-            val latestResults = latestDeferreds.awaitAll()
-            val completedResults = completedDeferreds.awaitAll()
-            val newResults = newDeferreds.awaitAll()
+            }.awaitAll().flatten()
+            val popularResults = results.filter { it.category == DiscoveryCategory.POPULAR }
+            val latestResults = results.filter { it.category == DiscoveryCategory.LATEST }
+            val completedResults = results.filter { it.category == DiscoveryCategory.COMPLETED }
+            val newResults = results.filter { it.category == DiscoveryCategory.NEW }
 
             val perSourcePopular = mutableListOf<List<HomeDiscoveryItem>>()
             val pageUpdates = mutableMapOf<Long, Int>()
@@ -340,6 +306,22 @@ class HomeViewModel(
                 newItems = interleavedNew,
                 completedItems = interleavedCompleted,
             )
+        } }
+    }
+
+    /** Publish each healthy source as soon as it finishes, independent of a hung sibling. */
+    private suspend fun publishEarlyPopular(result: mihon.domain.source.discovery.model.SourceDiscoveryResult) {
+        if (result.items.isEmpty() || !mihon.domain.source.health.SourceHealthMonitor.shared.discoverable(result.sourceId)) return
+        val local = networkToLocalManga(result.items.map { it.toDomainManga() })
+        val incoming = local.map { manga ->
+            HomeDiscoveryItem(mangaId = manga.id, title = manga.title, coverData = manga.asMangaCover(),
+                sourceId = result.sourceId, sourceName = result.sourceName, url = manga.url)
+        }
+        _state.update { current ->
+            val combined = (current.popularManga + listOfNotNull(current.discoveryFeatured) + incoming).distinctBy { "${it.sourceId}_${it.mangaId}" }
+            val featured = current.discoveryFeatured ?: combined.firstOrNull()
+            val popular = combined.filterNot { it.sourceId == featured?.sourceId && it.mangaId == featured.mangaId }
+            current.copy(discoveryFeatured = featured, popularManga = popular, discoveryLatest = popular, isDiscoveryLoading = false)
         }
     }
 
@@ -348,10 +330,17 @@ class HomeViewModel(
         hasMorePagesMap.putAll(batchResult.hasMoreMapUpdates)
         allDiscoveryItems = batchResult.popularItems.toMutableList()
 
-        val popularList = batchResult.popularItems
-        val latestList = batchResult.latestItems
-        val newList = batchResult.newItems
-        val completedList = batchResult.completedItems
+        fun preserve(incoming: List<HomeDiscoveryItem>, previous: List<HomeDiscoveryItem>): List<HomeDiscoveryItem> {
+            val health = mihon.domain.source.health.SourceHealthMonitor.shared
+            val present = incoming.map { it.sourceId }.toSet()
+            return (incoming + previous.filter { it.sourceId !in present && health.health(it.sourceId).state == mihon.domain.source.health.SourceHealthMonitor.State.DEGRADED })
+                .filter { health.discoverable(it.sourceId) }.distinctBy { "${it.sourceId}_${it.mangaId}" }
+        }
+        val old = _state.value
+        val popularList = preserve(batchResult.popularItems, old.popularManga + listOfNotNull(old.discoveryFeatured))
+        val latestList = preserve(batchResult.latestItems, old.latestManga)
+        val newList = preserve(batchResult.newItems, old.newManga)
+        val completedList = preserve(batchResult.completedItems, old.completedManga)
 
         if (popularList.isNotEmpty()) {
             val savedMangaId = sourcePreferences.featuredMangaId.get()
@@ -386,7 +375,7 @@ class HomeViewModel(
     }
 
     fun loadNextPage() {
-        if (_state.value.isPaginationLoading || _state.value.isDiscoveryLoading) return
+        if (_state.value.isPaginationLoading || _state.value.isDiscoveryLoading || discoveryJob?.isActive == true) return
 
         paginationJob = viewModelScope.launch {
             _state.update { it.copy(isPaginationLoading = true) }
@@ -399,10 +388,8 @@ class HomeViewModel(
                 eligibleSources.map { source ->
                     val nextPage = requestedPages.getValue(source.id)
                     val mangasPage: MangasPage? = try {
-                        if (source.supportsLatest) {
-                            source.getLatestUpdates(nextPage)
-                        } else {
-                            source.getPopularManga(nextPage)
+                        mihon.domain.source.health.SourceHealthMonitor.shared.run(source.id) {
+                            if (source.supportsLatest) source.getLatestUpdates(nextPage) else source.getPopularManga(nextPage)
                         }
                     } catch (e: CancellationException) {
                         throw e

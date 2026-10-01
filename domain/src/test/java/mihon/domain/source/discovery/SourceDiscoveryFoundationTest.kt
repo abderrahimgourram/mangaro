@@ -24,7 +24,7 @@ import org.junit.jupiter.api.Test
 class SourceDiscoveryFoundationTest {
 
     private val getSourceCapabilities = GetSourceCapabilities()
-    private val getSourceDiscovery = GetSourceDiscovery(getSourceCapabilities)
+    private val getSourceDiscovery = GetSourceDiscovery(getSourceCapabilities, health = mihon.domain.source.health.SourceHealthMonitor())
 
     @Test
     fun `verify source capability detection for source with latest and completed status filter`() {
