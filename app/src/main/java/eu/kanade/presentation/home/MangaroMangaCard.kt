@@ -41,7 +41,7 @@ fun MangaroMangaCard(
     item: HomeDiscoveryItem,
     onMangaClick: (Long) -> Unit,
     modifier: Modifier = Modifier,
-    cardWidth: Dp = 114.dp,
+    cardWidth: Dp = 116.dp,
 ) {
     val accessibilityLabel = item.title
 
@@ -64,7 +64,7 @@ fun MangaroMangaCard(
                 .clip(RoundedCornerShape(12.dp))
                 .background(MangaroDesignSystem.SurfaceDark)
                 .border(
-                    BorderStroke(1.dp, Color(0x22A78BFA)),
+                    BorderStroke(1.dp, Color(0x28A78BFA)),
                     RoundedCornerShape(12.dp),
                 ),
         ) {
@@ -99,15 +99,15 @@ fun MangaroMangaCard(
             }
         }
 
-        Spacer(modifier = Modifier.height(5.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
-        // Manga Title (No visible provider/source name labels)
+        // Manga Title (Max 2 lines with clean typography)
         Text(
             text = item.title,
             style = MaterialTheme.typography.bodySmall.copy(
                 fontWeight = FontWeight.Bold,
-                fontSize = 11.5.sp,
-                lineHeight = 15.sp,
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
                 textDirection = TextDirection.Content,
             ),
             color = Color.White,

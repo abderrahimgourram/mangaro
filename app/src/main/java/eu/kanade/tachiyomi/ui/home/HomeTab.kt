@@ -582,26 +582,26 @@ object HomeTab : Tab {
             onClick = onClick,
             shape = RoundedCornerShape(12.dp),
             color = MangaroDesignSystem.SurfaceDark,
-            border = BorderStroke(1.dp, MangaroDesignSystem.GoldPrimary.copy(alpha = 0.3f)),
+            border = BorderStroke(1.dp, MangaroDesignSystem.GoldPrimary.copy(alpha = 0.25f)),
             modifier = Modifier
-                .width(80.dp)
-                .height(171.dp),
+                .width(90.dp)
+                .height(210.dp),
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color(0x10A78BFA))
-                    .padding(6.dp),
+                    .background(Color(0x12A78BFA))
+                    .padding(8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
                 Box(
                     modifier = Modifier
-                        .size(32.dp)
+                        .size(36.dp)
                         .clip(CircleShape)
                         .background(MangaroDesignSystem.GoldPrimary.copy(alpha = 0.15f))
                         .border(
-                            BorderStroke(1.dp, MangaroDesignSystem.GoldPrimary.copy(alpha = 0.35f)),
+                            BorderStroke(1.dp, MangaroDesignSystem.GoldPrimary.copy(alpha = 0.4f)),
                             shape = CircleShape,
                         ),
                     contentAlignment = Alignment.Center,
@@ -610,7 +610,7 @@ object HomeTab : Tab {
                         imageVector = Icons.AutoMirrored.Outlined.ArrowForward,
                         contentDescription = "عرض المزيد",
                         tint = MangaroDesignSystem.GoldPrimary,
-                        modifier = Modifier.size(18.dp),
+                        modifier = Modifier.size(20.dp),
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
