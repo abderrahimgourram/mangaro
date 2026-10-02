@@ -1,18 +1,27 @@
 package eu.kanade.presentation.home
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowForward
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -41,18 +50,31 @@ fun MangaroSectionHeader(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.weight(1f, fill = false),
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = MangaroDesignSystem.GoldPrimary,
-                modifier = Modifier.size(16.dp),
-            )
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0x1AFFB800))
+                    .border(
+                        BorderStroke(0.8.dp, MangaroDesignSystem.GoldPrimary.copy(alpha = 0.35f)),
+                        RoundedCornerShape(8.dp),
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = MangaroDesignSystem.GoldPrimary,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
 
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleMedium.copy(
                     fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
+                    fontSize = 16.5.sp,
+                    letterSpacing = (-0.2).sp,
                 ),
                 color = Color.White,
                 maxLines = 1,
@@ -61,17 +83,36 @@ fun MangaroSectionHeader(
         }
 
         if (actionText != null && onActionClick != null) {
-            TextButton(
-                onClick = onActionClick,
-                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(Color(0x12FFB800))
+                    .border(
+                        BorderStroke(0.8.dp, MangaroDesignSystem.GoldPrimary.copy(alpha = 0.25f)),
+                        RoundedCornerShape(20.dp),
+                    )
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onActionClick,
+                    )
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Text(
                     text = actionText,
                     style = MaterialTheme.typography.labelMedium.copy(
                         fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp,
+                        fontSize = 11.5.sp,
                     ),
                     color = MangaroDesignSystem.GoldPrimary,
+                )
+                Icon(
+                    imageVector = Icons.AutoMirrored.Outlined.ArrowForward,
+                    contentDescription = actionText,
+                    tint = MangaroDesignSystem.GoldPrimary,
+                    modifier = Modifier.size(13.dp),
                 )
             }
         }

@@ -1,9 +1,13 @@
 package eu.kanade.tachiyomi.ui.home
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -44,10 +48,13 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -511,7 +518,7 @@ object HomeTab : Tab {
         width: Dp = 108.dp,
     ) {
         Surface(
-            shape = RoundedCornerShape(12.dp),
+            shape = RoundedCornerShape(14.dp),
             color = MangaroDesignSystem.SurfaceDark,
             border = BorderStroke(1.dp, Color(0x28A78BFA)),
             modifier = modifier.width(width),
@@ -600,7 +607,7 @@ object HomeTab : Tab {
 
             if (onViewMoreClick != null && mangaList.isNotEmpty()) {
                 item(key = "${category}_end_cap_view_more_${firstMangaId}") {
-                    val calculatedHeight = cardWidth * 1.5f + 6.dp + 34.dp
+                    val calculatedHeight = cardWidth * 1.5f + 38.dp
                     ViewMoreEndCapCard(
                         onClick = onViewMoreClick,
                         width = 88.dp,
@@ -616,32 +623,66 @@ object HomeTab : Tab {
         onClick: () -> Unit,
         modifier: Modifier = Modifier,
         width: Dp = 88.dp,
-        height: Dp = 202.dp,
+        height: Dp = 200.dp,
     ) {
-        Surface(
-            onClick = onClick,
-            shape = RoundedCornerShape(12.dp),
-            color = MangaroDesignSystem.SurfaceDark,
-            border = BorderStroke(1.dp, MangaroDesignSystem.GoldPrimary.copy(alpha = 0.25f)),
+        val interactionSource = remember { MutableInteractionSource() }
+        val isPressed by interactionSource.collectIsPressedAsState()
+
+        val scale by animateFloatAsState(
+            targetValue = if (isPressed) 0.96f else 1.0f,
+            animationSpec = tween(durationMillis = 120),
+            label = "viewMorePressScale",
+        )
+
+        val cardShape = RoundedCornerShape(14.dp)
+        val borderColor = if (isPressed) {
+            MangaroDesignSystem.GoldPrimary.copy(alpha = 0.6f)
+        } else {
+            Color(0x30A78BFA)
+        }
+
+        Box(
             modifier = modifier
                 .width(width)
-                .height(height),
+                .height(height)
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                }
+                .clip(cardShape)
+                .background(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            Color(0xFF1B1325),
+                            Color(0xFF130D1A),
+                        ),
+                    ),
+                )
+                .border(
+                    border = BorderStroke(1.dp, borderColor),
+                    shape = cardShape,
+                )
+                .clickable(
+                    interactionSource = interactionSource,
+                    indication = null,
+                    onClick = onClick,
+                ),
+            contentAlignment = Alignment.Center,
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color(0x12A78BFA))
                     .padding(8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
                 Box(
                     modifier = Modifier
-                        .size(36.dp)
+                        .size(38.dp)
                         .clip(CircleShape)
-                        .background(MangaroDesignSystem.GoldPrimary.copy(alpha = 0.15f))
+                        .background(MangaroDesignSystem.GoldPrimary.copy(alpha = 0.12f))
                         .border(
-                            BorderStroke(1.dp, MangaroDesignSystem.GoldPrimary.copy(alpha = 0.4f)),
+                            BorderStroke(1.dp, MangaroDesignSystem.GoldPrimary.copy(alpha = 0.35f)),
                             shape = CircleShape,
                         ),
                     contentAlignment = Alignment.Center,
@@ -653,12 +694,12 @@ object HomeTab : Tab {
                         modifier = Modifier.size(20.dp),
                     )
                 }
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(10.dp))
                 Text(
                     text = "عرض المزيد",
-                    style = MaterialTheme.typography.labelSmall.copy(
+                    style = MaterialTheme.typography.labelMedium.copy(
                         fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp,
+                        fontSize = 11.5.sp,
                     ),
                     color = MangaroDesignSystem.GoldPrimary,
                     textAlign = TextAlign.Center,
