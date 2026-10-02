@@ -29,14 +29,6 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowForward
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Download
-import androidx.compose.material.icons.outlined.Explore
-import androidx.compose.material.icons.outlined.Extension
-import androidx.compose.material.icons.outlined.FiberNew
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.PlayCircle
-import androidx.compose.material.icons.outlined.Schedule
-import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material.icons.outlined.Whatshot
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -83,6 +75,14 @@ import mihon.domain.source.discovery.model.DiscoveryCategory
 import tachiyomi.presentation.core.components.ScrollbarLazyColumn
 import tachiyomi.presentation.core.components.material.PullRefresh
 import tachiyomi.presentation.core.components.material.Scaffold
+import androidx.compose.material.icons.outlined.Explore
+import androidx.compose.material.icons.outlined.Extension
+import androidx.compose.material.icons.outlined.FiberNew
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.PlayCircle
+import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Whatshot
 
 const val HOME_DISCOVERY_PREVIEW_LIMIT = 8
 
@@ -547,7 +547,7 @@ object HomeTab : Tab {
         LazyRow(
             contentPadding = PaddingValues(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            verticalAlignment = Alignment.Top,
         ) {
             items(previewItems, key = { item -> "${item.sourceId}_${item.mangaId}" }) { item ->
                 MangaroMangaCard(
@@ -571,28 +571,28 @@ object HomeTab : Tab {
     ) {
         Surface(
             onClick = onClick,
-            shape = RoundedCornerShape(14.dp),
+            shape = RoundedCornerShape(12.dp),
             color = MangaroDesignSystem.SurfaceDark,
-            border = BorderStroke(1.dp, MangaroDesignSystem.GoldPrimary.copy(alpha = 0.35f)),
+            border = BorderStroke(1.dp, MangaroDesignSystem.GoldPrimary.copy(alpha = 0.3f)),
             modifier = Modifier
-                .width(108.dp)
-                .height(178.dp),
+                .width(80.dp)
+                .height(171.dp),
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(MangaroDesignSystem.SurfaceCardGradient)
-                    .padding(8.dp),
+                    .background(Color(0x10A78BFA))
+                    .padding(6.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
                 Box(
                     modifier = Modifier
-                        .size(36.dp)
+                        .size(32.dp)
                         .clip(CircleShape)
                         .background(MangaroDesignSystem.GoldPrimary.copy(alpha = 0.15f))
                         .border(
-                            BorderStroke(1.dp, MangaroDesignSystem.GoldPrimary.copy(alpha = 0.4f)),
+                            BorderStroke(1.dp, MangaroDesignSystem.GoldPrimary.copy(alpha = 0.35f)),
                             shape = CircleShape,
                         ),
                     contentAlignment = Alignment.Center,
@@ -601,15 +601,15 @@ object HomeTab : Tab {
                         imageVector = Icons.AutoMirrored.Outlined.ArrowForward,
                         contentDescription = "عرض المزيد",
                         tint = MangaroDesignSystem.GoldPrimary,
-                        modifier = Modifier.size(20.dp),
+                        modifier = Modifier.size(18.dp),
                     )
                 }
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "عرض المزيد",
-                    style = MaterialTheme.typography.labelMedium.copy(
+                    style = MaterialTheme.typography.labelSmall.copy(
                         fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp,
+                        fontSize = 11.sp,
                     ),
                     color = MangaroDesignSystem.GoldPrimary,
                     textAlign = TextAlign.Center,

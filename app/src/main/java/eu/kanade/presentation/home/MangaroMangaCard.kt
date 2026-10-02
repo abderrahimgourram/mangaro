@@ -60,7 +60,7 @@ fun MangaroMangaCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(2f / 3f)
-                .shadow(4.dp, RoundedCornerShape(12.dp))
+                .shadow(3.dp, RoundedCornerShape(12.dp))
                 .clip(RoundedCornerShape(12.dp))
                 .background(MangaroDesignSystem.SurfaceDark)
                 .border(
@@ -99,9 +99,9 @@ fun MangaroMangaCard(
             }
         }
 
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(5.dp))
 
-        // Manga Title
+        // Manga Title (No visible provider/source name labels)
         Text(
             text = item.title,
             style = MaterialTheme.typography.bodySmall.copy(
@@ -115,21 +115,6 @@ fun MangaroMangaCard(
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Start,
-            modifier = Modifier.fillMaxWidth(),
-        )
-
-        Spacer(modifier = Modifier.height(2.dp))
-
-        // Source Name
-        Text(
-            text = item.sourceName,
-            style = MaterialTheme.typography.labelSmall.copy(
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Medium,
-            ),
-            color = Color(0xFF8C80A1),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
             modifier = Modifier.fillMaxWidth(),
         )
     }
