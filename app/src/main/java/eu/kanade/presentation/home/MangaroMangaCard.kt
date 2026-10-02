@@ -41,7 +41,7 @@ fun MangaroMangaCard(
     item: HomeDiscoveryItem,
     onMangaClick: (Long) -> Unit,
     modifier: Modifier = Modifier,
-    cardWidth: Dp = 116.dp,
+    cardWidth: Dp = 108.dp,
 ) {
     val accessibilityLabel = item.title
 
@@ -101,21 +101,28 @@ fun MangaroMangaCard(
 
         Spacer(modifier = Modifier.height(6.dp))
 
-        // Manga Title (Max 2 lines with clean typography)
-        Text(
-            text = item.title,
-            style = MaterialTheme.typography.bodySmall.copy(
-                fontWeight = FontWeight.Bold,
-                fontSize = 12.sp,
-                lineHeight = 16.sp,
-                textDirection = TextDirection.Content,
-            ),
-            color = Color.White,
-            minLines = 2,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            textAlign = TextAlign.Start,
-            modifier = Modifier.fillMaxWidth(),
-        )
+        // Stable Title Container (Exact 34.dp height for up to 2 lines)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(34.dp),
+            contentAlignment = Alignment.TopStart,
+        ) {
+            Text(
+                text = item.title,
+                style = MaterialTheme.typography.bodySmall.copy(
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp,
+                    textDirection = TextDirection.Content,
+                ),
+                color = Color.White,
+                minLines = 2,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Start,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
     }
 }

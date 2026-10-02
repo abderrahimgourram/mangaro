@@ -202,7 +202,7 @@ object HomeTab : Tab {
                     // Section 3: شائع الآن (Popular Manga)
                     if (state.popularManga.isNotEmpty() || state.isDiscoveryLoading) {
                         item(key = "popular_manga_header") {
-                            Spacer(modifier = Modifier.height(8.dp))
+                            Spacer(modifier = Modifier.height(12.dp))
                             MangaroSectionHeader(
                                 title = "شائع الآن",
                                 icon = Icons.Outlined.Whatshot,
@@ -484,15 +484,17 @@ object HomeTab : Tab {
     }
 
     @Composable
-    private fun MangaCardSkeletonRow() {
+    private fun MangaCardSkeletonRow(
+        cardWidth: Dp = 108.dp,
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                .padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             repeat(4) {
-                MangaCardSkeleton()
+                MangaCardSkeleton(width = cardWidth)
             }
         }
     }
@@ -500,10 +502,10 @@ object HomeTab : Tab {
     @Composable
     fun MangaCardSkeleton(
         modifier: Modifier = Modifier,
-        width: Dp = 114.dp,
+        width: Dp = 108.dp,
     ) {
         Surface(
-            shape = RoundedCornerShape(14.dp),
+            shape = RoundedCornerShape(12.dp),
             color = MangaroDesignSystem.SurfaceDark,
             border = BorderStroke(1.dp, Color(0x28A78BFA)),
             modifier = modifier.width(width),
@@ -546,13 +548,14 @@ object HomeTab : Tab {
         mangaList: List<HomeDiscoveryItem>,
         onMangaClick: (Long) -> Unit,
         onViewMoreClick: (() -> Unit)? = null,
+        cardWidth: Dp = 108.dp,
     ) {
         val previewItems = mangaList.take(HOME_DISCOVERY_PREVIEW_LIMIT)
         val firstMangaId = previewItems.firstOrNull()?.mangaId ?: 0L
 
         LazyRow(
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.Top,
         ) {
             items(
@@ -562,13 +565,18 @@ object HomeTab : Tab {
                 MangaroMangaCard(
                     item = item,
                     onMangaClick = onMangaClick,
-                    cardWidth = 114.dp,
+                    cardWidth = cardWidth,
                 )
             }
 
             if (onViewMoreClick != null && mangaList.isNotEmpty()) {
                 item(key = "${category}_end_cap_view_more_${firstMangaId}") {
-                    ViewMoreEndCapCard(onClick = onViewMoreClick)
+                    val calculatedHeight = cardWidth * 1.5f + 6.dp + 34.dp
+                    ViewMoreEndCapCard(
+                        onClick = onViewMoreClick,
+                        width = 88.dp,
+                        height = calculatedHeight,
+                    )
                 }
             }
         }
@@ -577,15 +585,18 @@ object HomeTab : Tab {
     @Composable
     private fun ViewMoreEndCapCard(
         onClick: () -> Unit,
+        modifier: Modifier = Modifier,
+        width: Dp = 88.dp,
+        height: Dp = 202.dp,
     ) {
         Surface(
             onClick = onClick,
             shape = RoundedCornerShape(12.dp),
             color = MangaroDesignSystem.SurfaceDark,
             border = BorderStroke(1.dp, MangaroDesignSystem.GoldPrimary.copy(alpha = 0.25f)),
-            modifier = Modifier
-                .width(90.dp)
-                .height(210.dp),
+            modifier = modifier
+                .width(width)
+                .height(height),
         ) {
             Column(
                 modifier = Modifier
