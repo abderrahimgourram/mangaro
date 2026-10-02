@@ -16,10 +16,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.ChevronLeft
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -56,7 +58,7 @@ fun MangaroFeaturedBanner(
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 6.dp)
             .clickable { onOpenManga(item.mangaId) },
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = MangaroDesignSystem.SurfaceDark),
         border = BorderStroke(1.dp, Color(0x33A78BFA)),
         elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
@@ -64,9 +66,9 @@ fun MangaroFeaturedBanner(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(184.dp),
+                .height(192.dp),
         ) {
-            // Artwork-first Background Layer
+            // Full-width Artwork Background
             AsyncImage(
                 model = item.coverData,
                 contentDescription = item.title,
@@ -74,45 +76,46 @@ fun MangaroFeaturedBanner(
                 contentScale = ContentScale.Crop,
             )
 
-            // Cinematic Dark Gradient Overlay
+            // Cinematic Vignette Dark Gradient Overlay
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(
                         Brush.verticalGradient(
                             colors = listOf(
-                                Color(0x770A070F),
-                                Color(0xB20A070F),
-                                Color(0xFD0A070F),
+                                Color(0x660A070F),
+                                Color(0x990A070F),
+                                Color(0xF20A070F),
                             ),
                         ),
                     ),
             )
 
-            // Content Overlay
+            // Hero Overlay Content
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(16.dp),
                 verticalArrangement = Arrangement.SpaceBetween,
             ) {
-                // Top Section: Story Tag Badge
+                // Top Section: Story Badge + Optional Compact Rotate Action
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    // Badge Tag
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                         modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(Color(0xE6100B18))
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xD9100B18))
                             .border(
                                 BorderStroke(0.5.dp, MangaroDesignSystem.GoldPrimary.copy(alpha = 0.5f)),
-                                RoundedCornerShape(6.dp),
+                                RoundedCornerShape(8.dp),
                             )
-                            .padding(horizontal = 8.dp, vertical = 3.dp),
+                            .padding(horizontal = 10.dp, vertical = 4.dp),
                     ) {
                         Icon(
                             imageVector = Icons.Outlined.AutoAwesome,
@@ -124,92 +127,88 @@ fun MangaroFeaturedBanner(
                             text = "قصة مميزة",
                             style = MaterialTheme.typography.labelSmall.copy(
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 10.5.sp,
+                                fontSize = 11.sp,
                             ),
                             color = MangaroDesignSystem.GoldPrimary,
                         )
                     }
 
-                    if (item.availableVersions.size > 1) {
+                    if (canRotate) {
                         Box(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(Color(0xE6100B18))
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xD9100B18))
                                 .border(
-                                    BorderStroke(0.5.dp, MangaroDesignSystem.GoldPrimary.copy(alpha = 0.5f)),
-                                    RoundedCornerShape(6.dp),
+                                    BorderStroke(0.5.dp, Color(0x33A78BFA)),
+                                    CircleShape,
                                 )
-                                .padding(horizontal = 8.dp, vertical = 3.dp),
+                                .clickable { onNextStory() },
+                            contentAlignment = Alignment.Center,
                         ) {
-                            Text(
-                                text = "${item.availableVersions.size} مصادر",
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                ),
-                                color = MangaroDesignSystem.GoldPrimary,
+                            Icon(
+                                imageVector = Icons.Outlined.Refresh,
+                                contentDescription = "قصة أخرى",
+                                modifier = Modifier.size(16.dp),
+                                tint = Color(0xFFCBBED5),
                             )
                         }
                     }
                 }
 
-                // Bottom Section: Anchored Title + Single Primary Action Button
-                Row(
+                // Lower Area: Title + Main CTA Action
+                Column(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.Bottom,
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(end = 12.dp),
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
-                    ) {
-                        Text(
-                            text = item.title,
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 17.sp,
-                                lineHeight = 22.sp,
-                                textDirection = TextDirection.Content,
-                            ),
-                            color = Color.White,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-
-                    Button(
-                        onClick = { onOpenManga(item.mangaId) },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MangaroDesignSystem.GoldPrimary,
-                            contentColor = Color.Black,
+                    Text(
+                        text = item.title,
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp,
+                            lineHeight = 23.sp,
+                            textDirection = TextDirection.Content,
                         ),
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.height(36.dp),
+                        color = Color.White,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Start,
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center,
+                        Button(
+                            onClick = { onOpenManga(item.mangaId) },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MangaroDesignSystem.GoldPrimary,
+                                contentColor = Color.Black,
+                            ),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.height(36.dp),
                         ) {
-                            Text(
-                                text = "عرض التفاصيل",
-                                style = MaterialTheme.typography.labelLarge.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 12.5.sp,
-                                ),
-                                color = Color.Black,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Icon(
-                                imageVector = Icons.Outlined.ChevronLeft,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                                tint = Color.Black,
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center,
+                            ) {
+                                Text(
+                                    text = "اقرأ الآن",
+                                    style = MaterialTheme.typography.labelLarge.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                    ),
+                                    color = Color.Black,
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Icon(
+                                    imageVector = Icons.Outlined.ChevronLeft,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = Color.Black,
+                                )
+                            }
                         }
                     }
                 }
