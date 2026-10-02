@@ -6,9 +6,9 @@ import eu.kanade.tachiyomi.data.backup.create.BackupOptions
 import eu.kanade.tachiyomi.data.backup.models.BackupChapter
 import eu.kanade.tachiyomi.data.backup.models.BackupHistory
 import eu.kanade.tachiyomi.data.backup.models.BackupManga
-import eu.kanade.tachiyomi.data.backup.models.backupChapterMapper
 import eu.kanade.tachiyomi.data.backup.models.backupTrackMapper
 import eu.kanade.tachiyomi.ui.reader.setting.ReadingMode
+import kotlinx.serialization.json.JsonObject
 import tachiyomi.data.Database
 import tachiyomi.data.MemoColumnAdapter
 import tachiyomi.domain.category.interactor.GetCategories
@@ -43,7 +43,40 @@ class MangaBackupCreator(
                 .getChaptersByMangaId(
                     mangaId = manga.id,
                     applyScanlatorFilter = 0, // false
-                    mapper = backupChapterMapper,
+                    mapper = {
+                        _: Long,
+                        _: Long,
+                        url: String,
+                        name: String,
+                        scanlator: String?,
+                        read: Boolean,
+                        bookmark: Boolean,
+                        lastPageRead: Long,
+                        totalPages: Long,
+                        chapterNumber: Double,
+                        sourceOrder: Long,
+                        dateFetch: Long,
+                        dateUpload: Long,
+                        lastModifiedAt: Long,
+                        version: Long,
+                        _: Long,
+                        memo: JsonObject ->
+                        BackupChapter(
+                            url = url,
+                            name = name,
+                            chapterNumber = chapterNumber.toFloat(),
+                            scanlator = scanlator,
+                            read = read,
+                            bookmark = bookmark,
+                            lastPageRead = lastPageRead,
+                            dateFetch = dateFetch,
+                            dateUpload = dateUpload,
+                            sourceOrder = sourceOrder,
+                            lastModifiedAt = lastModifiedAt,
+                            version = version,
+                            memo = MemoColumnAdapter.encode(memo),
+                        )
+                    },
                 )
                 .awaitAsList()
                 .takeUnless(List<BackupChapter>::isEmpty)

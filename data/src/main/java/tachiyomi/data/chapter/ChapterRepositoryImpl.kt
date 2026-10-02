@@ -31,6 +31,7 @@ class ChapterRepositoryImpl(
                         chapter.read,
                         chapter.bookmark,
                         chapter.lastPageRead,
+                        chapter.totalPages,
                         chapter.chapterNumber,
                         chapter.sourceOrder,
                         chapter.dateFetch,
@@ -67,6 +68,7 @@ class ChapterRepositoryImpl(
                     read = chapterUpdate.read,
                     bookmark = chapterUpdate.bookmark,
                     lastPageRead = chapterUpdate.lastPageRead,
+                    totalPages = chapterUpdate.totalPages,
                     chapterNumber = chapterUpdate.chapterNumber,
                     sourceOrder = chapterUpdate.sourceOrder,
                     dateFetch = chapterUpdate.dateFetch,
@@ -140,6 +142,7 @@ class ChapterRepositoryImpl(
         read: Boolean,
         bookmark: Boolean,
         lastPageRead: Long,
+        totalPages: Long,
         chapterNumber: Double,
         sourceOrder: Long,
         dateFetch: Long,
@@ -164,5 +167,6 @@ class ChapterRepositoryImpl(
         lastModifiedAt = lastModifiedAt,
         version = version,
         memo = memo,
+        totalPages = totalPages,
     )
 }
