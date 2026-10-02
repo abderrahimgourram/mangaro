@@ -30,8 +30,6 @@ object HistoryMapper {
         chapterNumber: Double,
         readAt: Date?,
         readDuration: Long,
-        lastPageRead: Long,
-        read: Boolean,
     ): HistoryWithRelations = HistoryWithRelations(
         id = historyId,
         chapterId = chapterId,
@@ -47,7 +45,5 @@ object HistoryMapper {
             url = thumbnailUrl,
             lastModified = coverLastModified,
         ),
-        lastPageRead = lastPageRead,
-        read = read,
     )
 }

@@ -11,8 +11,6 @@ SELECT
     chapters.chapter_number AS chapterNumber,
     history.last_read AS readAt,
     history.time_read AS readDuration,
-    chapters.last_page_read AS lastPageRead,
-    chapters.read AS read,
     max_last_read.last_read AS maxReadAt,
     max_last_read.chapter_id AS maxReadAtChapterId
 FROM mangas
@@ -40,9 +38,7 @@ favorite,
 cover_last_modified,
 chapterNumber,
 readAt,
-readDuration,
-lastPageRead,
-read
+readDuration
 FROM historyView
 WHERE historyView.readAt > 0
 AND maxReadAtChapterId = historyView.chapterId
@@ -61,9 +57,7 @@ favorite,
 cover_last_modified,
 chapterNumber,
 readAt,
-readDuration,
-lastPageRead,
-read
+readDuration
 FROM historyView
 WHERE historyView.readAt > 0
 ORDER BY readAt DESC
