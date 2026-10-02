@@ -99,7 +99,7 @@ fun MangaroMangaCard(
             }
         }
 
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(5.dp))
 
         // Stable Title Container (Exact 34.dp height for up to 2 lines)
         Box(
@@ -111,13 +111,12 @@ fun MangaroMangaCard(
             Text(
                 text = item.title,
                 style = MaterialTheme.typography.bodySmall.copy(
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp,
-                    lineHeight = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 11.5.sp,
+                    lineHeight = 15.sp,
                     textDirection = TextDirection.Content,
                 ),
                 color = Color.White,
-                minLines = 2,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Start,
