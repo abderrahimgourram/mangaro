@@ -32,6 +32,7 @@ object HistoryMapper {
         readDuration: Long,
         lastPageRead: Long,
         read: Boolean,
+        totalPages: Long,
     ): HistoryWithRelations = HistoryWithRelations(
         id = historyId,
         chapterId = chapterId,
@@ -49,5 +50,6 @@ object HistoryMapper {
         ),
         lastPageRead = lastPageRead,
         read = read,
+        totalPages = totalPages,
     )
 }
