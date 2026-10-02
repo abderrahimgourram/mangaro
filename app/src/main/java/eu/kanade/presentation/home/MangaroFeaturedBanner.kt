@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.ChevronLeft
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.Button
@@ -75,7 +74,7 @@ fun MangaroFeaturedBanner(
                 .fillMaxWidth()
                 .height(184.dp),
         ) {
-            // Layer 1: Background Atmospheric Cover Artwork
+            // Layer 1: Heavily Darkened Background Atmospheric Cover Artwork
             AsyncImage(
                 model = item.coverData,
                 contentDescription = null,
@@ -83,14 +82,14 @@ fun MangaroFeaturedBanner(
                 contentScale = ContentScale.Crop,
             )
 
-            // Layer 1.5: Darkened Gradient Overlay over Background Layer
+            // Layer 1.5: Strong Directional Scrim Overlay
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(
                         Brush.horizontalGradient(
                             colors = listOf(
-                                Color(0xFE0A070F),
+                                Color(0xFF0A070F),
                                 Color(0xF20A070F),
                                 Color(0x880A070F),
                             ),
@@ -98,7 +97,7 @@ fun MangaroFeaturedBanner(
                     ),
             )
 
-            // Layer 2: Foreground Content (RTL Row: Uncropped 2:3 Cover on Right/Start, Info & CTA on Left/End)
+            // Layer 2: Foreground Content (RTL Row: Responsive 2:3 Cover on Right, Info & CTA on Left)
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
                 Row(
                     modifier = Modifier
@@ -107,10 +106,10 @@ fun MangaroFeaturedBanner(
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    // Right Side (Start in RTL): Foreground Uncropped 2:3 Cover Artwork
+                    // Right Side (Start in RTL): Responsive Uncropped 2:3 Cover Artwork
                     Box(
                         modifier = Modifier
-                            .width(104.dp)
+                            .fillMaxHeight()
                             .aspectRatio(2f / 3f)
                             .shadow(6.dp, RoundedCornerShape(12.dp))
                             .clip(RoundedCornerShape(12.dp))
@@ -122,7 +121,7 @@ fun MangaroFeaturedBanner(
                         MangaCover.Book(
                             data = item.coverData,
                             contentDescription = item.title,
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxSize(),
                         )
 
                         if (item.availableVersions.size > 1) {
@@ -157,48 +156,32 @@ fun MangaroFeaturedBanner(
                             .fillMaxHeight(),
                         verticalArrangement = Arrangement.SpaceBetween,
                     ) {
-                        // Top Row: Story Badge + Compact Rotate Icon
+                        // Top Section: Source Name + Compact Refresh Action
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(Color(0xD9100B18))
-                                    .border(
-                                        BorderStroke(0.5.dp, MangaroDesignSystem.GoldPrimary.copy(alpha = 0.5f)),
-                                        RoundedCornerShape(6.dp),
-                                    )
-                                    .padding(horizontal = 8.dp, vertical = 3.dp),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Outlined.AutoAwesome,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(12.dp),
-                                    tint = MangaroDesignSystem.GoldPrimary,
-                                )
-                                Text(
-                                    text = "قصة مميزة",
-                                    style = MaterialTheme.typography.labelSmall.copy(
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 10.5.sp,
-                                    ),
-                                    color = MangaroDesignSystem.GoldPrimary,
-                                )
-                            }
+                            Text(
+                                text = item.sourceName,
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Medium,
+                                ),
+                                color = Color(0xFFCBBED5),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false),
+                            )
 
                             if (canRotate) {
                                 Box(
                                     modifier = Modifier
-                                        .size(30.dp)
+                                        .size(28.dp)
                                         .clip(CircleShape)
-                                        .background(Color(0xD9100B18))
+                                        .background(Color(0x1AA78BFA))
                                         .border(
-                                            BorderStroke(0.5.dp, Color(0x33A78BFA)),
+                                            BorderStroke(1.dp, Color(0x28A78BFA)),
                                             CircleShape,
                                         )
                                         .clickable { onNextStory() },
@@ -214,7 +197,7 @@ fun MangaroFeaturedBanner(
                             }
                         }
 
-                        // Title Text
+                        // Middle Section: Manga Title
                         Text(
                             text = item.title,
                             style = MaterialTheme.typography.titleMedium.copy(
@@ -228,7 +211,7 @@ fun MangaroFeaturedBanner(
                             overflow = TextOverflow.Ellipsis,
                         )
 
-                        // Primary Action Button
+                        // Bottom Section: Primary Action Button ("عرض التفاصيل")
                         Button(
                             onClick = { onOpenManga(item.mangaId) },
                             colors = ButtonDefaults.buttonColors(
@@ -246,7 +229,7 @@ fun MangaroFeaturedBanner(
                                 horizontalArrangement = Arrangement.Center,
                             ) {
                                 Text(
-                                    text = "اقرأ الآن",
+                                    text = "عرض التفاصيل",
                                     style = MaterialTheme.typography.labelLarge.copy(
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 12.5.sp,
