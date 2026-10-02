@@ -19,6 +19,7 @@ data class Chapter(
     val lastModifiedAt: Long,
     val version: Long,
     val memo: JsonObject,
+    val totalPages: Long = 0L,
 ) {
     val isRecognizedNumber: Boolean
         get() = chapterNumber >= 0f
