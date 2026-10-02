@@ -217,6 +217,7 @@ object HomeTab : Tab {
                         item(key = "popular_manga_row") {
                             if (state.popularManga.isNotEmpty()) {
                                 DiscoveryMangaRow(
+                                    category = "popular",
                                     mangaList = state.popularManga,
                                     onMangaClick = { mangaId ->
                                         navigator.push(MangaScreen(mangaId, true))
@@ -250,6 +251,7 @@ object HomeTab : Tab {
                         item(key = "new_manga_row") {
                             if (state.newManga.isNotEmpty()) {
                                 DiscoveryMangaRow(
+                                    category = "new",
                                     mangaList = state.newManga,
                                     onMangaClick = { mangaId ->
                                         navigator.push(MangaScreen(mangaId, true))
@@ -283,6 +285,7 @@ object HomeTab : Tab {
                         item(key = "latest_manga_row") {
                             if (state.latestManga.isNotEmpty()) {
                                 DiscoveryMangaRow(
+                                    category = "latest",
                                     mangaList = state.latestManga,
                                     onMangaClick = { mangaId ->
                                         navigator.push(MangaScreen(mangaId, true))
@@ -316,6 +319,7 @@ object HomeTab : Tab {
                         item(key = "completed_manga_row") {
                             if (state.completedManga.isNotEmpty()) {
                                 DiscoveryMangaRow(
+                                    category = "completed",
                                     mangaList = state.completedManga,
                                     onMangaClick = { mangaId ->
                                         navigator.push(MangaScreen(mangaId, true))
@@ -538,18 +542,23 @@ object HomeTab : Tab {
 
     @Composable
     private fun DiscoveryMangaRow(
+        category: String,
         mangaList: List<HomeDiscoveryItem>,
         onMangaClick: (Long) -> Unit,
         onViewMoreClick: (() -> Unit)? = null,
     ) {
         val previewItems = mangaList.take(HOME_DISCOVERY_PREVIEW_LIMIT)
+        val firstMangaId = previewItems.firstOrNull()?.mangaId ?: 0L
 
         LazyRow(
             contentPadding = PaddingValues(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.Top,
         ) {
-            items(previewItems, key = { item -> "${item.sourceId}_${item.mangaId}" }) { item ->
+            items(
+                items = previewItems,
+                key = { item -> "${category}_${item.sourceId}_${item.mangaId}" },
+            ) { item ->
                 MangaroMangaCard(
                     item = item,
                     onMangaClick = onMangaClick,
@@ -558,7 +567,7 @@ object HomeTab : Tab {
             }
 
             if (onViewMoreClick != null && mangaList.isNotEmpty()) {
-                item(key = "end_cap_view_more") {
+                item(key = "${category}_end_cap_view_more_${firstMangaId}") {
                     ViewMoreEndCapCard(onClick = onViewMoreClick)
                 }
             }
