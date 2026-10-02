@@ -23,10 +23,12 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -56,6 +58,19 @@ fun MangaroContinueReading(
 ) {
     val formattedChapter = formatChapterDisplay(history.chapterNumber)
     val accessibilityLabel = "متابعة قراءة ${history.title} $formattedChapter"
+
+    val (hasRealProgress, progressFraction, percentageInt) = remember(history.read, history.lastPageRead, history.totalPages) {
+        when {
+            history.read -> Triple(true, 1.0f, 100)
+            history.totalPages > 0L -> {
+                val pagesReached = history.lastPageRead + 1L
+                val fraction = (pagesReached.toFloat() / history.totalPages.toFloat()).coerceIn(0f, 1f)
+                val percentage = (fraction * 100).toInt()
+                Triple(true, fraction, percentage)
+            }
+            else -> Triple(false, 0.0f, 0)
+        }
+    }
 
     Card(
         modifier = modifier
@@ -157,6 +172,49 @@ fun MangaroContinueReading(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
+
+                        // Real Reading Progress Indicator
+                        if (hasRealProgress) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 2.dp),
+                                verticalArrangement = Arrangement.spacedBy(3.dp),
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        text = "التقدم",
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Normal,
+                                        ),
+                                        color = Color(0xFF9E95AC),
+                                    )
+                                    Text(
+                                        text = "$percentageInt%",
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                        ),
+                                        color = MangaroDesignSystem.GoldPrimary,
+                                    )
+                                }
+
+                                LinearProgressIndicator(
+                                    progress = { progressFraction },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(3.5.dp)
+                                        .clip(RoundedCornerShape(2.dp)),
+                                    color = MangaroDesignSystem.GoldPrimary,
+                                    trackColor = Color(0xFF2A2636),
+                                )
+                            }
+                        }
                     }
 
                     // Compact "متابعة" Action
