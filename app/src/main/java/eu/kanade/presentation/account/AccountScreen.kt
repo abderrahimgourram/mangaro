@@ -174,7 +174,7 @@ private fun AccountProfileEditor(
     }
     AccountAvatar(profile, Modifier.size(80.dp))
     Text(profile.displayName ?: profile.username.orEmpty(), color = Color.White)
-    profile.username?.let { Text("@$it", color = Color(0xFFB7A9C4)) }
+    profile.username?.let { UsernameHandle(it, color = Color(0xFFB7A9C4), style = MaterialTheme.typography.bodyLarge) }
     // Email is visible only in this owner's account area, never public comments/profiles.
     profile.email?.let { Text(it, color = Color(0xFFB7A9C4)) }
     Text("المستوى ${profile.level} · ${profile.rankTitle}", color = Color(0xFFB7A9C4), style = MaterialTheme.typography.bodySmall)
@@ -209,7 +209,9 @@ fun AccountDrawerArea(session: AccountSession, onLogin: () -> Unit, onProfile: (
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(profile?.displayName ?: profile?.username ?: "MANGARO", color = MangaroDesignSystem.GoldPrimary,
                         style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                    Text(profile?.username?.let { "@$it" } ?: if (profile != null) "الملف الشخصي" else "أنت تستخدم Mangaro كضيف",
+                    val handle = profile?.username
+                    if (handle != null) UsernameHandle(handle, color = Color(0xFFB7A9C4), style = MaterialTheme.typography.bodySmall)
+                    else Text(if (profile != null) "الملف الشخصي" else "أنت تستخدم Mangaro كضيف",
                         color = Color(0xFFB7A9C4), style = MaterialTheme.typography.bodySmall)
                 }
             }
@@ -241,10 +243,10 @@ private fun AccountAvatar(profile: MangaroProfile?, modifier: Modifier) {
 
 /** One reusable account-required prompt, delegating authentication to the existing account UI. */
 @Composable
-fun AccountRequiredPrompt(onDismiss: () -> Unit, onAccount: () -> Unit) {
+fun AccountRequiredPrompt(onDismiss: () -> Unit, onAccount: () -> Unit, profileIncomplete: Boolean = false) {
     AlertDialog(onDismissRequest = onDismiss, containerColor = MangaroDesignSystem.SurfaceDark,
-        title = { Text("سجّل دخولك للمشاركة") },
+        title = { Text(if (profileIncomplete) "أكمل ملفك الشخصي للمشاركة" else "سجّل دخولك للمشاركة") },
         text = { Text("التعليقات والتقييمات ونظام المستوى متاحة لأعضاء Mangaro.") },
-        confirmButton = { TextButton(onClick = { onDismiss(); onAccount() }) { Text("المتابعة باستخدام Google") } },
+        confirmButton = { TextButton(onClick = { onDismiss(); onAccount() }) { Text(if (profileIncomplete) "إكمال الملف الشخصي" else "المتابعة باستخدام Google") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("ليس الآن") } })
 }

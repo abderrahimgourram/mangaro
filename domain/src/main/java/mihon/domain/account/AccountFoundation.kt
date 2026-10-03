@@ -121,6 +121,7 @@ enum class AccountFeature {
 sealed interface AccountAccess {
     data class Allowed(val userId: String) : AccountAccess
     data class LoginRequired(val feature: AccountFeature) : AccountAccess
+    data class ProfileRequired(val feature: AccountFeature) : AccountAccess
     data object SessionLoading : AccountAccess
 }
 
@@ -133,7 +134,10 @@ class AccountFeatureGate(private val session: StateFlow<AccountSession>) {
     fun access(feature: AccountFeature): AccountAccess = when (val current = session.value) {
         AccountSession.Guest -> AccountAccess.LoginRequired(feature)
         AccountSession.Loading -> AccountAccess.SessionLoading
-        is AccountSession.Authenticated -> AccountAccess.Allowed(current.profile.userId)
+        is AccountSession.Authenticated -> if (current.profile.username.isNullOrBlank() && feature in setOf(
+            AccountFeature.COMMENTS, AccountFeature.REPLIES, AccountFeature.MANGA_RATINGS,
+            AccountFeature.CHAPTER_RATINGS, AccountFeature.REACTIONS,
+        )) AccountAccess.ProfileRequired(feature) else AccountAccess.Allowed(current.profile.userId)
     }
     fun ownsContent(ownerUserId: String): Boolean =
         (session.value as? AccountSession.Authenticated)?.profile?.userId == ownerUserId

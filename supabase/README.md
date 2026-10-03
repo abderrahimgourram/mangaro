@@ -28,12 +28,55 @@ Handles normalize to lowercase `[a-z0-9_]{3,24}`; `profiles_username_lower_uniqu
 
 Public `avatars` bucket accepts JPEG/PNG/WebP, max 2 MiB. Writes/deletes require auth.uid() to own the first folder **and** the exact `<user-id>/avatar.webp` path. Android accepts input up to 2 MiB, validates actual image type/dimensions, resizes to max 1024px and encodes WebP <=1 MiB. Paths stay stable; updated_at versions Coil image URLs. Failed custom images fall back to Google, then the bundled default.
 
-Direct anon/authenticated execution of `rls_auto_enable()` and trigger-only helpers is revoked; `ensure_rls` remains enabled. No Community backend, XP awards, cloud sync or local SQL migrations are added.
+Direct anon/authenticated execution of `rls_auto_enable()` and trigger-only helpers is revoked; `ensure_rls` remains enabled. The Account phase added no Community backend, XP awards, cloud sync or local SQL migrations. Community deployment is documented below.
 
 ## Verification
 
 Remote catalogs verified all columns, FK cascade, checks, index, RLS policies, bucket constraints, triggers/functions and their restricted grants. `tests/phase1_rls.sql` passed under actual anon/authenticated roles inside a rolled-back transaction: anonymous writes denied, owner updates allowed, cross-user writes/deletes denied, immutable fields protected, case conflict/invalid handles rejected, 40-character names enforced, signup metadata boundary fixed, and automatic RLS still working. Storage metadata fixtures emulate the Storage API transaction delete guard; no RLS was disabled and no real files were uploaded. All fixture users/profiles/objects and the probe table were rolled back. Security Advisor reported no findings. Public profiles/Auth HTTPS checks succeeded.
 
-**Android OAuth runtime verification pending manual device test.** Compilation/static wiring does not prove Google account selection, callback or device Keystore/session behavior. Google test-user/consent restrictions remain external.
+Google OAuth was subsequently manually verified by the user on a real Android device. Google test-user/consent restrictions remain external.
 
 Manual checklist: open as Guest; tap Google; choose account; return to Mangaro; choose username; edit display name; upload avatar; reopen and verify session; sign out; verify local Library/history/downloads remain.
+
+## Community Phase 2
+
+New forward migrations: `20261003223459_mangaro_community_phase2.sql` and
+`20261003224550_mangaro_community_private_report_dedup.sql`. The second fixes a
+permission issue discovered by rollback tests after deployment: report
+idempotency catches unique violations without granting private report reads.
+Both were deployed to the same production project; deployed Account migrations
+were not edited. CLI/remote migration history matches.
+
+`community_comments`, `community_comment_likes`, `community_ratings` and
+`community_comment_reports` explicitly enable RLS. Social writes require the
+caller to own the row and have a completed public profile. Column grants and
+triggers protect comment/rating identity and timestamps. Replies must target a
+top-level comment in the exact same manga/chapter context; deleting a parent
+cascades its replies, likes and reports. Ratings have separate partial unique
+indexes for manga and chapter targets. Likes/reports have composite uniqueness.
+Reports have no public/client read policy or SELECT grants.
+
+Security-invoker RPCs provide public comment pages (20 rows, newest-first
+`created_at + id` keyset cursor), database rating summaries and authenticated
+idempotent rating/like/report operations. The comments projection joins public
+profiles and counts in one server request; it never selects email or private Auth
+metadata. Reply pages load only when expanded. No privileged read endpoint,
+Realtime socket, XP awarding, cloud Library sync or local SQL change was added.
+
+The existing `CommunityRepository` now uses the single Account-owned Supabase
+client. Details, chapter discussions and the Reader sheet share this adapter.
+Server-confirmed mutations refresh observable state; failed submissions retain
+text, double-submit is prevented, failures offer retry and leave reading usable.
+Shared handle text renders explicitly LTR within unchanged Arabic RTL layouts.
+
+`tests/phase2_rls.sql` passes against actual anon/authenticated roles with all
+fixtures rolled back: public reads, denied guest/incomplete-profile writes,
+ownership, immutable fields, shallow same-target replies, blank/length/target
+validation, duplicate constraints, rating updates, keyset pagination, payload
+privacy and cascades. All four RLS flags and platform automatic-RLS hardening
+were verified remotely. Security Advisor has no Community findings; it reports
+an Auth-only leaked-password-protection warning (Google Auth configuration was
+not changed). See [Supabase password security](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection).
+
+Google OAuth was manually verified by the user before Phase 2.
+**Android Community runtime verification pending manual device test.**

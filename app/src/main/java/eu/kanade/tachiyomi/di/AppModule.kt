@@ -160,7 +160,11 @@ class AppModule(val app: Application) : InjektModule {
         addSingletonFactory<SourceManager> { AndroidSourceManager(app, get(), get(), get(), get()) }
         addSingletonFactory { ExtensionManager(app) }
 
-        addSingletonFactory<mihon.domain.community.CommunityRepository> { mihon.domain.community.DisabledCommunityRepository() }
+        addSingletonFactory<mihon.domain.community.CommunityRepository> {
+            val auth = get<mihon.domain.account.AccountAuth>() as? eu.kanade.tachiyomi.data.account.SupabaseAccountAuth
+            auth?.let { eu.kanade.tachiyomi.data.community.SupabaseCommunityRepository(it.communityClient, get()) }
+                ?: mihon.domain.community.DisabledCommunityRepository()
+        }
         addSingletonFactory<mihon.domain.account.AccountAuth> { eu.kanade.tachiyomi.data.account.SupabaseAccountAuth.create(app) }
         addSingletonFactory<mihon.domain.account.AccountCloudSync> { mihon.domain.account.DisabledAccountCloudSync() }
         addSingletonFactory { mihon.domain.account.AccountFoundation(get(), get()) }

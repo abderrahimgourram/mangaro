@@ -120,13 +120,16 @@ data class CommunitySnapshot(
     val loadingMore: Boolean = false,
     val hasMore: Boolean = false,
     val nextCursor: CommunityCursor? = null,
+    val replies: Map<String, List<CommunityComment>> = emptyMap(),
+    val replyCursors: Map<String, CommunityCursor> = emptyMap(),
+    val loadingReplies: Set<String> = emptySet(),
 ) {
     init { require(!hasMore || nextCursor != null) }
 }
 
 /** Opaque server cursor, not a local chapter/manga row ID or client guessed offset. */
 data class CommunityCursor(val value: String) { init { require(value.isNotBlank()) } }
-enum class CommunityErrorKind { AUTH_REQUIRED, VALIDATION, RATE_LIMITED, PERMISSION_DENIED, NETWORK, BACKEND_UNAVAILABLE, UNKNOWN }
+enum class CommunityErrorKind { AUTH_REQUIRED, PROFILE_INCOMPLETE, VALIDATION, RATE_LIMITED, PERMISSION_DENIED, NETWORK, BACKEND_UNAVAILABLE, UNKNOWN }
 enum class CommunityValidationIssue { BLANK_COMMENT, COMMENT_TOO_LONG, INVALID_RATING }
 data class CommunityError(
     val kind: CommunityErrorKind,
@@ -135,6 +138,7 @@ data class CommunityError(
 ) {
     val userMessage: String get() = when (kind) {
         CommunityErrorKind.AUTH_REQUIRED -> "سجّل دخولك للمشاركة"
+        CommunityErrorKind.PROFILE_INCOMPLETE -> "أكمل اسم المستخدم للمشاركة"
         CommunityErrorKind.VALIDATION -> when (validation) {
             CommunityValidationIssue.BLANK_COMMENT -> "اكتب تعليقًا أولًا"
             CommunityValidationIssue.COMMENT_TOO_LONG -> "الحد الأقصى للتعليق ${CommunityCommentInput.MAX_LENGTH} حرف"
@@ -185,6 +189,7 @@ interface CommunityRepository {
     suspend fun loadInitial(target: CommunityTarget): CommunityOperation
     suspend fun refresh(target: CommunityTarget): CommunityOperation
     suspend fun loadMore(target: CommunityTarget, cursor: CommunityCursor): CommunityOperation
+    suspend fun loadReplies(target: CommunityTarget, parentId: String, cursor: CommunityCursor? = null): CommunityOperation
     suspend fun getRatingSummary(target: CommunityTarget): CommunityOperation
     // Future implementation upserts one rating per authenticated user + target.
     suspend fun rate(target: CommunityTarget, stars: Int): CommunityOperation
@@ -202,6 +207,7 @@ class DisabledCommunityRepository : CommunityRepository {
     override suspend fun loadInitial(target: CommunityTarget) = CommunityOperation.NotConfigured
     override suspend fun refresh(target: CommunityTarget) = CommunityOperation.NotConfigured
     override suspend fun loadMore(target: CommunityTarget, cursor: CommunityCursor) = CommunityOperation.NotConfigured
+    override suspend fun loadReplies(target: CommunityTarget, parentId: String, cursor: CommunityCursor?) = CommunityOperation.NotConfigured
     override suspend fun getRatingSummary(target: CommunityTarget) = CommunityOperation.NotConfigured
     override suspend fun rate(target: CommunityTarget, stars: Int): CommunityOperation =
         if (stars in 1..5) CommunityOperation.NotConfigured else CommunityOperation.Failed(

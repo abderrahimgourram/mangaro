@@ -50,6 +50,8 @@ import kotlin.time.Duration.Companion.seconds
 
 /** One injectable application client; Google browser OAuth only. No local manga database access. */
 class SupabaseAccountAuth private constructor(private val client: SupabaseClient, private val credentials: AccountSessionStorage) : AccountAuth {
+    // Community reuses this application client; authentication lifecycle remains here.
+    internal val communityClient: SupabaseClient get() = client
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mutations = Mutex()
     private val session = MutableStateFlow<AccountSession>(AccountSession.Loading)
