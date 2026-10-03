@@ -241,39 +241,22 @@ private fun MangaScreenSmallImpl(
 
     Scaffold(
         topBar = {
-            val selectedChapterCount: Int = remember(chapters) {
-                chapters.count { it.selected }
-            }
             val isFirstItemVisible by remember {
                 derivedStateOf { chapterListState.firstVisibleItemIndex == 0 }
             }
             val isFirstItemScrolled by remember {
                 derivedStateOf { chapterListState.firstVisibleItemScrollOffset > 0 }
             }
-            val titleAlpha by animateFloatAsState(
-                if (!isFirstItemVisible) 1f else 0f,
-                label = "Top Bar Title",
-            )
             val backgroundAlpha by animateFloatAsState(
                 if (!isFirstItemVisible || isFirstItemScrolled) 1f else 0f,
                 label = "Top Bar Background",
             )
             MangaToolbar(
-                title = state.manga.title,
-                hasFilters = state.filterActive,
-                navigateUp = navigateUp,
-                onClickFilter = onFilterClicked,
-                onClickShare = onShareClicked,
-                onClickDownload = onDownloadActionClicked,
-                onClickEditCategory = onEditCategoryClicked,
-                onClickRefresh = onRefresh,
-                onClickMigrate = onMigrateClicked,
-                onClickEditNotes = onEditNotesClicked,
-                actionModeCounter = selectedChapterCount,
-                onCancelActionMode = { onAllChapterSelected(false) },
-                onSelectAll = { onAllChapterSelected(true) },
-                onInvertSelection = { onInvertSelection() },
-                titleAlphaProvider = { titleAlpha },
+                navigateUp = if (isAnySelected) {
+                    { onAllChapterSelected(false) }
+                } else {
+                    navigateUp
+                },
                 backgroundAlphaProvider = { backgroundAlpha },
             )
         },
@@ -361,7 +344,7 @@ private fun MangaScreenSmallImpl(
                             freshness = freshness,
                             newestFirst = newestFirst,
                             onSortClick = { newestFirst = !newestFirst },
-                            onFilterClick = onFilterClicked,
+                            onDownloadClick = onDownloadActionClicked,
                         )
                     }
 
@@ -459,27 +442,14 @@ fun MangaScreenLargeImpl(
 
     Scaffold(
         topBar = {
-            val selectedChapterCount = remember(chapters) {
-                chapters.count { it.selected }
-            }
             MangaToolbar(
                 modifier = Modifier.onSizeChanged { topBarHeight = it.height },
-                title = state.manga.title,
-                hasFilters = state.filterActive,
-                navigateUp = navigateUp,
-                onClickFilter = onFilterButtonClicked,
-                onClickShare = onShareClicked,
-                onClickDownload = onDownloadActionClicked,
-                onClickEditCategory = onEditCategoryClicked,
-                onClickRefresh = onRefresh,
-                onClickMigrate = onMigrateClicked,
-                onClickEditNotes = onEditNotesClicked,
-                onCancelActionMode = { onAllChapterSelected(false) },
-                actionModeCounter = selectedChapterCount,
-                onSelectAll = { onAllChapterSelected(true) },
-                onInvertSelection = { onInvertSelection() },
-                titleAlphaProvider = { 1f },
-                backgroundAlphaProvider = { 1f },
+                navigateUp = if (isAnySelected) {
+                    { onAllChapterSelected(false) }
+                } else {
+                    navigateUp
+                },
+                backgroundAlphaProvider = { 0f },
             )
         },
         bottomBar = {
@@ -572,7 +542,7 @@ fun MangaScreenLargeImpl(
                                     freshness = freshness,
                                     newestFirst = newestFirst,
                                     onSortClick = { newestFirst = !newestFirst },
-                                    onFilterClick = onFilterButtonClicked,
+                                    onDownloadClick = onDownloadActionClicked,
                                 )
                             }
 

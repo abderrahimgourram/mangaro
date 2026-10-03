@@ -3,6 +3,7 @@ package eu.kanade.presentation.manga.components
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -13,12 +14,16 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowDownward
 import androidx.compose.material.icons.outlined.ArrowUpward
-import androidx.compose.material.icons.outlined.FilterList
+import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
@@ -26,12 +31,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import eu.kanade.presentation.components.DownloadDropdownMenu
+import eu.kanade.presentation.manga.DownloadAction
+import eu.kanade.presentation.theme.MangaroDesignSystem
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.SECONDARY_ALPHA
 import tachiyomi.presentation.core.components.material.padding
 import tachiyomi.presentation.core.i18n.pluralStringResource
 import tachiyomi.presentation.core.i18n.stringResource
-import eu.kanade.presentation.theme.MangaroDesignSystem
 
 @Composable
 fun ChapterHeader(
@@ -41,7 +48,7 @@ fun ChapterHeader(
     freshness: String? = null,
     newestFirst: Boolean,
     onSortClick: () -> Unit,
-    onFilterClick: () -> Unit,
+    onDownloadClick: ((DownloadAction) -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -112,20 +119,30 @@ fun ChapterHeader(
                 )
             }
 
-            IconButton(
-                onClick = onFilterClick,
-                enabled = enabled,
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(Color.White.copy(alpha = 0.055f)),
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.FilterList,
-                    contentDescription = stringResource(MR.strings.action_filter),
-                    tint = MangaroDesignSystem.LavenderPrimary,
-                    modifier = Modifier.size(20.dp),
-                )
+            onDownloadClick?.let { downloadClick ->
+                var downloadExpanded by remember { mutableStateOf(false) }
+                Box {
+                    IconButton(
+                        onClick = { downloadExpanded = true },
+                        enabled = enabled,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Color.White.copy(alpha = 0.055f)),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Download,
+                            contentDescription = stringResource(MR.strings.manga_download),
+                            tint = MangaroDesignSystem.GoldPrimary,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                    DownloadDropdownMenu(
+                        expanded = downloadExpanded,
+                        onDismissRequest = { downloadExpanded = false },
+                        onDownloadClicked = downloadClick,
+                    )
+                }
             }
         }
         MissingChaptersWarning(missingChapterCount)
