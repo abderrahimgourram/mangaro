@@ -347,7 +347,7 @@ private fun MangaScreenSmallImpl(
                             onSortClick = { newestFirst = !newestFirst },
                             onDownloadClick = onDownloadChapter?.let { download ->
                                 { option ->
-                                    displayedChapters.bulkDownloadSelection(option).takeIf { it.isNotEmpty() }?.let {
+                                    chapters.bulkDownloadSelection(option, state.manga).takeIf { it.isNotEmpty() }?.let {
                                         download(it, ChapterDownloadAction.START)
                                     }
                                 }
@@ -551,7 +551,7 @@ fun MangaScreenLargeImpl(
                                     onSortClick = { newestFirst = !newestFirst },
                                     onDownloadClick = onDownloadChapter?.let { download ->
                                         { option ->
-                                            displayedChapters.bulkDownloadSelection(option).takeIf { it.isNotEmpty() }?.let {
+                                            chapters.bulkDownloadSelection(option, state.manga).takeIf { it.isNotEmpty() }?.let {
                                                 download(it, ChapterDownloadAction.START)
                                             }
                                         }
@@ -717,8 +717,17 @@ private enum class ReadingActionKind {
 
 private fun List<ChapterList>.bulkDownloadSelection(
     option: ChapterBulkDownloadOption,
+    manga: Manga,
 ): List<ChapterList.Item> {
+    // Source reading order also matches Downloader.queueChapters; visible sort is irrelevant.
+    // This copy never writes the user's sorting preference or database chapter order.
+    val canonicalManga = manga.copy(
+        chapterFlags = (manga.chapterFlags and Manga.CHAPTER_SORTING_MASK.inv()) or Manga.CHAPTER_SORTING_SOURCE,
+    )
+    val readingOrder = tachiyomi.domain.chapter.service.getChapterSort(canonicalManga, sortDescending = false)
     val eligible = filterIsInstance<ChapterList.Item>()
+        .distinctBy { it.chapter.id }
+        .sortedWith { a, b -> readingOrder(a.chapter, b.chapter) }
         .filter { item ->
             item.downloadState == Download.State.NOT_DOWNLOADED || item.downloadState == Download.State.ERROR
         }

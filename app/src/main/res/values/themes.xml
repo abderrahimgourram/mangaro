@@ -94,7 +94,8 @@
 
     <!--== Splash Theme ==-->
     <style name="Theme.Tachiyomi.SplashScreen" parent="Theme.SplashScreen">
-        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_logo</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/mangaro_intro_launch_icon</item>
+        <item name="windowSplashScreenAnimationDuration">0</item>
         <item name="windowSplashScreenBackground">@color/splash</item>
         <item name="postSplashScreenTheme">@style/Theme.Tachiyomi</item>
         <item name="android:statusBarColor">@android:color/transparent</item>

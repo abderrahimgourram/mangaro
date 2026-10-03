@@ -97,8 +97,17 @@ private fun LocalIntroVideo(playing: Boolean) {
         onDispose { playback.setEnabled(false) }
     }
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        if (playback.showFallback) StartupFallback(showLogo = true)
         AndroidView(factory = { playback.view }, modifier = Modifier.fillMaxSize())
+        // Exact local first frame bridges surface preparation; never postpone player.start().
+        if (playback.showFallback) {
+            if (playback.failed) StartupFallback(showLogo = true)
+            else Image(
+                painter = painterResource(R.drawable.mangaro_intro_first_frame),
+                contentDescription = null,
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
         if (playback.ended && !playback.showFallback) StartupFallback(showLogo = false)
     }
 }
@@ -139,7 +148,8 @@ private class IntroPlayback(private val context: Context) : TextureView.SurfaceT
     private var surface: Surface? = null
     private var enabled = false
     private var foreground = false
-    private var failed = false
+    var failed by mutableStateOf(false)
+        private set
     var showFallback by mutableStateOf(true)
         private set
     var ended by mutableStateOf(false)
