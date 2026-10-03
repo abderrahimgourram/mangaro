@@ -45,6 +45,7 @@ import androidx.compose.ui.util.fastMap
 import eu.kanade.presentation.components.relativeDateText
 import eu.kanade.presentation.theme.MangaroDesignSystem
 import eu.kanade.presentation.manga.components.ChapterDownloadAction
+import eu.kanade.presentation.manga.components.ChapterBulkDownloadOption
 import eu.kanade.presentation.manga.components.ChapterHeader
 import eu.kanade.presentation.manga.components.MangaBottomActionMenu
 import eu.kanade.presentation.manga.components.MangaChapterListItem
@@ -344,7 +345,13 @@ private fun MangaScreenSmallImpl(
                             freshness = freshness,
                             newestFirst = newestFirst,
                             onSortClick = { newestFirst = !newestFirst },
-                            onDownloadClick = onDownloadActionClicked,
+                            onDownloadClick = onDownloadChapter?.let { download ->
+                                { option ->
+                                    displayedChapters.bulkDownloadSelection(option).takeIf { it.isNotEmpty() }?.let {
+                                        download(it, ChapterDownloadAction.START)
+                                    }
+                                }
+                            },
                         )
                     }
 
@@ -542,7 +549,13 @@ fun MangaScreenLargeImpl(
                                     freshness = freshness,
                                     newestFirst = newestFirst,
                                     onSortClick = { newestFirst = !newestFirst },
-                                    onDownloadClick = onDownloadActionClicked,
+                                    onDownloadClick = onDownloadChapter?.let { download ->
+                                        { option ->
+                                            displayedChapters.bulkDownloadSelection(option).takeIf { it.isNotEmpty() }?.let {
+                                                download(it, ChapterDownloadAction.START)
+                                            }
+                                        }
+                                    },
                                 )
                             }
 
@@ -700,6 +713,20 @@ private enum class ReadingActionKind {
     RESUME,
     NEXT,
     START,
+}
+
+private fun List<ChapterList>.bulkDownloadSelection(
+    option: ChapterBulkDownloadOption,
+): List<ChapterList.Item> {
+    val eligible = filterIsInstance<ChapterList.Item>()
+        .filter { item ->
+            item.downloadState == Download.State.NOT_DOWNLOADED || item.downloadState == Download.State.ERROR
+        }
+        .let { items ->
+            if (option.unreadOnly) items.filter { !it.chapter.read } else items
+        }
+
+    return option.limit?.let(eligible::take) ?: eligible
 }
 
 private data class ReadingAction(
