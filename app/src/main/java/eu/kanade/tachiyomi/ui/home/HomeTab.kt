@@ -60,7 +60,6 @@ import eu.kanade.presentation.home.MangaroSectionHeader
 import eu.kanade.presentation.home.MangaroStandardShelf
 import eu.kanade.presentation.theme.MangaroDesignSystem
 import eu.kanade.presentation.util.Tab
-import eu.kanade.tachiyomi.ui.browse.source.globalsearch.GlobalSearchScreen
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.more.MoreTab
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
@@ -121,7 +120,10 @@ object HomeTab : Tab {
                     item(key = "home_header") {
                         MangaroHomeHeader(
                             activeDownloadsCount = state.activeDownloadsCount,
-                            onSearchClick = { navigator.push(GlobalSearchScreen()) },
+                            onSearchClick = {
+                                SearchTab.requestFocus()
+                                tabNavigator.current = SearchTab
+                            },
                             onDownloadsClick = { tabNavigator.current = DownloadsTab },
                             onSettingsClick = { tabNavigator.current = MoreTab },
                         )

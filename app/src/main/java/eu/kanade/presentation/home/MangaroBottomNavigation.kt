@@ -23,11 +23,13 @@ import androidx.compose.material.icons.filled.CollectionsBookmark
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.outlined.CollectionsBookmark
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -56,6 +58,7 @@ import eu.kanade.presentation.theme.MangaroDesignSystem
 import eu.kanade.presentation.util.Tab
 import eu.kanade.tachiyomi.ui.browse.BrowseTab
 import eu.kanade.tachiyomi.ui.home.DownloadsTab
+import eu.kanade.tachiyomi.ui.home.SearchTab
 import eu.kanade.tachiyomi.ui.home.HomeTab
 import eu.kanade.tachiyomi.ui.library.LibraryTab
 import eu.kanade.tachiyomi.ui.more.MoreTab
@@ -208,6 +211,7 @@ private fun RowScope.MangaroNavItem(
 private fun getTabIconPair(tab: Tab): Pair<ImageVector, ImageVector> {
     return when {
         HomeTab::class.isInstance(tab) -> Icons.Outlined.Home to Icons.Filled.Home
+        SearchTab::class.isInstance(tab) -> Icons.Outlined.Search to Icons.Filled.Search
         LibraryTab::class.isInstance(tab) -> Icons.Outlined.CollectionsBookmark to Icons.Filled.CollectionsBookmark
         BrowseTab::class.isInstance(tab) -> Icons.Outlined.Explore to Icons.Filled.Explore
         DownloadsTab::class.isInstance(tab) -> Icons.Outlined.Download to Icons.Filled.Download

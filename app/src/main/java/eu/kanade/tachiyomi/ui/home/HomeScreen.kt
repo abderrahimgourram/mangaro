@@ -80,8 +80,9 @@ object HomeScreen : Screen() {
 
     private val TABS = listOf(
         HomeTab,
-        LibraryTab,
+        SearchTab,
         DownloadsTab,
+        LibraryTab,
     )
 
     @Composable
