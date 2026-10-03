@@ -3,7 +3,6 @@ package eu.kanade.presentation.manga.components
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,14 +15,9 @@ import androidx.compose.material.icons.outlined.ArrowDownward
 import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
@@ -31,7 +25,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import eu.kanade.presentation.components.DownloadDropdownMenu
 import eu.kanade.presentation.manga.DownloadAction
 import eu.kanade.presentation.theme.MangaroDesignSystem
 import tachiyomi.i18n.MR
@@ -120,27 +113,27 @@ fun ChapterHeader(
             }
 
             onDownloadClick?.let { downloadClick ->
-                var downloadExpanded by remember { mutableStateOf(false) }
-                Box {
-                    IconButton(
-                        onClick = { downloadExpanded = true },
-                        enabled = enabled,
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(Color(0xFF24172F)),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Download,
-                            contentDescription = stringResource(MR.strings.manga_download),
-                            tint = MangaroDesignSystem.GoldPrimary,
-                            modifier = Modifier.size(18.dp),
-                        )
-                    }
-                    DownloadDropdownMenu(
-                        expanded = downloadExpanded,
-                        onDismissRequest = { downloadExpanded = false },
-                        onDownloadClicked = downloadClick,
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable(enabled = enabled) {
+                            downloadClick(DownloadAction.UNREAD_CHAPTERS)
+                        }
+                        .padding(horizontal = 4.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "تحميل الكل",
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                        color = MangaroDesignSystem.GoldPrimary.copy(alpha = 0.86f),
+                        maxLines = 1,
+                    )
+                    Icon(
+                        imageVector = Icons.Outlined.Download,
+                        contentDescription = stringResource(MR.strings.manga_download),
+                        tint = MangaroDesignSystem.LavenderPrimary.copy(alpha = 0.82f),
+                        modifier = Modifier.size(16.dp),
                     )
                 }
             }
