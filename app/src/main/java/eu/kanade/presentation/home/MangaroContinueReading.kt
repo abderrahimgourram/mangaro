@@ -1,14 +1,16 @@
 package eu.kanade.presentation.home
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -28,12 +30,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -58,6 +63,13 @@ fun MangaroContinueReading(
 ) {
     val formattedChapter = formatChapterDisplay(history.chapterNumber)
     val accessibilityLabel = "متابعة قراءة ${history.title} $formattedChapter"
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val scale by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (pressed) 0.988f else 1f,
+        animationSpec = androidx.compose.animation.core.tween(110),
+        label = "resumeCardPress",
+    )
 
     val (hasRealProgress, progressFraction, percentageInt) = remember(history.read, history.lastPageRead, history.totalPages) {
         when {
@@ -76,30 +88,36 @@ fun MangaroContinueReading(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp)
-            .clickable { onResumeClick() }
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .clickable(interactionSource, indication = null) { onResumeClick() }
             .semantics { contentDescription = accessibilityLabel },
         colors = CardDefaults.cardColors(containerColor = MangaroDesignSystem.SurfaceDark),
-        border = BorderStroke(1.dp, Color(0x28A78BFA)),
-        shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        border = BorderStroke(1.dp, Color(0x20A78BFA)),
+        shape = RoundedCornerShape(18.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
     ) {
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(12.dp),
+                    .background(
+                        Brush.horizontalGradient(
+                            listOf(Color(0xFF21162D), Color(0xFF15101C)),
+                        ),
+                    )
+                    .padding(11.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 // Right Side in RTL: Poster Cover Anchor
                 Box(
                     modifier = Modifier
-                        .width(76.dp)
+                        .width(72.dp)
                         .aspectRatio(2f / 3f)
                         .shadow(4.dp, RoundedCornerShape(10.dp))
                         .clip(RoundedCornerShape(10.dp))
                         .border(
-                            BorderStroke(1.dp, Color(0x33A78BFA)),
+                            BorderStroke(1.dp, Color.White.copy(alpha = 0.10f)),
                             RoundedCornerShape(10.dp),
                         )
                         .clickable { onMangaClick() },
@@ -114,7 +132,7 @@ fun MangaroContinueReading(
                 // Left Side in RTL: Clean Vertical Information Stack
                 Column(
                     modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(5.dp),
                 ) {
                     // Manga Title
                     Text(
@@ -184,8 +202,6 @@ fun MangaroContinueReading(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(2.dp))
-
                     // Compact "متابعة" CTA
                     Button(
                         onClick = onResumeClick,
@@ -195,7 +211,7 @@ fun MangaroContinueReading(
                         ),
                         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
                         shape = RoundedCornerShape(20.dp),
-                        modifier = Modifier.height(28.dp),
+                        modifier = Modifier.height(30.dp),
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,

@@ -1,8 +1,6 @@
 package eu.kanade.presentation.home
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,7 +16,6 @@ import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -47,13 +44,13 @@ fun MangaroHomeHeader(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(MangaroDesignSystem.SurfaceDark),
+            .background(MangaroDesignSystem.BackgroundDark),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .statusBarsPadding()
-                .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
+                .padding(start = 18.dp, end = 12.dp, top = 4.dp, bottom = 4.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -62,7 +59,7 @@ fun MangaroHomeHeader(
                 text = "الرئيسية",
                 style = MaterialTheme.typography.titleLarge.copy(
                     fontWeight = FontWeight.Bold,
-                    fontSize = 20.sp,
+                    fontSize = 21.sp,
                     textDirection = TextDirection.Content,
                 ),
                 color = Color.White,
@@ -72,7 +69,7 @@ fun MangaroHomeHeader(
 
             // Action Group: Search, Downloads (if active), Settings (RTL Left/End)
             Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 HeaderActionButton(
@@ -98,7 +95,6 @@ fun MangaroHomeHeader(
             }
         }
 
-        HorizontalDivider(color = Color(0x1DA78BFA))
     }
 }
 
@@ -109,26 +105,22 @@ private fun HeaderActionButton(
     onClick: () -> Unit,
     badgeCount: Int = 0,
 ) {
-    val actionIconColor = Color(0xFFD4C9E3)
+    val actionIconColor = Color(0xFFD5CADE)
 
     Box(
-        modifier = Modifier.size(38.dp),
+        modifier = Modifier.size(44.dp),
         contentAlignment = Alignment.Center,
     ) {
         Box(
             modifier = Modifier
-                .size(34.dp)
+                .size(36.dp)
                 .clip(CircleShape)
-                .background(Color(0x1AA78BFA))
-                .border(
-                    BorderStroke(1.dp, Color(0x28A78BFA)),
-                    CircleShape,
-                ),
+                .background(Color(0x141F172A)),
             contentAlignment = Alignment.Center,
         ) {
             IconButton(
                 onClick = onClick,
-                modifier = Modifier.size(34.dp),
+                modifier = Modifier.size(44.dp),
             ) {
                 if (badgeCount > 0) {
                     BadgedBox(
@@ -149,7 +141,7 @@ private fun HeaderActionButton(
                             imageVector = icon,
                             contentDescription = contentDescription,
                             tint = actionIconColor,
-                            modifier = Modifier.size(18.dp),
+                            modifier = Modifier.size(19.dp),
                         )
                     }
                 } else {
@@ -157,7 +149,7 @@ private fun HeaderActionButton(
                         imageVector = icon,
                         contentDescription = contentDescription,
                         tint = actionIconColor,
-                        modifier = Modifier.size(18.dp),
+                        modifier = Modifier.size(19.dp),
                     )
                 }
             }

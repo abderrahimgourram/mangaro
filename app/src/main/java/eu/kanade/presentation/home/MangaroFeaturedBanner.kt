@@ -1,5 +1,10 @@
 package eu.kanade.presentation.home
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -59,20 +64,38 @@ fun MangaroFeaturedBanner(
     onNextStory: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    AnimatedContent(
+        targetState = item,
+        modifier = modifier,
+        transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
+        contentKey = { "${it.sourceId}_${it.mangaId}" },
+        label = "featuredStory",
+    ) { featured ->
+        FeaturedStoryCard(featured, canRotate, onOpenManga, onNextStory)
+    }
+}
+
+@Composable
+private fun FeaturedStoryCard(
+    item: HomeDiscoveryItem,
+    canRotate: Boolean,
+    onOpenManga: (Long) -> Unit,
+    onNextStory: () -> Unit,
+) {
     Card(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .padding(horizontal = 16.dp, vertical = 4.dp)
             .clickable { onOpenManga(item.mangaId) },
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = MangaroDesignSystem.SurfaceDark),
-        border = BorderStroke(1.dp, Color(0x33A78BFA)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+        border = BorderStroke(1.dp, Color(0x22A78BFA)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(184.dp),
+                .height(180.dp),
         ) {
             // Layer 1: Heavily Darkened Background Atmospheric Cover Artwork
             AsyncImage(
@@ -102,7 +125,7 @@ fun MangaroFeaturedBanner(
                 Row(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(14.dp),
+                        .padding(13.dp),
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -111,11 +134,11 @@ fun MangaroFeaturedBanner(
                         modifier = Modifier
                             .fillMaxHeight()
                             .aspectRatio(2f / 3f)
-                            .shadow(6.dp, RoundedCornerShape(12.dp))
-                            .clip(RoundedCornerShape(12.dp))
+                            .shadow(4.dp, RoundedCornerShape(13.dp))
+                            .clip(RoundedCornerShape(13.dp))
                             .border(
                                 BorderStroke(1.dp, Color(0x33A78BFA)),
-                                RoundedCornerShape(12.dp),
+                                RoundedCornerShape(13.dp),
                             ),
                     ) {
                         MangaCover.Book(
@@ -179,11 +202,7 @@ fun MangaroFeaturedBanner(
                                     modifier = Modifier
                                         .size(28.dp)
                                         .clip(CircleShape)
-                                        .background(Color(0x1AA78BFA))
-                                        .border(
-                                            BorderStroke(1.dp, Color(0x28A78BFA)),
-                                            CircleShape,
-                                        )
+                                        .background(Color(0x26140E1B))
                                         .clickable { onNextStory() },
                                     contentAlignment = Alignment.Center,
                                 ) {
@@ -215,14 +234,14 @@ fun MangaroFeaturedBanner(
                         Button(
                             onClick = { onOpenManga(item.mangaId) },
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = MangaroDesignSystem.GoldPrimary,
-                                contentColor = Color.Black,
+                                containerColor = MangaroDesignSystem.GoldPrimary.copy(alpha = 0.96f),
+                                contentColor = Color(0xFF130D18),
                             ),
                             contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(36.dp),
+                                .height(38.dp),
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,

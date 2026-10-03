@@ -1,8 +1,6 @@
 package eu.kanade.presentation.home
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -41,31 +39,27 @@ fun MangaroSectionHeader(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp),
+            .padding(horizontal = 16.dp, vertical = 5.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(9.dp),
             modifier = Modifier.weight(1f, fill = false),
         ) {
             Box(
                 modifier = Modifier
-                    .size(28.dp)
+                    .size(26.dp)
                     .clip(RoundedCornerShape(8.dp))
-                    .background(Color(0x1AFFB800))
-                    .border(
-                        BorderStroke(0.8.dp, MangaroDesignSystem.GoldPrimary.copy(alpha = 0.35f)),
-                        RoundedCornerShape(8.dp),
-                    ),
+                    .background(MangaroDesignSystem.GoldPrimary.copy(alpha = 0.11f)),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
                     tint = MangaroDesignSystem.GoldPrimary,
-                    modifier = Modifier.size(16.dp),
+                    modifier = Modifier.size(15.dp),
                 )
             }
 
@@ -73,7 +67,7 @@ fun MangaroSectionHeader(
                 text = title,
                 style = MaterialTheme.typography.titleMedium.copy(
                     fontWeight = FontWeight.Bold,
-                    fontSize = 16.5.sp,
+                    fontSize = 16.sp,
                     letterSpacing = (-0.2).sp,
                 ),
                 color = Color.White,
@@ -86,17 +80,13 @@ fun MangaroSectionHeader(
             Row(
                 modifier = Modifier
                     .clip(RoundedCornerShape(20.dp))
-                    .background(Color(0x12FFB800))
-                    .border(
-                        BorderStroke(0.8.dp, MangaroDesignSystem.GoldPrimary.copy(alpha = 0.25f)),
-                        RoundedCornerShape(20.dp),
-                    )
+                    .background(MangaroDesignSystem.GoldPrimary.copy(alpha = 0.08f))
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
                         onClick = onActionClick,
                     )
-                    .padding(horizontal = 10.dp, vertical = 4.dp),
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
