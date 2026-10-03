@@ -90,7 +90,6 @@ import eu.kanade.tachiyomi.ui.deeplink.DeepLinkScreen
 import eu.kanade.tachiyomi.ui.home.HomeScreen
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.more.NewUpdateScreen
-import eu.kanade.tachiyomi.ui.more.OnboardingScreen
 import eu.kanade.tachiyomi.ui.setting.SettingsScreen
 import eu.kanade.tachiyomi.util.system.dpToPx
 import eu.kanade.tachiyomi.util.system.isBenchmarkBuildType
@@ -284,7 +283,10 @@ class MainActivity : BaseActivity() {
 
                 if (!isBenchmarkBuildType) {
                     CheckForUpdates()
-                    ShowOnboarding()
+                    LaunchedEffect(Unit) {
+                        // First launch is usable immediately; permissions are action-scoped.
+                        preferences.shownOnboardingFlow.set(true)
+                    }
                     ShowDonationCampaign()
                 }
             }
@@ -351,17 +353,6 @@ class MainActivity : BaseActivity() {
             }
         }
 
-    }
-
-    @Composable
-    private fun ShowOnboarding() {
-        val navigator = LocalNavigator.currentOrThrow
-
-        LaunchedEffect(Unit) {
-            if (!preferences.shownOnboardingFlow.get() && navigator.lastItem !is OnboardingScreen) {
-                navigator.push(OnboardingScreen())
-            }
-        }
     }
 
     @Composable
@@ -613,5 +604,5 @@ class MainActivity : BaseActivity() {
 }
 
 // Splash screen
-private const val SPLASH_MAX_DURATION = 5000 // ms
+private const val SPLASH_MAX_DURATION = 2500 // ms
 private const val SPLASH_EXIT_ANIM_DURATION = 200L // ms

@@ -100,15 +100,18 @@ class MangaroDownloadsViewModel : ViewModel() {
                 if (file.isDirectory || file.name.orEmpty().endsWith(".cbz", ignoreCase = true)) entries[key] = entry
                 return entry
             }
-            val used = measure(root).bytes
+            val used = storage.getDownloadDirectories().sumOf { measure(it).bytes }
             val mangas = Injekt.get<Database>().mangasQueries.getAllManga(MangaMapper::mapManga).awaitAsList()
             val nextSizes = mutableMapOf<String, Pair<Long, DiskEntry>>()
             val groups = mangas.mapNotNull { manga ->
                 currentCoroutineContext().ensureActive()
                 if (manager.getDownloadCount(manga) == 0) return@mapNotNull null
                 val source = sources.getOrStub(manga.source)
-                val directory = provider.findMangaDir(manga.title, source) ?: return@mapNotNull null
-                val files = checkNotNull(directory.listFiles()) { "Manga directory could not be listed" }.associateBy { it.name }
+                val directories = provider.findMangaDirs(manga.title, source)
+                if (directories.isEmpty()) return@mapNotNull null
+                val files = directories.flatMap { directory ->
+                    checkNotNull(directory.listFiles()) { "Manga directory could not be listed" }.toList()
+                }.groupBy { it.name }.mapValues { (_, copies) -> copies.first() }
                 val chapters = Injekt.get<ChapterRepository>().getChapterByMangaId(manga.id).mapNotNull { chapter ->
                     if (!manager.isChapterDownloaded(chapter.name, chapter.scanlator, chapter.url, manga.title, manga.source)) return@mapNotNull null
                     val file = provider.getValidChapterDirNames(chapter.name, chapter.scanlator, chapter.url)

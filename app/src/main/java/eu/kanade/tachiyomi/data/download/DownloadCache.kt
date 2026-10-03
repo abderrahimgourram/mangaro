@@ -94,7 +94,7 @@ class DownloadCache(
         .stateIn(scope, SharingStarted.WhileSubscribed(), false)
 
     private val diskCacheFile: File
-        get() = File(context.cacheDir, "dl_index_cache_v3")
+        get() = File(context.cacheDir, "dl_index_cache_v4_app_scoped")
 
     private val rootDownloadsDirMutex = Mutex()
     private var rootDownloadsDir = RootDirectory(storageManager.getDownloadsDirectory())
@@ -363,41 +363,32 @@ class DownloadCache(
             rootDownloadsDirMutex.withLock {
                 val updatedRootDir = RootDirectory(storageManager.getDownloadsDirectory())
 
-                updatedRootDir.sourceDirs = updatedRootDir.dir?.listFiles().orEmpty()
+                val sourceFolders = storageManager.getDownloadDirectories()
+                    .flatMap { it.listFiles().orEmpty().toList() }
                     .filter { it.isDirectory && !it.name.isNullOrBlank() }
-                    .mapNotNull { dir ->
-                        val sourceId = sourceMap[dir.name!!.lowercase()]
-                        sourceId?.let { it to SourceDirectory(dir) }
-                    }
-                    .toMap()
+                    .mapNotNull { dir -> sourceMap[dir.name!!.lowercase()]?.let { it to dir } }
+                    .groupBy({ it.first }, { it.second })
 
-                updatedRootDir.sourceDirs.values.map { sourceDir ->
+                updatedRootDir.sourceDirs = sourceFolders.mapValues { (_, folders) -> SourceDirectory(folders.first()) }
+                sourceFolders.map { (sourceId, folders) ->
                     async {
-                        sourceDir.mangaDirs = sourceDir.dir?.listFiles().orEmpty()
+                        val mangas = folders.flatMap { it.listFiles().orEmpty().toList() }
                             .filter { it.isDirectory && !it.name.isNullOrBlank() }
-                            .associate { it.name!! to MangaDirectory(it) }
-
-                        sourceDir.mangaDirs.values.forEach { mangaDir ->
-                            val chapterDirs = mangaDir.dir?.listFiles().orEmpty()
+                            .groupBy { it.name!! }
+                        updatedRootDir.sourceDirs.getValue(sourceId).mangaDirs = mangas.mapValues { (_, directories) ->
+                            val chapterDirs = directories.flatMap { it.listFiles().orEmpty().toList() }
                                 .mapNotNull {
                                     when {
-                                        // Ignore incomplete downloads
                                         it.name?.endsWith(Downloader.TMP_DIR_SUFFIX) == true -> null
-                                        // Folder of images
                                         it.isDirectory -> it.name
-                                        // CBZ files
                                         it.isFile && it.extension == "cbz" -> it.nameWithoutExtension
-                                        // Anything else is irrelevant
                                         else -> null
                                     }
-                                }
-                                .toMutableSet()
-
-                            mangaDir.chapterDirs = chapterDirs
+                                }.toMutableSet()
+                            MangaDirectory(directories.first(), chapterDirs)
                         }
                     }
-                }
-                    .awaitAll()
+                }.awaitAll()
 
                 rootDownloadsDir = updatedRootDir
             }

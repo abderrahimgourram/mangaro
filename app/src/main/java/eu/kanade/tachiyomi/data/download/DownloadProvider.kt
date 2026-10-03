@@ -77,8 +77,14 @@ class DownloadProvider(
      * @param source the source to query.
      */
     fun findSourceDir(source: Source): UniFile? {
-        return downloadsDir?.findFile(getSourceDirName(source))
+        return findSourceDirs(source).firstOrNull()
     }
+
+    fun findSourceDirs(source: Source): List<UniFile> = storageManager.getDownloadDirectories()
+        .mapNotNull { it.findFile(getSourceDirName(source)) }
+
+    fun findMangaDirs(mangaTitle: String, source: Source): List<UniFile> = findSourceDirs(source)
+        .mapNotNull { it.findFile(getMangaDirName(mangaTitle)) }
 
     /**
      * Returns the download directory for a manga if it exists.
@@ -87,8 +93,7 @@ class DownloadProvider(
      * @param source the source of the manga.
      */
     fun findMangaDir(mangaTitle: String, source: Source): UniFile? {
-        val sourceDir = findSourceDir(source)
-        return sourceDir?.findFile(getMangaDirName(mangaTitle))
+        return findMangaDirs(mangaTitle, source).firstOrNull()
     }
 
     /**
@@ -106,10 +111,10 @@ class DownloadProvider(
         mangaTitle: String,
         source: Source,
     ): UniFile? {
-        val mangaDir = findMangaDir(mangaTitle, source)
-        return getValidChapterDirNames(chapterName, chapterScanlator, chapterUrl).asSequence()
-            .mapNotNull { mangaDir?.findFile(it) }
-            .firstOrNull()
+        val names = getValidChapterDirNames(chapterName, chapterScanlator, chapterUrl)
+        return findMangaDirs(mangaTitle, source).asSequence().flatMap { mangaDir ->
+            names.asSequence().mapNotNull { mangaDir.findFile(it) }
+        }.firstOrNull()
     }
 
     /**
@@ -120,12 +125,13 @@ class DownloadProvider(
      * @param source the source of the chapter.
      */
     fun findChapterDirs(chapters: List<Chapter>, manga: Manga, source: Source): Pair<UniFile?, List<UniFile>> {
-        val mangaDir = findMangaDir(manga.title, source) ?: return null to emptyList()
-        return mangaDir to chapters.mapNotNull { chapter ->
-            getValidChapterDirNames(chapter.name, chapter.scanlator, chapter.url).asSequence()
-                .mapNotNull { mangaDir.findFile(it) }
-                .firstOrNull()
-        }
+        val mangaDirs = findMangaDirs(manga.title, source)
+        return mangaDirs.firstOrNull() to mangaDirs.flatMap { mangaDir ->
+            chapters.flatMap { chapter ->
+                getValidChapterDirNames(chapter.name, chapter.scanlator, chapter.url)
+                    .mapNotNull { mangaDir.findFile(it) }
+            }
+        }.distinctBy { it.uri }
     }
 
     /**

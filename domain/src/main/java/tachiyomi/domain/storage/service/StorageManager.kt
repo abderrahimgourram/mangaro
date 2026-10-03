@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.shareIn
+import java.io.File
 
 class StorageManager(
     private val context: Context,
@@ -21,6 +22,10 @@ class StorageManager(
 ) {
 
     private val scope = CoroutineScope(Dispatchers.IO)
+
+    private val legacyDownloadsBase = storagePreferences.legacyDownloadsBaseDirectory.apply {
+        if (!isSet()) set(storagePreferences.baseStorageDirectory.get())
+    }
 
     private var baseDir: UniFile? = getBaseDir(storagePreferences.baseStorageDirectory.get())
 
@@ -37,9 +42,6 @@ class StorageManager(
                 baseDir?.let { parent ->
                     parent.createDirectory(AUTOMATIC_BACKUPS_PATH)
                     parent.createDirectory(LOCAL_SOURCE_PATH)
-                    parent.createDirectory(DOWNLOADS_PATH).also {
-                        DiskUtil.createNoMediaFile(it, context)
-                    }
                 }
                 _changes.send(Unit)
             }
@@ -56,8 +58,17 @@ class StorageManager(
     }
 
     fun getDownloadsDirectory(): UniFile? {
-        return baseDir?.createDirectory(DOWNLOADS_PATH)
+        val external = context.getExternalFilesDir(null) ?: return null
+        val directory = File(external, DOWNLOADS_PATH)
+        if (!directory.isDirectory && !directory.mkdirs()) return null
+        return UniFile.fromFile(directory).also { DiskUtil.createNoMediaFile(it, context) }
     }
+
+    /** New writes use the first root; old files stay untouched and readable. */
+    fun getDownloadDirectories(): List<UniFile> = listOfNotNull(
+        getDownloadsDirectory(),
+        getBaseDir(legacyDownloadsBase.get())?.findFile(DOWNLOADS_PATH),
+    ).distinctBy { it.uri }
 
     fun getLocalSourceDirectory(): UniFile? {
         return baseDir?.createDirectory(LOCAL_SOURCE_PATH)
