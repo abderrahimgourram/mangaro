@@ -145,6 +145,11 @@ android {
         }
     }
 
+    androidResources {
+        // Platform MediaPlayer opens the bundled intro by file descriptor.
+        noCompress += "webm"
+    }
+
     packaging {
         jniLibs {
             keepDebugSymbols += listOf(
