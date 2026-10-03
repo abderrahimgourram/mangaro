@@ -76,16 +76,18 @@ internal class SearchRelevance(query: String) {
         return previous[b.length]
     }
 
-    private fun normalize(value: String): String = buildString {
-        for (character in Normalizer.normalize(value, Normalizer.Form.NFKC).lowercase(Locale.ROOT)) {
-            when {
-                character == '\u0640' || character in '\u0610'..'\u061a' || character in '\u064b'..'\u065f' ||
-                    character == '\u0670' || character in '\u06d6'..'\u06ed' -> Unit
-                character in "أإآٱ" -> append('ا')
-                character == 'ى' -> append('ي')
-                character.isLetterOrDigit() -> append(character)
-                isNotEmpty() && last() != ' ' -> append(' ')
+    companion object {
+        fun normalize(value: String): String = buildString {
+            for (character in Normalizer.normalize(value, Normalizer.Form.NFKC).lowercase(Locale.ROOT)) {
+                when {
+                    character == '\u0640' || character in '\u0610'..'\u061a' || character in '\u064b'..'\u065f' ||
+                        character == '\u0670' || character in '\u06d6'..'\u06ed' -> Unit
+                    character in "أإآٱ" -> append('ا')
+                    character == 'ى' -> append('ي')
+                    character.isLetterOrDigit() -> append(character)
+                    isNotEmpty() && last() != ' ' -> append(' ')
+                }
             }
-        }
-    }.trim()
+        }.trim()
+    }
 }

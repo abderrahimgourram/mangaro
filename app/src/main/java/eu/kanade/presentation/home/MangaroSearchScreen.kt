@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -46,6 +47,7 @@ import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -67,6 +69,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.manga.components.MangaCover
 import eu.kanade.presentation.theme.MangaroDesignSystem
+import eu.kanade.tachiyomi.ui.browse.source.globalsearch.SearchRelevance
 import eu.kanade.tachiyomi.ui.browse.source.globalsearch.SearchItemResult
 import eu.kanade.tachiyomi.ui.browse.source.globalsearch.SearchViewModel
 import tachiyomi.domain.manga.model.Manga
@@ -84,6 +87,25 @@ fun MangaroSearchScreen(
     onClickManga: (Manga) -> Unit,
 ) {
     val query = state.searchQuery.orEmpty()
+    val resultsListState = rememberLazyListState()
+    val acceptedQuery = remember(state.activeQuery) { SearchRelevance.normalize(state.activeQuery.orEmpty()) }
+    val displayedQuery = remember(state.resultQuery) { SearchRelevance.normalize(state.resultQuery.orEmpty()) }
+    var lastAcceptedQuery by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingScrollReset by rememberSaveable { mutableStateOf(false) }
+
+    // Arm once when the debounced/cached query is accepted, then reset when its
+    // rows arrive. Previous-query rows can remain visible during the request.
+    // Source completions and ranking changes do not change either query key.
+    LaunchedEffect(acceptedQuery, displayedQuery) {
+        if (lastAcceptedQuery != acceptedQuery) {
+            lastAcceptedQuery = acceptedQuery
+            pendingScrollReset = acceptedQuery.isNotEmpty()
+        }
+        if (pendingScrollReset && displayedQuery == acceptedQuery) {
+            resultsListState.scrollToItem(index = 0, scrollOffset = 0)
+            pendingScrollReset = false
+        }
+    }
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
@@ -243,6 +265,7 @@ fun MangaroSearchScreen(
                 }
             } else {
                 LazyColumn(
+                    state = resultsListState,
                     modifier = Modifier.weight(1f),
                     contentPadding = PaddingValues(horizontal = 18.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
