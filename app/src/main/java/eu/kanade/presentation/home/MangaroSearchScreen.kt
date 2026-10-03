@@ -30,10 +30,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowForward
 import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -197,30 +194,13 @@ fun MangaroSearchScreen(
                     },
                 )
             }
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                FilterChip(
-                    selected = state.onlyShowHasResults,
-                    onClick = onToggleResults,
-                    label = { Text("مصادر لديها نتائج", style = MaterialTheme.typography.labelMedium) },
-                    leadingIcon = { Icon(Icons.Outlined.FilterList, null, modifier = Modifier.size(16.dp)) },
-                    shape = RoundedCornerShape(10.dp),
-                    colors = FilterChipDefaults.filterChipColors(
-                        containerColor = Color.Transparent,
-                        labelColor = Color(0xFFCBBED5),
-                        iconColor = Color(0xFF9E95AC),
-                        selectedContainerColor = MangaroDesignSystem.SurfaceHigh,
-                        selectedLabelColor = MangaroDesignSystem.GoldPrimary,
-                        selectedLeadingIconColor = MangaroDesignSystem.GoldPrimary,
-                    ),
-                    border = null,
+            if (hasSearch && currentResults && results.isNotEmpty()) {
+                Text(
+                    "${results.size} نتيجة",
+                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp),
+                    color = Color(0xFF9E95AC),
+                    style = MaterialTheme.typography.labelMedium,
                 )
-                if (hasSearch && currentResults && results.isNotEmpty()) {
-                    Text("${results.size} نتيجة", color = Color(0xFF9E95AC), style = MaterialTheme.typography.labelMedium)
-                }
             }
             Box(Modifier.fillMaxWidth().height(2.dp)) {
                 if (loading) {
@@ -275,9 +255,9 @@ fun MangaroSearchScreen(
                             Text("بعض النتائج غير متاحة حالياً", color = Color(0xFF9E95AC), style = MaterialTheme.typography.bodySmall)
                         }
                     }
-                    items(results, key = { (source, manga) -> "${source.id}:${manga.id}" }) { (source, initial) ->
+                    items(results, key = { (source, manga) -> "${source.id}:${manga.id}" }) { (_, initial) ->
                         val manga by getManga(initial)
-                        SearchMangaRow(manga, source.name, onClick = { onClickManga(manga) })
+                        SearchMangaRow(manga, onClick = { onClickManga(manga) })
                     }
                 }
             }
@@ -286,7 +266,7 @@ fun MangaroSearchScreen(
 }
 
 @Composable
-private fun SearchMangaRow(manga: Manga, sourceName: String, onClick: () -> Unit) {
+private fun SearchMangaRow(manga: Manga, onClick: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     Surface(
@@ -316,7 +296,6 @@ private fun SearchMangaRow(manga: Manga, sourceName: String, onClick: () -> Unit
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(sourceName, color = Color(0xFFA99BB9), style = MaterialTheme.typography.labelMedium)
                 manga.author?.takeIf { it.isNotBlank() }?.let {
                     Text(it, color = Color(0xFF9E95AC), style = MaterialTheme.typography.bodySmall.copy(textDirection = TextDirection.Content), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
