@@ -152,13 +152,6 @@ fun MangaroMangaHero(
                     statusLabel(manga.status)?.let {
                         MetadataLine(it, MangaroDesignSystem.GoldPrimary.copy(alpha = 0.88f))
                     }
-                    Text(
-                        text = sourceName,
-                        color = Color(0xFFB5A9C2),
-                        style = MaterialTheme.typography.labelSmall,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
                 }
             }
 
