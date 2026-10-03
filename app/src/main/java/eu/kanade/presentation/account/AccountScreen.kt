@@ -1,6 +1,12 @@
 package eu.kanade.presentation.account
 
 import androidx.compose.foundation.Image
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -48,6 +54,10 @@ import eu.kanade.presentation.theme.MangaroDesignSystem
 import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.R
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import eu.kanade.tachiyomi.data.account.prepareAccountAvatar
+import mihon.domain.account.ProfileUpdate
+import mihon.domain.account.AccountProfileInput
 import mihon.domain.account.AccountFoundation
 import mihon.domain.account.AccountOperation
 import mihon.domain.account.AccountSession
@@ -67,6 +77,7 @@ class AccountScreen : Screen() {
 fun AccountPanel(onBack: () -> Unit) {
         val account = remember { Injekt.get<AccountFoundation>() }
         val session by account.session.collectAsState()
+        val authError by account.auth.error.collectAsState()
         val scope = rememberCoroutineScope()
         var error by remember { mutableStateOf<String?>(null) }
         var submitting by remember { mutableStateOf(false) }
@@ -87,8 +98,22 @@ fun AccountPanel(onBack: () -> Unit) {
                 Text("Mangaro", style = MaterialTheme.typography.headlineSmall, color = MangaroDesignSystem.GoldPrimary, fontWeight = FontWeight.Bold)
                 when (val current = session) {
                     is AccountSession.Authenticated -> {
-                        Text(current.profile.displayName ?: current.profile.username.orEmpty(), color = Color.White)
-                        current.profile.email?.let { Text(it, color = Color(0xFFB7A9C4)) }
+                        AccountProfileEditor(current.profile, account, submitting,
+                            onAction = { action ->
+                                scope.launch {
+                                    submitting = true
+                                    error = null
+                                    try {
+                                        error = when (val result = action()) {
+                                            AccountOperation.Completed -> null
+                                            AccountOperation.NotConfigured -> "الحساب غير متاح حاليًا"
+                                            is AccountOperation.Failed -> result.message
+                                        }
+                                    } catch (cancelled: CancellationException) { throw cancelled }
+                                    catch (_: Exception) { error = "تعذّر تنفيذ العملية، حاول مجددًا" }
+                                    finally { submitting = false }
+                                }
+                            })
                     }
                     else -> {
                         Text("أنت تستخدم Mangaro كضيف", color = Color.White, style = MaterialTheme.typography.titleMedium)
@@ -117,14 +142,61 @@ fun AccountPanel(onBack: () -> Unit) {
                             ),
                         ) {
                             if (loading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                            else Text("تسجيل الدخول باستخدام Google")
+                            else Text("المتابعة باستخدام Google")
                         }
-                        if (!account.auth.googleSignInAvailable) Text("تسجيل الدخول والمزامنة سيتوفران لاحقًا", color = Color(0xFFB7A9C4), style = MaterialTheme.typography.bodySmall)
-                        error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                        if (!account.auth.googleSignInAvailable) Text("تسجيل الدخول غير متاح حاليًا", color = Color(0xFFB7A9C4), style = MaterialTheme.typography.bodySmall)
                     }
                 }
+                (error ?: authError)?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
         }
+}
+
+@Composable
+private fun AccountProfileEditor(
+    profile: MangaroProfile,
+    account: AccountFoundation,
+    submitting: Boolean,
+    onAction: (suspend () -> AccountOperation) -> Unit,
+) {
+    val context = LocalContext.current
+    var username by remember(profile.userId, profile.username) { mutableStateOf(profile.username.orEmpty()) }
+    var displayName by remember(profile.userId, profile.displayName) { mutableStateOf(profile.displayName.orEmpty()) }
+    val update = remember(username, displayName) { ProfileUpdate(displayName, username) }
+    val validation = remember(update) { AccountProfileInput.error(update) }
+    val avatarPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) onAction {
+            val jpeg = try { prepareAccountAvatar(context, uri) }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (_: Exception) { return@onAction AccountOperation.Failed("اختر صورة JPEG أو PNG أو WebP لا تتجاوز 5 ميغابايت") }
+            account.auth.uploadAvatar(jpeg)
+        }
+    }
+    if (profile.avatarUrl != null) AsyncImage(profile.avatarUrl, null, Modifier.size(80.dp))
+    Text(profile.displayName ?: profile.username.orEmpty(), color = Color.White)
+    profile.username?.let { Text("@$it", color = Color(0xFFB7A9C4)) }
+    // Email is visible only in this owner's account area, never public comments/profiles.
+    profile.email?.let { Text(it, color = Color(0xFFB7A9C4)) }
+    Text("المستوى ${profile.level} · ${profile.rankTitle}", color = Color(0xFFB7A9C4), style = MaterialTheme.typography.bodySmall)
+    if (profile.username == null) Text("أكمل ملفك باختيار اسم مستخدم فريد. يمكنك مواصلة القراءة كالمعتاد.",
+        color = MangaroDesignSystem.GoldPrimary, style = MaterialTheme.typography.bodySmall)
+    OutlinedTextField(displayName, { displayName = it }, label = { Text("اسم العرض") },
+        enabled = !submitting, singleLine = true, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp))
+    OutlinedTextField(username, { username = it }, label = { Text("اسم المستخدم") },
+        supportingText = { Text("3–24 حرفًا إنجليزيًا أو رقمًا أو شرطة سفلية") },
+        enabled = !submitting, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
+        modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp))
+    if (validation != null && username.isNotEmpty()) Text(validation, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+    Button(enabled = !submitting && validation == null, onClick = { onAction { account.auth.updateProfile(update) } },
+        modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = MangaroDesignSystem.GoldPrimary, contentColor = MangaroDesignSystem.BackgroundDark)) {
+        if (submitting) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("حفظ الملف الشخصي")
+    }
+    Row {
+        TextButton(enabled = !submitting, onClick = { avatarPicker.launch("image/*") }) { Text("تغيير الصورة") }
+        TextButton(enabled = !submitting, onClick = { onAction { account.auth.removeAvatar() } }) { Text("إزالة الصورة") }
+    }
+    TextButton(enabled = !submitting, onClick = { onAction { account.auth.signOut(); AccountOperation.Completed } }) { Text("تسجيل الخروج") }
 }
 
 @Composable
@@ -138,7 +210,8 @@ fun AccountDrawerArea(session: AccountSession, onLogin: () -> Unit, onProfile: (
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(profile?.displayName ?: profile?.username ?: "MANGARO", color = MangaroDesignSystem.GoldPrimary,
                         style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                    Text(profile?.email ?: "أنت تستخدم Mangaro كضيف", color = Color(0xFFB7A9C4), style = MaterialTheme.typography.bodySmall)
+                    Text(profile?.username?.let { "@$it" } ?: if (profile != null) "الملف الشخصي" else "أنت تستخدم Mangaro كضيف",
+                        color = Color(0xFFB7A9C4), style = MaterialTheme.typography.bodySmall)
                 }
             }
             when (session) {

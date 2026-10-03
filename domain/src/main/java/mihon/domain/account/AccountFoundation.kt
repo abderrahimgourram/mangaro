@@ -67,7 +67,21 @@ object MangaroRanks {
 }
 
 // Editable profile properties exclude server-owned progression and account identity.
-data class ProfileUpdate(val displayName: String?, val username: String?, val avatarUrl: String?)
+data class ProfileUpdate(val displayName: String?, val username: String?)
+/** Same conservative rules as the server CHECK constraints; display names are not handles. */
+object AccountProfileInput {
+    fun username(value: String): String = value.trim().lowercase(java.util.Locale.ROOT)
+    private val handle = Regex("[a-z0-9_]{3,24}")
+    fun error(update: ProfileUpdate): String? {
+        val name = update.displayName?.trim().orEmpty()
+        return when {
+            update.username == null || !username(update.username).matches(handle) ->
+                "اسم المستخدم: 3–24 حرفًا إنجليزيًا صغيرًا أو رقمًا أو شرطة سفلية"
+            name.isEmpty() || name.codePointCount(0, name.length) > 80 -> "أدخل اسم عرض من 1 إلى 80 حرفًا"
+            else -> null
+        }
+    }
+}
 sealed interface AccountOperation {
     data object NotConfigured : AccountOperation
     data object Completed : AccountOperation
@@ -77,21 +91,27 @@ sealed interface AccountOperation {
 interface AccountAuth {
     val googleSignInAvailable: Boolean
     fun observeSession(): StateFlow<AccountSession>
+    val error: StateFlow<String?>
     suspend fun signInWithGoogle(): AccountOperation
     suspend fun signOut()
     suspend fun getCurrentProfile(): MangaroProfile?
     suspend fun updateProfile(update: ProfileUpdate): AccountOperation
+    suspend fun uploadAvatar(jpeg: ByteArray): AccountOperation
+    suspend fun removeAvatar(): AccountOperation
 }
 
 /** No network, credentials, account fabrication, token storage or local-data mutation. */
 class GuestAccountAuth : AccountAuth {
     private val session = MutableStateFlow<AccountSession>(AccountSession.Guest)
     override val googleSignInAvailable = false
+    override val error: StateFlow<String?> = MutableStateFlow(null).asStateFlow()
     override fun observeSession(): StateFlow<AccountSession> = session.asStateFlow()
     override suspend fun signInWithGoogle(): AccountOperation = AccountOperation.NotConfigured
     override suspend fun signOut() { session.value = AccountSession.Guest }
     override suspend fun getCurrentProfile(): MangaroProfile? = null
     override suspend fun updateProfile(update: ProfileUpdate): AccountOperation = AccountOperation.NotConfigured
+    override suspend fun uploadAvatar(jpeg: ByteArray): AccountOperation = AccountOperation.NotConfigured
+    override suspend fun removeAvatar(): AccountOperation = AccountOperation.NotConfigured
 }
 
 enum class AccountFeature {

@@ -4,6 +4,8 @@ import android.app.SearchManager
 import android.app.assist.AssistContent
 import android.content.Context
 import android.content.Intent
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.get
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.os.Build
@@ -151,6 +153,11 @@ class MainActivity : BaseActivity() {
         val splashScreen = if (isLaunch) installSplashScreen() else null
 
         super.onCreate(savedInstanceState)
+        // Session restoration is independent of Home readiness and never gates local reading.
+        Injekt.get<mihon.domain.account.AccountFoundation>()
+        // Consume auth before the duplicate-activity guard. A callback arriving over Reader
+        // completes the shared session, then this transient activity finishes without touching Reader.
+        val accountCallback = handleAccountCallback(intent)
 
         // Do not let the launcher create a new activity http://stackoverflow.com/questions/16283079
         if (!isTaskRoot) {
@@ -220,7 +227,8 @@ class MainActivity : BaseActivity() {
 
                                 if (isLaunch) {
                                     // Set start screen
-                                    handleIntentAction(intent, navigator)
+                                    if (accountCallback) navigator.push(eu.kanade.presentation.account.AccountScreen())
+                                    else handleIntentAction(intent, navigator)
 
                                     // Reset Incognito Mode on relaunch
                                     preferences.incognitoMode.set(false)
@@ -504,7 +512,26 @@ class MainActivity : BaseActivity() {
         }
     }
 
+    private fun handleAccountCallback(intent: Intent): Boolean {
+        val accountAuth = Injekt.get<mihon.domain.account.AccountAuth>()
+        if (intent.action == Intent.ACTION_VIEW && intent.data?.let {
+            (accountAuth as? eu.kanade.tachiyomi.data.account.SupabaseAccountAuth)?.handleCallback(it)
+        } == true) {
+            // Consume codes without logging or retaining them in the activity's launch intent.
+            intent.data = null
+            return true
+        }
+        return false
+    }
+
     private fun handleIntentAction(intent: Intent, navigator: Navigator): Boolean {
+        if (handleAccountCallback(intent)) {
+            if (navigator.lastItem !is eu.kanade.presentation.account.AccountScreen) {
+                navigator.push(eu.kanade.presentation.account.AccountScreen())
+            }
+            ready = true
+            return true
+        }
         val notificationId = intent.getIntExtra("notificationId", -1)
         if (notificationId > -1) {
             NotificationReceiver.dismissNotification(

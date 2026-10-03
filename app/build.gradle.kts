@@ -5,6 +5,7 @@ import mihon.gradle.getLatestCommitSha
 import mihon.gradle.tasks.ReplaceShortcutsPlaceholderTask
 import java.io.FileInputStream
 import java.util.Properties
+import java.util.Base64 as JavaBase64
 import kotlin.io.encoding.Base64
 
 plugins {
@@ -25,12 +26,32 @@ if (false) {
 }
 
 val keystorePropertiesFile = rootProject.file("keystore.properties")
+val accountLocalProperties = Properties().apply {
+    rootProject.file("local.properties").takeIf { it.isFile }?.inputStream()?.use { load(it) }
+}
+fun accountConfiguration(name: String): String = providers.environmentVariable(name)
+    .orElse(providers.gradleProperty(name)).orNull ?: accountLocalProperties.getProperty(name, "")
 
 android {
     namespace = "eu.kanade.tachiyomi"
 
     defaultConfig {
         applicationId = "app.manhwaar.reader"
+        val supabaseUrl = accountConfiguration("SUPABASE_URL").trim()
+        val supabaseKey = accountConfiguration("SUPABASE_PUBLISHABLE_KEY").trim()
+        require(listOf(supabaseUrl, supabaseKey).all { value -> value.none { it == '"' || it == '\\' || it.isISOControl() } }) {
+            "Invalid Supabase client configuration"
+        }
+        if (supabaseKey.isNotEmpty()) {
+            val isLegacyAnon = runCatching {
+                val payload = String(JavaBase64.getUrlDecoder().decode(supabaseKey.split('.')[1]))
+                (groovy.json.JsonSlurper().parseText(payload) as? Map<*, *>)?.get("role") == "anon"
+            }.getOrDefault(false)
+            require(supabaseKey.startsWith("sb_publishable_") || isLegacyAnon) { "Only a Supabase publishable/anon client key is allowed" }
+        }
+        buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
+        buildConfigField("String", "SUPABASE_PUBLISHABLE_KEY", "\"$supabaseKey\"")
+        manifestPlaceholders["accountAuthScheme"] = "app.manhwaar.reader.auth"
 
         versionCode = 1
         versionName = "1.0.0"
@@ -85,6 +106,7 @@ android {
     buildTypes {
         val debug = getByName("debug") {
             applicationIdSuffix = ".dev"
+            manifestPlaceholders["accountAuthScheme"] = "app.manhwaar.reader.dev.auth"
             versionNameSuffix = "-${getLatestCommitCount()}"
             isPseudoLocalesEnabled = true
         }
@@ -220,6 +242,12 @@ baselineProfile {
 }
 
 dependencies {
+    // Phase 1 account modules only: no Community, Realtime, Functions or cloud library sync.
+    implementation(platform("io.github.jan-tennert.supabase:bom:3.8.0"))
+    implementation("io.github.jan-tennert.supabase:auth-kt")
+    implementation("io.github.jan-tennert.supabase:postgrest-kt")
+    implementation("io.github.jan-tennert.supabase:storage-kt")
+    implementation("io.ktor:ktor-client-okhttp:3.5.1")
     baselineProfile(projects.baselineProfile)
 
     implementation(projects.i18n)
