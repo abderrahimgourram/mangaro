@@ -11,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Bookmark
 import androidx.compose.material.icons.outlined.BookmarkBorder
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -44,6 +45,7 @@ fun MangaroReaderTopBar(
     onOpenInBrowser: (() -> Unit)?,
     onShare: (() -> Unit)?,
     modifier: Modifier = Modifier,
+    onCommunity: (() -> Unit)? = null,
 ) {
     var showOverflowMenu by remember { mutableStateOf(false) }
 
@@ -106,6 +108,11 @@ fun MangaroReaderTopBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
+            onCommunity?.let { community ->
+                IconButton(onClick = community) {
+                    Icon(Icons.Outlined.ChatBubbleOutline, "تعليقات الفصل", tint = Color(0xFFB7A9C4))
+                }
+            }
             IconButton(onClick = onToggleBookmarked) {
                 Icon(
                     imageVector = if (bookmarked) Icons.Outlined.Bookmark else Icons.Outlined.BookmarkBorder,

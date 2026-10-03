@@ -33,6 +33,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import eu.kanade.presentation.community.CommunityContext
+import eu.kanade.presentation.community.ReaderCommunitySheet
+import eu.kanade.presentation.community.communityContextFor
+import eu.kanade.tachiyomi.data.database.models.toDomainChapter
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -110,6 +116,8 @@ import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
 class ReaderActivity : BaseActivity() {
+    // Overlay state only: opening/dismissing discussion never loads or selects a chapter.
+    private var readerCommunity by mutableStateOf<CommunityContext?>(null)
 
     companion object {
         fun newIntent(context: Context, mangaId: Long?, chapterId: Long?): Intent {
@@ -276,6 +284,9 @@ class ReaderActivity : BaseActivity() {
             AppBars(state = state)
         }
 
+        readerCommunity?.let { context ->
+            ReaderCommunitySheet(context, onDismiss = { readerCommunity = null })
+        }
         val onDismissRequest = viewModel::closeDialog
         when (state.dialog) {
             is ReaderViewModel.Dialog.Loading -> {
@@ -549,6 +560,11 @@ class ReaderActivity : BaseActivity() {
             },
             onClickSettings = viewModel::openSettingsDialog,
             onClickChapterSelector = viewModel::openChapterListDialog,
+            onClickCommunity = state.manga?.let { manga ->
+                state.currentChapter?.chapter?.toDomainChapter()?.let { chapter ->
+                    { readerCommunity = communityContextFor(manga, chapter) }
+                }
+            },
         )
     }
 

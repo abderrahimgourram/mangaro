@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -58,6 +59,12 @@ class AccountScreen : Screen() {
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
+        AccountPanel(onBack = { navigator.pop() })
+    }
+}
+
+@Composable
+fun AccountPanel(onBack: () -> Unit) {
         val account = remember { Injekt.get<AccountFoundation>() }
         val session by account.session.collectAsState()
         val scope = rememberCoroutineScope()
@@ -71,7 +78,7 @@ class AccountScreen : Screen() {
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { navigator.pop() }) {
+                    IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Outlined.ArrowBack, "رجوع", tint = Color(0xFFD6C9E0))
                     }
                     Text("الحساب", style = MaterialTheme.typography.titleLarge, color = Color.White, fontWeight = FontWeight.Bold)
@@ -118,7 +125,6 @@ class AccountScreen : Screen() {
                 }
             }
         }
-    }
 }
 
 @Composable
@@ -147,4 +153,14 @@ fun AccountDrawerArea(session: AccountSession, onLogin: () -> Unit, onProfile: (
             }
         }
     }
+}
+
+/** One reusable account-required prompt, delegating authentication to the existing account UI. */
+@Composable
+fun AccountRequiredPrompt(onDismiss: () -> Unit, onAccount: () -> Unit) {
+    AlertDialog(onDismissRequest = onDismiss, containerColor = MangaroDesignSystem.SurfaceDark,
+        title = { Text("سجّل دخولك للمشاركة") },
+        text = { Text("التعليقات والتقييمات ونظام المستوى متاحة لأعضاء Mangaro.") },
+        confirmButton = { TextButton(onClick = { onDismiss(); onAccount() }) { Text("المتابعة باستخدام Google") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("ليس الآن") } })
 }

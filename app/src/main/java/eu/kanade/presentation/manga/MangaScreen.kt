@@ -1,5 +1,11 @@
 package eu.kanade.presentation.manga
 
+import eu.kanade.presentation.community.MangaCommunitySection
+import eu.kanade.presentation.community.CommunityCommentsScreen
+import eu.kanade.presentation.community.communityContextFor
+import cafe.adriel.voyager.navigator.LocalNavigator
+import cafe.adriel.voyager.navigator.currentOrThrow
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.Box
@@ -328,6 +334,10 @@ private fun MangaScreenSmallImpl(
                         )
                     }
 
+                    item(key = MangaScreenItem.COMMUNITY, contentType = MangaScreenItem.COMMUNITY) {
+                        MangaCommunitySection(state.manga)
+                    }
+
                     item(
                         key = MangaScreenItem.CHAPTER_HEADER,
                         contentType = MangaScreenItem.CHAPTER_HEADER,
@@ -515,6 +525,7 @@ fun MangaScreenLargeImpl(
                             tags = state.manga.genre,
                             onTagClick = onTagSearch,
                         )
+                        MangaCommunitySection(state.manga)
                     }
                 },
                 endContent = {
@@ -647,6 +658,7 @@ private fun LazyListScope.sharedChapterItems(
         contentType = { MangaScreenItem.CHAPTER },
     ) { item ->
         val haptic = LocalHapticFeedback.current
+        val communityNavigator = LocalNavigator.currentOrThrow
 
         when (item) {
             is ChapterList.MissingCount -> {
@@ -702,6 +714,9 @@ private fun LazyListScope.sharedChapterItems(
                     },
                     onChapterSwipe = {
                         onChapterSwipe(item, it)
+                    },
+                    onCommunityClick = if (isAnyChapterSelected) null else {
+                        { communityNavigator.push(CommunityCommentsScreen(communityContextFor(manga, item.chapter))) }
                     },
                 )
             }

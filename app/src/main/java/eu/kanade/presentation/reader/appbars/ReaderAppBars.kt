@@ -60,6 +60,7 @@ fun ReaderAppBars(
     onClickCropBorder: () -> Unit,
     onClickSettings: () -> Unit,
     onClickChapterSelector: () -> Unit = onClickSettings,
+    onClickCommunity: (() -> Unit)? = null,
 ) {
     val preferences = Injekt.get<ReaderPreferences>()
     val customBrightness by preferences.customBrightness.collectAsState()
@@ -83,6 +84,7 @@ fun ReaderAppBars(
                 onOpenInWebView = onOpenInWebView,
                 onOpenInBrowser = onOpenInBrowser,
                 onShare = onShare,
+                onCommunity = onClickCommunity,
             )
         }
 

@@ -97,6 +97,8 @@ class AccountFeatureGate(private val session: StateFlow<AccountSession>) {
         AccountSession.Loading -> AccountAccess.SessionLoading
         is AccountSession.Authenticated -> AccountAccess.Allowed(current.profile.userId)
     }
+    fun ownsContent(ownerUserId: String): Boolean =
+        (session.value as? AccountSession.Authenticated)?.profile?.userId == ownerUserId
     fun request(feature: AccountFeature): AccountAccess = access(feature).also {
         if (it is AccountAccess.LoginRequired) prompts.tryEmit(it)
     }

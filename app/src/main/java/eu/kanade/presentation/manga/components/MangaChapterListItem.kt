@@ -25,6 +25,9 @@ import androidx.compose.material.icons.outlined.Done
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.FileDownloadOff
 import androidx.compose.material.icons.outlined.RemoveDone
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material3.IconButton
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
@@ -75,6 +78,7 @@ fun MangaChapterListItem(
     onDownloadClick: ((ChapterDownloadAction) -> Unit)?,
     onChapterSwipe: (LibraryPreferences.ChapterSwipeAction) -> Unit,
     modifier: Modifier = Modifier,
+    onCommunityClick: (() -> Unit)? = null,
 ) {
     val titleColor by animateColorAsState(
         targetValue = LocalContentColor.current.copy(alpha = if (read) DISABLED_ALPHA else 1f),
@@ -220,6 +224,12 @@ fun MangaChapterListItem(
                         }
                     }
                     Spacer(Modifier.width(6.dp))
+                    onCommunityClick?.let { onCommunity ->
+                        IconButton(onClick = onCommunity, modifier = Modifier.size(32.dp)) {
+                            Icon(Icons.Outlined.ChatBubbleOutline, "تعليقات الفصل", Modifier.size(16.dp),
+                                tint = MangaroDesignSystem.LavenderPrimary.copy(alpha = 0.75f))
+                        }
+                    }
                     MangaroChapterDownloadIndicator(
                         enabled = downloadIndicatorEnabled,
                         downloadStateProvider = downloadStateProvider,
