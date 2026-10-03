@@ -7,6 +7,11 @@ import androidx.compose.runtime.Immutable
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import eu.kanade.presentation.community.communityContextFor
+import mihon.domain.account.AccountFoundation
+import mihon.domain.account.AccountFeature
+import mihon.domain.account.AccountAccess
+import mihon.domain.account.AccountOperation
 import eu.kanade.domain.base.BasePreferences
 import eu.kanade.domain.chapter.model.toDbChapter
 import eu.kanade.domain.manga.interactor.SetMangaViewerFlags
@@ -536,6 +541,26 @@ class ReaderViewModel @JvmOverloads constructor(
      * Saves the chapter progress (last read page and whether it's read)
      * if incognito mode isn't on.
      */
+    private val completionEarlierPages = java.util.concurrent.ConcurrentHashMap.newKeySet<Long>()
+    private val progressionClaims = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    private fun submitCompletedChapter(readerChapter: ReaderChapter) {
+        val currentManga = manga ?: return
+        val chapter = readerChapter.chapter.toDomainChapter() ?: return
+        val account = Injekt.get<AccountFoundation>()
+        val access = account.featureGate.access(AccountFeature.XP) as? AccountAccess.Allowed ?: return
+        val target = communityContextFor(currentManga, chapter).target
+        val key = target.chapterKey?.value ?: return
+        val attempt = "${access.userId}:$key"
+        if (!progressionClaims.add(attempt)) return
+        viewModelScope.launchIO {
+            try {
+                if (account.auth.claimChapterCompletion(target.mangaKey.value, key) != AccountOperation.Completed) progressionClaims.remove(attempt)
+            } catch (cancelled: CancellationException) { progressionClaims.remove(attempt); throw cancelled }
+            catch (_: Exception) { progressionClaims.remove(attempt) }
+        }
+    }
+
     private suspend fun updateChapterProgress(readerChapter: ReaderChapter, page: Page) {
         val pageIndex = page.index
 
@@ -548,8 +573,15 @@ class ReaderViewModel @JvmOverloads constructor(
         if (!incognitoMode && page.status !is Page.State.Error) {
             readerChapter.chapter.last_page_read = pageIndex
 
-            if (readerChapter.pages?.lastIndex == pageIndex) {
+            val chapterId = readerChapter.chapter.id
+            val finalPage = readerChapter.pages?.lastIndex
+            if (page.status is Page.State.Ready && finalPage != null && pageIndex < finalPage && chapterId != null) {
+                completionEarlierPages.add(chapterId)
+            }
+            if (finalPage == pageIndex) {
                 updateChapterProgressOnComplete(readerChapter)
+                // Reaching a rendered final page after an earlier page, rather than opening at the end.
+                if (page.status is Page.State.Ready && chapterId != null && chapterId in completionEarlierPages) submitCompletedChapter(readerChapter)
             }
 
             updateChapter.await(

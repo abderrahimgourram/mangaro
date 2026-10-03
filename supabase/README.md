@@ -80,3 +80,68 @@ not changed). See [Supabase password security](https://supabase.com/docs/guides/
 
 Google OAuth was manually verified by the user before Phase 2.
 **Android Community runtime verification pending manual device test.**
+
+## Progression Phase 3
+
+Forward migrations `20261003230846_mangaro_server_progression.sql` and
+`20261003231953_mangaro_progression_rpc_hardening.sql` add trusted progression.
+Existing deployed Account/Community migration files remain unchanged.
+`user_progression` holds owner-readable total XP and server-calculated level;
+`xp_events` retains unique action awards and revocation audit; and
+`reader_chapter_completions` permanently records the first claim per user/stable
+chapter key, including claims capped at zero. All three explicitly enable RLS;
+clients have owner SELECT only, with no INSERT/UPDATE/DELETE grants.
+
+Rewards are fixed server-side: top-level comment **12 XP** (5 eligible awards per
+UTC day), reply **4 XP** (5/day), completed chapter **2 XP** (50/day). Per-user row
+locks serialize eligibility checks and balance updates. Zero-amount capped
+ledger entries prevent later re-awards. Deleted comments and cascaded replies
+revoke their contributions once while positive original awards still consume
+their original award-day caps. Existing comments receive no retroactive XP.
+Profiles backfill/start at zero XP, level one, through an additional profile
+signup trigger without replacing Auth triggers.
+
+`progression_level(total_xp)` is the canonical server curve: the transition from
+level L costs `40 + (L-1)*8`; cumulative threshold is `40*n + 4*n*(n-1)` for
+`n=L-1`. Every boundary was tested, including 4407→29 and **4408→30**. Level stays
+within 1–30. Android's existing rank resolver presents the canonical Arabic
+rank names; its added threshold helper only formats progress inside the
+server-confirmed level. No client XP/rank/level mutation exists.
+
+Generic award/revoke/balance functions live in the non-exposed
+`mangaro_private` schema and are not executable by client roles. Public
+`claim_chapter_completion(manga_key,chapter_key)` is an invoker wrapper around a
+private, authenticated, complete-profile checked implementation deriving
+`auth.uid()`. Clients cannot supply user ID, reward, XP or level. A bounded
+public author-level projection returns user ID/level only, joined into the
+existing comment page RPC, without total XP or per-comment network requests.
+Security Advisor flagged the original public definer endpoints; the second
+forward migration moves those implementations behind the invoker wrappers.
+Final Advisor findings contain only the existing unrelated Auth password warning.
+
+Account restoration maps server progression, retaining last-confirmed values
+on progression read failure. Confirmed comment/reply creation, deletion and
+chapter claims refresh only the current owner's progression. Ratings, likes,
+reports, edits and login earn nothing. Account shows total XP and an accurate
+current-level earned/required bar; level 30 shows maximum level. Drawer and
+comments reuse the existing restrained rank/level presentation.
+
+Reader claims are asynchronous and session-deduplicated, with safe retry after
+failure. They use the existing Community key mapping and existing final-page
+completion path, requiring a rendered final page after an earlier rendered page
+in the current Reader session. Opening/resuming directly at the end, an error
+page, incognito reading or a one-page chapter does not automatically claim XP.
+Local reading progress/completion/navigation semantics are unchanged. Chapter
+claims are **not cheat-proof**: third-party local reading cannot be verified
+cryptographically by this backend. The server controls deduplication and caps;
+a modified client can still submit otherwise well-formed completion claims.
+
+`tests/phase3_xp.sql` passes with rollback-only fixtures under actual client
+roles: direct mutation denials, owner-private XP, complete-profile gating,
+rewards/caps, duplicate events/claims, delete/repost protection, zero-boundary
+revocation, historical UTC award windows, capped claims remaining ineligible
+later, public comment levels, all level boundaries, ledger consistency and
+internal-function privileges. No production fixtures remain. No Realtime,
+polling, cloud sync, local SQL migration, publisher or workflow changes.
+
+**Android progression runtime verification pending manual device test.**

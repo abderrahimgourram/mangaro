@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -27,6 +28,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -61,6 +63,8 @@ import mihon.domain.account.AccountProfileInput
 import mihon.domain.account.AccountFoundation
 import mihon.domain.account.AccountOperation
 import mihon.domain.account.AccountSession
+import mihon.domain.account.MangaroRanks
+import mihon.domain.account.MangaroLevelProgress
 import mihon.domain.account.MangaroProfile
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
@@ -178,6 +182,17 @@ private fun AccountProfileEditor(
     // Email is visible only in this owner's account area, never public comments/profiles.
     profile.email?.let { Text(it, color = Color(0xFFB7A9C4)) }
     Text("المستوى ${profile.level} · ${profile.rankTitle}", color = Color(0xFFB7A9C4), style = MaterialTheme.typography.bodySmall)
+    Text("${profile.xp} XP", color = Color(0xFFB7A9C4), style = MaterialTheme.typography.labelSmall)
+    if (profile.level == MangaroRanks.MAX_LEVEL) {
+        Text("المستوى الأقصى", color = MangaroDesignSystem.GoldPrimary, style = MaterialTheme.typography.labelSmall)
+    } else {
+        val earned = MangaroLevelProgress.earned(profile)
+        val required = MangaroLevelProgress.required(profile.level)
+        LinearProgressIndicator(progress = { (earned.toFloat() / required).coerceIn(0f, 1f) },
+            modifier = Modifier.fillMaxWidth().height(4.dp), color = MangaroDesignSystem.GoldPrimary,
+            trackColor = MangaroDesignSystem.SurfaceHigh)
+        Text("$earned / $required XP", color = Color(0xFFB7A9C4), style = MaterialTheme.typography.labelSmall)
+    }
     if (profile.username == null) Text("أكمل ملفك باختيار اسم مستخدم فريد. يمكنك مواصلة القراءة كالمعتاد.",
         color = MangaroDesignSystem.GoldPrimary, style = MaterialTheme.typography.bodySmall)
     OutlinedTextField(displayName, { displayName = it }, label = { Text("اسم العرض") },
@@ -209,6 +224,7 @@ fun AccountDrawerArea(session: AccountSession, onLogin: () -> Unit, onProfile: (
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(profile?.displayName ?: profile?.username ?: "MANGARO", color = MangaroDesignSystem.GoldPrimary,
                         style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                    profile?.let { Text("${it.rankTitle} · المستوى ${it.level}", color = Color(0xFFB7A9C4), style = MaterialTheme.typography.labelSmall) }
                     val handle = profile?.username
                     if (handle != null) UsernameHandle(handle, color = Color(0xFFB7A9C4), style = MaterialTheme.typography.bodySmall)
                     else Text(if (profile != null) "الملف الشخصي" else "أنت تستخدم Mangaro كضيف",

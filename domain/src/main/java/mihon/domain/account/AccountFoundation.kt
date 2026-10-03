@@ -67,6 +67,17 @@ object MangaroRanks {
     }
 }
 
+/** Presentation of server-confirmed XP inside its server-confirmed level; never awards XP. */
+object MangaroLevelProgress {
+    fun threshold(level: Int): Long {
+        require(level in 1..MangaroRanks.MAX_LEVEL)
+        val n = (level - 1).toLong()
+        return 40 * n + 4 * n * (n - 1)
+    }
+    fun required(level: Int): Long = if (level == MangaroRanks.MAX_LEVEL) 0 else 40L + (level - 1) * 8
+    fun earned(profile: MangaroProfile): Long = (profile.xp - threshold(profile.level)).coerceAtLeast(0)
+}
+
 // Editable profile properties exclude server-owned progression and account identity.
 data class ProfileUpdate(val displayName: String?, val username: String?)
 /** Same conservative rules as the server CHECK constraints; display names are not handles. */
@@ -95,6 +106,8 @@ interface AccountAuth {
     val error: StateFlow<String?>
     suspend fun signInWithGoogle(): AccountOperation
     suspend fun signOut()
+    suspend fun refreshProgression(): AccountOperation
+    suspend fun claimChapterCompletion(mangaKey: String, chapterKey: String): AccountOperation
     suspend fun getCurrentProfile(): MangaroProfile?
     suspend fun updateProfile(update: ProfileUpdate): AccountOperation
     suspend fun uploadAvatar(webp: ByteArray): AccountOperation
@@ -109,6 +122,8 @@ class GuestAccountAuth : AccountAuth {
     override fun observeSession(): StateFlow<AccountSession> = session.asStateFlow()
     override suspend fun signInWithGoogle(): AccountOperation = AccountOperation.NotConfigured
     override suspend fun signOut() { session.value = AccountSession.Guest }
+    override suspend fun refreshProgression() = AccountOperation.NotConfigured
+    override suspend fun claimChapterCompletion(mangaKey: String, chapterKey: String) = AccountOperation.NotConfigured
     override suspend fun getCurrentProfile(): MangaroProfile? = null
     override suspend fun updateProfile(update: ProfileUpdate): AccountOperation = AccountOperation.NotConfigured
     override suspend fun uploadAvatar(webp: ByteArray): AccountOperation = AccountOperation.NotConfigured
@@ -136,7 +151,7 @@ class AccountFeatureGate(private val session: StateFlow<AccountSession>) {
         AccountSession.Loading -> AccountAccess.SessionLoading
         is AccountSession.Authenticated -> if (current.profile.username.isNullOrBlank() && feature in setOf(
             AccountFeature.COMMENTS, AccountFeature.REPLIES, AccountFeature.MANGA_RATINGS,
-            AccountFeature.CHAPTER_RATINGS, AccountFeature.REACTIONS,
+            AccountFeature.CHAPTER_RATINGS, AccountFeature.REACTIONS, AccountFeature.XP,
         )) AccountAccess.ProfileRequired(feature) else AccountAccess.Allowed(current.profile.userId)
     }
     fun ownsContent(ownerUserId: String): Boolean =

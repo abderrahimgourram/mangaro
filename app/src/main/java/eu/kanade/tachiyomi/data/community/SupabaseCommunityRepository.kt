@@ -66,7 +66,7 @@ class SupabaseCommunityRepository(private val client: SupabaseClient, private va
             client.storage.from("avatars").publicUrl(it) + "?v=" + (author_updated_at?.let(::timestamp) ?: 0)
         }
         val avatar = custom ?: google_avatar_url?.takeIf { it.startsWith("https://") }
-        return CommunityComment(id, target, AccountAuthor(user_id, display_name, username, avatar, 1), body,
+        return CommunityComment(id, target, AccountAuthor(user_id, display_name, username, avatar, level), body,
             timestamp(created_at), timestamp(updated_at), like_count, reply_count,
             timestamp(updated_at) > timestamp(created_at), user_id == user, parent_comment_id, liked_by_me)
     }
@@ -140,7 +140,7 @@ class SupabaseCommunityRepository(private val client: SupabaseClient, private va
         replies(target, it, parentId, cursor)
     }
     private fun feature(target: CommunityTarget) = if (target.targetType == CommunityTargetType.MANGA) AccountFeature.MANGA_RATINGS else AccountFeature.CHAPTER_RATINGS
-    private suspend fun write(target: CommunityTarget, feature: AccountFeature, parent: String? = null, action: suspend (String) -> CommunityEvent?): CommunityOperation {
+    private suspend fun write(target: CommunityTarget, feature: AccountFeature, parent: String? = null, refreshProgression: Boolean = false, action: suspend (String) -> CommunityEvent?): CommunityOperation {
         val access = account.featureGate.access(feature)
         val user = when (access) {
             is AccountAccess.Allowed -> access.userId
@@ -152,6 +152,7 @@ class SupabaseCommunityRepository(private val client: SupabaseClient, private va
             item.lock.withLock {
                 try {
                     val event = requests.withPermit { action(user) }
+                    if (refreshProgression) account.auth.refreshProgression()
                     event?.let { emitted.tryEmit(it) }
                     // The mutation is server-confirmed; a subsequent read failure must not encourage duplicate posting.
                     try { reload(target, item); if (parent != null) replies(target, item, parent, null) }
@@ -176,7 +177,7 @@ class SupabaseCommunityRepository(private val client: SupabaseClient, private va
     override suspend fun post(target: CommunityTarget, body: String, parentCommentId: String?): CommunityOperation {
         val input = CommunityCommentInput.validate(body)
         if (input is CommentValidation.Invalid) return CommunityOperation.Failed(CommunityError(CommunityErrorKind.VALIDATION, input.issue))
-        return write(target, if (parentCommentId == null) AccountFeature.COMMENTS else AccountFeature.REPLIES, parentCommentId) { user ->
+        return write(target, if (parentCommentId == null) AccountFeature.COMMENTS else AccountFeature.REPLIES, parentCommentId, refreshProgression = true) { user ->
             val id = client.from("community_comments").insert(buildJsonObject {
                 put("target_type", target.targetType.name.lowercase()); put("manga_key", target.mangaKey.value)
                 put("chapter_key", target.chapterKey?.value); put("user_id", user)
@@ -200,7 +201,7 @@ class SupabaseCommunityRepository(private val client: SupabaseClient, private va
             }.decodeSingle<Identity>(); null
         }
     }
-    override suspend fun deleteOwned(comment: CommunityComment) = write(comment.target, AccountFeature.COMMENTS, comment.parentCommentId) { user ->
+    override suspend fun deleteOwned(comment: CommunityComment) = write(comment.target, AccountFeature.COMMENTS, comment.parentCommentId, refreshProgression = true) { user ->
         client.from("community_comments").delete { filter { eq("id", comment.id); eq("user_id", user) }; select() }.decodeSingle<Identity>(); null
     }
     private fun error(failure: Exception): CommunityError {
@@ -224,6 +225,6 @@ class SupabaseCommunityRepository(private val client: SupabaseClient, private va
     @Serializable private data class Row(
         val id: String, val user_id: String, val body: String, val created_at: String, val updated_at: String,
         val parent_comment_id: String?, val display_name: String?, val username: String?, val avatar_path: String?,
-        val google_avatar_url: String?, val author_updated_at: String?, val like_count: Long, val reply_count: Long, val liked_by_me: Boolean,
+        val google_avatar_url: String?, val author_updated_at: String?, val like_count: Long, val reply_count: Long, val liked_by_me: Boolean, val level: Int = 1,
     )
 }

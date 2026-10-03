@@ -19,6 +19,7 @@ import io.github.jan.supabase.auth.status.SessionStatus
 import io.github.jan.supabase.auth.user.UserInfo
 import io.github.jan.supabase.logging.LogLevel
 import io.github.jan.supabase.postgrest.Postgrest
+import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.exception.PostgrestRestException
 import io.github.jan.supabase.storage.Storage
@@ -164,6 +165,41 @@ class SupabaseAccountAuth private constructor(private val client: SupabaseClient
         catch (_: Exception) { errors.value = "تعذّر تحميل ملفك الشخصي"; null }
     }
 
+    override suspend fun refreshProgression(): AccountOperation = mutations.withLock {
+        val current = (session.value as? AccountSession.Authenticated)?.profile
+            ?: return@withLock AccountOperation.NotConfigured
+        try {
+            val progress = client.from("user_progression").select {
+                filter { eq("user_id", current.userId) }
+            }.decodeSingle<ProgressionRow>()
+            val latest = (session.value as? AccountSession.Authenticated)?.profile
+            if (latest?.userId == current.userId && client.auth.currentUserOrNull()?.id == current.userId) {
+                session.value = AccountSession.Authenticated(latest.copy(xp = progress.total_xp, level = progress.level))
+            }
+            AccountOperation.Completed
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { AccountOperation.Failed("تعذّر تحديث التقدم") }
+    }
+
+    override suspend fun claimChapterCompletion(mangaKey: String, chapterKey: String): AccountOperation {
+        val current = (session.value as? AccountSession.Authenticated)?.profile
+            ?: return AccountOperation.Failed("سجّل دخولك أولًا")
+        if (current.username == null) return AccountOperation.Failed("أكمل اسم المستخدم أولًا")
+        return try {
+            client.postgrest.rpc("claim_chapter_completion", buildJsonObject {
+                put("p_manga_key", mangaKey); put("p_chapter_key", chapterKey)
+            }).decodeAs<CompletionResult>()
+            // Server-confirmed, idempotent claim. Reading never waits for this method.
+            refreshProgression()
+            AccountOperation.Completed
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { AccountOperation.Failed("تعذّر تحديث التقدم") }
+    }
+
+    @Serializable private data class ProgressionRow(val total_xp: Long, val level: Int)
+    @Serializable private data class CompletionResult(val xp_awarded: Int, val new_total_xp: Long,
+        val new_level: Int, val leveled_up: Boolean)
+
     override suspend fun updateProfile(update: ProfileUpdate): AccountOperation = mutations.withLock {
         AccountProfileInput.error(update)?.let { return@withLock AccountOperation.Failed(it) }
         val user = client.auth.currentUserOrNull() ?: return@withLock AccountOperation.Failed("سجّل دخولك أولًا")
@@ -211,8 +247,15 @@ class SupabaseAccountAuth private constructor(private val client: SupabaseClient
         val avatar = row.avatarPath?.takeIf { it == "${user.id}/avatar.webp" }?.let {
             client.storage.from("avatars").publicUrl(it) + "?v=" + Uri.encode(row.updatedAt)
         } ?: row.googleAvatarUrl?.takeIf { Uri.parse(it).scheme == "https" }
-        val profile = MangaroProfile(user.id, user.email, row.displayName, row.username, avatar, xp = 0, level = 1, googleAvatarUrl = row.googleAvatarUrl?.takeIf { Uri.parse(it).scheme == "https" })
-        // No progression table exists in Phase 1; no client XP earning or mutation.
+        // A failed progression read must not invalidate a working Google session.
+        val previous = (session.value as? AccountSession.Authenticated)?.profile?.takeIf { it.userId == user.id }
+        val progression = try {
+            client.from("user_progression").select { filter { eq("user_id", user.id) } }.decodeSingle<ProgressionRow>()
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { null }
+        val profile = MangaroProfile(user.id, user.email, row.displayName, row.username, avatar,
+            xp = progression?.total_xp ?: previous?.xp ?: 0, level = progression?.level ?: previous?.level ?: 1, googleAvatarUrl = row.googleAvatarUrl?.takeIf { Uri.parse(it).scheme == "https" })
+        // Total XP/level come only from server state; offline refresh retains the last confirmed values.
         if (client.auth.currentUserOrNull()?.id == user.id) {
             session.value = AccountSession.Authenticated(profile)
             errors.value = null
