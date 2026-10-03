@@ -50,10 +50,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.theme.MangaroDesignSystem
+import mihon.domain.account.AccountSession
+import mihon.domain.account.MangaroProfile
 import eu.kanade.presentation.account.AccountDrawerArea
-import eu.kanade.presentation.account.AccountMode
-import eu.kanade.presentation.account.AccountUiState
-import eu.kanade.presentation.account.AccountUser
 import eu.kanade.tachiyomi.BuildConfig
 import kotlinx.coroutines.launch
 
@@ -66,9 +65,9 @@ fun MangaroHomeDrawer(
     onSettings: () -> Unit,
     onAbout: () -> Unit,
     onLicenses: () -> Unit,
-    onAccount: (AccountMode) -> Unit,
-    accountState: AccountUiState = AccountUiState.Guest,
-    onProfile: ((AccountUser) -> Unit)? = null,
+    onAccount: () -> Unit,
+    accountState: AccountSession = AccountSession.Guest,
+    onProfile: ((MangaroProfile) -> Unit)? = null,
     content: @Composable (openDrawer: () -> Unit) -> Unit,
 ) {
     val drawer = rememberDrawerState(DrawerValue.Closed)
@@ -124,9 +123,8 @@ fun MangaroHomeDrawer(
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             AccountDrawerArea(
-                                state = accountState,
-                                onCreate = { select { onAccount(AccountMode.CREATE) } },
-                                onLogin = { select { onAccount(AccountMode.LOGIN) } },
+                                session = accountState,
+                                onLogin = { select(onAccount) },
                                 onProfile = onProfile?.let { profile -> { user -> select { profile(user) } } },
                             )
                             DrawerAction("المكتبة", Icons.Outlined.BookmarkBorder) { select(onLibrary) }

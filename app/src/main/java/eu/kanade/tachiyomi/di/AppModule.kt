@@ -160,6 +160,10 @@ class AppModule(val app: Application) : InjektModule {
         addSingletonFactory<SourceManager> { AndroidSourceManager(app, get(), get(), get(), get()) }
         addSingletonFactory { ExtensionManager(app) }
 
+        addSingletonFactory<mihon.domain.account.AccountAuth> { mihon.domain.account.GuestAccountAuth() }
+        addSingletonFactory<mihon.domain.account.AccountCloudSync> { mihon.domain.account.DisabledAccountCloudSync() }
+        addSingletonFactory { mihon.domain.account.AccountFoundation(get(), get()) }
+
         addSingletonFactory { DownloadProvider(app) }
         addSingletonFactory { DownloadManager(app) }
         addSingletonFactory { DownloadCache(app) }

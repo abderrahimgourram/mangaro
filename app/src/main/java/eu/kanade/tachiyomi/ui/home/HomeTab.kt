@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.ui.home
 
+import uy.kohesive.injekt.api.get
 import coil3.imageLoader
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -123,6 +124,8 @@ object HomeTab : Tab {
             }
         }
 
+        val account = androidx.compose.runtime.remember { uy.kohesive.injekt.Injekt.get<mihon.domain.account.AccountFoundation>() }
+        val accountSession by account.session.collectAsState()
         MangaroHomeDrawer(
             activeDownloadsCount = state.activeDownloadsCount,
             onLibrary = { tabNavigator.current = LibraryTab },
@@ -130,7 +133,9 @@ object HomeTab : Tab {
             onSettings = { navigator.push(SettingsScreen()) },
             onAbout = { navigator.push(SettingsScreen(SettingsScreen.Destination.About)) },
             onLicenses = { navigator.push(OpenSourceLicensesScreen()) },
-            onAccount = { mode -> navigator.push(AccountScreen(mode)) },
+            onAccount = { navigator.push(AccountScreen()) },
+            accountState = accountSession,
+            onProfile = { navigator.push(AccountScreen()) },
         ) { openDrawer ->
         Scaffold(
             contentWindowInsets = WindowInsets(0),
