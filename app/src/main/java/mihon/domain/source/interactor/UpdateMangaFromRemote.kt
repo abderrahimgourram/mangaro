@@ -8,6 +8,10 @@ import eu.kanade.tachiyomi.data.cache.CoverCache
 import eu.kanade.tachiyomi.data.download.DownloadManager
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.model.SManga
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.withLock
 import eu.kanade.tachiyomi.source.model.ChapterFetchCompleteness
@@ -42,7 +46,21 @@ class UpdateMangaFromRemote(
         var users = 0
         var result: Result<RemoteMangaUpdate>? = null
     }
-    companion object { private val pending = mutableMapOf<OperationKey, Pending>() }
+    companion object {
+        private val pending = mutableMapOf<OperationKey, Pending>()
+        private const val CHAPTER_REFRESH_KEY = "mangaro.chapterRefresh"
+        private const val CHAPTER_REFRESH_INTERVAL_MS = 30 * 60 * 1000L
+
+        fun chaptersRefreshedRecently(manga: Manga): Boolean {
+            val refresh = manga.memo[CHAPTER_REFRESH_KEY] as? JsonObject ?: return false
+            if ((refresh["source"] as? JsonPrimitive)?.content != manga.source.toString() ||
+                (refresh["url"] as? JsonPrimitive)?.content != manga.url
+            ) return false
+            val timestamp = (refresh["at"] as? JsonPrimitive)?.content?.toLongOrNull() ?: return false
+            val age = Clock.System.now().toEpochMilliseconds() - timestamp
+            return timestamp > 0 && age in 0 until CHAPTER_REFRESH_INTERVAL_MS
+        }
+    }
 
     suspend operator fun invoke(
         manga: Manga,
@@ -123,7 +141,20 @@ class UpdateMangaFromRemote(
                 completeness = update.chapterCompleteness,
                 declaredChapterCount = update.declaredChapterCount,
             ) else emptyList()
-            val updatedManga = mangaRepository.getMangaById(manga.id)
+            var updatedManga = mangaRepository.getMangaById(manga.id)
+            // Record successful checks even when no new chapters arrived. lastUpdate instead
+            // describes list changes. Failed/degraded checks never advance this freshness stamp.
+            if (fetchChapters && update.chapterCompleteness == ChapterFetchCompleteness.COMPLETE &&
+                tachiyomi.domain.chapter.service.ChapterListIntegrity.complete(updatedManga)
+            ) {
+                val memo = JsonObject(updatedManga.memo + (CHAPTER_REFRESH_KEY to buildJsonObject {
+                    put("source", updatedManga.source)
+                    put("url", updatedManga.url)
+                    put("at", Clock.System.now().toEpochMilliseconds())
+                }))
+                mangaRepository.update(MangaUpdate(updatedManga.id, memo = memo))
+                updatedManga = mangaRepository.getMangaById(manga.id)
+            }
 
             Result.success(RemoteMangaUpdate(manga = updatedManga, newChapters = newChapters))
         } catch (e: CancellationException) {

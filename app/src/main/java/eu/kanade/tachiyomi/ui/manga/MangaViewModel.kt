@@ -224,10 +224,8 @@ class MangaViewModel(
                 setMangaDefaultChapterFlags.await(manga)
             }
 
-            val needRefreshInfo = !manga.initialized
-            val needRefreshChapter = chapters.isEmpty() || !tachiyomi.domain.chapter.service.ChapterListIntegrity.verified(
-                manga, getMangaAndChapters.awaitChapters(mangaId, applyScanlatorFilter = false),
-            )
+            val needsAutoRefresh = !manga.isLocal() &&
+                !UpdateMangaFromRemote.chaptersRefreshedRecently(manga)
 
             // Show what we have earlier
             mutableState.update {
@@ -238,7 +236,7 @@ class MangaViewModel(
                     chapters = chapters,
                     availableScanlators = getAvailableScanlators.await(mangaId),
                     excludedScanlators = getExcludedScanlators.await(mangaId),
-                    isRefreshingData = needRefreshInfo || needRefreshChapter,
+                    isRefreshingData = false,
                     dialog = null,
                     hideMissingChapters = libraryPreferences.hideMissingChapters.get(),
                 )
@@ -247,12 +245,12 @@ class MangaViewModel(
             // Start observe tracking since it only needs mangaId
             observeTrackers()
 
-            // Fetch info-chapters when needed
-            if ((needRefreshInfo || needRefreshChapter) && viewModelScope.isActive) {
+            // One silent check per ViewModel entry; cached data is already visible above.
+            if (needsAutoRefresh && viewModelScope.isActive) {
                 fetchAllFromSource(
                     manualFetch = false,
-                    fetchDetails = needRefreshInfo,
-                    fetchChapters = needRefreshChapter,
+                    fetchDetails = true,
+                    fetchChapters = true,
                 )
             }
 
@@ -297,6 +295,10 @@ class MangaViewModel(
         } catch (_: CancellationException) {
             // ignore
         } catch (e: Exception) {
+            if (!manualFetch) {
+                logcat(LogPriority.WARN, e) { "Automatic manga refresh failed; cached chapters retained" }
+                return
+            }
             val message = if (e is NoChaptersException) {
                 context.stringResource(MR.strings.no_chapters_error)
             } else {
