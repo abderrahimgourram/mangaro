@@ -32,6 +32,23 @@ data class MangaroProfile(
     val rankTitle: String get() = MangaroRanks.titleFor(level)
 }
 
+/** Public author projection of the existing profile; excludes private email and account XP. */
+data class AccountAuthor(
+    val userId: String,
+    val displayName: String?,
+    val username: String?,
+    val avatarUrl: String?,
+    val level: Int,
+) {
+    init { require(userId.isNotBlank()); require(level in 1..MangaroRanks.MAX_LEVEL) }
+    val rankTitle: String get() = MangaroRanks.titleFor(level)
+    companion object {
+        fun fromProfile(profile: MangaroProfile) = AccountAuthor(
+            profile.userId, profile.displayName, profile.username, profile.avatarUrl, profile.level,
+        )
+    }
+}
+
 /** Rank names only; no XP rewards, earning rules or level calculation. */
 object MangaroRanks {
     const val MAX_LEVEL = 30
