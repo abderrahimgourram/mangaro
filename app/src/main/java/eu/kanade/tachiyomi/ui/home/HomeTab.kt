@@ -2,10 +2,8 @@ package eu.kanade.tachiyomi.ui.home
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -24,7 +22,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.CheckCircle
-import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -40,12 +37,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -65,7 +60,6 @@ import eu.kanade.presentation.home.MangaroSectionHeader
 import eu.kanade.presentation.home.MangaroStandardShelf
 import eu.kanade.presentation.theme.MangaroDesignSystem
 import eu.kanade.presentation.util.Tab
-import eu.kanade.tachiyomi.ui.browse.BrowseTab
 import eu.kanade.tachiyomi.ui.browse.source.globalsearch.GlobalSearchScreen
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.more.MoreTab
@@ -74,13 +68,11 @@ import mihon.domain.source.discovery.model.DiscoveryCategory
 import tachiyomi.presentation.core.components.ScrollbarLazyColumn
 import tachiyomi.presentation.core.components.material.PullRefresh
 import tachiyomi.presentation.core.components.material.Scaffold
-import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.Extension
 import androidx.compose.material.icons.outlined.FiberNew
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material.icons.outlined.Schedule
-import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Whatshot
 
 const val HOME_DISCOVERY_PREVIEW_LIMIT = 8
@@ -315,27 +307,7 @@ object HomeTab : Tab {
                         }
                     }
 
-                    // Section 7: Quick Access Shortcuts
-                    item(key = "quick_access_header") {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        MangaroSectionHeader(title = "وصول سريع", icon = Icons.Outlined.Extension)
-                    }
 
-                    item(key = "quick_access_row") {
-                        QuickAccessRow(
-                            onBrowseClick = { tabNavigator.current = BrowseTab },
-                            onExtensionsClick = {
-                                BrowseTab.showExtension()
-                                tabNavigator.current = BrowseTab
-                            },
-                            onSearchClick = { navigator.push(GlobalSearchScreen()) },
-                            onDownloadsClick = { tabNavigator.current = DownloadsTab },
-                        )
-                    }
-
-                    item(key = "bottom_padding_spacer") {
-                        Spacer(modifier = Modifier.height(28.dp))
-                    }
                 }
             }
         }
@@ -517,101 +489,6 @@ object HomeTab : Tab {
                         .height(9.dp)
                         .clip(RoundedCornerShape(4.dp))
                         .background(MangaroDesignSystem.SurfaceHigh.copy(alpha = 0.4f)),
-                )
-            }
-        }
-    }
-
-    @Composable
-    private fun QuickAccessRow(
-        onBrowseClick: () -> Unit,
-        onExtensionsClick: () -> Unit,
-        onSearchClick: () -> Unit,
-        onDownloadsClick: () -> Unit,
-    ) {
-        BoxWithConstraints(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-        ) {
-            val isSmallScreen = maxWidth < 360.dp
-            if (isSmallScreen) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        QuickShortcutCard("الاستكشاف", Icons.Outlined.Explore, Modifier.weight(1f), onBrowseClick)
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        QuickShortcutCard("البحث", Icons.Outlined.Search, Modifier.weight(1f), onSearchClick)
-                        QuickShortcutCard("التنزيلات", Icons.Outlined.Download, Modifier.weight(1f), onDownloadsClick)
-                    }
-                }
-            } else {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    QuickShortcutCard("الاستكشاف", Icons.Outlined.Explore, Modifier.weight(1f), onBrowseClick)
-                    QuickShortcutCard("البحث", Icons.Outlined.Search, Modifier.weight(1f), onSearchClick)
-                    QuickShortcutCard("التنزيلات", Icons.Outlined.Download, Modifier.weight(1f), onDownloadsClick)
-                }
-            }
-        }
-    }
-
-    @Composable
-    private fun QuickShortcutCard(
-        title: String,
-        icon: ImageVector,
-        modifier: Modifier = Modifier,
-        onClick: () -> Unit,
-    ) {
-        Surface(
-            onClick = onClick,
-            shape = RoundedCornerShape(16.dp),
-            color = MangaroDesignSystem.SurfaceDark,
-            border = BorderStroke(1.dp, Color(0x28A78BFA)),
-            tonalElevation = 4.dp,
-            modifier = modifier.height(72.dp),
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(MangaroDesignSystem.SurfaceCardGradient)
-                    .padding(6.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(30.dp)
-                        .clip(CircleShape)
-                        .background(MangaroDesignSystem.LavenderPrimary.copy(alpha = 0.15f))
-                        .border(BorderStroke(1.dp, MangaroDesignSystem.LavenderPrimary.copy(alpha = 0.3f)), shape = CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = title,
-                        tint = MangaroDesignSystem.GoldPrimary,
-                        modifier = Modifier.size(16.dp),
-                    )
-                }
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.labelMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 11.5.sp,
-                    ),
-                    color = Color.White,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }
