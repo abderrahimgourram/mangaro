@@ -117,6 +117,18 @@ internal fun ColumnScope.GeneralPage(viewModel: ReaderSettingsViewModel) {
         pref = viewModel.preferences.keepScreenOn,
     )
 
+    val readWithVolumeKeys by viewModel.preferences.readWithVolumeKeys.collectAsState()
+    CheckboxItem(
+        label = stringResource(MR.strings.pref_read_with_volume_keys),
+        pref = viewModel.preferences.readWithVolumeKeys,
+    )
+    if (readWithVolumeKeys) {
+        CheckboxItem(
+            label = stringResource(MR.strings.pref_read_with_volume_keys_inverted),
+            pref = viewModel.preferences.readWithVolumeKeysInverted,
+        )
+    }
+
     CheckboxItem(
         label = stringResource(MR.strings.pref_read_with_long_tap),
         pref = viewModel.preferences.readWithLongTap,
