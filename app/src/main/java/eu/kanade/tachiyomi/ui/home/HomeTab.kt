@@ -65,6 +65,7 @@ import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.library.LibraryTab
 import eu.kanade.tachiyomi.ui.setting.SettingsScreen
 import eu.kanade.presentation.more.settings.screen.about.OpenSourceLicensesScreen
+import eu.kanade.presentation.account.AccountScreen
 import eu.kanade.presentation.home.MangaroHomeDrawer
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
 import mihon.domain.source.discovery.model.DiscoveryCategory
@@ -129,6 +130,7 @@ object HomeTab : Tab {
             onSettings = { navigator.push(SettingsScreen()) },
             onAbout = { navigator.push(SettingsScreen(SettingsScreen.Destination.About)) },
             onLicenses = { navigator.push(OpenSourceLicensesScreen()) },
+            onAccount = { mode -> navigator.push(AccountScreen(mode)) },
         ) { openDrawer ->
         Scaffold(
             contentWindowInsets = WindowInsets(0),

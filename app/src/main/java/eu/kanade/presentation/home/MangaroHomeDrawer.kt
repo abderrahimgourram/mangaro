@@ -2,7 +2,6 @@ package eu.kanade.presentation.home
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.systemGestureExclusion
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
@@ -48,13 +47,14 @@ import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.platform.ViewConfiguration
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.theme.MangaroDesignSystem
+import eu.kanade.presentation.account.AccountDrawerArea
+import eu.kanade.presentation.account.AccountMode
+import eu.kanade.presentation.account.AccountUiState
+import eu.kanade.presentation.account.AccountUser
 import eu.kanade.tachiyomi.BuildConfig
-import eu.kanade.tachiyomi.R
 import kotlinx.coroutines.launch
 
 /** Home-only utility navigation; destinations and download state stay with their existing owners. */
@@ -66,6 +66,9 @@ fun MangaroHomeDrawer(
     onSettings: () -> Unit,
     onAbout: () -> Unit,
     onLicenses: () -> Unit,
+    onAccount: (AccountMode) -> Unit,
+    accountState: AccountUiState = AccountUiState.Guest,
+    onProfile: ((AccountUser) -> Unit)? = null,
     content: @Composable (openDrawer: () -> Unit) -> Unit,
 ) {
     val drawer = rememberDrawerState(DrawerValue.Closed)
@@ -120,19 +123,12 @@ fun MangaroHomeDrawer(
                             modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(20.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            Row(
-                                modifier = Modifier.padding(vertical = 16.dp),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Image(painterResource(R.drawable.ic_splash_logo), null, Modifier.size(60.dp))
-                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    Text("MANGARO", style = MaterialTheme.typography.titleLarge,
-                                        fontWeight = FontWeight.Bold, color = MangaroDesignSystem.GoldPrimary)
-                                    Text("قارئ المانجا الخاص بك", style = MaterialTheme.typography.bodySmall,
-                                        color = Color(0xFFB7A9C4))
-                                }
-                            }
+                            AccountDrawerArea(
+                                state = accountState,
+                                onCreate = { select { onAccount(AccountMode.CREATE) } },
+                                onLogin = { select { onAccount(AccountMode.LOGIN) } },
+                                onProfile = onProfile?.let { profile -> { user -> select { profile(user) } } },
+                            )
                             DrawerAction("المكتبة", Icons.Outlined.BookmarkBorder) { select(onLibrary) }
                             DrawerAction("التنزيلات", Icons.Outlined.Download, activeDownloadsCount) { select(onDownloads) }
                             DrawerAction("الإعدادات", Icons.Outlined.Settings) { select(onSettings) }
