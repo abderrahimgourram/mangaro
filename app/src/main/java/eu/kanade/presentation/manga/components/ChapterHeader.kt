@@ -126,15 +126,15 @@ fun ChapterHeader(
                         onClick = { downloadExpanded = true },
                         enabled = enabled,
                         modifier = Modifier
-                            .size(40.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(Color.White.copy(alpha = 0.055f)),
+                            .size(36.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color(0xFF24172F)),
                     ) {
                         Icon(
                             imageVector = Icons.Outlined.Download,
                             contentDescription = stringResource(MR.strings.manga_download),
                             tint = MangaroDesignSystem.GoldPrimary,
-                            modifier = Modifier.size(20.dp),
+                            modifier = Modifier.size(18.dp),
                         )
                     }
                     DownloadDropdownMenu(

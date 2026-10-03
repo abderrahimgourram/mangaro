@@ -8,11 +8,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Circle
@@ -217,16 +219,15 @@ fun MangaChapterListItem(
                             )
                         }
                     }
+                    Spacer(Modifier.width(6.dp))
+                    MangaroChapterDownloadIndicator(
+                        enabled = downloadIndicatorEnabled,
+                        downloadStateProvider = downloadStateProvider,
+                        downloadProgressProvider = downloadProgressProvider,
+                        onClick = { onDownloadClick?.invoke(it) },
+                    )
                 }
             }
-
-            ChapterDownloadIndicator(
-                enabled = downloadIndicatorEnabled,
-                modifier = Modifier.padding(start = 4.dp),
-                downloadStateProvider = downloadStateProvider,
-                downloadProgressProvider = downloadProgressProvider,
-                onClick = { onDownloadClick?.invoke(it) },
-            )
         }
     }
 }
