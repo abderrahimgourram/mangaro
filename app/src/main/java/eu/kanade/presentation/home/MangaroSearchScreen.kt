@@ -56,6 +56,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
@@ -86,6 +87,7 @@ fun MangaroSearchScreen(
     val query = state.searchQuery.orEmpty()
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
     var focused by remember { mutableStateOf(false) }
     var submittedQuery by rememberSaveable {
         mutableStateOf(if (state.items.isNotEmpty()) query else "")
@@ -99,7 +101,7 @@ fun MangaroSearchScreen(
     val loading = hasSearch && state.progress < state.total
     val failed = hasSearch && state.items.values.any { it is SearchItemResult.Error }
     val fieldBorder by animateColorAsState(
-        if (focused) MangaroDesignSystem.GoldPrimary.copy(alpha = 0.5f) else Color(0x28A78BFA),
+        if (focused) MangaroDesignSystem.GoldPrimary.copy(alpha = 0.32f) else Color(0x30A78BFA),
         animationSpec = tween(150),
         label = "searchFieldFocus",
     )
@@ -107,6 +109,7 @@ fun MangaroSearchScreen(
         submittedQuery = query
         onSearch()
         keyboard?.hide()
+        focusManager.clearFocus()
     }
 
     LaunchedEffect(focusRequest) { focusRequester.requestFocus() }
@@ -188,7 +191,7 @@ fun MangaroSearchScreen(
                 FilterChip(
                     selected = state.onlyShowHasResults,
                     onClick = onToggleResults,
-                    label = { Text("النتائج فقط", style = MaterialTheme.typography.labelMedium) },
+                    label = { Text("مصادر لديها نتائج", style = MaterialTheme.typography.labelMedium) },
                     leadingIcon = { Icon(Icons.Outlined.FilterList, null, modifier = Modifier.size(16.dp)) },
                     shape = RoundedCornerShape(10.dp),
                     colors = FilterChipDefaults.filterChipColors(
@@ -216,7 +219,17 @@ fun MangaroSearchScreen(
                 }
             }
             if (!hasSearch || results.isEmpty()) {
-                Box(Modifier.weight(1f).fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                Column(
+                    Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 28.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Icon(
+                        Icons.Outlined.Search,
+                        contentDescription = null,
+                        tint = Color(0xFF80738F),
+                        modifier = Modifier.size(26.dp),
+                    )
                     Text(
                         when {
                             !hasSearch -> "ابحث عن عنوان"
@@ -228,6 +241,14 @@ fun MangaroSearchScreen(
                         style = MaterialTheme.typography.bodyLarge,
                         textAlign = TextAlign.Center,
                     )
+                    if (!hasSearch) {
+                        Text(
+                            "اكتب الاسم ثم اضغط بحث",
+                            color = Color(0xFF9E95AC),
+                            style = MaterialTheme.typography.bodySmall,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
                 }
             } else {
                 LazyColumn(
@@ -255,20 +276,21 @@ private fun SearchMangaRow(manga: Manga, sourceName: String, onClick: () -> Unit
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     Surface(
-        modifier = Modifier.fillMaxWidth().alpha(if (pressed) 0.85f else 1f)
+        modifier = Modifier.fillMaxWidth().alpha(if (pressed) 0.92f else 1f)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick),
         color = MangaroDesignSystem.SurfaceDark,
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, Color(0x1DA78BFA)),
     ) {
         Row(
             Modifier.padding(10.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             MangaCover.Book(
                 data = manga.asMangaCover(),
-                modifier = Modifier.width(72.dp),
-                shape = RoundedCornerShape(9.dp),
+                modifier = Modifier.width(80.dp),
+                shape = RoundedCornerShape(10.dp),
                 contentDescription = manga.title,
             )
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
@@ -280,12 +302,12 @@ private fun SearchMangaRow(manga: Manga, sourceName: String, onClick: () -> Unit
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(sourceName, color = Color(0xFFCBBED5), style = MaterialTheme.typography.labelMedium)
+                Text(sourceName, color = Color(0xFFA99BB9), style = MaterialTheme.typography.labelMedium)
                 manga.author?.takeIf { it.isNotBlank() }?.let {
                     Text(it, color = Color(0xFF9E95AC), style = MaterialTheme.typography.bodySmall.copy(textDirection = TextDirection.Content), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
-            Icon(Icons.AutoMirrored.Outlined.ArrowForward, null, tint = Color(0xFF9E95AC), modifier = Modifier.size(17.dp))
+            Icon(Icons.AutoMirrored.Outlined.ArrowForward, null, tint = Color(0xFF80738F), modifier = Modifier.size(16.dp))
         }
     }
 }
