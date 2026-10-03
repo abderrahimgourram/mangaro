@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.data.account
 
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.graphics.BitmapFactory
 import eu.kanade.tachiyomi.BuildConfig
@@ -12,6 +13,7 @@ import io.github.jan.supabase.auth.UrlLauncher
 import io.github.jan.supabase.annotations.SupabaseExperimental
 import io.github.jan.supabase.auth.ExternalAuthAction
 import io.github.jan.supabase.auth.auth
+import io.github.jan.supabase.auth.handleDeeplinks
 import io.github.jan.supabase.auth.providers.Google
 import io.github.jan.supabase.auth.status.SessionStatus
 import io.github.jan.supabase.auth.user.UserInfo
@@ -23,6 +25,7 @@ import io.github.jan.supabase.storage.Storage
 import io.github.jan.supabase.storage.storage
 import io.ktor.http.ContentType
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -102,7 +105,7 @@ class SupabaseAccountAuth private constructor(private val client: SupabaseClient
 
     /** Exact route + pending encrypted PKCE verifier; never accepts implicit tokens from arbitrary links. */
     fun handleCallback(uri: Uri): Boolean {
-        if (uri.scheme != redirectScheme || uri.host != "auth" || uri.path != "/callback" || uri.port != -1 || uri.userInfo != null) return false
+        if (uri.scheme != redirectScheme || uri.host != "auth" || !uri.path.isNullOrEmpty() || uri.port != -1 || uri.userInfo != null) return false
         scope.launch {
             mutations.withLock {
                 attempt {
@@ -126,8 +129,15 @@ class SupabaseAccountAuth private constructor(private val client: SupabaseClient
                         errors.value = "رابط تسجيل الدخول غير صالح"
                         return@attempt
                     }
-                    try { client.auth.exchangeCodeForSession(code) }
-                    finally { credentials.deleteCodeVerifier() }
+                    val completed = CompletableDeferred<Unit>()
+                    client.handleDeeplinks(Intent(Intent.ACTION_VIEW, uri),
+                        onSessionSuccess = { completed.complete(Unit) },
+                        onError = { completed.completeExceptionally(it) })
+                    try {
+                        if (withTimeoutOrNull(20_000) { completed.await(); true } == null) {
+                            errors.value = "تعذّر إكمال تسجيل الدخول، حاول مجددًا"
+                        }
+                    } finally { credentials.deleteCodeVerifier() }
                 }
             }
         }
@@ -164,16 +174,16 @@ class SupabaseAccountAuth private constructor(private val client: SupabaseClient
         }
     }
 
-    override suspend fun uploadAvatar(jpeg: ByteArray): AccountOperation = mutations.withLock {
+    override suspend fun uploadAvatar(webp: ByteArray): AccountOperation = mutations.withLock {
         val user = client.auth.currentUserOrNull() ?: return@withLock AccountOperation.Failed("سجّل دخولك أولًا")
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size, bounds)
-        if (jpeg.size !in 1..1_048_576 || bounds.outMimeType != "image/jpeg" || bounds.outWidth !in 1..1024 || bounds.outHeight !in 1..1024) {
+        BitmapFactory.decodeByteArray(webp, 0, webp.size, bounds)
+        if (webp.size !in 1..1_048_576 || bounds.outMimeType != "image/webp" || bounds.outWidth !in 1..1024 || bounds.outHeight !in 1..1024) {
             return@withLock AccountOperation.Failed("اختر صورة صالحة بحجم مناسب")
         }
         attempt {
-            val path = "${user.id}/avatar.jpg"
-            client.storage.from("avatars").upload(path, jpeg) { upsert = true; contentType = ContentType.Image.JPEG }
+            val path = "${user.id}/avatar.webp"
+            client.storage.from("avatars").upload(path, webp) { upsert = true; contentType = ContentType.parse("image/webp") }
             client.from("profiles").update(buildJsonObject { put("avatar_path", path) }) {
                 filter { eq("user_id", user.id) }; select()
             }.decodeSingle<ProfileRow>()
@@ -189,17 +199,17 @@ class SupabaseAccountAuth private constructor(private val client: SupabaseClient
                 filter { eq("user_id", user.id) }; select()
             }.decodeSingle<ProfileRow>()
             loadProfile(user)
-            client.storage.from("avatars").delete(listOf("${user.id}/avatar.jpg"))
+            client.storage.from("avatars").delete(listOf("${user.id}/avatar.webp"))
         }
     }
 
     private suspend fun loadProfile(user: UserInfo): MangaroProfile {
         val row = client.from("profiles").select { filter { eq("user_id", user.id) } }.decodeSingle<ProfileRow>()
         check(row.userId == user.id)
-        val avatar = row.avatarPath?.takeIf { it == "${user.id}/avatar.jpg" }?.let {
+        val avatar = row.avatarPath?.takeIf { it == "${user.id}/avatar.webp" }?.let {
             client.storage.from("avatars").publicUrl(it) + "?v=" + Uri.encode(row.updatedAt)
         } ?: row.googleAvatarUrl?.takeIf { Uri.parse(it).scheme == "https" }
-        val profile = MangaroProfile(user.id, user.email, row.displayName, row.username, avatar, xp = 0, level = 1)
+        val profile = MangaroProfile(user.id, user.email, row.displayName, row.username, avatar, xp = 0, level = 1, googleAvatarUrl = row.googleAvatarUrl?.takeIf { Uri.parse(it).scheme == "https" })
         // No progression table exists in Phase 1; no client XP earning or mutation.
         if (client.auth.currentUserOrNull()?.id == user.id) {
             session.value = AccountSession.Authenticated(profile)
@@ -233,8 +243,8 @@ class SupabaseAccountAuth private constructor(private val client: SupabaseClient
     )
 
     companion object {
-        val redirectScheme get() = "${BuildConfig.APPLICATION_ID}.auth"
-        val redirectUri get() = "$redirectScheme://auth/callback"
+        const val redirectScheme = "mangaro"
+        const val redirectUri = "mangaro://auth"
         @OptIn(SupabaseExperimental::class)
         fun create(context: Context): AccountAuth {
             val url = BuildConfig.SUPABASE_URL
@@ -249,6 +259,8 @@ class SupabaseAccountAuth private constructor(private val client: SupabaseClient
                     requestTimeout = 12.seconds
                     install(Auth) {
                         flowType = FlowType.PKCE
+                        scheme = redirectScheme
+                        host = "auth"
                         defaultRedirectUrl = redirectUri
                         defaultExternalAuthAction = ExternalAuthAction.CustomTabs()
                         sessionManager = storage

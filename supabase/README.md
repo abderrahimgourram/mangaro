@@ -1,34 +1,39 @@
-# Mangaro Account Phase 1 deployment
+# Mangaro production Account integration
 
-Android wiring is implemented, but real sign-in requires your own Supabase/Google configuration.
-No project, credentials or server deployment is assumed. The migration has not been applied to a live project.
+Linked/deployed project: **mangaro-prod**, `pehsxthjetlltlsqcbfa`, region `eu-west-3`.
+Client endpoint: `https://pehsxthjetlltlsqcbfa.supabase.co`.
 
-## External setup
+## Configuration and auth
 
-- Create/select a dedicated Supabase project. Apply `migrations/20261003211112_mangaro_account_phase1.sql` through its SQL editor or your existing Supabase migration process. This is server SQL, never an Android/Mihon migration. It creates public social profiles (no emails), ownership RLS and a new public `avatars` bucket. Review existing bucket/policy conflicts before applying to an existing project; no existing records are deleted.
-- Enable **Google only** in Supabase Auth. Disable email/password, phone and anonymous signup. Configure a Google **Web application** OAuth client and consent screen. Store its client ID/secret exclusively in Supabase's Google provider configuration.
-- In Google Cloud, register the Supabase provider callback shown by the dashboard (normally `https://<project-ref>.supabase.co/auth/v1/callback`). This is separate from the Android callback below.
-- Supabase Auth redirect allow-list: `app.manhwaar.reader.auth://auth/callback` (Release) and `app.manhwaar.reader.dev.auth://auth/callback` (Debug). These exact app-specific schemes avoid Debug/Release callback collisions. No new Activity is used. PKCE verifier is required, expires after 15 minutes, and is encrypted/persisted before browser launch.
-- Put only these client values in ignored `local.properties`, environment variables or Gradle properties:
+The production URL and publishable client key are configured in ignored `local.properties`; no credentials file is committed. Environment/Gradle properties retain their existing override precedence. Only publishable/legacy anon client keys are accepted in Android; privileged keys are rejected by the build configuration. No Google client ID/secret is needed by this browser OAuth flow.
 
-```properties
-SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
-SUPABASE_PUBLISHABLE_KEY=YOUR_PUBLISHABLE_CLIENT_KEY
-```
+Google provider is enabled (verified through public Auth settings). Google Web credentials and its callback `https://pehsxthjetlltlsqcbfa.supabase.co/auth/v1/callback` remain externally managed by the user. No provider secrets were retrieved or changed. The public settings still report Email enabled: disable that provider in Dashboard if server-side signup must also be Google-only. Android exposes only Google OAuth and rejects non-Google/anonymous sessions.
 
-Environment overrides Gradle properties, which override local.properties. A legacy **anon** JWT key is accepted for compatibility. Privileged secret/service-role keys are rejected by build configuration. Never put Google secrets or tokens in any of these values. The public client key intentionally goes into BuildConfig; RLS is the security boundary.
+One canonical Android callback: **`mangaro://auth`**, scheme `mangaro`, host `auth`, no path. The supplied Supabase redirect allow-list entry matches it. Both Debug and Release use the same callback; when both apps are installed Android may ask which one to open. No new callback Activity is created. Existing MainActivity handles cold/warm returns and its duplicate-activity guard preserves an active Reader session.
 
-Missing/invalid configuration keeps Guest mode usable and disables Google login. After setting configuration, build the APK normally. Auth/session restoration never gates Home or local reading. Tokens/verifiers use AES-GCM Android Keystore encryption under `noBackupFilesDir`, not manga storage. Sign-out clears the cloud session only, including when the backend is offline; it does not clear manga data or downloads. Browser dismissal leaves Guest state with no fake success.
+The SDK's PKCE deep-link handler exchanges the code. The app checks the exact route, rejects implicit token fragments, requires a pending verifier (15-minute lifetime), and consumes callback data without logging it. The verifier is encrypted/persisted before browser launch. Tokens/verifiers use Android Keystore AES-GCM under `noBackupFilesDir`. Session restoration runs independently of Home; unavailable/invalid auth falls back to Guest. Sign-out clears cloud credentials only, including offline cleanup, and never touches manga/library/history/downloads.
 
-## Server security
+## Deployed migrations (source of truth)
 
-- Profiles: public reads contain only user UUID, handle, display name, avatar paths/Google photo URL and timestamps. Email comes only from the signed-in owner's Auth session.
-- Google signup trigger in an unexposed private schema creates a profile; repeat logins never overwrite it. Existing Google users are backfilled only when their row is absent. No client INSERT/DELETE privileges.
-- Username: normalized lowercase Latin letters/digits/underscore, 3–24 characters, nullable until completion. Unique lower(username) index enforces case-insensitive conflicts. Display name is trimmed Unicode, max 80 characters.
-- Authenticated users can UPDATE only username, display_name and avatar_path on their own row. Identity, Google photo and creation time are immutable; updated_at is server-maintained.
-- Avatars: only `<auth.uid()>/avatar.jpg` can be written/deleted by that user. Bucket accepts JPEG up to 1 MiB. Android validates PNG/JPEG/WebP input up to 5 MiB, decodes bounded dimensions, scales to max 1024px and re-encodes JPEG. Custom path is stored; Google image is fallback. Timestamp URL version lets Coil refresh a replaced image without bypassing its cache.
-- No XP/progression persistence, awards, Community backend or cloud Library sync in this phase. Domain XP=0/level=1 remains the initial presentation default, not client-editable server progression.
+- `20261003211112_mangaro_account_phase1.sql`: profiles, signup/updated_at triggers, username index, profile/Storage RLS, avatars bucket and platform-helper EXECUTE hardening. Corrected before its first deployment.
+- `20261003221412_mangaro_profile_metadata_trim.sql`: forward fix for Google display names truncated at a whitespace boundary. Deployed migrations must not be rewritten.
 
-## Required deployment verification
+Continue with the linked CLI's normal `supabase db push`. Local `.temp/` link metadata is ignored. No production reset was used.
 
-After applying migration, verify with separate anon/user-A/user-B clients that public profiles contain no email, A cannot update B, protected columns cannot be updated, case variants of the same username conflict, and A cannot upload/delete B's avatar. Verify Google callback, cancellation, process-restart restoration and offline sign-out on your device. These checks cannot be claimed from compilation; no live backend/device checks were run here.
+## Contract and security
+
+Public profiles contain UUID, nullable username, display name, custom avatar path, Google avatar URL and timestamps. **No email**, token, XP or level columns. Owner email comes only from their Auth session. Google signup uses NEW.id and leaves username NULL; repeat login never overwrites a profile. Profile completion does not block local reading.
+
+Handles normalize to lowercase `[a-z0-9_]{3,24}`; `profiles_username_lower_unique` enforces case-insensitive uniqueness. Display names support Unicode, are trimmed, max 40 characters. Profile updates grant only username/display_name/avatar_path to the authenticated owner; identity, Google avatar and created_at are protected. `set_updated_at()` maintains timestamps server-side.
+
+Public `avatars` bucket accepts JPEG/PNG/WebP, max 2 MiB. Writes/deletes require auth.uid() to own the first folder **and** the exact `<user-id>/avatar.webp` path. Android accepts input up to 2 MiB, validates actual image type/dimensions, resizes to max 1024px and encodes WebP <=1 MiB. Paths stay stable; updated_at versions Coil image URLs. Failed custom images fall back to Google, then the bundled default.
+
+Direct anon/authenticated execution of `rls_auto_enable()` and trigger-only helpers is revoked; `ensure_rls` remains enabled. No Community backend, XP awards, cloud sync or local SQL migrations are added.
+
+## Verification
+
+Remote catalogs verified all columns, FK cascade, checks, index, RLS policies, bucket constraints, triggers/functions and their restricted grants. `tests/phase1_rls.sql` passed under actual anon/authenticated roles inside a rolled-back transaction: anonymous writes denied, owner updates allowed, cross-user writes/deletes denied, immutable fields protected, case conflict/invalid handles rejected, 40-character names enforced, signup metadata boundary fixed, and automatic RLS still working. Storage metadata fixtures emulate the Storage API transaction delete guard; no RLS was disabled and no real files were uploaded. All fixture users/profiles/objects and the probe table were rolled back. Security Advisor reported no findings. Public profiles/Auth HTTPS checks succeeded.
+
+**Android OAuth runtime verification pending manual device test.** Compilation/static wiring does not prove Google account selection, callback or device Keystore/session behavior. Google test-user/consent restrictions remain external.
+
+Manual checklist: open as Guest; tap Google; choose account; return to Mangaro; choose username; edit display name; upload avatar; reopen and verify session; sign out; verify local Library/history/downloads remain.

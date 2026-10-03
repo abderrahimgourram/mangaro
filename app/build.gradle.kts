@@ -51,7 +51,7 @@ android {
         }
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
         buildConfigField("String", "SUPABASE_PUBLISHABLE_KEY", "\"$supabaseKey\"")
-        manifestPlaceholders["accountAuthScheme"] = "app.manhwaar.reader.auth"
+        manifestPlaceholders["accountAuthScheme"] = "mangaro"
 
         versionCode = 1
         versionName = "1.0.0"
@@ -106,7 +106,6 @@ android {
     buildTypes {
         val debug = getByName("debug") {
             applicationIdSuffix = ".dev"
-            manifestPlaceholders["accountAuthScheme"] = "app.manhwaar.reader.dev.auth"
             versionNameSuffix = "-${getLatestCommitCount()}"
             isPseudoLocalesEnabled = true
         }

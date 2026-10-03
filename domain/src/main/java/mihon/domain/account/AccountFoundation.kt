@@ -23,6 +23,7 @@ data class MangaroProfile(
     val avatarUrl: String?,
     val xp: Long,
     val level: Int,
+    val googleAvatarUrl: String? = null,
 ) {
     init {
         require(userId.isNotBlank())
@@ -77,7 +78,7 @@ object AccountProfileInput {
         return when {
             update.username == null || !username(update.username).matches(handle) ->
                 "اسم المستخدم: 3–24 حرفًا إنجليزيًا صغيرًا أو رقمًا أو شرطة سفلية"
-            name.isEmpty() || name.codePointCount(0, name.length) > 80 -> "أدخل اسم عرض من 1 إلى 80 حرفًا"
+            name.isEmpty() || name.codePointCount(0, name.length) > 40 -> "أدخل اسم عرض من 1 إلى 40 حرفًا"
             else -> null
         }
     }
@@ -96,7 +97,7 @@ interface AccountAuth {
     suspend fun signOut()
     suspend fun getCurrentProfile(): MangaroProfile?
     suspend fun updateProfile(update: ProfileUpdate): AccountOperation
-    suspend fun uploadAvatar(jpeg: ByteArray): AccountOperation
+    suspend fun uploadAvatar(webp: ByteArray): AccountOperation
     suspend fun removeAvatar(): AccountOperation
 }
 
@@ -110,7 +111,7 @@ class GuestAccountAuth : AccountAuth {
     override suspend fun signOut() { session.value = AccountSession.Guest }
     override suspend fun getCurrentProfile(): MangaroProfile? = null
     override suspend fun updateProfile(update: ProfileUpdate): AccountOperation = AccountOperation.NotConfigured
-    override suspend fun uploadAvatar(jpeg: ByteArray): AccountOperation = AccountOperation.NotConfigured
+    override suspend fun uploadAvatar(webp: ByteArray): AccountOperation = AccountOperation.NotConfigured
     override suspend fun removeAvatar(): AccountOperation = AccountOperation.NotConfigured
 }
 

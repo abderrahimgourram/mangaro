@@ -166,13 +166,13 @@ private fun AccountProfileEditor(
     val validation = remember(update) { AccountProfileInput.error(update) }
     val avatarPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) onAction {
-            val jpeg = try { prepareAccountAvatar(context, uri) }
+            val webp = try { prepareAccountAvatar(context, uri) }
                 catch (cancelled: CancellationException) { throw cancelled }
-                catch (_: Exception) { return@onAction AccountOperation.Failed("اختر صورة JPEG أو PNG أو WebP لا تتجاوز 5 ميغابايت") }
-            account.auth.uploadAvatar(jpeg)
+                catch (_: Exception) { return@onAction AccountOperation.Failed("اختر صورة JPEG أو PNG أو WebP لا تتجاوز 2 ميغابايت") }
+            account.auth.uploadAvatar(webp)
         }
     }
-    if (profile.avatarUrl != null) AsyncImage(profile.avatarUrl, null, Modifier.size(80.dp))
+    AccountAvatar(profile, Modifier.size(80.dp))
     Text(profile.displayName ?: profile.username.orEmpty(), color = Color.White)
     profile.username?.let { Text("@$it", color = Color(0xFFB7A9C4)) }
     // Email is visible only in this owner's account area, never public comments/profiles.
@@ -205,8 +205,7 @@ fun AccountDrawerArea(session: AccountSession, onLogin: () -> Unit, onProfile: (
     Surface(shape = RoundedCornerShape(16.dp), color = MangaroDesignSystem.SurfaceHigh) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (profile?.avatarUrl != null) AsyncImage(profile.avatarUrl, null, modifier = Modifier.size(44.dp))
-                else Image(painterResource(R.drawable.ic_splash_logo), null, Modifier.size(44.dp))
+                AccountAvatar(profile, Modifier.size(44.dp))
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(profile?.displayName ?: profile?.username ?: "MANGARO", color = MangaroDesignSystem.GoldPrimary,
                         style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
@@ -226,6 +225,18 @@ fun AccountDrawerArea(session: AccountSession, onLogin: () -> Unit, onProfile: (
             }
         }
     }
+}
+
+/** Failed custom/Google images fall back without breaking session/profile state. Uses existing Coil. */
+@Composable
+private fun AccountAvatar(profile: MangaroProfile?, modifier: Modifier) {
+    val urls = remember(profile?.avatarUrl, profile?.googleAvatarUrl) {
+        listOfNotNull(profile?.avatarUrl, profile?.googleAvatarUrl).distinct()
+    }
+    var index by remember(urls) { mutableStateOf(0) }
+    if (index < urls.size) AsyncImage(urls[index], null, modifier = modifier,
+        onError = { index += 1 })
+    else Image(painterResource(R.drawable.ic_splash_logo), null, modifier)
 }
 
 /** One reusable account-required prompt, delegating authentication to the existing account UI. */

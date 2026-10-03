@@ -9,7 +9,7 @@ import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import kotlin.math.max
 
-/** Bounded local preprocessing; only the resized JPEG crosses the network. */
+/** Bounded local preprocessing; only the resized WebP crosses the network. */
 suspend fun prepareAccountAvatar(context: Context, uri: Uri): ByteArray = withContext(Dispatchers.IO) {
     require(context.contentResolver.getType(uri) in setOf("image/jpeg", "image/png", "image/webp"))
     val input = context.contentResolver.openInputStream(uri)?.use { stream ->
@@ -18,13 +18,13 @@ suspend fun prepareAccountAvatar(context: Context, uri: Uri): ByteArray = withCo
         while (true) {
             val count = stream.read(buffer)
             if (count < 0) break
-            require(output.size() + count <= 5 * 1024 * 1024)
+            require(output.size() + count <= 2 * 1024 * 1024)
             output.write(buffer, 0, count)
         }
         output.toByteArray()
     }
         ?: error("Unavailable image")
-    require(input.size in 1..5 * 1024 * 1024)
+    require(input.size in 1..2 * 1024 * 1024)
     val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     BitmapFactory.decodeByteArray(input, 0, input.size, options)
     require(options.outWidth in 1..20000 && options.outHeight in 1..20000)
@@ -38,7 +38,7 @@ suspend fun prepareAccountAvatar(context: Context, uri: Uri): ByteArray = withCo
         val ratio = minOf(1f, 1024f / max(bitmap.width, bitmap.height))
         resized = Bitmap.createScaledBitmap(bitmap, max(1, (bitmap.width * ratio).toInt()), max(1, (bitmap.height * ratio).toInt()), true)
         val output = ByteArrayOutputStream()
-        check(resized.compress(Bitmap.CompressFormat.JPEG, 85, output))
+        check(resized.compress(if (android.os.Build.VERSION.SDK_INT >= 30) Bitmap.CompressFormat.WEBP_LOSSY else Bitmap.CompressFormat.WEBP, 85, output))
         output.toByteArray().also { require(it.size <= 1_048_576) }
     } finally {
         if (resized !== bitmap) resized?.recycle()
