@@ -1,7 +1,14 @@
 package eu.kanade.presentation.home
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.systemGestureExclusion
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -31,11 +38,16 @@ import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalViewConfiguration
+import androidx.compose.ui.platform.ViewConfiguration
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.LayoutDirection
@@ -58,6 +70,16 @@ fun MangaroHomeDrawer(
 ) {
     val drawer = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+    val homeViewConfiguration = LocalViewConfiguration.current
+    val edgeGesture = remember { DrawerEdgeGesture() }
+    // Restrict only Material's drag recognizer. Descendants retain normal touch slop.
+    // No custom drawer offset, velocity calculation, or second animation/state is needed.
+    val drawerViewConfiguration = remember(homeViewConfiguration, edgeGesture) {
+        object : ViewConfiguration by homeViewConfiguration {
+            override val touchSlop: Float
+                get() = if (edgeGesture.allowed) homeViewConfiguration.touchSlop else Float.MAX_VALUE
+        }
+    }
     fun select(action: () -> Unit) {
         scope.launch {
             drawer.close()
@@ -66,52 +88,94 @@ fun MangaroHomeDrawer(
     }
     BackHandler(enabled = drawer.isOpen) { scope.launch { drawer.close() } }
     // Material drawers use the layout start edge, which is the right edge in Arabic.
-    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+    CompositionLocalProvider(
+        LocalLayoutDirection provides LayoutDirection.Rtl,
+        LocalViewConfiguration provides drawerViewConfiguration,
+    ) {
         ModalNavigationDrawer(
             drawerState = drawer,
-            gesturesEnabled = drawer.isOpen,
+            gesturesEnabled = true,
+            modifier = Modifier.pointerInput(drawer) {
+                val edgeWidth = 24.dp.toPx()
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    // Latch the DOWN location for the entire gesture, even as the finger leaves the edge.
+                    edgeGesture.allowed = drawer.isOpen || drawer.isAnimationRunning ||
+                        down.position.x >= size.width - edgeWidth
+                    do {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                    } while (event.changes.any { it.pressed })
+                }
+            },
             scrimColor = Color.Black.copy(alpha = 0.65f),
             drawerContent = {
-                ModalDrawerSheet(
-                    modifier = Modifier.widthIn(max = 304.dp),
-                    drawerShape = RoundedCornerShape(topEnd = 24.dp, bottomEnd = 24.dp),
-                    drawerContainerColor = MangaroDesignSystem.SurfaceDark,
-                    drawerContentColor = Color(0xFFE8DFED),
-                ) {
-                    Column(
-                        modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(20.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                CompositionLocalProvider(LocalViewConfiguration provides homeViewConfiguration) {
+                    ModalDrawerSheet(
+                        modifier = Modifier.widthIn(max = 304.dp),
+                        drawerShape = RoundedCornerShape(topEnd = 24.dp, bottomEnd = 24.dp),
+                        drawerContainerColor = MangaroDesignSystem.SurfaceDark,
+                        drawerContentColor = Color(0xFFE8DFED),
                     ) {
-                        Row(
-                            modifier = Modifier.padding(vertical = 16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
+                        Column(
+                            modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(20.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            Image(painterResource(R.drawable.ic_splash_logo), null, Modifier.size(60.dp))
-                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text("MANGARO", style = MaterialTheme.typography.titleLarge,
-                                    fontWeight = FontWeight.Bold, color = MangaroDesignSystem.GoldPrimary)
-                                Text("قارئ المانجا الخاص بك", style = MaterialTheme.typography.bodySmall,
-                                    color = Color(0xFFB7A9C4))
+                            Row(
+                                modifier = Modifier.padding(vertical = 16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Image(painterResource(R.drawable.ic_splash_logo), null, Modifier.size(60.dp))
+                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Text("MANGARO", style = MaterialTheme.typography.titleLarge,
+                                        fontWeight = FontWeight.Bold, color = MangaroDesignSystem.GoldPrimary)
+                                    Text("قارئ المانجا الخاص بك", style = MaterialTheme.typography.bodySmall,
+                                        color = Color(0xFFB7A9C4))
+                                }
                             }
+                            DrawerAction("المكتبة", Icons.Outlined.BookmarkBorder) { select(onLibrary) }
+                            DrawerAction("التنزيلات", Icons.Outlined.Download, activeDownloadsCount) { select(onDownloads) }
+                            DrawerAction("الإعدادات", Icons.Outlined.Settings) { select(onSettings) }
+                            HorizontalDivider(Modifier.padding(vertical = 14.dp), color = Color(0x266D557B))
+                            Text("عن Mangaro", style = MaterialTheme.typography.labelMedium,
+                                color = Color(0xFFB7A9C4), modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
+                            DrawerAction("حول التطبيق", Icons.Outlined.Info) { select(onAbout) }
+                            DrawerAction("التراخيص مفتوحة المصدر", Icons.Outlined.Description) { select(onLicenses) }
                         }
-                        DrawerAction("المكتبة", Icons.Outlined.BookmarkBorder) { select(onLibrary) }
-                        DrawerAction("التنزيلات", Icons.Outlined.Download, activeDownloadsCount) { select(onDownloads) }
-                        DrawerAction("الإعدادات", Icons.Outlined.Settings) { select(onSettings) }
-                        HorizontalDivider(Modifier.padding(vertical = 14.dp), color = Color(0x266D557B))
-                        Text("عن Mangaro", style = MaterialTheme.typography.labelMedium,
-                            color = Color(0xFFB7A9C4), modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
-                        DrawerAction("حول التطبيق", Icons.Outlined.Info) { select(onAbout) }
-                        DrawerAction("التراخيص مفتوحة المصدر", Icons.Outlined.Description) { select(onLicenses) }
+                        Text("الإصدار ${BuildConfig.VERSION_NAME}", modifier = Modifier.padding(24.dp),
+                            style = MaterialTheme.typography.labelSmall, color = Color(0xFF9F90AC))
                     }
-                    Text("الإصدار ${BuildConfig.VERSION_NAME}", modifier = Modifier.padding(24.dp),
-                        style = MaterialTheme.typography.labelSmall, color = Color(0xFF9F90AC))
                 }
             },
         ) {
-            content { scope.launch { drawer.open() } }
+            CompositionLocalProvider(LocalViewConfiguration provides homeViewConfiguration) {
+                Box(Modifier.fillMaxSize()) {
+                    content { scope.launch { drawer.open() } }
+                    if (drawer.isClosed && !drawer.isAnimationRunning) {
+                        // This transparent hit target gives edge starts priority over carousels.
+                        // It consumes no movement: Material's parent recognizer drives the sheet.
+                        Box(
+                            Modifier.align(Alignment.CenterStart).fillMaxHeight().width(24.dp)
+                                .systemGestureExclusion()
+                                .pointerInput(Unit) {
+                                    awaitEachGesture {
+                                        awaitFirstDown(requireUnconsumed = false)
+                                        do {
+                                            val event = awaitPointerEvent()
+                                        } while (event.changes.any { it.pressed })
+                                    }
+                                },
+                        )
+                    }
+                }
+            }
         }
     }
+}
+
+/** Pointer-session flag read by the native drawer recognizer without recomposition. */
+private class DrawerEdgeGesture {
+    var allowed = false
 }
 
 @Composable
