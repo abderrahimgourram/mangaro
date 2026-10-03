@@ -21,6 +21,9 @@ import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.chapter.getNextUnread
 import eu.kanade.tachiyomi.util.removeCovers
+import logcat.LogPriority
+import tachiyomi.core.common.util.system.logcat
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
@@ -88,6 +91,16 @@ class LibraryViewModel(
 ) : StateViewModel<LibraryViewModel.State>(State()) {
 
     init {
+        viewModelScope.launch {
+            MangaroLibraryShelves.bindings.collectLatest { shelves ->
+                mutableState.update { it.copy(shelves = shelves) }
+            }
+        }
+        viewModelScope.launchIO {
+            try { MangaroLibraryShelves.ensure() }
+            catch (cancel: kotlinx.coroutines.CancellationException) { throw cancel }
+            catch (error: Exception) { logcat(LogPriority.ERROR, error) }
+        }
         mutableState.update { state ->
             state.copy(activeCategoryIndex = libraryPreferences.lastUsedCategory.get())
         }
@@ -100,6 +113,10 @@ class LibraryViewModel(
                 getLibraryItemPreferencesFlow(),
             ) { searchQuery, categories, favorites, (tracksMap, trackingFilters), itemPreferences ->
                 val showSystemCategory = favorites.any { it.libraryManga.categories.contains(0) }
+                val collection = if (searchQuery.isNullOrEmpty()) favorites else {
+                    val queryNode = QueryNode.from(searchQuery)
+                    favorites.filter { queryNode.matches(it) }
+                }
                 val filteredFavorites = favorites
                     .applyFilters(tracksMap, trackingFilters, itemPreferences)
                     .let { libraryItems ->
@@ -116,10 +133,19 @@ class LibraryViewModel(
                     showSystemCategory = showSystemCategory,
                     categories = categories,
                     favorites = filteredFavorites,
+                    collection = collection,
                     tracksMap = tracksMap,
                     loggedInTrackerIds = trackingFilters.keys,
                 )
             }
+                .combine(libraryPreferences.sortingMode.changes()) { data, sort ->
+                    // Reuse the existing Library comparator on the complete collection.
+                    val category = Category(-1L, "", 0L, sort.flag)
+                    val byId = data.collection.associateBy { it.id }
+                    val ids = mapOf(category to data.collection.map { it.id })
+                        .applySort(byId, data.tracksMap, data.loggedInTrackerIds)[category].orEmpty()
+                    data.copy(collection = ids.mapNotNull(byId::get))
+                }
                 .distinctUntilChanged()
                 .collectLatest { libraryData ->
                     mutableState.update { state ->
@@ -686,6 +712,12 @@ class LibraryViewModel(
         }
     }
 
+    fun setShelfSort(type: LibrarySort.Type) {
+        val direction = if (type == LibrarySort.Type.Alphabetical) LibrarySort.Direction.Ascending else LibrarySort.Direction.Descending
+        // Change the existing global preference without rewriting custom category flags.
+        libraryPreferences.sortingMode.set(LibrarySort(type, direction))
+    }
+
     fun search(query: String?) {
         mutableState.update { it.copy(searchQuery = query) }
     }
@@ -765,6 +797,7 @@ class LibraryViewModel(
         val showSystemCategory: Boolean = false,
         val categories: List<Category> = emptyList(),
         val favorites: List<LibraryItem> = emptyList(),
+        val collection: List<LibraryItem> = emptyList(),
         val tracksMap: Map</* Manga */ Long, List<Track>> = emptyMap(),
         val loggedInTrackerIds: Set<Long> = emptySet(),
     ) {
@@ -783,6 +816,7 @@ class LibraryViewModel(
         val showMangaContinueButton: Boolean = false,
         val dialog: Dialog? = null,
         val libraryData: LibraryData = LibraryData(),
+        val shelves: List<MangaroLibraryShelves.Binding> = emptyList(),
         private val activeCategoryIndex: Int = 0,
         private val groupedFavorites: Map<Category, List</* LibraryItem */ Long>> = emptyMap(),
     ) {

@@ -214,7 +214,7 @@ fun MangaroMangaHero(
                                 modifier = Modifier.size(17.dp),
                             )
                             Spacer(Modifier.width(6.dp))
-                            Text(if (favorite) "إزالة من المكتبة" else "إضافة للمكتبة", maxLines = 1)
+                            Text(if (favorite) "تنظيم المكتبة" else "إضافة للمكتبة", maxLines = 1)
                         }
                     }
                 }

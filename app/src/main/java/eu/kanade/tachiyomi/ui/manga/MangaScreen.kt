@@ -26,6 +26,7 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.core.util.ifSourcesLoaded
 import eu.kanade.domain.manga.model.hasCustomCover
 import eu.kanade.domain.manga.model.toSManga
+import eu.kanade.presentation.library.MangaroLibraryShelfSheet
 import eu.kanade.presentation.category.components.ChangeCategoryDialog
 import eu.kanade.presentation.components.NavigatorAdaptiveSheet
 import eu.kanade.presentation.manga.ChapterSettingsDialog
@@ -100,6 +101,7 @@ class MangaScreen(
         }
 
         val successState = state as MangaViewModel.State.Success
+        var showLibraryShelves by remember { mutableStateOf(false) }
         val isHttpSource = remember { successState.source is HttpSource }
 
         LaunchedEffect(successState.manga, viewModel.source) {
@@ -124,7 +126,7 @@ class MangaScreen(
             onChapterClicked = { openChapter(context, it) },
             onDownloadChapter = viewModel::runChapterDownloadActions.takeIf { !successState.source.isLocalOrStub() },
             onAddToLibraryClicked = {
-                viewModel.toggleFavorite()
+                showLibraryShelves = true
                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
             },
             onTagSearch = { scope.launch { performGenreSearch(navigator, it, viewModel.source!!) } },
@@ -146,6 +148,10 @@ class MangaScreen(
             onAllChapterSelected = viewModel::toggleAllSelection,
             onInvertSelection = viewModel::invertSelection,
         )
+
+        if (showLibraryShelves) {
+            MangaroLibraryShelfSheet(successState.manga, onDismissRequest = { showLibraryShelves = false })
+        }
 
         var showScanlatorsDialog by remember { mutableStateOf(false) }
 
