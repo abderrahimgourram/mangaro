@@ -42,7 +42,14 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import eu.kanade.tachiyomi.R
 import kotlin.math.max
 
-/** Local muted intro, visible only while critical local/root initialization is pending. */
+/** The existing Home instance reports readiness without another ViewModel or request pipeline. */
+class HomeStartupObserver(val waiting: Boolean, val onReady: () -> Unit)
+
+val LocalHomeStartupObserver = androidx.compose.runtime.staticCompositionLocalOf {
+    HomeStartupObserver(false) {}
+}
+
+/** Local muted intro covering initial Home loading, with readiness owned by the root. */
 @Composable
 fun MangaroStartupTransition(ready: Boolean, onDismissed: () -> Unit, modifier: Modifier = Modifier) {
     val visibility = remember { MutableTransitionState(true) }
@@ -159,7 +166,7 @@ private class IntroPlayback(private val context: Context) : TextureView.SurfaceT
             player = media
             // Mute BEFORE preparation and again before playback. The supplied file has audio.
             media.setVolume(0f, 0f)
-            media.isLooping = false
+            media.isLooping = true
             surface = Surface(view.surfaceTexture)
             media.setSurface(surface)
             context.resources.openRawResourceFd(R.raw.mangaro_intro).use { descriptor ->

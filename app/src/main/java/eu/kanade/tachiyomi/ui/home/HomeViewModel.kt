@@ -17,6 +17,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
@@ -58,7 +60,12 @@ class HomeViewModel(
     private val getSourceDiscovery: GetSourceDiscovery = GetSourceDiscovery(getSourceCapabilities),
 ) : ViewModel() {
 
-    private val _state = MutableStateFlow(HomeState())
+    // Retain only bounded discovery presentation data across Home instances in this process.
+    // History is always resolved by its existing local database subscription.
+    private val _state = MutableStateFlow(cachedDiscovery ?: HomeState())
+    companion object {
+        @Volatile private var cachedDiscovery: HomeState? = null
+    }
     val state: StateFlow<HomeState> = _state.asStateFlow()
 
     private var featuredIndex = 0
@@ -69,6 +76,17 @@ class HomeViewModel(
     private var paginationJob: Job? = null
 
     init {
+        viewModelScope.launch {
+            state.collectLatest { current ->
+                if (current.initialHomeReady) {
+                    cachedDiscovery = current.copy(
+                        recentHistory = emptyList(), continueReadingResolved = false,
+                        recentUpdates = emptyList(), libraryManga = emptyList(), activeDownloadsCount = 0,
+                        isSwipeRefreshing = false, isPaginationLoading = false,
+                    )
+                }
+            }
+        }
         viewModelScope.launch {
             PreferredMangaVariants.changes.collectLatest {
                 _state.update { current ->
@@ -104,7 +122,7 @@ class HomeViewModel(
         // Collect history
         viewModelScope.launch {
             getHistory.subscribe("").collectLatest { history ->
-                _state.update { it.copy(recentHistory = history.distinctBy { h -> h.mangaId }.take(6)) }
+                _state.update { it.copy(recentHistory = history.distinctBy { h -> h.mangaId }.take(6), continueReadingResolved = true) }
             }
         }
 
@@ -133,7 +151,10 @@ class HomeViewModel(
 
         // Bundled sources are available independently of legacy extension filters.
         viewModelScope.launch {
-            sourceManager.sources.collectLatest { sources ->
+            // An uninitialized source registry's empty emission is not a resolved empty Home.
+            sourceManager.sources.combine(sourceManager.isInitialized) { sources, initialized ->
+                sources.takeIf { initialized }
+            }.filterNotNull().collectLatest { sources ->
                 val onlineSources = sources
                     .filterIsInstance<HttpSource>()
                     .distinctBy { it.id }
@@ -144,10 +165,10 @@ class HomeViewModel(
 
                 _state.update { it.copy(installedSources = sourceItems) }
 
-                if (_state.value.popularManga.isEmpty() &&
+                if (discoveryJob == null || (_state.value.popularManga.isEmpty() &&
                     _state.value.latestManga.isEmpty() &&
                     _state.value.completedManga.isEmpty() &&
-                    _state.value.newManga.isEmpty()
+                    _state.value.newManga.isEmpty())
                 ) {
                     loadDiscoveryContent(onlineSources)
                 }
@@ -181,6 +202,7 @@ class HomeViewModel(
                         completedManga = emptyList(),
                         discoveryLatest = emptyList(),
                         isDiscoveryLoading = false,
+                        popularResolved = true, latestResolved = true, newResolved = true,
                     )
                 }
                 return@launch
@@ -188,27 +210,41 @@ class HomeViewModel(
 
             val payload = fetchSourceBatch(eligibleSources)
             updateDiscoveryState(payload, isFinal = true)
+            _state.update { it.copy(popularResolved = true, latestResolved = true, newResolved = true) }
         }
     }
 
     private suspend fun fetchSourceBatch(batchSources: List<CatalogueSource>): DiscoveryBatchResultPayload {
         return withContext(Dispatchers.IO) { kotlinx.coroutines.supervisorScope {
             val semaphore = Semaphore(2)
+            val capabilitiesBySource = batchSources.associate { it.id to getSourceCapabilities(it) }
+            _state.update { it.copy(
+                latestResolved = it.latestResolved || capabilitiesBySource.values.none { c -> c.supportsLatest == CapabilitySupport.SUPPORTED },
+                newResolved = it.newResolved || capabilitiesBySource.values.none { c -> c.supportsNewFilter == CapabilitySupport.SUPPORTED },
+            ) }
 
+            val pendingInitial = mapOf(
+                DiscoveryCategory.POPULAR to java.util.concurrent.atomic.AtomicInteger(batchSources.size),
+                DiscoveryCategory.LATEST to java.util.concurrent.atomic.AtomicInteger(capabilitiesBySource.values.count { it.supportsLatest == CapabilitySupport.SUPPORTED }),
+                DiscoveryCategory.NEW to java.util.concurrent.atomic.AtomicInteger(capabilitiesBySource.values.count { it.supportsNewFilter == CapabilitySupport.SUPPORTED }),
+            )
             val results = batchSources.map { source ->
                 async {
                     try {
                         semaphore.withPermit {
-                            val capabilities = getSourceCapabilities(source)
+                            val capabilities = capabilitiesBySource.getValue(source.id)
                             val categories = buildList {
                                 add(DiscoveryCategory.POPULAR)
                                 if (capabilities.supportsLatest == CapabilitySupport.SUPPORTED) add(DiscoveryCategory.LATEST)
-                                if (capabilities.supportsCompletedFilter == CapabilitySupport.SUPPORTED) add(DiscoveryCategory.COMPLETED)
                                 if (capabilities.supportsNewFilter == CapabilitySupport.SUPPORTED) add(DiscoveryCategory.NEW)
+                                if (capabilities.supportsCompletedFilter == CapabilitySupport.SUPPORTED) add(DiscoveryCategory.COMPLETED)
                             }
                             categories.map { category ->
                                 getSourceDiscovery(source, category, page = 1).also {
-                                    if (category == DiscoveryCategory.POPULAR) publishEarlyPopular(it)
+                                    if (category != DiscoveryCategory.COMPLETED) {
+                                        val allResolved = pendingInitial.getValue(category).decrementAndGet() == 0
+                                        publishInitialSection(it, allResolved)
+                                    }
                                 }
                             }
                         }
@@ -321,18 +357,27 @@ class HomeViewModel(
     }
 
     /** Publish each healthy source as soon as it finishes, independent of a hung sibling. */
-    private suspend fun publishEarlyPopular(result: mihon.domain.source.discovery.model.SourceDiscoveryResult) {
-        if (result.items.isEmpty() || !mihon.domain.source.health.SourceHealthMonitor.shared.discoverable(result.sourceId)) return
-        val local = networkToLocalManga(result.items.map { it.toDomainManga() }).let { eu.kanade.tachiyomi.source.internal.util.DiscoveryChapterGate.filter(it) }
+    private suspend fun publishInitialSection(
+        result: mihon.domain.source.discovery.model.SourceDiscoveryResult,
+        allResolved: Boolean,
+    ) {
+        val visible = mihon.domain.source.health.SourceHealthMonitor.shared.discoverable(result.sourceId)
+        val local = networkToLocalManga(result.items.take(12).filter { visible }.map { it.toDomainManga() }).let { eu.kanade.tachiyomi.source.internal.util.DiscoveryChapterGate.filter(it) }
         val incoming = local.map { manga ->
             HomeDiscoveryItem(mangaId = manga.id, title = manga.title, coverData = manga.also { PreferredMangaVariants.remember(it) }.asMangaCover(),
                 sourceId = result.sourceId, sourceName = result.sourceName, url = manga.url)
         }
         _state.update { current ->
+            if (result.category == DiscoveryCategory.LATEST) return@update current.copy(
+                latestManga = GroupDiscoveryItems.group(current.latestManga + incoming), latestResolved = current.latestResolved || incoming.isNotEmpty() || allResolved,
+            )
+            if (result.category == DiscoveryCategory.NEW) return@update current.copy(
+                newManga = GroupDiscoveryItems.group(current.newManga + incoming), newResolved = current.newResolved || incoming.isNotEmpty() || allResolved,
+            )
             val combined = GroupDiscoveryItems.group(current.popularManga + listOfNotNull(current.discoveryFeatured) + incoming)
             val featured = combined.firstOrNull { it.mangaId == current.discoveryFeatured?.mangaId } ?: combined.firstOrNull()
             val popular = combined.filterNot { it.sourceId == featured?.sourceId && it.mangaId == featured.mangaId }
-            current.copy(discoveryFeatured = featured, popularManga = popular, discoveryLatest = popular, isDiscoveryLoading = false)
+            current.copy(discoveryFeatured = featured, popularManga = popular, discoveryLatest = popular, isDiscoveryLoading = false, popularResolved = current.popularResolved || incoming.isNotEmpty() || allResolved)
         }
     }
 
@@ -582,6 +627,10 @@ data class HomeSourceItem(
 )
 
 data class HomeState(
+    val continueReadingResolved: Boolean = false,
+    val popularResolved: Boolean = false,
+    val latestResolved: Boolean = false,
+    val newResolved: Boolean = false,
     val recentHistory: List<HistoryWithRelations> = emptyList(),
     val recentUpdates: List<UpdatesWithRelations> = emptyList(),
     val libraryManga: List<LibraryManga> = emptyList(),
@@ -597,4 +646,8 @@ data class HomeState(
     val isSwipeRefreshing: Boolean = false,
     val isPaginationLoading: Boolean = false,
     val discoveryError: String? = null,
-)
+) {
+    // Featured is produced by the Popular request, including handled empty/error outcomes.
+    val initialHomeReady: Boolean
+        get() = continueReadingResolved && popularResolved && latestResolved && newResolved
+}

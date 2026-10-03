@@ -166,7 +166,16 @@ class MainActivity : BaseActivity() {
         setComposeContent {
             var localInitialized by remember { mutableStateOf(false) }
             var startupReady by remember { mutableStateOf(false) }
+            var homeReady by remember { mutableStateOf(false) }
+            var startupCeilingReached by remember { mutableStateOf(false) }
             var showStartupOverlay by rememberSaveable { mutableStateOf(isLaunch) }
+            LaunchedEffect(localInitialized, showStartupOverlay) {
+                if (localInitialized && showStartupOverlay) {
+                    // A ceiling only: never delay an already usable Home or cancel its requests.
+                    kotlinx.coroutines.delay(8_000)
+                    startupCeilingReached = true
+                }
+            }
             LaunchedEffect(Unit) {
                 // Suspend instead of blocking the UI while existing local migrations finish.
                 Migrator.await()
@@ -176,133 +185,140 @@ class MainActivity : BaseActivity() {
                     lifecycleScope.launchIO { chapterCache.clear() }
                 }
             }
-            Box(Modifier.fillMaxSize()) {
-                if (localInitialized) {
-                    val context = LocalContext.current
+            androidx.compose.runtime.CompositionLocalProvider(
+                eu.kanade.presentation.home.LocalHomeStartupObserver provides
+                    eu.kanade.presentation.home.HomeStartupObserver(showStartupOverlay && !homeReady && !startupCeilingReached) {
+                        homeReady = true
+                    },
+            ) {
+                Box(Modifier.fillMaxSize()) {
+                    if (localInitialized) {
+                        val context = LocalContext.current
 
-                    var incognito by remember { mutableStateOf(getIncognitoState.await(null)) }
-                    val downloadOnly by preferences.downloadedOnly.collectAsState()
-                    val indexing by downloadCache.isInitializing.collectAsState()
+                        var incognito by remember { mutableStateOf(getIncognitoState.await(null)) }
+                        val downloadOnly by preferences.downloadedOnly.collectAsState()
+                        val indexing by downloadCache.isInitializing.collectAsState()
 
-                    val isSystemInDarkTheme = isSystemInDarkTheme()
-                    val statusBarBackgroundColor = when {
-                        indexing -> IndexingBannerBackgroundColor
-                        downloadOnly -> DownloadedOnlyBannerBackgroundColor
-                        incognito -> IncognitoModeBannerBackgroundColor
-                        else -> MaterialTheme.colorScheme.surface
+                        val isSystemInDarkTheme = isSystemInDarkTheme()
+                        val statusBarBackgroundColor = when {
+                            indexing -> IndexingBannerBackgroundColor
+                            downloadOnly -> DownloadedOnlyBannerBackgroundColor
+                            incognito -> IncognitoModeBannerBackgroundColor
+                            else -> MaterialTheme.colorScheme.surface
+                        }
+                        LaunchedEffect(isSystemInDarkTheme, statusBarBackgroundColor) {
+                            // Draw edge-to-edge and set system bars color to transparent
+                            val lightStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.BLACK)
+                            val darkStyle = SystemBarStyle.dark(Color.TRANSPARENT)
+                            enableEdgeToEdge(
+                                statusBarStyle = if (statusBarBackgroundColor.luminance() > 0.5) lightStyle else darkStyle,
+                                navigationBarStyle = if (isSystemInDarkTheme) darkStyle else lightStyle,
+                            )
+                        }
+
+                        Navigator(
+                            screen = HomeScreen,
+                            disposeBehavior = NavigatorDisposeBehavior(disposeNestedNavigators = false, disposeSteps = true),
+                        ) { navigator ->
+                            LaunchedEffect(navigator) {
+                                this@MainActivity.navigator = navigator
+
+                                if (isLaunch) {
+                                    // Set start screen
+                                    handleIntentAction(intent, navigator)
+
+                                    // Reset Incognito Mode on relaunch
+                                    preferences.incognitoMode.set(false)
+                                }
+                                // Local migrations/settings have finished and root navigation is installed.
+                                // Home composes here and loads behind the intro independently.
+                                withFrameNanos { }
+                                startupReady = true
+                                ready = true
+                            }
+                            LaunchedEffect(navigator.lastItem) {
+                                (navigator.lastItem as? BrowseSourceScreen)?.sourceId
+                                    .let(getIncognitoState::subscribe)
+                                    .collectLatest { incognito = it }
+                            }
+
+                            val scaffoldInsets = WindowInsets.navigationBars.only(WindowInsetsSides.Horizontal)
+                            Scaffold(
+                                topBar = {
+                                    AppStateBanners(
+                                        downloadedOnlyMode = downloadOnly,
+                                        incognitoMode = incognito,
+                                        indexing = indexing,
+                                        modifier = Modifier.windowInsetsPadding(scaffoldInsets),
+                                    )
+                                },
+                                contentWindowInsets = scaffoldInsets,
+                            ) { contentPadding ->
+                                // Consume insets already used by app state banners
+                                Box {
+                                    // Shows current screen
+                                    DefaultNavigatorScreenTransition(
+                                        navigator = navigator,
+                                        modifier = Modifier
+                                            .padding(contentPadding)
+                                            .consumeWindowInsets(contentPadding),
+                                    )
+
+                                    // Draw navigation bar scrim when needed
+                                    if (remember { isNavigationBarNeedsScrim() }) {
+                                        Spacer(
+                                            modifier = Modifier
+                                                .align(Alignment.BottomCenter)
+                                                .fillMaxWidth()
+                                                .windowInsetsBottomHeight(WindowInsets.navigationBars)
+                                                .alpha(0.8f)
+                                                .background(MaterialTheme.colorScheme.surfaceContainer),
+                                        )
+                                    }
+
+                                }
+                            }
+
+                            // Pop source-related screens when incognito mode is turned off
+                            LaunchedEffect(Unit) {
+                                preferences.incognitoMode.changes()
+                                    .drop(1)
+                                    .filter { !it }
+                                    .onEach {
+                                        val currentScreen = navigator.lastItem
+                                        if (currentScreen is BrowseSourceScreen ||
+                                            (currentScreen is MangaScreen && currentScreen.fromSource)
+                                        ) {
+                                            navigator.popUntilRoot()
+                                        }
+                                    }
+                                    .launchIn(this)
+                            }
+
+                            HandleOnNewIntent(context = context, navigator = navigator)
+
+                            if (!isBenchmarkBuildType) {
+                                CheckForUpdates()
+                                LaunchedEffect(Unit) {
+                                    // First launch is usable immediately; permissions are action-scoped.
+                                    preferences.shownOnboardingFlow.set(true)
+                                }
+                                ShowDonationCampaign()
+                            }
+                        }
                     }
-                    LaunchedEffect(isSystemInDarkTheme, statusBarBackgroundColor) {
-                        // Draw edge-to-edge and set system bars color to transparent
-                        val lightStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.BLACK)
-                        val darkStyle = SystemBarStyle.dark(Color.TRANSPARENT)
-                        enableEdgeToEdge(
-                            statusBarStyle = if (statusBarBackgroundColor.luminance() > 0.5) lightStyle else darkStyle,
-                            navigationBarStyle = if (isSystemInDarkTheme) darkStyle else lightStyle,
+                    if (showStartupOverlay || !localInitialized) {
+                        MangaroStartupTransition(
+                            ready = localInitialized && startupReady && (homeReady || startupCeilingReached),
+                            onDismissed = {
+                                showStartupOverlay = false
+                                if (!fullyDrawnReported) {
+                                    fullyDrawnReported = true
+                                    reportFullyDrawn()
+                                }
+                            },
                         )
                     }
-
-                    Navigator(
-                        screen = HomeScreen,
-                        disposeBehavior = NavigatorDisposeBehavior(disposeNestedNavigators = false, disposeSteps = true),
-                    ) { navigator ->
-                        LaunchedEffect(navigator) {
-                            this@MainActivity.navigator = navigator
-
-                            if (isLaunch) {
-                                // Set start screen
-                                handleIntentAction(intent, navigator)
-
-                                // Reset Incognito Mode on relaunch
-                                preferences.incognitoMode.set(false)
-                            }
-                            // Local migrations/settings have finished and root navigation is installed.
-                            // Wait for its first frame, never for Home's remote data or source scans.
-                            withFrameNanos { }
-                            startupReady = true
-                            ready = true
-                        }
-                        LaunchedEffect(navigator.lastItem) {
-                            (navigator.lastItem as? BrowseSourceScreen)?.sourceId
-                                .let(getIncognitoState::subscribe)
-                                .collectLatest { incognito = it }
-                        }
-
-                        val scaffoldInsets = WindowInsets.navigationBars.only(WindowInsetsSides.Horizontal)
-                        Scaffold(
-                            topBar = {
-                                AppStateBanners(
-                                    downloadedOnlyMode = downloadOnly,
-                                    incognitoMode = incognito,
-                                    indexing = indexing,
-                                    modifier = Modifier.windowInsetsPadding(scaffoldInsets),
-                                )
-                            },
-                            contentWindowInsets = scaffoldInsets,
-                        ) { contentPadding ->
-                            // Consume insets already used by app state banners
-                            Box {
-                                // Shows current screen
-                                DefaultNavigatorScreenTransition(
-                                    navigator = navigator,
-                                    modifier = Modifier
-                                        .padding(contentPadding)
-                                        .consumeWindowInsets(contentPadding),
-                                )
-
-                                // Draw navigation bar scrim when needed
-                                if (remember { isNavigationBarNeedsScrim() }) {
-                                    Spacer(
-                                        modifier = Modifier
-                                            .align(Alignment.BottomCenter)
-                                            .fillMaxWidth()
-                                            .windowInsetsBottomHeight(WindowInsets.navigationBars)
-                                            .alpha(0.8f)
-                                            .background(MaterialTheme.colorScheme.surfaceContainer),
-                                    )
-                                }
-
-                            }
-                        }
-
-                        // Pop source-related screens when incognito mode is turned off
-                        LaunchedEffect(Unit) {
-                            preferences.incognitoMode.changes()
-                                .drop(1)
-                                .filter { !it }
-                                .onEach {
-                                    val currentScreen = navigator.lastItem
-                                    if (currentScreen is BrowseSourceScreen ||
-                                        (currentScreen is MangaScreen && currentScreen.fromSource)
-                                    ) {
-                                        navigator.popUntilRoot()
-                                    }
-                                }
-                                .launchIn(this)
-                        }
-
-                        HandleOnNewIntent(context = context, navigator = navigator)
-
-                        if (!isBenchmarkBuildType) {
-                            CheckForUpdates()
-                            LaunchedEffect(Unit) {
-                                // First launch is usable immediately; permissions are action-scoped.
-                                preferences.shownOnboardingFlow.set(true)
-                            }
-                            ShowDonationCampaign()
-                        }
-                    }
-                }
-                if (showStartupOverlay || !localInitialized) {
-                    MangaroStartupTransition(
-                        ready = localInitialized && startupReady,
-                        onDismissed = {
-                            showStartupOverlay = false
-                            if (!fullyDrawnReported) {
-                                fullyDrawnReported = true
-                                reportFullyDrawn()
-                            }
-                        },
-                    )
                 }
             }
         }

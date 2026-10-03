@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.ui.home
 
+import coil3.imageLoader
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -101,6 +102,22 @@ object HomeTab : Tab {
         val context = LocalContext.current
         val tabNavigator = LocalTabNavigator.current
         val navigator = LocalNavigator.currentOrThrow
+
+        val startup = eu.kanade.presentation.home.LocalHomeStartupObserver.current
+        androidx.compose.runtime.LaunchedEffect(state.initialHomeReady, startup.waiting) {
+            if (startup.waiting && state.initialHomeReady) startup.onReady()
+        }
+        val prefetched = androidx.compose.runtime.remember { mutableSetOf<tachiyomi.domain.manga.model.MangaCover>() }
+        val initialCovers = listOfNotNull(state.discoveryFeatured?.coverData, state.recentHistory.firstOrNull()?.coverData) +
+            state.popularManga.take(3).map { it.coverData } +
+            (state.newManga.take(3) + state.latestManga.take(3)).map { it.coverData }
+        androidx.compose.runtime.LaunchedEffect(startup.waiting, initialCovers) {
+            if (startup.waiting) {
+                initialCovers.distinct().filter { prefetched.size < 11 && prefetched.add(it) }.forEach { cover ->
+                    context.imageLoader.enqueue(coil3.request.ImageRequest.Builder(context).data(cover).size(320, 480).build())
+                }
+            }
+        }
 
         Scaffold(
             contentWindowInsets = WindowInsets(0),
