@@ -206,30 +206,33 @@ fun MangaroContinueReading(
                     Button(
                         onClick = onResumeClick,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = MangaroDesignSystem.GoldPrimary,
-                            contentColor = Color.Black,
+                            containerColor = MangaroDesignSystem.GoldPrimary.copy(alpha = 0.92f),
+                            contentColor = Color(0xFF21162D),
                         ),
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
-                        shape = RoundedCornerShape(20.dp),
-                        modifier = Modifier.height(30.dp),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp),
+                        shape = RoundedCornerShape(percent = 50),
+                        elevation = null,
+                        modifier = Modifier.height(34.dp),
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
                             Icon(
                                 imageVector = Icons.Outlined.PlayArrow,
                                 contentDescription = null,
-                                modifier = Modifier.size(14.dp),
-                                tint = Color.Black,
+                                modifier = Modifier.size(16.dp),
+                                tint = Color(0xFF21162D),
                             )
                             Text(
                                 text = "متابعة",
                                 style = MaterialTheme.typography.labelMedium.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 12.sp,
+                                    lineHeight = 16.sp,
                                 ),
-                                color = Color.Black,
+                                color = Color(0xFF21162D),
+                                maxLines = 1,
                             )
                         }
                     }
