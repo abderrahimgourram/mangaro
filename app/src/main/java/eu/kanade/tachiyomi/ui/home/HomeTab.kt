@@ -62,7 +62,10 @@ import eu.kanade.presentation.home.MangaroStandardShelf
 import eu.kanade.presentation.theme.MangaroDesignSystem
 import eu.kanade.presentation.util.Tab
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
-import eu.kanade.tachiyomi.ui.more.MoreTab
+import eu.kanade.tachiyomi.ui.library.LibraryTab
+import eu.kanade.tachiyomi.ui.setting.SettingsScreen
+import eu.kanade.presentation.more.settings.screen.about.OpenSourceLicensesScreen
+import eu.kanade.presentation.home.MangaroHomeDrawer
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
 import mihon.domain.source.discovery.model.DiscoveryCategory
 import tachiyomi.presentation.core.components.ScrollbarLazyColumn
@@ -119,6 +122,14 @@ object HomeTab : Tab {
             }
         }
 
+        MangaroHomeDrawer(
+            activeDownloadsCount = state.activeDownloadsCount,
+            onLibrary = { tabNavigator.current = LibraryTab },
+            onDownloads = { tabNavigator.current = DownloadsTab },
+            onSettings = { navigator.push(SettingsScreen()) },
+            onAbout = { navigator.push(SettingsScreen(SettingsScreen.Destination.About)) },
+            onLicenses = { navigator.push(OpenSourceLicensesScreen()) },
+        ) { openDrawer ->
         Scaffold(
             contentWindowInsets = WindowInsets(0),
         ) { paddingValues ->
@@ -136,13 +147,11 @@ object HomeTab : Tab {
                     // Home Header as scrolling top item
                     item(key = "home_header") {
                         MangaroHomeHeader(
-                            activeDownloadsCount = state.activeDownloadsCount,
                             onSearchClick = {
                                 SearchTab.requestFocus()
                                 tabNavigator.current = SearchTab
                             },
-                            onDownloadsClick = { tabNavigator.current = DownloadsTab },
-                            onSettingsClick = { tabNavigator.current = MoreTab },
+                            onMenuClick = openDrawer,
                         )
                     }
 
@@ -329,6 +338,7 @@ object HomeTab : Tab {
 
                 }
             }
+        }
         }
     }
 
