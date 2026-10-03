@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -68,8 +67,7 @@ fun MangaroMangaHero(
     manga: Manga,
     sourceName: String,
     appBarPadding: Dp,
-    isReading: Boolean,
-    canRead: Boolean,
+    readingActionLabel: String?,
     onCoverClick: () -> Unit,
     onContinueReading: () -> Unit,
     onLibraryClick: () -> Unit,
@@ -99,7 +97,7 @@ fun MangaroMangaHero(
             contentDescription = null,
             contentScale = ContentScale.Crop,
             modifier = Modifier
-                .fillMaxSize()
+                .matchParentSize()
                 .blur(12.dp)
                 .alpha(0.34f)
                 .drawWithContent {
@@ -170,7 +168,7 @@ fun MangaroMangaHero(
             ) {
                 Button(
                     onClick = onContinueReading,
-                    enabled = canRead,
+                    enabled = readingActionLabel != null,
                     modifier = Modifier
                         .weight(1.15f)
                         .height(48.dp),
@@ -182,7 +180,12 @@ fun MangaroMangaHero(
                 ) {
                     Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(19.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text(if (isReading) "متابعة" else "ابدأ", fontWeight = FontWeight.Bold)
+                    Text(
+                        text = readingActionLabel ?: "لا توجد فصول",
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
                 OutlinedButton(
                     onClick = onLibraryClick,

@@ -3,9 +3,11 @@ package eu.kanade.presentation.manga.components
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -60,6 +62,7 @@ fun MangaChapterListItem(
     read: Boolean,
     bookmark: Boolean,
     selected: Boolean,
+    highlighted: Boolean,
     downloadIndicatorEnabled: Boolean,
     downloadStateProvider: () -> Download.State,
     downloadProgressProvider: () -> Int,
@@ -103,7 +106,10 @@ fun MangaChapterListItem(
         Row(
             modifier = modifier
                 .fillMaxWidth()
-                .defaultMinSize(minHeight = 68.dp)
+                .defaultMinSize(minHeight = 64.dp)
+                .background(
+                    if (highlighted) MangaroDesignSystem.LavenderPrimary.copy(alpha = 0.075f) else Color.Transparent,
+                )
                 .selectedBackground(selected)
                 .combinedClickable(
                     onClick = onClick,
@@ -117,9 +123,20 @@ fun MangaChapterListItem(
                         strokeWidth = 1.dp.toPx(),
                     )
                 }
-                .padding(start = 16.dp, top = 9.dp, end = 10.dp, bottom = 9.dp),
+                .padding(start = 12.dp, top = 8.dp, end = 10.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            if (highlighted) {
+                Box(
+                    modifier = Modifier
+                        .padding(end = 8.dp)
+                        .sizeIn(minWidth = 3.dp, minHeight = 34.dp)
+                        .background(
+                            MangaroDesignSystem.GoldPrimary.copy(alpha = 0.72f),
+                            androidx.compose.foundation.shape.RoundedCornerShape(50),
+                        ),
+                )
+            }
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(5.dp),

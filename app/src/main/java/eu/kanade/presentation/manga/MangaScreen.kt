@@ -28,7 +28,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -85,7 +87,7 @@ fun MangaScreen(
 
     onFilterButtonClicked: () -> Unit,
     onRefresh: () -> Unit,
-    onContinueReading: () -> Unit,
+    onContinueReading: (Chapter) -> Unit,
 
     // For cover dialog
     onCoverClicked: () -> Unit,
@@ -188,7 +190,7 @@ private fun MangaScreenSmallImpl(
 
     onFilterClicked: () -> Unit,
     onRefresh: () -> Unit,
-    onContinueReading: () -> Unit,
+    onContinueReading: (Chapter) -> Unit,
 
     // For cover dialog
     onCoverClicked: () -> Unit,
@@ -222,6 +224,15 @@ private fun MangaScreenSmallImpl(
             second = state.chapterListItems,
             third = state.isAnySelected,
         )
+    }
+    val readingAction = remember(chapters, state.manga.sortDescending()) {
+        chapters.readingAction(state.manga)
+    }
+    var newestFirst by rememberSaveable(state.manga.id) {
+        mutableStateOf(state.manga.sortDescending())
+    }
+    val displayedChapters = remember(listItem, newestFirst, state.manga.sortDescending()) {
+        if (newestFirst == state.manga.sortDescending()) listItem else listItem.asReversed()
     }
 
     BackHandler(enabled = isAnySelected) {
@@ -315,12 +326,9 @@ private fun MangaScreenSmallImpl(
                             appBarPadding = topPadding,
                             manga = state.manga,
                             sourceName = remember(state.source) { state.source.getNameForMangaInfo() },
-                            isReading = remember(chapters) {
-                                chapters.fastAny { it.chapter.read || it.chapter.lastPageRead > 0L }
-                            },
-                            canRead = state.chapters.isNotEmpty(),
+                            readingActionLabel = readingAction?.label,
                             onCoverClick = onCoverClicked,
-                            onContinueReading = onContinueReading,
+                            onContinueReading = { readingAction?.chapter?.let(onContinueReading) },
                             onLibraryClick = onAddToLibraryClicked,
                         )
                     }
@@ -351,13 +359,19 @@ private fun MangaScreenSmallImpl(
                             chapterCount = chapters.size,
                             missingChapterCount = missingChapterCount,
                             freshness = freshness,
-                            onClick = onFilterClicked,
+                            newestFirst = newestFirst,
+                            onSortClick = { newestFirst = !newestFirst },
+                            onFilterClick = onFilterClicked,
                         )
                     }
 
                     sharedChapterItems(
                         manga = state.manga,
-                        chapters = listItem,
+                        chapters = displayedChapters,
+                        highlightedChapterId = readingAction
+                            ?.takeIf { it.kind == ReadingActionKind.RESUME }
+                            ?.chapter
+                            ?.id,
                         isAnyChapterSelected = chapters.fastAny { it.selected },
                         chapterSwipeStartAction = chapterSwipeStartAction,
                         chapterSwipeEndAction = chapterSwipeEndAction,
@@ -388,7 +402,7 @@ fun MangaScreenLargeImpl(
 
     onFilterButtonClicked: () -> Unit,
     onRefresh: () -> Unit,
-    onContinueReading: () -> Unit,
+    onContinueReading: (Chapter) -> Unit,
 
     // For cover dialog
     onCoverClicked: () -> Unit,
@@ -423,6 +437,15 @@ fun MangaScreenLargeImpl(
             second = state.chapterListItems,
             third = state.isAnySelected,
         )
+    }
+    val readingAction = remember(chapters, state.manga.sortDescending()) {
+        chapters.readingAction(state.manga)
+    }
+    var newestFirst by rememberSaveable(state.manga.id) {
+        mutableStateOf(state.manga.sortDescending())
+    }
+    val displayedChapters = remember(listItem, newestFirst, state.manga.sortDescending()) {
+        if (newestFirst == state.manga.sortDescending()) listItem else listItem.asReversed()
     }
 
     val insetPadding = WindowInsets.systemBars.only(WindowInsetsSides.Horizontal).asPaddingValues()
@@ -505,12 +528,9 @@ fun MangaScreenLargeImpl(
                             appBarPadding = contentPadding.calculateTopPadding(),
                             manga = state.manga,
                             sourceName = remember(state.source) { state.source.getNameForMangaInfo() },
-                            isReading = remember(chapters) {
-                                chapters.fastAny { it.chapter.read || it.chapter.lastPageRead > 0L }
-                            },
-                            canRead = state.chapters.isNotEmpty(),
+                            readingActionLabel = readingAction?.label,
                             onCoverClick = onCoverClicked,
-                            onContinueReading = onContinueReading,
+                            onContinueReading = { readingAction?.chapter?.let(onContinueReading) },
                             onLibraryClick = onAddToLibraryClicked,
                         )
                         MangaroMangaDescription(
@@ -550,13 +570,19 @@ fun MangaScreenLargeImpl(
                                     chapterCount = chapters.size,
                                     missingChapterCount = missingChapterCount,
                                     freshness = freshness,
-                                    onClick = onFilterButtonClicked,
+                                    newestFirst = newestFirst,
+                                    onSortClick = { newestFirst = !newestFirst },
+                                    onFilterClick = onFilterButtonClicked,
                                 )
                             }
 
                             sharedChapterItems(
                                 manga = state.manga,
-                                chapters = listItem,
+                                chapters = displayedChapters,
+                                highlightedChapterId = readingAction
+                                    ?.takeIf { it.kind == ReadingActionKind.RESUME }
+                                    ?.chapter
+                                    ?.id,
                                 isAnyChapterSelected = chapters.fastAny { it.selected },
                                 chapterSwipeStartAction = chapterSwipeStartAction,
                                 chapterSwipeEndAction = chapterSwipeEndAction,
@@ -618,6 +644,7 @@ private fun SharedMangaBottomActionMenu(
 private fun LazyListScope.sharedChapterItems(
     manga: Manga,
     chapters: List<ChapterList>,
+    highlightedChapterId: Long?,
     isAnyChapterSelected: Boolean,
     chapterSwipeStartAction: LibraryPreferences.ChapterSwipeAction,
     chapterSwipeEndAction: LibraryPreferences.ChapterSwipeAction,
@@ -667,6 +694,7 @@ private fun LazyListScope.sharedChapterItems(
                     read = item.chapter.read,
                     bookmark = item.chapter.bookmark,
                     selected = item.selected,
+                    highlighted = item.chapter.id == highlightedChapterId,
                     downloadIndicatorEnabled = !isAnyChapterSelected && !manga.isLocal(),
                     downloadStateProvider = { item.downloadState },
                     downloadProgressProvider = { item.downloadProgress },
@@ -696,6 +724,64 @@ private fun LazyListScope.sharedChapterItems(
             }
         }
     }
+}
+
+private enum class ReadingActionKind {
+    RESUME,
+    NEXT,
+    START,
+}
+
+private data class ReadingAction(
+    val chapter: Chapter,
+    val kind: ReadingActionKind,
+    val label: String,
+)
+
+private fun List<ChapterList.Item>.readingAction(manga: Manga): ReadingAction? {
+    if (isEmpty()) return null
+
+    val readingOrder = if (manga.sortDescending()) asReversed() else this
+    val unfinished = readingOrder.lastOrNull { item ->
+        !item.chapter.read && item.chapter.lastPageRead > 0L
+    }
+    if (unfinished != null) {
+        return ReadingAction(
+            chapter = unfinished.chapter,
+            kind = ReadingActionKind.RESUME,
+            label = unfinished.chapter.actionLabel("متابعة الفصل", "متابعة القراءة"),
+        )
+    }
+
+    val lastCompletedIndex = readingOrder.indexOfLast { it.chapter.read }
+    val hasReadingHistory = lastCompletedIndex >= 0
+    val unread = if (hasReadingHistory) {
+        readingOrder.drop(lastCompletedIndex + 1).firstOrNull { !it.chapter.read }
+            ?: readingOrder.firstOrNull { !it.chapter.read }
+    } else {
+        readingOrder.firstOrNull { !it.chapter.read }
+    }
+    if (unread != null) {
+        val kind = if (hasReadingHistory) ReadingActionKind.NEXT else ReadingActionKind.START
+        return ReadingAction(
+            chapter = unread.chapter,
+            kind = kind,
+            label = if (kind == ReadingActionKind.NEXT) {
+                unread.chapter.actionLabel("الفصل التالي", "الفصل التالي")
+            } else {
+                "ابدأ القراءة"
+            },
+        )
+    }
+
+    return null
+}
+
+private fun Chapter.actionLabel(numberedPrefix: String, fallback: String): String {
+    return chapterNumber
+        .takeIf { it >= 0.0 }
+        ?.let { "$numberedPrefix ${formatChapterNumber(it)}" }
+        ?: fallback
 }
 
 private fun onChapterItemClick(

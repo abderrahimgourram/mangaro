@@ -1,19 +1,27 @@
 package eu.kanade.presentation.manga.components
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ArrowDownward
+import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -31,54 +39,96 @@ fun ChapterHeader(
     chapterCount: Int?,
     missingChapterCount: Int,
     freshness: String? = null,
-    onClick: () -> Unit,
+    newestFirst: Boolean,
+    onSortClick: () -> Unit,
+    onFilterClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(
+    Column(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(
-                enabled = enabled,
-                onClick = onClick,
-            )
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(
-                text = stringResource(MR.strings.chapters),
-                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                color = Color.White,
-            )
-            if (chapterCount != null) {
-                Text(
-                    text = pluralStringResource(MR.plurals.manga_num_chapters, count = chapterCount, chapterCount),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color(0xFFB7ABBF),
-                )
-            }
-            MissingChaptersWarning(missingChapterCount)
-        }
         Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            freshness?.let {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(MR.strings.chapters),
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                        color = Color.White,
+                    )
+                    chapterCount?.let {
+                        Text(
+                            text = pluralStringResource(MR.plurals.manga_num_chapters, count = it, it),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Color(0xFFB7ABBF),
+                            maxLines = 1,
+                        )
+                    }
+                }
+                freshness?.let {
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color(0xFFAA9DB5),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Color.White.copy(alpha = 0.055f))
+                    .clickable(enabled = enabled, onClick = onSortClick)
+                    .padding(horizontal = 10.dp, vertical = 8.dp)
+                    .widthIn(min = 76.dp),
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = if (newestFirst) Icons.Outlined.ArrowDownward else Icons.Outlined.ArrowUpward,
+                    contentDescription = null,
+                    modifier = Modifier.size(17.dp),
+                    tint = MangaroDesignSystem.LavenderPrimary,
+                )
                 Text(
-                    text = it,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFFAA9DB5),
+                    text = if (newestFirst) "الأحدث" else "الأقدم",
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = Color(0xFFD7CCDF),
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
             }
-            Icon(
-                imageVector = Icons.Outlined.FilterList,
-                contentDescription = stringResource(MR.strings.action_filter),
-                tint = MangaroDesignSystem.LavenderPrimary,
-            )
+
+            IconButton(
+                onClick = onFilterClick,
+                enabled = enabled,
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Color.White.copy(alpha = 0.055f)),
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.FilterList,
+                    contentDescription = stringResource(MR.strings.action_filter),
+                    tint = MangaroDesignSystem.LavenderPrimary,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
         }
+        MissingChaptersWarning(missingChapterCount)
     }
 }
 
