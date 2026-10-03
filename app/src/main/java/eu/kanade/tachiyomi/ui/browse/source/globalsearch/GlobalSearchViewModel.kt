@@ -8,7 +8,7 @@ import eu.kanade.tachiyomi.source.Source
 class GlobalSearchViewModel(
     initialQuery: String,
     initialExtensionFilter: String?,
-) : SearchViewModel(State(searchQuery = initialQuery)) {
+) : SearchViewModel(State(searchQuery = initialQuery), liveSearch = true) {
 
     companion object {
         val INITIAL_QUERY_KEY = CreationExtras.Key<String>()

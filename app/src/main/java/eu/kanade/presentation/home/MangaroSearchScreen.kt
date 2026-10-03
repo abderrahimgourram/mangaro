@@ -46,7 +46,6 @@ import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -89,24 +88,22 @@ fun MangaroSearchScreen(
     val keyboard = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
     var focused by remember { mutableStateOf(false) }
-    var submittedQuery by rememberSaveable {
-        mutableStateOf(if (state.items.isNotEmpty()) query else "")
+    val results = remember(state.rankedResults, state.healthRevision) {
+        val winners = eu.kanade.tachiyomi.ui.home.PreferredMangaVariants.preferred(state.rankedResults.map { it.manga })
+        state.rankedResults.filter {
+            it.manga.id in winners && mihon.domain.source.health.SourceHealthMonitor.shared.discoverable(it.source.id)
+        }.map { it.source to it.manga }
     }
-    val results = remember(state.items, state.healthRevision, state.onlyShowHasResults) {
-        state.filteredItems.flatMap { (source, result) ->
-            (result as? SearchItemResult.Success)?.result.orEmpty().map { source to it }
-        }
-    }
-    val hasSearch = submittedQuery.isNotBlank() && submittedQuery == query
-    val loading = hasSearch && state.progress < state.total
-    val failed = hasSearch && state.items.values.any { it is SearchItemResult.Error }
+    val hasSearch = query.isNotBlank()
+    val loading = hasSearch && state.isSearching
+    val currentResults = state.resultQuery == query.trim()
+    val failed = hasSearch && state.activeQuery == query.trim() && state.items.values.any { it is SearchItemResult.Error }
     val fieldBorder by animateColorAsState(
         if (focused) MangaroDesignSystem.GoldPrimary.copy(alpha = 0.32f) else Color(0x30A78BFA),
         animationSpec = tween(150),
         label = "searchFieldFocus",
     )
     val submit = {
-        submittedQuery = query
         onSearch()
         keyboard?.hide()
         focusManager.clearFocus()
@@ -136,10 +133,7 @@ fun MangaroSearchScreen(
             ) {
                 BasicTextField(
                     value = query,
-                    onValueChange = {
-                        submittedQuery = ""
-                        onChangeQuery(it)
-                    },
+                    onValueChange = onChangeQuery,
                     singleLine = true,
                     textStyle = MaterialTheme.typography.bodyLarge.copy(
                         color = Color.White,
@@ -170,8 +164,6 @@ fun MangaroSearchScreen(
                                 IconButton(
                                     onClick = {
                                         onChangeQuery("")
-                                        submittedQuery = ""
-                                        onSearch()
                                         focusRequester.requestFocus()
                                     },
                                     modifier = Modifier.size(40.dp),
@@ -204,14 +196,13 @@ fun MangaroSearchScreen(
                     ),
                     border = null,
                 )
-                if (hasSearch && results.isNotEmpty()) {
+                if (hasSearch && currentResults && results.isNotEmpty()) {
                     Text("${results.size} نتيجة", color = Color(0xFF9E95AC), style = MaterialTheme.typography.labelMedium)
                 }
             }
             Box(Modifier.fillMaxWidth().height(2.dp)) {
                 if (loading) {
                     LinearProgressIndicator(
-                        progress = { state.progress.toFloat() / state.total.coerceAtLeast(1) },
                         modifier = Modifier.fillMaxSize(),
                         color = MangaroDesignSystem.GoldPrimary,
                         trackColor = MangaroDesignSystem.SurfaceHigh,
@@ -243,7 +234,7 @@ fun MangaroSearchScreen(
                     )
                     if (!hasSearch) {
                         Text(
-                            "اكتب الاسم ثم اضغط بحث",
+                            "تظهر النتائج أثناء الكتابة",
                             color = Color(0xFF9E95AC),
                             style = MaterialTheme.typography.bodySmall,
                             textAlign = TextAlign.Center,
