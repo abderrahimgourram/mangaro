@@ -41,7 +41,6 @@ internal fun MangaroWeeklyPicks(state: WeeklyPicksState, onOpen: (Long) -> Unit,
             ) {
                 Column(Modifier.weight(1f)) {
                     Text("اختيارات المجتمع", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Text("تقييمات حقيقية ومختارات الأسبوع", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 if (state.failed || (state.cards.isEmpty() && !state.loading)) {
                     TextButton(onClick = onRetry) { Text("إعادة المحاولة") }
