@@ -1,6 +1,10 @@
 package eu.kanade.presentation.updates
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -9,17 +13,19 @@ import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.material.icons.outlined.FlipToBack
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.SelectAll
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.unit.dp
+import eu.kanade.presentation.theme.MangaroDesignSystem
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.util.fastAll
 import androidx.compose.ui.util.fastAny
@@ -30,18 +36,13 @@ import eu.kanade.presentation.manga.components.MangaBottomActionMenu
 import eu.kanade.tachiyomi.data.download.model.Download
 import eu.kanade.tachiyomi.ui.updates.UpdatesItem
 import eu.kanade.tachiyomi.ui.updates.UpdatesViewModel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import kotlinx.datetime.LocalDate
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.FastScrollLazyColumn
 import tachiyomi.presentation.core.components.material.PullRefresh
 import tachiyomi.presentation.core.components.material.Scaffold
 import tachiyomi.presentation.core.i18n.stringResource
-import tachiyomi.presentation.core.screens.EmptyScreen
-import tachiyomi.presentation.core.screens.LoadingScreen
 import tachiyomi.presentation.core.theme.active
-import kotlin.time.Duration.Companion.seconds
 
 @Composable
 fun UpdateScreen(
@@ -52,7 +53,9 @@ fun UpdateScreen(
     onSelectAll: (Boolean) -> Unit,
     onInvertSelection: () -> Unit,
     onCalendarClicked: () -> Unit,
-    onUpdateLibrary: () -> Boolean,
+    onUpdateLibrary: () -> Unit,
+    refreshing: Boolean,
+    onNavigateUp: (() -> Unit)? = null,
     onDownloadChapter: (List<UpdatesItem>, ChapterDownloadAction) -> Unit,
     onMultiBookmarkClicked: (List<UpdatesItem>, bookmark: Boolean) -> Unit,
     onMultiMarkAsReadClicked: (List<UpdatesItem>, read: Boolean) -> Unit,
@@ -66,9 +69,14 @@ fun UpdateScreen(
         onSelectAll(false)
     }
 
+    val uiModels = remember(state.items) { state.getUiModel() }
+
     Scaffold(
+        containerColor = MangaroDesignSystem.BackgroundDark,
         topBar = { scrollBehavior ->
             UpdatesAppBar(
+                onNavigateUp = onNavigateUp,
+                refreshing = refreshing,
                 onCalendarClicked = { onCalendarClicked() },
                 onUpdateLibrary = { onUpdateLibrary() },
                 onFilterClicked = { onFilterClicked() },
@@ -91,45 +99,37 @@ fun UpdateScreen(
         },
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
     ) { contentPadding ->
-        when {
-            state.isLoading -> LoadingScreen(Modifier.padding(contentPadding))
-            state.items.isEmpty() -> EmptyScreen(
-                stringRes = MR.strings.information_no_recent,
-                modifier = Modifier.padding(contentPadding),
-            )
-            else -> {
-                val scope = rememberCoroutineScope()
-                var isRefreshing by remember { mutableStateOf(false) }
-
-                PullRefresh(
-                    refreshing = isRefreshing,
-                    onRefresh = {
-                        val started = onUpdateLibrary()
-                        if (!started) return@PullRefresh
-                        scope.launch {
-                            // Fake refresh status but hide it after a second as it's a long running task
-                            isRefreshing = true
-                            delay(1.seconds)
-                            isRefreshing = false
-                        }
-                    },
-                    enabled = !state.selectionMode,
-                    indicatorPadding = contentPadding,
+        PullRefresh(
+            refreshing = refreshing,
+            onRefresh = onUpdateLibrary,
+            enabled = !state.selectionMode && !state.isLoading && !refreshing,
+            indicatorPadding = contentPadding,
+        ) {
+            when {
+                state.isLoading -> Box(Modifier.fillMaxSize().padding(contentPadding), contentAlignment = Alignment.TopCenter) {
+                    CircularProgressIndicator(Modifier.padding(top = 24.dp), color = MangaroDesignSystem.GoldPrimary, strokeWidth = 2.dp)
+                }
+                state.items.isEmpty() -> Column(
+                    Modifier.fillMaxSize().padding(contentPadding).padding(horizontal = 24.dp, vertical = 28.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    FastScrollLazyColumn(
-                        contentPadding = contentPadding,
-                    ) {
-                        updatesLastUpdatedItem(lastUpdated)
-
-                        updatesUiItems(
-                            uiModels = state.getUiModel(),
-                            selectionMode = state.selectionMode,
-                            onUpdateSelected = onUpdateSelected,
-                            onClickCover = onClickCover,
-                            onClickUpdate = onOpenChapter,
-                            onDownloadChapter = onDownloadChapter,
-                        )
+                    Text(if (hasActiveFilters) "لا توجد فصول تطابق الفلاتر" else "لا توجد تحديثات جديدة", style = MaterialTheme.typography.titleMedium)
+                    Text("تبقى مكتبتك وقراءتك متاحتين دون اتصال", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    TextButton(onClick = onUpdateLibrary, enabled = !refreshing) {
+                        Text(if (refreshing) "جارٍ التحديث..." else "البحث عن فصول جديدة", color = MangaroDesignSystem.GoldPrimary)
                     }
+                }
+                else -> FastScrollLazyColumn(contentPadding = contentPadding) {
+                    if (lastUpdated > 0) updatesLastUpdatedItem(lastUpdated)
+                    updatesUiItems(
+                        uiModels = uiModels,
+                        selectionMode = state.selectionMode,
+                        onUpdateSelected = onUpdateSelected,
+                        onClickCover = onClickCover,
+                        onClickUpdate = onOpenChapter,
+                        onDownloadChapter = onDownloadChapter,
+                    )
                 }
             }
         }
@@ -138,6 +138,8 @@ fun UpdateScreen(
 
 @Composable
 private fun UpdatesAppBar(
+    onNavigateUp: (() -> Unit)?,
+    refreshing: Boolean,
     onCalendarClicked: () -> Unit,
     onUpdateLibrary: () -> Unit,
     onFilterClicked: () -> Unit,
@@ -152,7 +154,8 @@ private fun UpdatesAppBar(
 ) {
     AppBar(
         modifier = modifier,
-        title = stringResource(MR.strings.label_recent_updates),
+        title = "الفصول الجديدة",
+        navigateUp = onNavigateUp,
         actions = {
             AppBarActions(
                 listOf(
@@ -171,6 +174,7 @@ private fun UpdatesAppBar(
                         title = stringResource(MR.strings.action_update_library),
                         icon = Icons.Outlined.Refresh,
                         onClick = onUpdateLibrary,
+                        enabled = !refreshing,
                     ),
                 ),
             )

@@ -5,10 +5,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
@@ -20,16 +20,13 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.foundation.shape.RoundedCornerShape
+import eu.kanade.presentation.theme.MangaroDesignSystem
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.components.relativeDateText
@@ -58,8 +55,9 @@ internal fun LazyListScope.updatesLastUpdatedItem(
                 .padding(horizontal = MaterialTheme.padding.medium, vertical = MaterialTheme.padding.small),
         ) {
             Text(
-                text = stringResource(MR.strings.updates_last_update_info, relativeTimeSpanString(lastUpdated)),
-                fontStyle = FontStyle.Italic,
+                text = "آخر محاولة تحديث: ${relativeTimeSpanString(lastUpdated)}",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
@@ -83,7 +81,7 @@ internal fun LazyListScope.updatesUiItems(
         },
         key = {
             when (it) {
-                is UpdatesUiModel.Header -> "updatesHeader-${it.hashCode()}"
+                is UpdatesUiModel.Header -> "updatesHeader-${it.date}"
                 is UpdatesUiModel.Item -> "updates-${it.item.update.mangaId}-${it.item.update.chapterId}"
             }
         },
@@ -145,7 +143,7 @@ private fun UpdatesUiItem(
     modifier: Modifier = Modifier,
 ) {
     val haptic = LocalHapticFeedback.current
-    val textAlpha = if (update.read) DISABLED_ALPHA else 1f
+    val textAlpha = if (update.read) 0.7f else 1f
 
     Row(
         modifier = modifier
@@ -157,14 +155,16 @@ private fun UpdatesUiItem(
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                 },
             )
-            .height(56.dp)
+            .heightIn(min = 88.dp)
             .padding(horizontal = MaterialTheme.padding.medium),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        MangaCover.Square(
+        MangaCover.Book(
             modifier = Modifier
-                .padding(vertical = 6.dp)
-                .fillMaxHeight(),
+                .padding(vertical = 8.dp)
+                .width(46.dp),
+            shape = RoundedCornerShape(8.dp),
+            contentDescription = update.mangaTitle,
             data = update.coverData,
             onClick = onClickCover,
         )
@@ -176,14 +176,13 @@ private fun UpdatesUiItem(
         ) {
             Text(
                 text = update.mangaTitle,
-                maxLines = 1,
-                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 2,
+                style = MaterialTheme.typography.bodyMedium.copy(textDirection = TextDirection.Content),
                 color = LocalContentColor.current.copy(alpha = textAlpha),
                 overflow = TextOverflow.Ellipsis,
             )
 
             Row(verticalAlignment = Alignment.CenterVertically) {
-                var textHeight by remember { mutableIntStateOf(0) }
                 if (!update.read) {
                     Icon(
                         imageVector = Icons.Filled.Circle,
@@ -191,7 +190,7 @@ private fun UpdatesUiItem(
                         modifier = Modifier
                             .height(8.dp)
                             .padding(end = 4.dp),
-                        tint = MaterialTheme.colorScheme.primary,
+                        tint = MangaroDesignSystem.GoldPrimary,
                     )
                 }
                 if (update.bookmark) {
@@ -199,18 +198,17 @@ private fun UpdatesUiItem(
                         imageVector = Icons.Filled.Bookmark,
                         contentDescription = stringResource(MR.strings.action_filter_bookmarked),
                         modifier = Modifier
-                            .sizeIn(maxHeight = with(LocalDensity.current) { textHeight.toDp() - 2.dp }),
-                        tint = MaterialTheme.colorScheme.primary,
+                            .size(14.dp),
+                        tint = MangaroDesignSystem.GoldPrimary,
                     )
                     Spacer(modifier = Modifier.width(2.dp))
                 }
                 Text(
                     text = update.chapterName,
                     maxLines = 1,
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodySmall.copy(textDirection = TextDirection.Content),
                     color = LocalContentColor.current.copy(alpha = textAlpha),
                     overflow = TextOverflow.Ellipsis,
-                    onTextLayout = { textHeight = it.size.height },
                     modifier = Modifier
                         .weight(weight = 1f, fill = false),
                 )

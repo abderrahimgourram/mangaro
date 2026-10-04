@@ -43,14 +43,17 @@ fun LibrarySettingsDialog(
     onDismissRequest: () -> Unit,
     viewModel: LibrarySettingsViewModel,
     category: Category?,
+    filtersOnly: Boolean = false,
 ) {
     TabbedDialog(
         onDismissRequest = onDismissRequest,
-        tabTitles = listOf(
-            stringResource(MR.strings.action_filter),
-            stringResource(MR.strings.action_sort),
-            stringResource(MR.strings.action_display),
-        ),
+        tabTitles = buildList {
+            add(stringResource(MR.strings.action_filter))
+            if (!filtersOnly) {
+                add(stringResource(MR.strings.action_sort))
+                add(stringResource(MR.strings.action_display))
+            }
+        },
     ) { page ->
         Column(
             modifier = Modifier

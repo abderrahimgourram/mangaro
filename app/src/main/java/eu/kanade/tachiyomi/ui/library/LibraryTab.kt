@@ -15,9 +15,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.foundation.layout.WindowInsets
+import eu.kanade.presentation.library.rememberLibraryUpdateRefresh
 import eu.kanade.presentation.library.MangaroLibraryScreen
 import eu.kanade.presentation.library.MangaroLibraryShelfSheet
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -31,8 +31,10 @@ import eu.kanade.presentation.library.DeleteLibraryMangaDialog
 import eu.kanade.presentation.library.LibrarySettingsDialog
 import eu.kanade.presentation.util.Tab
 import eu.kanade.tachiyomi.R
-import eu.kanade.tachiyomi.data.library.LibraryUpdateJob
 import eu.kanade.tachiyomi.ui.category.CategoryScreen
+import eu.kanade.tachiyomi.ui.home.SearchTab
+import eu.kanade.tachiyomi.ui.reader.ReaderActivity
+import eu.kanade.tachiyomi.ui.updates.UpdatesTab
 import eu.kanade.tachiyomi.ui.home.HomeScreen
 import eu.kanade.tachiyomi.ui.main.MainActivity
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
@@ -40,10 +42,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
-import tachiyomi.core.common.i18n.stringResource
-import tachiyomi.domain.category.model.Category
 import tachiyomi.domain.manga.model.Manga
-import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.Scaffold
 import tachiyomi.source.local.isLocal
 
@@ -69,7 +68,6 @@ data object LibraryTab : Tab {
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
         val context = LocalContext.current
-        val scope = rememberCoroutineScope()
 
         val viewModel = viewModel<LibraryViewModel>()
         val settingsViewModel = viewModel<LibrarySettingsViewModel>()
@@ -77,18 +75,14 @@ data object LibraryTab : Tab {
 
         val snackbarHostState = remember { SnackbarHostState() }
 
-        val onClickRefresh: (Category?) -> Boolean = { category ->
-            val started = LibraryUpdateJob.startNow(context, category)
-            scope.launch {
-                val msgRes = when {
-                    !started -> MR.strings.update_already_running
-                    category != null -> MR.strings.updating_category
-                    else -> MR.strings.updating_library
-                }
-                snackbarHostState.showSnackbar(context.stringResource(msgRes))
-            }
-            started
-        }
+        val refresh = rememberLibraryUpdateRefresh { snackbarHostState.showSnackbar(it) }
+        val tabNavigator = LocalTabNavigator.current
+        val unreadFilter by settingsViewModel.libraryPreferences.filterUnread.changes()
+            .collectAsState(initial = settingsViewModel.libraryPreferences.filterUnread.get())
+        val downloadedOnly by settingsViewModel.preferences.downloadedOnly.changes()
+            .collectAsState(initial = settingsViewModel.preferences.downloadedOnly.get())
+        val downloadedFilter by settingsViewModel.libraryPreferences.filterDownloaded.changes()
+            .collectAsState(initial = settingsViewModel.libraryPreferences.filterDownloaded.get())
 
         val sort by settingsViewModel.libraryPreferences.sortingMode.changes()
             .collectAsState(initial = settingsViewModel.libraryPreferences.sortingMode.get())
@@ -105,7 +99,19 @@ data object LibraryTab : Tab {
                 onSort = viewModel::setShelfSort,
                 onMangaClick = { navigator.push(MangaScreen(it)) },
                 onManageManga = { managedManga = it },
-                onRefresh = { onClickRefresh(null) },
+                onRefresh = refresh.refresh,
+                refreshing = refresh.refreshing,
+                unreadFilter = unreadFilter,
+                downloadedFilter = if (downloadedOnly) tachiyomi.core.common.preference.TriState.ENABLED_IS else downloadedFilter,
+                downloadedOnly = downloadedOnly,
+                onUnreadFilter = { settingsViewModel.libraryPreferences.filterUnread.set(it) },
+                onDownloadedFilter = { settingsViewModel.libraryPreferences.filterDownloaded.set(it) },
+                onFilters = viewModel::showSettingsDialog,
+                onUpdates = { navigator.push(UpdatesTab) },
+                onDiscover = { SearchTab.requestFocus(); tabNavigator.current = SearchTab },
+                onContinue = { history ->
+                    context.startActivity(ReaderActivity.newIntent(context, history.mangaId, history.chapterId))
+                },
                 modifier = Modifier.padding(contentPadding),
             )
         }
@@ -120,6 +126,7 @@ data object LibraryTab : Tab {
                     onDismissRequest = onDismissRequest,
                     viewModel = settingsViewModel,
                     category = state.activeCategory,
+                    filtersOnly = true,
                 )
             }
             is LibraryViewModel.Dialog.ChangeCategory -> {

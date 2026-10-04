@@ -387,20 +387,8 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
                 val file = context.createFileInCacheDir("mihon_update_errors.txt")
                 file.bufferedWriter().use { out ->
                     out.write(context.stringResource(MR.strings.library_errors_help, ERROR_LOG_HELP_URL) + "\n\n")
-                    // Error file format:
-                    // ! Error
-                    //   # Source
-                    //     - Manga
-                    errors.groupBy({ it.second }, { it.first }).forEach { (error, mangas) ->
-                        out.write("\n! ${error}\n")
-                        mangas.groupBy { it.source }.forEach { (srcId, mangas) ->
-                            val source = sourceManager.getOrStub(srcId)
-                            out.write("  # $source\n")
-                            mangas.forEach {
-                                out.write("    - ${it.title}\n")
-                            }
-                        }
-                    }
+                    // This report is opened by the user; technical provider/error details stay internal.
+                    out.write(formatLibraryUpdateErrors(errors.map { it.first.title }))
                 }
                 return file
             }
@@ -515,4 +503,10 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
                 }
         }
     }
+}
+
+/** Public diagnostics never include source identity or raw network exceptions. */
+internal fun formatLibraryUpdateErrors(titles: List<String>): String = buildString {
+    append("تعذّر تحديث بعض الأعمال. حاول مجددًا عند توفر الاتصال.\n\n")
+    titles.distinct().forEach { append("• ").append(it).append('\n') }
 }

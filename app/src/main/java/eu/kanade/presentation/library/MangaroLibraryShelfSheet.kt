@@ -18,6 +18,7 @@ import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.MenuBook
 import androidx.compose.material.icons.outlined.PauseCircle
 import androidx.compose.material.icons.outlined.WatchLater
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
@@ -67,7 +68,10 @@ fun MangaroLibraryShelfSheet(manga: Manga, onDismissRequest: () -> Unit) {
     var saving by remember(manga.id) { mutableStateOf(false) }
     var error by remember(manga.id) { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(manga.id) {
+    var loadAttempt by remember(manga.id) { mutableStateOf(0) }
+    var confirmRemoval by remember(manga.id) { mutableStateOf(false) }
+
+    LaunchedEffect(manga.id, loadAttempt) {
         try {
             val (bindings, ids) = withIOContext {
                 MangaroLibraryShelves.ensure() to Injekt.get<CategoryRepository>().getCategoriesByMangaId(manga.id).map { it.id }.toSet()
@@ -162,6 +166,9 @@ fun MangaroLibraryShelfSheet(manga: Manga, onDismissRequest: () -> Unit) {
                 }
             }
             error?.let { Text(it, color = Color(0xFFD5B4C2), style = MaterialTheme.typography.bodySmall) }
+            if (!loaded && error != null) {
+                TextButton(onClick = { error = null; loadAttempt++ }) { Text("إعادة المحاولة") }
+            }
             Button(
                 onClick = { save(false) },
                 enabled = loaded && !saving,
@@ -173,10 +180,22 @@ fun MangaroLibraryShelfSheet(manga: Manga, onDismissRequest: () -> Unit) {
                 Text(if (saving) "جارٍ الحفظ..." else if (manga.favorite) "حفظ التغييرات" else "إضافة إلى المكتبة", fontWeight = FontWeight.SemiBold)
             }
             if (manga.favorite) {
-                TextButton(onClick = { save(true) }, enabled = loaded && !saving, modifier = Modifier.fillMaxWidth()) {
+                TextButton(onClick = { confirmRemoval = true }, enabled = loaded && !saving, modifier = Modifier.fillMaxWidth()) {
                     Text("إزالة من المكتبة", color = Color(0xFFCBBED5))
                 }
             }
         }
+    }
+    if (confirmRemoval) {
+        AlertDialog(
+            onDismissRequest = { confirmRemoval = false },
+            title = { Text("إزالة من المكتبة؟") },
+            text = { Text("ستبقى التنزيلات وسجل القراءة والتقدم محفوظة على هذا الجهاز.") },
+            confirmButton = {
+                TextButton(onClick = { confirmRemoval = false; save(true) }, enabled = !saving) { Text("إزالة") }
+            },
+            dismissButton = { TextButton(onClick = { confirmRemoval = false }) { Text("إلغاء") } },
+            containerColor = MangaroDesignSystem.SurfaceDark,
+        )
     }
 }

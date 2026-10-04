@@ -15,6 +15,7 @@ import cafe.adriel.voyager.navigator.Navigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cafe.adriel.voyager.navigator.tab.LocalTabNavigator
 import cafe.adriel.voyager.navigator.tab.TabOptions
+import eu.kanade.presentation.library.rememberLibraryUpdateRefresh
 import eu.kanade.presentation.updates.UpdateScreen
 import eu.kanade.presentation.updates.UpdatesDeleteConfirmationDialog
 import eu.kanade.presentation.updates.UpdatesFilterDialog
@@ -58,6 +59,8 @@ data object UpdatesTab : Tab {
         val settingsViewModel = viewModel<UpdatesSettingsViewModel>()
         val state by viewModel.state.collectAsState()
 
+        val refresh = rememberLibraryUpdateRefresh { viewModel.snackbarHostState.showSnackbar(it) }
+
         UpdateScreen(
             state = state,
             snackbarHostState = viewModel.snackbarHostState,
@@ -65,7 +68,9 @@ data object UpdatesTab : Tab {
             onClickCover = { item -> navigator.push(MangaScreen(item.update.mangaId)) },
             onSelectAll = viewModel::toggleAllSelection,
             onInvertSelection = viewModel::invertSelection,
-            onUpdateLibrary = viewModel::updateLibrary,
+            onUpdateLibrary = refresh.refresh,
+            refreshing = refresh.refreshing,
+            onNavigateUp = { navigator.pop(); Unit }.takeIf { navigator.lastItem == UpdatesTab },
             onDownloadChapter = viewModel::downloadChapters,
             onMultiBookmarkClicked = viewModel::bookmarkUpdates,
             onMultiMarkAsReadClicked = viewModel::markUpdatesRead,

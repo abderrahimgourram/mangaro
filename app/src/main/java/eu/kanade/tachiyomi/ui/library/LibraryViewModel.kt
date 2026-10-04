@@ -25,6 +25,7 @@ import logcat.LogPriority
 import tachiyomi.core.common.util.system.logcat
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
@@ -52,6 +53,8 @@ import tachiyomi.domain.category.model.Category
 import tachiyomi.domain.chapter.interactor.GetBookmarkedChaptersByMangaId
 import tachiyomi.domain.chapter.interactor.GetChaptersByMangaId
 import tachiyomi.domain.chapter.model.Chapter
+import tachiyomi.domain.history.interactor.GetHistory
+import tachiyomi.domain.history.model.HistoryWithRelations
 import tachiyomi.domain.history.interactor.GetNextChapters
 import tachiyomi.domain.library.model.LibraryDisplayMode
 import tachiyomi.domain.library.model.LibraryManga
@@ -76,6 +79,7 @@ class LibraryViewModel(
     private val getCategories: GetCategories = Injekt.get(),
     private val getTracksPerManga: GetTracksPerManga = Injekt.get(),
     private val getNextChapters: GetNextChapters = Injekt.get(),
+    private val getHistory: GetHistory = Injekt.get(),
     private val getChaptersByMangaId: GetChaptersByMangaId = Injekt.get(),
     private val getBookmarkedChaptersByMangaId: GetBookmarkedChaptersByMangaId = Injekt.get(),
     private val setReadStatus: SetReadStatus = Injekt.get(),
@@ -113,10 +117,6 @@ class LibraryViewModel(
                 getLibraryItemPreferencesFlow(),
             ) { searchQuery, categories, favorites, (tracksMap, trackingFilters), itemPreferences ->
                 val showSystemCategory = favorites.any { it.libraryManga.categories.contains(0) }
-                val collection = if (searchQuery.isNullOrEmpty()) favorites else {
-                    val queryNode = QueryNode.from(searchQuery)
-                    favorites.filter { queryNode.matches(it) }
-                }
                 val filteredFavorites = favorites
                     .applyFilters(tracksMap, trackingFilters, itemPreferences)
                     .let { libraryItems ->
@@ -133,7 +133,9 @@ class LibraryViewModel(
                     showSystemCategory = showSystemCategory,
                     categories = categories,
                     favorites = filteredFavorites,
-                    collection = collection,
+                    collection = filteredFavorites,
+                    totalLibraryCount = favorites.size,
+                    libraryIds = favorites.mapTo(HashSet()) { it.id },
                     tracksMap = tracksMap,
                     loggedInTrackerIds = trackingFilters.keys,
                 )
@@ -172,6 +174,16 @@ class LibraryViewModel(
                         )
                     }
                 }
+        }
+
+        // History changes must not re-filter/re-sort the entire Library on every page save.
+        viewModelScope.launchIO {
+            combine(
+                state.map { it.libraryData.libraryIds }.distinctUntilChanged(),
+                getHistory.subscribe("").catch { emit(emptyList()) },
+            ) { ids, history -> recentLibraryHistory(history, ids) }
+                .distinctUntilChanged()
+                .collect { history -> mutableState.update { it.copy(continueReading = history) } }
         }
 
         combine(
@@ -374,6 +386,7 @@ class LibraryViewModel(
             val comparator = key.sort.comparator()
                 .let { if (key.sort.isAscending) it else it.reversed() }
                 .thenComparator(sortAlphabetically)
+                .thenBy { it.id }
 
             manga.sortedWith(comparator).map { it.id }
         }
@@ -419,21 +432,23 @@ class LibraryViewModel(
             downloadCache.changes,
         ) { libraryManga, preferences, _ ->
             libraryManga.map { manga ->
+                val downloadCount = downloadManager.getDownloadCount(manga.manga)
+                val source = sourceManager.getOrStub(manga.manga.source)
                 LibraryItem(
                     libraryManga = manga,
-                    downloadCount = downloadManager.getDownloadCount(manga.manga),
-                    unreadCount = manga.unreadCount,
+                    downloadCount = downloadCount,
+                    unreadCount = manga.visibleUnreadCount,
                     isLocal = manga.manga.isLocal(),
-                    sourceName = sourceManager.getOrStub(manga.manga.source).name.lowercase(),
-                    sourceLanguage = sourceManager.getOrStub(manga.manga.source).lang,
+                    sourceName = source.name.lowercase(),
+                    sourceLanguage = source.lang,
                     badges = LibraryItem.Badges(
                         downloadCount = if (preferences.downloadBadge) {
-                            downloadManager.getDownloadCount(manga.manga)
+                            downloadCount
                         } else {
                             0
                         },
                         unreadCount = if (preferences.unreadBadge) {
-                            manga.unreadCount
+                            manga.visibleUnreadCount
                         } else {
                             0
                         },
@@ -443,7 +458,7 @@ class LibraryViewModel(
                             false
                         },
                         sourceLanguage = if (preferences.languageBadge) {
-                            sourceManager.getOrStub(manga.manga.source).lang
+                            source.lang
                         } else {
                             ""
                         },
@@ -798,6 +813,8 @@ class LibraryViewModel(
         val categories: List<Category> = emptyList(),
         val favorites: List<LibraryItem> = emptyList(),
         val collection: List<LibraryItem> = emptyList(),
+        val totalLibraryCount: Int = 0,
+        val libraryIds: Set<Long> = emptySet(),
         val tracksMap: Map</* Manga */ Long, List<Track>> = emptyMap(),
         val loggedInTrackerIds: Set<Long> = emptySet(),
     ) {
@@ -816,6 +833,7 @@ class LibraryViewModel(
         val showMangaContinueButton: Boolean = false,
         val dialog: Dialog? = null,
         val libraryData: LibraryData = LibraryData(),
+        val continueReading: List<HistoryWithRelations> = emptyList(),
         val shelves: List<MangaroLibraryShelves.Binding> = emptyList(),
         private val activeCategoryIndex: Int = 0,
         private val groupedFavorites: Map<Category, List</* LibraryItem */ Long>> = emptyMap(),
