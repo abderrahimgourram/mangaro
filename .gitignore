@@ -15,3 +15,8 @@ local.properties
 
 # macOS specific files
 .DS_Store
+
+# Local signing credentials and private keystores
+signing.properties
+*.jks
+*.keystore

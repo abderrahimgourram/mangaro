@@ -46,15 +46,22 @@ fun MangaroDownloadsScreen(
     onRetry: (Queued) -> Unit,
     onRetryFailed: () -> Unit,
     onCancel: (Queued) -> Unit,
+    onClearAll: () -> Unit,
     onDelete: (List<CompletedGroup>, CompletedChapter?) -> Unit,
     onOpenManga: (Manga) -> Unit,
     onOpenChapter: (Manga, CompletedChapter) -> Unit,
 ) {
+    var clearMenu by remember { mutableStateOf(false) }
+    var clearRequest by remember { mutableStateOf(false) }
     var filter by rememberSaveable { mutableStateOf(DownloadFilter.ALL) }
     var sort by rememberSaveable { mutableStateOf(DownloadSort.RECENT) }
     var sortMenu by remember { mutableStateOf(false) }
     var expanded by rememberSaveable { mutableStateOf(emptyList<Long>()) }
     var deleteRequest by remember { mutableStateOf<Pair<List<CompletedGroup>, CompletedChapter?>?>(null) }
+    val hasCurrentOperations = state.queue.any { it.status != Download.State.DOWNLOADED }
+    LaunchedEffect(hasCurrentOperations) {
+        if (!hasCurrentOperations) { clearRequest = false; clearMenu = false }
+    }
     val active = remember(state.queue) { state.queue.filter { it.status == Download.State.DOWNLOADING } }
     val pending = remember(state.queue) { state.queue.filter { it.status == Download.State.QUEUE || it.status == Download.State.NOT_DOWNLOADED } }
     val failed = remember(state.queue) { state.queue.filter { it.status == Download.State.ERROR } }
@@ -79,10 +86,23 @@ fun MangaroDownloadsScreen(
         item(key = "header") {
             Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("التنزيلات", Modifier.weight(1f), color = Color.White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                if (state.queue.isNotEmpty()) {
-                    TextButton(onClick = onToggleRunning) {
+                if (hasCurrentOperations) {
+                    TextButton(onClick = onToggleRunning, enabled = !state.clearing) {
                         Icon(if (state.running) Icons.Outlined.Pause else Icons.Outlined.PlayArrow, null, tint = Gold, modifier = Modifier.size(18.dp))
                         Text(if (state.running) "إيقاف مؤقت" else "استئناف", color = Gold)
+                    }
+                    Box {
+                        IconButton(onClick = { clearMenu = true }, enabled = !state.clearing) {
+                            Icon(Icons.Outlined.MoreVert, "إزالة جميع التنزيلات", tint = Secondary)
+                        }
+                        DropdownMenu(expanded = clearMenu, onDismissRequest = { clearMenu = false }, containerColor = MangaroDesignSystem.SurfaceDark) {
+                            DropdownMenuItem(
+                                text = { Text("إزالة جميع التنزيلات", color = Failure) },
+                                leadingIcon = { Icon(Icons.Outlined.DeleteSweep, null, tint = Failure) },
+                                enabled = !state.clearing,
+                                onClick = { clearMenu = false; clearRequest = true },
+                            )
+                        }
                     }
                 }
             }
@@ -172,6 +192,19 @@ fun MangaroDownloadsScreen(
                 }
             }
         }
+    }
+    if (clearRequest && hasCurrentOperations && !state.clearing) {
+        AlertDialog(
+            onDismissRequest = { clearRequest = false },
+            containerColor = MangaroDesignSystem.SurfaceDark,
+            shape = RoundedCornerShape(18.dp),
+            title = { Text("إزالة جميع التنزيلات؟", color = Color.White) },
+            text = { Text("سيتم إيقاف وإزالة جميع عمليات التنزيل الحالية.", color = Secondary) },
+            confirmButton = {
+                TextButton(onClick = { clearRequest = false; onClearAll() }) { Text("إزالة الكل", color = Failure) }
+            },
+            dismissButton = { TextButton(onClick = { clearRequest = false }) { Text("إلغاء", color = Secondary) } },
+        )
     }
     deleteRequest?.let { request ->
         AlertDialog(

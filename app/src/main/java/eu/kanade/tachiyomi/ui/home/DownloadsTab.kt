@@ -54,6 +54,7 @@ object DownloadsTab : Tab {
             onRetry = model::retry,
             onRetryFailed = model::retryFailed,
             onCancel = model::cancel,
+            onClearAll = model::clearCurrentDownloads,
             onDelete = model::delete,
             onOpenManga = { navigator.push(MangaScreen(it.id)) },
             onOpenChapter = { manga, chapter ->

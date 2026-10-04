@@ -40,13 +40,14 @@ import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
 /** Presentation inventory only. All queue and file mutations remain in DownloadManager. */
-class MangaroDownloadsViewModel : ViewModel() {
-    private val manager = Injekt.get<DownloadManager>()
-    private val cache = Injekt.get<DownloadCache>()
-    private val provider = Injekt.get<DownloadProvider>()
-    private val sources = Injekt.get<SourceManager>()
-    private val storage = Injekt.get<StorageManager>()
-    private val context = Injekt.get<Context>()
+class MangaroDownloadsViewModel(
+    private val manager: DownloadManager = Injekt.get(),
+    private val cache: DownloadCache = Injekt.get(),
+    private val provider: DownloadProvider = Injekt.get(),
+    private val sources: SourceManager = Injekt.get(),
+    private val storage: StorageManager = Injekt.get(),
+    private val context: Context = Injekt.get(),
+) : ViewModel() {
     private val mutableState = MutableStateFlow(State())
     val state = mutableState.asStateFlow()
     private var lastScan = 0L
@@ -158,6 +159,24 @@ class MangaroDownloadsViewModel : ViewModel() {
         manager.startDownloads()
     }
     fun cancel(item: Queued) = action { manager.cancelQueuedDownloads(listOf(item.download)) }
+
+    /** Queue cancellation only: completed files, manga and reading state are untouched. */
+    fun clearCurrentDownloads() {
+        if (mutableState.value.clearing || manager.queueState.value.isEmpty()) return
+        mutableState.update { it.copy(clearing = true, error = null) }
+        viewModelScope.launch {
+            try {
+                manager.clearQueue()
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (_: Exception) {
+                mutableState.update { it.copy(error = "تعذّر إزالة التنزيلات. حاول مجددًا") }
+            } finally {
+                mutableState.update { it.copy(clearing = false) }
+            }
+        }
+    }
+
     fun delete(groups: List<CompletedGroup>, chapter: CompletedChapter? = null) = action {
         val queuedIds = manager.queueState.value.map { it.chapter.id }.toSet()
         groups.forEach { group ->
@@ -184,6 +203,6 @@ class MangaroDownloadsViewModel : ViewModel() {
     data class State(
         val queue: List<Queued> = emptyList(), val groups: List<CompletedGroup> = emptyList(),
         val completedCount: Int = 0, val usedBytes: Long? = null, val freeBytes: Long? = null,
-        val running: Boolean = false, val scanning: Boolean = true, val error: String? = null,
+        val clearing: Boolean = false, val running: Boolean = false, val scanning: Boolean = true, val error: String? = null,
     )
 }

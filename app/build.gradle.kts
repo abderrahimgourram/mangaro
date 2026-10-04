@@ -3,6 +3,7 @@ import mihon.gradle.getBuildTime
 import mihon.gradle.getLatestCommitCount
 import mihon.gradle.getLatestCommitSha
 import mihon.gradle.tasks.ReplaceShortcutsPlaceholderTask
+import java.io.File
 import java.io.FileInputStream
 import java.util.Properties
 import java.util.Base64 as JavaBase64
@@ -26,6 +27,20 @@ if (false) {
 }
 
 val keystorePropertiesFile = rootProject.file("keystore.properties")
+// Permanent website-release credentials live outside the repository.
+val mangaroSigningFile = File(System.getProperty("user.home"), ".config/mangaro/signing/signing.properties")
+val mangaroSigning = Properties().apply {
+    if (mangaroSigningFile.isFile) mangaroSigningFile.inputStream().use { load(it) }
+}
+// Never silently produce a debug-signed or unsigned production artifact.
+gradle.taskGraph.whenReady {
+    if (allTasks.any { it.path == ":app:assembleRelease" || it.path == ":app:bundleRelease" || it.path == ":app:packageRelease" }) {
+        check(mangaroSigningFile.isFile && listOf("storeFile", "storePassword", "keyAlias", "keyPassword").all {
+            !mangaroSigning.getProperty(it).isNullOrBlank()
+        }) { "Permanent Mangaro release signing configuration is required outside the repository." }
+    }
+}
+
 val accountLocalProperties = Properties().apply {
     rootProject.file("local.properties").takeIf { it.isFile }?.inputStream()?.use { load(it) }
 }
@@ -104,6 +119,17 @@ android {
         }
     }
 
+    signingConfigs {
+        create("mangaroRelease") {
+            if (mangaroSigningFile.isFile) {
+                storeFile = file(mangaroSigning.getProperty("storeFile"))
+                storePassword = mangaroSigning.getProperty("storePassword")
+                keyAlias = mangaroSigning.getProperty("keyAlias")
+                keyPassword = mangaroSigning.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         val debug = getByName("debug") {
             applicationIdSuffix = ".dev"
@@ -114,7 +140,7 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
 
-            signingConfig = debug.signingConfig
+            signingConfig = signingConfigs.getByName("mangaroRelease")
 
             isProfileable = true
 
@@ -127,6 +153,7 @@ android {
 
         create("foss") {
             initWith(release)
+            signingConfig = debug.signingConfig
 
             applicationIdSuffix = ".foss"
 
@@ -134,6 +161,7 @@ android {
         }
         create("preview") {
             initWith(release)
+            signingConfig = debug.signingConfig
 
             applicationIdSuffix = ".debug"
 
@@ -145,6 +173,7 @@ android {
         }
         create("benchmark") {
             initWith(release)
+            signingConfig = debug.signingConfig
 
             versionNameSuffix = "-benchmark"
             applicationIdSuffix = ".benchmark"
