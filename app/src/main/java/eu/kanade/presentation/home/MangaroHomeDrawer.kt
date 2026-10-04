@@ -1,6 +1,18 @@
 package eu.kanade.presentation.home
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.runtime.getValue
+import androidx.compose.material.icons.automirrored.outlined.ArrowForward
 import androidx.compose.foundation.systemGestureExclusion
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -114,34 +126,37 @@ fun MangaroHomeDrawer(
             drawerContent = {
                 CompositionLocalProvider(LocalViewConfiguration provides homeViewConfiguration) {
                     ModalDrawerSheet(
-                        modifier = Modifier.widthIn(max = 304.dp),
-                        drawerShape = RoundedCornerShape(topEnd = 24.dp, bottomEnd = 24.dp),
+                        modifier = Modifier.widthIn(max = 320.dp),
+                        drawerShape = RoundedCornerShape(topEnd = 28.dp, bottomEnd = 28.dp),
                         drawerContainerColor = MangaroDesignSystem.BackgroundDark,
                         drawerContentColor = Color(0xFFE8DFED),
                     ) {
                         Column(
                             modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
                             AccountDrawerArea(
                                 session = accountState,
                                 onLogin = { select(onAccount) },
                                 onProfile = onProfile?.let { profile -> { user -> select { profile(user) } } },
                             )
-                            Surface(shape = RoundedCornerShape(16.dp), color = MangaroDesignSystem.SurfaceDark) {
-                                Column(Modifier.padding(vertical = 2.dp)) {
-                                    DrawerAction("المكتبة", Icons.Outlined.BookmarkBorder) { select(onLibrary) }
-                                    HorizontalDivider(Modifier.padding(horizontal = 14.dp), color = Color(0x186D557B))
-                                    DrawerAction("التنزيلات", Icons.Outlined.Download, activeDownloadsCount) { select(onDownloads) }
-                                    HorizontalDivider(Modifier.padding(horizontal = 14.dp), color = Color(0x186D557B))
-                                    DrawerAction("الإعدادات", Icons.Outlined.Settings) { select(onSettings) }
-                                }
+                            Text("مكتبتك ومساحتك", style = MaterialTheme.typography.labelSmall,
+                                color = Color(0xFF9F90AC), modifier = Modifier.padding(start = 12.dp, top = 2.dp))
+                            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp))
+                                .background(Brush.horizontalGradient(listOf(Color(0xFF21182C), MangaroDesignSystem.SurfaceDark)))
+                                .border(1.dp, Color(0x1A89709F), RoundedCornerShape(20.dp))
+                                .padding(4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                DrawerAction("المكتبة", Icons.Outlined.BookmarkBorder) { select(onLibrary) }
+                                DrawerAction("التنزيلات", Icons.Outlined.Download, activeDownloadsCount) { select(onDownloads) }
+                                DrawerAction("الإعدادات", Icons.Outlined.Settings) { select(onSettings) }
                             }
-                            HorizontalDivider(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), color = Color(0x266D557B))
-                            Text("عن Mangaro", style = MaterialTheme.typography.labelMedium,
-                                color = Color(0xFFB7A9C4), modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
-                            DrawerAction("حول التطبيق", Icons.Outlined.Info) { select(onAbout) }
-                            DrawerAction("التراخيص مفتوحة المصدر", Icons.Outlined.Description) { select(onLicenses) }
+                            HorizontalDivider(Modifier.padding(horizontal = 12.dp, vertical = 2.dp), color = Color(0x266D557B))
+                            Text("عن Mangaro", style = MaterialTheme.typography.labelSmall,
+                                color = Color(0xFF9F90AC), modifier = Modifier.padding(horizontal = 12.dp))
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                DrawerAction("حول التطبيق", Icons.Outlined.Info, secondary = true) { select(onAbout) }
+                                DrawerAction("التراخيص مفتوحة المصدر", Icons.Outlined.Description, secondary = true) { select(onLicenses) }
+                            }
                             Text("الإصدار ${BuildConfig.VERSION_NAME}", modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
                                 style = MaterialTheme.typography.labelSmall, color = Color(0xFF9F90AC))
                         }
@@ -180,21 +195,34 @@ private class DrawerEdgeGesture {
 }
 
 @Composable
-private fun DrawerAction(label: String, icon: ImageVector, count: Int = 0, onClick: () -> Unit) {
-    Surface(shape = RoundedCornerShape(12.dp), color = Color.Transparent) {
-        Row(
-            modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).heightIn(min = 48.dp).padding(horizontal = 14.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(icon, null, Modifier.size(20.dp), tint = MangaroDesignSystem.LavenderPrimary)
-            Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-            if (count > 0) {
-                Surface(shape = RoundedCornerShape(8.dp), color = MangaroDesignSystem.SurfaceHigh) {
-                    Text(count.toString(), modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
-                        style = MaterialTheme.typography.labelSmall, color = Color(0xFFB7A9C4))
-                }
+private fun DrawerAction(label: String, icon: ImageVector, count: Int = 0, secondary: Boolean = false, onClick: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (pressed) 0.985f else 1f, tween(120), label = "drawerPressScale")
+    val tint by animateColorAsState(if (pressed) Color(0xFF392A48) else Color.Transparent, tween(120), label = "drawerPressTint")
+    Row(
+        modifier = Modifier.fillMaxWidth().graphicsLayer { scaleX = scale; scaleY = scale }
+            .clip(RoundedCornerShape(14.dp)).background(tint)
+            .clickable(interactionSource = interaction, indication = androidx.compose.material3.ripple(), onClick = onClick)
+            .heightIn(min = if (secondary) 48.dp else 56.dp).padding(horizontal = 10.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(if (secondary) 28.dp else 34.dp).clip(RoundedCornerShape(10.dp))
+            .background(if (secondary) Color.Transparent else MangaroDesignSystem.LavenderPrimary.copy(alpha = 0.09f)),
+            contentAlignment = Alignment.Center) {
+            Icon(icon, null, Modifier.size(if (secondary) 18.dp else 20.dp),
+                tint = if (secondary) Color(0xFF9F90AC) else MangaroDesignSystem.LavenderPrimary)
+        }
+        Text(label, modifier = Modifier.weight(1f), style = if (secondary) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
+            color = if (secondary) Color(0xFFB7A9C4) else Color(0xFFE8DFED))
+        if (count > 0) {
+            Surface(shape = RoundedCornerShape(8.dp), color = MangaroDesignSystem.LavenderPrimary.copy(alpha = 0.1f)) {
+                Text(count.toString(), modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                    style = MaterialTheme.typography.labelSmall, color = Color(0xFFCEC0DB))
             }
+        } else if (!secondary) {
+            Icon(Icons.AutoMirrored.Outlined.ArrowForward, null, Modifier.size(15.dp), tint = Color(0xFF786786))
         }
     }
 }

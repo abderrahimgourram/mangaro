@@ -430,52 +430,65 @@ fun AccountDrawerArea(session: AccountSession, onLogin: () -> Unit, onProfile: (
     val profile = (session as? AccountSession.Authenticated)?.profile
     val secondary = Color(0xFFB7A9C4)
     val muted = Color(0xFF8F819E)
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(MangaroDesignSystem.SurfaceDark)) {
-        Box(Modifier.fillMaxWidth().height(148.dp)) {
-            ProfileCover(profile, Modifier.fillMaxWidth().height(132.dp))
-            Box(Modifier.align(Alignment.BottomStart).padding(start = 14.dp).size(72.dp)
-                .clip(RoundedCornerShape(20.dp)).background(MangaroDesignSystem.SurfaceDark)
-                .border(1.dp, MangaroDesignSystem.GoldPrimary.copy(alpha = 0.24f), RoundedCornerShape(20.dp)).padding(4.dp)) {
-                AccountAvatar(profile, Modifier.fillMaxSize().clip(RoundedCornerShape(16.dp)).background(MangaroDesignSystem.SurfaceHigh))
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp))
+        .background(Brush.verticalGradient(listOf(Color(0xFF2C1E38), MangaroDesignSystem.SurfaceDark)))
+        .border(1.dp, Color(0xFF493253).copy(alpha = 0.45f), RoundedCornerShape(24.dp))) {
+        Box(Modifier.fillMaxWidth().height(162.dp)) {
+            ProfileCover(profile, Modifier.fillMaxWidth().height(140.dp))
+            Box(Modifier.align(Alignment.BottomStart).padding(start = 4.dp).size(96.dp)
+                .background(Brush.radialGradient(listOf(MangaroDesignSystem.GoldPrimary.copy(alpha = 0.09f), Color.Transparent))))
+            Box(Modifier.align(Alignment.BottomStart).padding(start = 16.dp).size(76.dp)
+                .clip(RoundedCornerShape(24.dp)).background(MangaroDesignSystem.SurfaceDark)
+                .border(1.dp, MangaroDesignSystem.GoldPrimary.copy(alpha = 0.38f), RoundedCornerShape(24.dp)).padding(4.dp)) {
+                AccountAvatar(profile, Modifier.fillMaxSize().clip(RoundedCornerShape(20.dp)).background(MangaroDesignSystem.SurfaceHigh))
+            }
+            if (session is AccountSession.Authenticated) {
+                TextButton(enabled = onProfile != null, onClick = { onProfile?.invoke(session.profile) },
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(end = 14.dp, bottom = 2.dp),
+                    shape = RoundedCornerShape(12.dp), contentPadding = PaddingValues(horizontal = 10.dp),
+                    colors = ButtonDefaults.textButtonColors(contentColor = MangaroDesignSystem.GoldPrimary,
+                        containerColor = MangaroDesignSystem.GoldPrimary.copy(alpha = 0.07f))) {
+                    Text("الملف الشخصي", style = MaterialTheme.typography.labelMedium)
+                    Icon(Icons.AutoMirrored.Outlined.ArrowForward, null, Modifier.padding(start = 5.dp).size(14.dp))
+                }
             }
         }
-        Column(Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 4.dp, bottom = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)) {
             when (session) {
                 is AccountSession.Authenticated -> {
                     Text(profile?.displayName ?: profile?.username.orEmpty(), color = Color.White,
                         style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold,
                         maxLines = 2, overflow = TextOverflow.Ellipsis)
                     profile?.username?.let { UsernameHandle(it, color = secondary, style = MaterialTheme.typography.bodySmall) }
-                    Text("${session.profile.rankTitle} · Lv.${session.profile.level}", color = muted,
-                        style = MaterialTheme.typography.labelSmall.copy(textDirection = androidx.compose.ui.text.style.TextDirection.Content))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(session.profile.rankTitle, color = secondary, style = MaterialTheme.typography.labelSmall)
+                        Text("Lv.${session.profile.level}", color = MangaroDesignSystem.GoldPrimary,
+                            modifier = Modifier.clip(RoundedCornerShape(6.dp))
+                                .background(MangaroDesignSystem.GoldPrimary.copy(alpha = 0.08f)).padding(horizontal = 7.dp, vertical = 3.dp),
+                            style = MaterialTheme.typography.labelSmall.copy(textDirection = androidx.compose.ui.text.style.TextDirection.Ltr))
+                    }
                     profile?.bio?.takeIf { it.isNotBlank() }?.let {
                         Text(it, color = secondary, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     val account = remember { Injekt.get<AccountFoundation>() }
                     val sync by remember(session.profile.userId, account) { account.cloudSync.observe(session.profile.userId) }.collectAsState()
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        TextButton(enabled = onProfile != null, onClick = { onProfile?.invoke(session.profile) },
-                            shape = RoundedCornerShape(12.dp), contentPadding = PaddingValues(horizontal = 0.dp),
-                            colors = ButtonDefaults.textButtonColors(contentColor = secondary)) {
-                            Text("الملف الشخصي", style = MaterialTheme.typography.labelMedium)
-                            Icon(Icons.AutoMirrored.Outlined.ArrowForward, null, Modifier.padding(start = 5.dp).size(14.dp))
-                        }
-                        if (sync.loaded && sync.enabled) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Icon(when {
-                                    sync.running -> Icons.Outlined.Sync
-                                    sync.error != null -> Icons.Outlined.ErrorOutline
-                                    sync.pending > 0 -> Icons.Outlined.Schedule
-                                    else -> Icons.Outlined.CheckCircleOutline
-                                }, null, Modifier.size(12.dp), tint = muted)
-                                Text(when {
-                                    sync.running -> "تتم المزامنة..."
-                                    sync.error != null -> "تعذر المزامنة"
-                                    sync.pending > 0 -> "بانتظار المزامنة"
-                                    else -> "المزامنة مفعّلة"
-                                }, color = muted, style = MaterialTheme.typography.labelSmall)
-                            }
+                    if (sync.loaded && sync.enabled) {
+                        Row(Modifier.clip(RoundedCornerShape(8.dp)).background(Color(0xFFB7A9C4).copy(alpha = 0.06f))
+                            .padding(horizontal = 8.dp, vertical = 5.dp),
+                            horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(when {
+                                sync.running -> Icons.Outlined.Sync
+                                sync.error != null -> Icons.Outlined.ErrorOutline
+                                sync.pending > 0 -> Icons.Outlined.Schedule
+                                else -> Icons.Outlined.CheckCircleOutline
+                            }, null, Modifier.size(13.dp), tint = muted)
+                            Text(when {
+                                sync.running -> "تتم المزامنة..."
+                                sync.error != null -> "تعذر المزامنة"
+                                sync.pending > 0 -> "بانتظار المزامنة"
+                                else -> "المزامنة مفعّلة"
+                            }, color = muted, style = MaterialTheme.typography.labelSmall)
                         }
                     }
                 }
