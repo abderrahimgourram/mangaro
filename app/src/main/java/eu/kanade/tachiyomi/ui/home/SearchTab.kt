@@ -54,7 +54,14 @@ object SearchTab : Tab {
             focusRequest = focusRequest,
             onChangeQuery = model::updateSearchQuery,
             onSearch = model::search,
-            onToggleResults = model::toggleFilterResults,
+            onRetry = model::retrySearch,
+            onLoadMore = model::loadMore,
+            onRecent = { model.updateSearchQuery(it); model.search() },
+            onRemoveRecent = model::removeRecent,
+            onClearRecents = model::clearRecents,
+            onDiscover = { category ->
+                navigator.push(DiscoveryCategoryGridScreen(category.name, if (category == mihon.domain.source.discovery.model.DiscoveryCategory.POPULAR) "الأعمال الشائعة" else "آخر التحديثات"))
+            },
             getManga = { model.getManga(it) },
             onClickManga = { navigator.push(MangaScreen(it.id, true)) },
         )

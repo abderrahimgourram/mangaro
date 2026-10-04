@@ -93,7 +93,7 @@ internal fun GlobalSearchContent(
                             )
                         }
                         is SearchItemResult.Error -> {
-                            GlobalSearchErrorResultItem(message = result.throwable.message)
+                            GlobalSearchErrorResultItem(message = "تعذّر تحميل النتائج، حاول مجددًا")
                         }
                     }
                 }

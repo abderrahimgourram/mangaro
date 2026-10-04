@@ -12,9 +12,10 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.core.util.ifSourcesLoaded
-import eu.kanade.presentation.browse.GlobalSearchScreen
+import eu.kanade.presentation.home.MangaroSearchScreen
 import eu.kanade.presentation.util.Screen
-import eu.kanade.tachiyomi.ui.browse.source.browse.BrowseSourceScreen
+import eu.kanade.tachiyomi.ui.home.DiscoveryCategoryGridScreen
+import mihon.domain.source.discovery.model.DiscoveryCategory
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import tachiyomi.presentation.core.screens.LoadingScreen
 
@@ -63,19 +64,21 @@ class GlobalSearchScreen(
                 }
             }
         } else {
-            GlobalSearchScreen(
+            MangaroSearchScreen(
                 state = state,
-                navigateUp = navigator::pop,
-                onChangeSearchQuery = viewModel::updateSearchQuery,
-                onSearch = { viewModel.search() },
+                focusRequest = 0,
+                onNavigateUp = { navigator.pop() },
+                onChangeQuery = viewModel::updateSearchQuery,
+                onSearch = viewModel::search,
+                onRetry = viewModel::retrySearch,
+                onLoadMore = viewModel::loadMore,
+                onRecent = { viewModel.updateSearchQuery(it); viewModel.search() },
+                onRemoveRecent = viewModel::removeRecent,
+                onClearRecents = viewModel::clearRecents,
+                onDiscover = { category -> navigator.push(DiscoveryCategoryGridScreen(category.name,
+                    if (category == DiscoveryCategory.POPULAR) "الأعمال الشائعة" else "آخر التحديثات")) },
                 getManga = { viewModel.getManga(it) },
-                onChangeSearchFilter = viewModel::setSourceFilter,
-                onToggleResults = viewModel::toggleFilterResults,
-                onClickSource = {
-                    navigator.push(BrowseSourceScreen(it.id, state.searchQuery))
-                },
-                onClickItem = { navigator.push(MangaScreen(it.id, true)) },
-                onLongClickItem = { navigator.push(MangaScreen(it.id, true)) },
+                onClickManga = { navigator.push(MangaScreen(it.id, true)) },
             )
         }
     }
