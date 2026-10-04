@@ -20,6 +20,7 @@ import logcat.LogPriority
 import mihon.domain.source.models.RemoteMangaUpdate
 import tachiyomi.core.common.util.lang.withIOContext
 import tachiyomi.core.common.util.system.logcat
+import tachiyomi.core.common.preference.getAndSet
 import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.chapter.repository.ChapterRepository
 import tachiyomi.domain.library.service.LibraryPreferences
@@ -29,6 +30,7 @@ import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.source.local.isLocal
 import kotlin.time.Clock
+import uy.kohesive.injekt.api.get
 
 class UpdateMangaFromRemote(
     private val sourceManager: SourceManager,
@@ -38,6 +40,9 @@ class UpdateMangaFromRemote(
     private val coverCache: CoverCache,
     private val libraryPreferences: LibraryPreferences,
     private val downloadManager: DownloadManager,
+    private val recordUpdates: (Manga, List<Chapter>) -> Unit = { manga, chapters ->
+        uy.kohesive.injekt.Injekt.get<eu.kanade.tachiyomi.data.inbox.WorkUpdateInbox>().record(manga, chapters)
+    },
 ) {
     private data class OperationKey(val source: Long, val manga: Long, val url: String, val details: Boolean,
         val chapters: Boolean, val manual: Boolean, val window: Pair<Long, Long>)
@@ -47,9 +52,15 @@ class UpdateMangaFromRemote(
         var result: Result<RemoteMangaUpdate>? = null
     }
     companion object {
+        private data class MangaKey(val source: Long, val manga: Long, val url: String)
+        private class MangaPending {
+            val mutex = kotlinx.coroutines.sync.Mutex()
+            var users = 0
+        }
+        private val mangaPending = mutableMapOf<MangaKey, MangaPending>()
         private val pending = mutableMapOf<OperationKey, Pending>()
         private const val CHAPTER_REFRESH_KEY = "mangaro.chapterRefresh"
-        private const val CHAPTER_REFRESH_INTERVAL_MS = 30 * 60 * 1000L
+        private const val CHAPTER_REFRESH_INTERVAL_MS = 2 * 60 * 1000L
 
         fun chaptersRefreshedRecently(manga: Manga): Boolean {
             val refresh = manga.memo[CHAPTER_REFRESH_KEY] as? JsonObject ?: return false
@@ -89,14 +100,21 @@ class UpdateMangaFromRemote(
         fetchWindow: Pair<Long, Long> = Pair(0, 0),
     ): Result<RemoteMangaUpdate> {
         val key = OperationKey(source.id, manga.id, manga.url, fetchDetails, fetchChapters, manualFetch, fetchWindow)
+        val mangaKey = MangaKey(source.id, manga.id, manga.url)
+        val serial = synchronized(mangaPending) {
+            mangaPending.getOrPut(mangaKey) { MangaPending() }.also { it.users++ }
+        }
         val entry = synchronized(pending) { pending.getOrPut(key) { Pending() }.also { it.users++ } }
         try {
             return entry.mutex.withLock {
-                entry.result ?: perform(source, manga, fetchDetails, fetchChapters, manualFetch, fetchWindow)
+                entry.result ?: serial.mutex.withLock {
+                    perform(source, manga, fetchDetails, fetchChapters, manualFetch, fetchWindow)
+                }
                     .also { entry.result = it }
             }
         } finally {
             synchronized(pending) { if (--entry.users == 0) pending.remove(key) }
+            synchronized(mangaPending) { if (--serial.users == 0) mangaPending.remove(mangaKey) }
         }
     }
 
@@ -156,6 +174,18 @@ class UpdateMangaFromRemote(
                 updatedManga = mangaRepository.getMangaById(manga.id)
             }
 
+            if (updatedManga.favorite && newChapters.isNotEmpty()) {
+                // Publish discovery regardless of whether Details or a Library worker initiated it.
+                // Optional presentation persistence cannot invalidate committed source data.
+                withIOContext {
+                    runCatching {
+                        synchronized(libraryPreferences) {
+                            libraryPreferences.newUpdatesCount.getAndSet { it + newChapters.size }
+                        }
+                    }
+                    runCatching { recordUpdates(updatedManga, newChapters) }
+                }
+            }
             Result.success(RemoteMangaUpdate(manga = updatedManga, newChapters = newChapters))
         } catch (e: CancellationException) {
             throw e

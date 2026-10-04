@@ -146,6 +146,9 @@ object HomeTab : Tab {
         val currentInboxOwner = (accountSession as? mihon.domain.account.AccountSession.Authenticated)?.profile?.userId
         val hasUnreadInbox = workNotices.any { it.readAt == null } || (inboxState.owner == currentInboxOwner && inboxState.unread > 0)
 
+        val snackbarHostState = androidx.compose.runtime.remember { androidx.compose.material3.SnackbarHostState() }
+        val chapterRefresh = eu.kanade.presentation.library.rememberLibraryUpdateRefresh { snackbarHostState.showSnackbar(it) }
+
         MangaroHomeDrawer(
             activeDownloadsCount = state.activeDownloadsCount,
             onLibrary = { tabNavigator.current = LibraryTab },
@@ -160,11 +163,12 @@ object HomeTab : Tab {
         ) { openDrawer ->
         Scaffold(
             contentWindowInsets = WindowInsets(0),
+            snackbarHost = { androidx.compose.material3.SnackbarHost(snackbarHostState) },
         ) { paddingValues ->
             PullRefresh(
-                refreshing = state.isSwipeRefreshing,
+                refreshing = state.isSwipeRefreshing || chapterRefresh.refreshing,
                 enabled = true,
-                onRefresh = { viewModel.onHomeSwipeRefresh(); weekly.refresh(force=true) },
+                onRefresh = { viewModel.onHomeSwipeRefresh(); weekly.refresh(force=true); chapterRefresh.refresh() },
             ) {
                 ScrollbarLazyColumn(
                     modifier = Modifier

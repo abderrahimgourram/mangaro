@@ -249,6 +249,9 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
 
     override fun onStart(owner: LifecycleOwner) {
         SecureActivityDelegate.onApplicationStart()
+        ProcessLifecycleOwner.get().lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {eu.kanade.tachiyomi.data.library.LibraryUpdateJob.startForegroundCheck(this@App)}
+        }
         eu.kanade.tachiyomi.source.repair.RuleMaintenanceJob.enqueue(this)
     }
 

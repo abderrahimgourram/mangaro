@@ -284,7 +284,11 @@ abstract class HttpSource : CatalogueSource {
     @Suppress("DEPRECATION")
     @Deprecated("Use the combined suspend API instead", replaceWith = ReplaceWith("getMangaUpdate"))
     override fun fetchChapterList(manga: SManga): Observable<List<SChapter>> {
-        return client.newCall(chapterListRequest(manga))
+        // Chapter metadata must reflect the current source; page/image requests keep their cache policy.
+        val request = chapterListRequest(manga).newBuilder()
+            .cacheControl(okhttp3.CacheControl.FORCE_NETWORK)
+            .build()
+        return client.newCall(request)
             .asObservableSuccess()
             .map { response ->
                 chapterListParse(response)

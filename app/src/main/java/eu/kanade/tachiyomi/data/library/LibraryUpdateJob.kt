@@ -41,7 +41,6 @@ import logcat.LogPriority
 import mihon.domain.chapter.interactor.FilterChaptersForDownload
 import mihon.domain.source.interactor.UpdateMangaFromRemote
 import tachiyomi.core.common.i18n.stringResource
-import tachiyomi.core.common.preference.getAndSet
 import tachiyomi.core.common.util.lang.withIOContext
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.category.model.Category
@@ -109,19 +108,19 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
 
         setForegroundSafely()
 
-        libraryPreferences.lastUpdatedTimestamp.set(Clock.System.now().toEpochMilliseconds())
-
         val categoryId = inputData.getLong(KEY_CATEGORY, -1L)
         addMangaToQueue(categoryId)
 
         return withIOContext {
             try {
-                updateChapterList()
-                Result.success()
+                when {
+                    updateChapterList() -> Result.success()
+                    tags.contains(WORK_NAME_FOREGROUND) && runAttemptCount < 2 -> Result.retry()
+                    else -> Result.failure()
+                }
             } catch (e: Exception) {
                 if (e is CancellationException) {
-                    // Assume success although cancelled
-                    Result.success()
+                    throw e
                 } else {
                     logcat(LogPriority.ERROR, e)
                     Result.failure()
@@ -166,7 +165,11 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
             }
         }
 
-        val restrictions = libraryPreferences.autoUpdateMangaRestrictions.get()
+        val restrictions = if (tags.contains(WORK_NAME_MANUAL) || tags.contains(WORK_NAME_FOREGROUND)) {
+            emptySet()
+        } else {
+            libraryPreferences.autoUpdateMangaRestrictions.get()
+        }
         val skippedUpdates = mutableListOf<Pair<Manga, String?>>()
         val timeZone = TimeZone.currentSystemDefault()
         val (_, fetchWindowUpperBound) = fetchInterval.getWindow(
@@ -177,7 +180,7 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
         mangaToUpdate = listToUpdate
             .filter {
                 when {
-                    it.manga.updateStrategy == UpdateStrategy.ONLY_FETCH_ONCE && it.totalChapters > 0L -> {
+                    !tags.contains(WORK_NAME_MANUAL) && it.manga.updateStrategy == UpdateStrategy.ONLY_FETCH_ONCE && it.totalChapters > 0L -> {
                         skippedUpdates.add(
                             it.manga to context.stringResource(MR.strings.skipped_reason_not_always_update),
                         )
@@ -211,6 +214,9 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
             }
             .sortedBy { it.manga.title }
 
+        if (tags.contains(WORK_NAME_FOREGROUND)) {
+            mangaToUpdate = mangaToUpdate.sortedByDescending { it.lastRead }.take(12)
+        }
         notifier.showQueueSizeWarningNotificationIfNeeded(mangaToUpdate)
 
         if (skippedUpdates.isNotEmpty()) {
@@ -232,8 +238,8 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
      *
      * @return an observable delivering the progress of each update.
      */
-    private suspend fun updateChapterList() {
-        val semaphore = Semaphore(5)
+    private suspend fun updateChapterList(): Boolean {
+        val semaphore = sourceSlots
         val progressCount = AtomicInt(0)
         val currentlyUpdatingManga = CopyOnWriteArrayList<Manga>()
         val newUpdates = CopyOnWriteArrayList<Pair<Manga, Array<Chapter>>>()
@@ -266,16 +272,12 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
                                             .sortedByDescending { it.sourceOrder }
 
                                         if (newChapters.isNotEmpty()) {
-                                            // Optional local inbox persistence must never fail the manga update.
-                                            runCatching { Injekt.get<eu.kanade.tachiyomi.data.inbox.WorkUpdateInbox>().record(manga, newChapters) }
                                             val chaptersToDownload = filterChaptersForDownload.await(manga, newChapters)
 
                                             if (chaptersToDownload.isNotEmpty()) {
                                                 downloadChapters(manga, chaptersToDownload)
                                                 hasDownloads.store(true)
                                             }
-
-                                            libraryPreferences.newUpdatesCount.getAndSet { it + newChapters.size }
 
                                             // Convert to the manga that contains new chapters
                                             newUpdates.add(manga to newChapters.toTypedArray())
@@ -316,6 +318,14 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
             }
         }
 
+        if (failedUpdates.isEmpty()) {
+            val successfulAt = Clock.System.now().toEpochMilliseconds()
+            if (tags.contains(WORK_NAME_FOREGROUND)) {
+                libraryPreferences.lastForegroundUpdatedTimestamp.set(successfulAt)
+            } else {
+                libraryPreferences.lastUpdatedTimestamp.set(successfulAt)
+            }
+        }
         if (failedUpdates.isNotEmpty()) {
             val errorFile = writeErrorFile(failedUpdates)
             notifier.showUpdateErrorNotification(
@@ -323,6 +333,7 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
                 errorFile.getUriCompat(context),
             )
         }
+        return failedUpdates.isEmpty()
     }
 
     private fun downloadChapters(manga: Manga, chapters: List<Chapter>) {
@@ -345,6 +356,7 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
             manga = manga,
             fetchDetails = libraryPreferences.autoUpdateMetadata.get(),
             fetchChapters = true,
+            manualFetch = tags.contains(WORK_NAME_MANUAL),
             fetchWindow = fetchWindow,
         )
             .getOrThrow()
@@ -402,6 +414,31 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
         private const val TAG = "LibraryUpdate"
         private const val WORK_NAME_AUTO = "LibraryUpdate-auto"
         private const val WORK_NAME_MANUAL = "LibraryUpdate-manual"
+        private const val WORK_NAME_FOREGROUND = "LibraryUpdate-foreground"
+        private var lastForegroundAttempt = 0L
+        private val sourceSlots = Semaphore(5)
+
+        @Synchronized
+        fun startForegroundCheck(context: Context): Boolean {
+            val preferences = Injekt.get<LibraryPreferences>()
+            val now = Clock.System.now().toEpochMilliseconds()
+            val lastSuccess = maxOf(preferences.lastUpdatedTimestamp.get(), preferences.lastForegroundUpdatedTimestamp.get())
+            if (!SourceRefreshPolicy.foregroundDue(now, lastForegroundAttempt, lastSuccess)) return false
+            val wm = context.workManager
+            if (wm.getWorkInfosByTag(TAG).get().any {
+                it.state == WorkInfo.State.RUNNING ||
+                    it.state == WorkInfo.State.ENQUEUED && WORK_NAME_AUTO !in it.tags
+            }) return false
+            lastForegroundAttempt = now
+            val request = OneTimeWorkRequestBuilder<LibraryUpdateJob>()
+                .addTag(TAG)
+                .addTag(WORK_NAME_FOREGROUND)
+                .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
+                .build()
+            wm.enqueueUniqueWork(WORK_NAME_FOREGROUND, ExistingWorkPolicy.KEEP, request)
+            return true
+        }
 
         private const val ERROR_LOG_HELP_URL = "https://mihon.app/docs/guides/troubleshooting/"
 
@@ -465,13 +502,16 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
             }
         }
 
+        @Synchronized
         fun startNow(
             context: Context,
             category: Category? = null,
         ): Boolean {
             val wm = context.workManager
-            if (wm.isRunning(TAG)) {
-                // Already running either as a scheduled or manual job
+            if (wm.getWorkInfosByTag(TAG).get().any {
+                WORK_NAME_MANUAL in it.tags && it.state in setOf(WorkInfo.State.RUNNING, WorkInfo.State.ENQUEUED)
+            }) {
+                // Share an admitted explicit update; automatic work never substitutes for it.
                 return false
             }
 

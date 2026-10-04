@@ -36,6 +36,8 @@ class LibraryPreferences(
         Preference.appStateKey("library_update_last_timestamp"),
         0L,
     )
+    val lastForegroundUpdatedTimestamp = preferenceStore.getLong(Preference.appStateKey("library_foreground_success"),0L)
+
     val autoUpdateInterval: Preference<Int> = preferenceStore.getInt("pref_library_update_interval_key", 0)
 
     val autoUpdateDeviceRestrictions: Preference<Set<String>> = preferenceStore.getStringSet(

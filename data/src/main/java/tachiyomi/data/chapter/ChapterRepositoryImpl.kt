@@ -21,6 +21,31 @@ class ChapterRepositoryImpl(
     private val database: Database,
 ) : ChapterRepository {
 
+    override suspend fun applySourceChanges(
+        additions: List<Chapter>,
+        updates: List<ChapterUpdate>,
+        removals: List<Long>,
+    ): List<Chapter> {
+        val inserted = database.transactionWithResult {
+            val rows = additions.map { chapter ->
+                val id = database.chaptersQueries.insertReturningId(
+                    chapter.mangaId, chapter.url, chapter.name, chapter.scanlator,
+                    chapter.read, chapter.bookmark, chapter.lastPageRead, chapter.totalPages,
+                    chapter.chapterNumber, chapter.sourceOrder, chapter.dateFetch, chapter.dateUpload,
+                    chapter.version, chapter.memo,
+                ).awaitAsOne()
+                chapter.copy(id = id)
+            }
+            partialUpdate(*updates.toTypedArray())
+            if (removals.isNotEmpty()) database.chaptersQueries.removeChaptersWithIds(removals)
+            rows
+        }
+        // Notify only after commit; remote restore suppression remains owned by LocalCloudChanges.
+        inserted.map { it.mangaId }.distinct().forEach { LocalCloudChanges.changed(LocalCloudChanges.Kind.RESOLVE, -it) }
+        updates.forEach(::notifyChange)
+        return inserted
+    }
+
     override suspend fun addAll(chapters: List<Chapter>): List<Chapter> {
         return try {
             database.transactionWithResult {

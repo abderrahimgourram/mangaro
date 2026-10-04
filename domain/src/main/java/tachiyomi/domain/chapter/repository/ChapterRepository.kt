@@ -6,6 +6,9 @@ import tachiyomi.domain.chapter.model.ChapterUpdate
 
 interface ChapterRepository {
 
+    /** Atomic metadata reconciliation; failure must propagate and leave the prior chapter set intact. */
+    suspend fun applySourceChanges(additions: List<Chapter>, updates: List<ChapterUpdate>, removals: List<Long>): List<Chapter>
+
     suspend fun addAll(chapters: List<Chapter>): List<Chapter>
 
     suspend fun update(chapterUpdate: ChapterUpdate)

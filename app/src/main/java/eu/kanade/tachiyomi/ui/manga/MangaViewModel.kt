@@ -247,6 +247,7 @@ class MangaViewModel(
 
             // One silent check per ViewModel entry; cached data is already visible above.
             if (needsAutoRefresh && viewModelScope.isActive) {
+                updateSuccessState { it.copy(isRefreshingData = true) }
                 fetchAllFromSource(
                     manualFetch = false,
                     fetchDetails = true,
@@ -259,15 +260,26 @@ class MangaViewModel(
         }
     }
 
+    fun refreshIfStale() {
+        val state = successState ?: return
+        if (!state.manga.isLocal() && !UpdateMangaFromRemote.chaptersRefreshedRecently(state.manga)) {
+            fetchAllFromSource(manualFetch = false)
+        }
+    }
+
     fun fetchAllFromSource(manualFetch: Boolean = true) {
+        if (successState?.isRefreshingData != false) return
+        updateSuccessState { it.copy(isRefreshingData = true) }
         viewModelScope.launch {
-            updateSuccessState { it.copy(isRefreshingData = true) }
-            fetchAllFromSource(
-                manualFetch = manualFetch,
-                fetchDetails = true,
-                fetchChapters = true,
-            )
-            updateSuccessState { it.copy(isRefreshingData = false) }
+            try {
+                fetchAllFromSource(
+                    manualFetch = manualFetch,
+                    fetchDetails = true,
+                    fetchChapters = true,
+                )
+            } finally {
+                updateSuccessState { it.copy(isRefreshingData = false) }
+            }
         }
     }
 
@@ -292,8 +304,8 @@ class MangaViewModel(
                     downloadNewChapters(update.newChapters)
                 }
             }
-        } catch (_: CancellationException) {
-            // ignore
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             if (!manualFetch) {
                 logcat(LogPriority.WARN, e) { "Automatic manga refresh failed; cached chapters retained" }
@@ -303,7 +315,7 @@ class MangaViewModel(
                 context.stringResource(MR.strings.no_chapters_error)
             } else {
                 logcat(LogPriority.ERROR, e)
-                with(context) { e.formattedMessage }
+                "تعذّر تحديث الفصول. بياناتك محفوظة — حاول مجددًا"
             }
 
             viewModelScope.launch {

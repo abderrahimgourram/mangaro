@@ -14,7 +14,8 @@ class LibraryUpdateRefreshTest {
     @Test
     fun `scheduled work waiting for next interval does not leave refresh spinning`() {
         isLibraryUpdateActive(WorkInfo.State.ENQUEUED, setOf("LibraryUpdate-auto")) shouldBe false
-        isLibraryUpdateActive(WorkInfo.State.RUNNING, setOf("LibraryUpdate-auto")) shouldBe true
+        isLibraryUpdateActive(WorkInfo.State.RUNNING, setOf("LibraryUpdate-auto")) shouldBe false
+        isLibraryUpdateActive(WorkInfo.State.RUNNING,setOf("LibraryUpdate-foreground")) shouldBe false
     }
 
     @Test

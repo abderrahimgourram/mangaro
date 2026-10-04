@@ -1,7 +1,6 @@
 package eu.kanade.presentation.library
 
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -16,8 +15,6 @@ import eu.kanade.tachiyomi.util.system.isOnline
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -25,21 +22,27 @@ internal data class LibraryUpdateRefresh(val refreshing: Boolean, val refresh: (
 
 /** Observe the existing worker; a periodic job waiting for its next interval is not a refresh. */
 internal fun isLibraryUpdateActive(state: WorkInfo.State, tags: Set<String>): Boolean =
-    state == WorkInfo.State.RUNNING ||
-        (state == WorkInfo.State.ENQUEUED && "LibraryUpdate-manual" in tags)
+    state in setOf(WorkInfo.State.RUNNING, WorkInfo.State.ENQUEUED) && "LibraryUpdate-manual" in tags
 
 @Composable
 internal fun rememberLibraryUpdateRefresh(onMessage: suspend (String) -> Unit): LibraryUpdateRefresh {
     val context = LocalContext.current.applicationContext
     val scope = rememberCoroutineScope()
     val showMessage by rememberUpdatedState(onMessage)
-    val activeFlow = remember(context) {
-        context.workManager.getWorkInfosByTagFlow("LibraryUpdate")
-            .map { work -> work.any { isLibraryUpdateActive(it.state, it.tags) } }
-            .distinctUntilChanged()
-            .catch { emit(false) }
+    val workFlow = remember(context) { context.workManager.getWorkInfosByTagFlow("LibraryUpdate") }
+    var active by remember(context) { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(workFlow) {
+        val observed = mutableSetOf<java.util.UUID>()
+        workFlow.catch { emit(emptyList()) }.collect { work ->
+            active = work.any { isLibraryUpdateActive(it.state, it.tags) }
+            work.filter { isLibraryUpdateActive(it.state, it.tags) }.forEach { observed.add(it.id) }
+            work.filter { it.state.isFinished && observed.remove(it.id) }.forEach {
+                if (it.state == WorkInfo.State.FAILED) {
+                    showMessage("تعذّر تحديث بعض الأعمال. بياناتك محفوظة — حاول مجددًا")
+                }
+            }
+        }
     }
-    val active by activeFlow.collectAsState(initial = false)
     var starting by remember { mutableStateOf(false) }
     return LibraryUpdateRefresh(active || starting) {
         if (!active && !starting) {

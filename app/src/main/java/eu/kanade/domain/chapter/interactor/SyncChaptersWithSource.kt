@@ -235,25 +235,17 @@ class SyncChaptersWithSource(
             dbChapters.size >= 5 &&
             sourceChapters.size < (dbChapters.size * 0.5)
 
-        if (removedChapters.isNotEmpty() && !isChapterCountCollapse) {
-            val toDeleteIds = removedChapters.map { it.id }
-            chapterRepository.removeChaptersWithIds(toDeleteIds)
-        } else if (isChapterCountCollapse) {
-            this.logcat(LogPriority.WARN) {
-                "Chapter collapse prevented for manga ${manga.id} (${manga.title}): DB had ${dbChapters.size} chapters, remote returned ${sourceChapters.size}. Preserving existing DB chapters."
-            }
+        val removalIds = if (isChapterCountCollapse) emptyList() else removedChapters.map { it.id }
+        val metadataUpdates = updatedChapters.map {
+            ChapterUpdate(
+                it.id, name = it.name, chapterNumber = it.chapterNumber, scanlator = it.scanlator,
+                sourceOrder = it.sourceOrder, dateUpload = it.dateUpload, memo = it.memo,
+            )
         }
-
-        if (updatedToAdd.isNotEmpty()) {
-            updatedToAdd = chapterRepository.addAll(updatedToAdd)
-        }
-
-        if (updatedChapters.isNotEmpty()) {
-            val chapterUpdates = updatedChapters.map {
-                ChapterUpdate(it.id, name = it.name, chapterNumber = it.chapterNumber, scanlator = it.scanlator,
-                    sourceOrder = it.sourceOrder, dateUpload = it.dateUpload, memo = it.memo)
-            }
-            updateChapter.awaitAll(chapterUpdates)
+        if (updatedToAdd.isNotEmpty() || metadataUpdates.isNotEmpty() || removalIds.isNotEmpty()) {
+            val inserted = chapterRepository.applySourceChanges(updatedToAdd,metadataUpdates,removalIds)
+            check(inserted.size == updatedToAdd.size) { "Chapter insertion incomplete; refresh failed" }
+            updatedToAdd = inserted
         }
         updateManga.awaitUpdateFetchInterval(manga, timeZone, now, fetchWindow)
 

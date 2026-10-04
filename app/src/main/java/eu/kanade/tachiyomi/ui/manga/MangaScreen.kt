@@ -101,6 +101,7 @@ class MangaScreen(
         }
 
         val successState = state as MangaViewModel.State.Success
+        androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) {viewModel.refreshIfStale()}
         var showLibraryShelves by remember { mutableStateOf(false) }
         val isHttpSource = remember { successState.source is HttpSource }
 

@@ -32,6 +32,7 @@ class SyncChapterIntegrityTest {
         val excluded = mockk<GetExcludedScanlators>(); coEvery { excluded.await(any()) } returns emptySet()
         coEvery { repo.getChapterByMangaId(any(), any()) } returns listOf(old)
         coEvery { repo.getChapterById(7) } returns old
+        coEvery { repo.applySourceChanges(any(), any(), any()) } coAnswers { firstArg<List<Chapter>>().mapIndexed { i, c -> c.copy(id=100L+i) } }
         val preferences = mockk<LibraryPreferences>(); every { preferences.markDuplicateReadChapterAsRead.get() } returns emptySet()
         return SyncChaptersWithSource(downloads, mockk<DownloadProvider>(relaxed = true), repo, ShouldUpdateDbChapter(), updates, UpdateChapter(repo), GetChaptersByMangaId(repo), excluded, preferences)
     }
