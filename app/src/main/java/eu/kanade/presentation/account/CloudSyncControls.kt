@@ -43,18 +43,18 @@ fun CloudSyncControls(userId: String, repository: AccountCloudSync) {
     LaunchedEffect(userId, status.loaded, status.decisionMade) {
         if (status.loaded && status.error == null && !status.decisionMade && !shown) { shown = true; confirm = true }
     }
-    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = MangaroDesignSystem.BackgroundDark) {
-        Column(Modifier.padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), color = MangaroDesignSystem.BackgroundDark) {
+        Column(Modifier.padding(horizontal = 4.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("المزامنة السحابية", style = MaterialTheme.typography.titleSmall, color = Color.White)
                 Box(Modifier.size(6.dp).background(
-                    if (status.enabled) MangaroDesignSystem.GoldPrimary.copy(alpha = 0.7f) else Color(0xFF746580), RoundedCornerShape(3.dp)))
+                    if (status.enabled) Color(0xFFB7A9C4) else Color(0xFF746580), RoundedCornerShape(3.dp)))
             }
             Text(when {
                 status.running || busy -> "تتم المزامنة..."
                 !status.loaded -> "جارٍ تجهيز المزامنة"
                 !status.enabled -> "بياناتك محفوظة على هذا الجهاز"
-                status.pending > 0 -> "توجد تغييرات بانتظار المزامنة أو الاتصال"
+                status.pending > 0 -> "تغييرات بانتظار المزامنة أو الاتصال"
                 else -> "المزامنة مفعّلة"
             }, style = MaterialTheme.typography.bodySmall, color = Color(0xFFB7A9C4))
             status.lastSuccess?.let {
@@ -68,8 +68,8 @@ fun CloudSyncControls(userId: String, repository: AccountCloudSync) {
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 TextButton(colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFB7A9C4)), enabled = status.loaded && !busy, onClick = {
                     if (status.enabled) perform { repository.configure(userId, false) } else confirm = true
-                }) { Text(if (status.enabled) "إيقاف المزامنة" else "تفعيل المزامنة") }
-                if (status.enabled) TextButton(colors = ButtonDefaults.textButtonColors(contentColor = MangaroDesignSystem.GoldPrimary), enabled = !status.running && !busy, onClick = { perform { repository.syncNow(userId) } }) { Text("مزامنة الآن") }
+                }) { Text(if (status.enabled) "إيقاف المزامنة" else "تفعيل المزامنة", style = MaterialTheme.typography.labelMedium) }
+                if (status.enabled) TextButton(colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFB7A9C4)), enabled = !status.running && !busy, onClick = { perform { repository.syncNow(userId) } }) { Text("مزامنة الآن", style = MaterialTheme.typography.labelMedium) }
             }
         }
     }

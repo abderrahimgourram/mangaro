@@ -10,6 +10,9 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.material.icons.outlined.Bookmarks
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -224,54 +227,57 @@ private fun AccountProfileEditor(
     var editing by rememberSaveable(profile.userId) { mutableStateOf(false) }
     val secondary = Color(0xFFB7A9C4)
     val muted = Color(0xFF8F819E)
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(MangaroDesignSystem.SurfaceDark)) {
-        Box(Modifier.fillMaxWidth().height(242.dp)) {
-            ProfileCover(profile, Modifier.fillMaxWidth().height(200.dp))
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(MangaroDesignSystem.SurfaceDark)) {
+        Box(Modifier.fillMaxWidth().height(216.dp)) {
+            ProfileCover(profile, Modifier.fillMaxWidth().height(180.dp))
             Box(Modifier.align(Alignment.BottomStart).padding(start = 16.dp).size(100.dp)
-                .clip(RoundedCornerShape(28.dp)).background(MangaroDesignSystem.SurfaceDark)
-                .border(1.dp, MangaroDesignSystem.GoldPrimary.copy(alpha = 0.3f), RoundedCornerShape(28.dp)).padding(5.dp)) {
-                AccountAvatar(profile, Modifier.fillMaxSize().clip(RoundedCornerShape(23.dp)).background(MangaroDesignSystem.SurfaceHigh))
-            }
-            TextButton(enabled = !submitting, onClick = { editing = true },
-                modifier = Modifier.align(Alignment.BottomEnd).padding(end = 14.dp, bottom = 4.dp),
-                contentPadding = PaddingValues(horizontal = 12.dp), shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.textButtonColors(contentColor = secondary, containerColor = MangaroDesignSystem.SurfaceHigh)) {
-                Text("تعديل الملف", style = MaterialTheme.typography.labelMedium)
+                .clip(RoundedCornerShape(24.dp)).background(MangaroDesignSystem.SurfaceDark)
+                .border(1.dp, MangaroDesignSystem.GoldPrimary.copy(alpha = 0.24f), RoundedCornerShape(24.dp)).padding(5.dp)) {
+                AccountAvatar(profile, Modifier.fillMaxSize().clip(RoundedCornerShape(20.dp)).background(MangaroDesignSystem.SurfaceHigh))
             }
         }
-        Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            Text(profile.displayName ?: profile.username.orEmpty(), color = Color.White,
-                style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            profile.username?.let { UsernameHandle(it, color = secondary, style = MaterialTheme.typography.bodyMedium) }
-            profile.bio?.takeIf { it.isNotBlank() }?.let {
-                Text(it, color = secondary, style = MaterialTheme.typography.bodyMedium)
+        Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(profile.displayName ?: profile.username.orEmpty(), color = Color.White,
+                        style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    profile.username?.let { UsernameHandle(it, color = secondary, style = MaterialTheme.typography.bodySmall) }
+                }
+                TextButton(enabled = !submitting, onClick = { editing = true },
+                    contentPadding = PaddingValues(horizontal = 12.dp), shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.textButtonColors(contentColor = secondary, containerColor = MangaroDesignSystem.SurfaceHigh)) {
+                    Text("تعديل الملف", style = MaterialTheme.typography.labelMedium)
+                }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(profile.rankTitle, color = muted, style = MaterialTheme.typography.labelMedium)
                 Text("·", color = muted, style = MaterialTheme.typography.labelMedium)
                 Text("المستوى ${profile.level}", color = MangaroDesignSystem.GoldPrimary.copy(alpha = 0.8f), style = MaterialTheme.typography.labelMedium)
             }
+            profile.bio?.takeIf { it.isNotBlank() }?.let {
+                Text(it, color = secondary.copy(alpha = 0.85f), style = MaterialTheme.typography.bodySmall)
+            }
         }
     }
     AccountProfileStatistics(profile.userId, account)
-    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = MangaroDesignSystem.SurfaceDark) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), color = MangaroDesignSystem.SurfaceDark) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text("الخبرة", style = MaterialTheme.typography.titleSmall, color = Color.White)
-                Text("Lv.${profile.level} · ${profile.rankTitle}", style = MaterialTheme.typography.labelMedium.copy(textDirection = androidx.compose.ui.text.style.TextDirection.Content), color = MangaroDesignSystem.GoldPrimary)
+                Text("Lv.${profile.level}", style = MaterialTheme.typography.labelMedium.copy(textDirection = androidx.compose.ui.text.style.TextDirection.Ltr), color = MangaroDesignSystem.GoldPrimary)
             }
             if (profile.level == MangaroRanks.MAX_LEVEL) {
-                Text("${profile.rankTitle} · المستوى الأقصى", color = secondary, style = MaterialTheme.typography.bodySmall)
+                Text("المستوى الأقصى", color = secondary, style = MaterialTheme.typography.bodySmall)
             } else {
                 val earned = MangaroLevelProgress.earned(profile)
                 val required = MangaroLevelProgress.required(profile.level)
                 LinearProgressIndicator(progress = { (earned.toFloat() / required).coerceIn(0f, 1f) },
-                    modifier = Modifier.fillMaxWidth().height(5.dp).clip(RoundedCornerShape(3.dp)), color = MangaroDesignSystem.GoldPrimary,
+                    modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)), color = MangaroDesignSystem.GoldPrimary,
                     trackColor = MangaroDesignSystem.SurfaceHigh)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("إلى المستوى التالي", color = secondary, style = MaterialTheme.typography.labelSmall)
-                    Text("$earned / $required XP", color = secondary, style = MaterialTheme.typography.labelSmall.copy(textDirection = androidx.compose.ui.text.style.TextDirection.Ltr))
+                    Text("$earned / $required XP", color = MangaroDesignSystem.GoldPrimary, style = MaterialTheme.typography.labelMedium.copy(textDirection = androidx.compose.ui.text.style.TextDirection.Ltr))
                 }
             }
             Text("إجمالي الخبرة: ${profile.xp} XP", color = muted, style = MaterialTheme.typography.labelSmall)
@@ -372,7 +378,9 @@ private fun ProfileCover(profile: MangaroProfile, modifier: Modifier) {
         profile.coverUrl?.let { AsyncImage(it, null, contentScale = ContentScale.Crop,
             modifier = Modifier.matchParentSize()) }
         Box(Modifier.matchParentSize().background(Brush.verticalGradient(
-            listOf(Color.Transparent, MangaroDesignSystem.SurfaceDark.copy(alpha = 0.8f)))))
+            0f to Color.Transparent,
+            0.45f to MangaroDesignSystem.SurfaceDark.copy(alpha = 0.2f),
+            1f to MangaroDesignSystem.SurfaceDark.copy(alpha = 0.96f))))
     }
 }
 
@@ -392,11 +400,19 @@ private fun AccountProfileStatistics(userId: String, account: AccountFoundation)
         finally { loading = false }
     }
     Column {
-        Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("في المكتبة" to libraryCount, "التعليقات" to counts?.comments, "التقييمات" to counts?.ratings).forEach { (label, value) ->
-                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(value?.toString() ?: "—", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MangaroDesignSystem.GoldPrimary)
-                    Text(label, style = MaterialTheme.typography.labelSmall, color = Color(0xFFB7A9C4))
+        Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), color = MangaroDesignSystem.SurfaceDark) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                listOf(
+                    Triple("في المكتبة", libraryCount, Icons.Outlined.Bookmarks),
+                    Triple("التعليقات", counts?.comments, Icons.Outlined.ChatBubbleOutline),
+                    Triple("التقييمات", counts?.ratings, Icons.Outlined.StarOutline),
+                ).forEachIndexed { index, (label, value, icon) ->
+                    if (index > 0) Box(Modifier.size(width = 1.dp, height = 42.dp).background(MangaroDesignSystem.SurfaceHigh))
+                    Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color(0xFF8F819E))
+                        Text(value?.toString() ?: "—", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Color.White)
+                        Text(label, style = MaterialTheme.typography.labelSmall, color = Color(0xFFB7A9C4))
+                    }
                 }
             }
         }
