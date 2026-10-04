@@ -29,4 +29,11 @@ class AccountHardeningTest {
         MangaroLevelProgress.required(30) shouldBe 0
         MangaroRanks.titleFor(30) shouldBe "قارئ أسطوري"
     }
+    @Test fun `bio permits Unicode whitespace and enforces code point limit`() {
+        AccountProfileInput.error(ProfileUpdate("قارئ", "reader", "  أقرأ المانجا  ")) shouldBe null
+        AccountProfileInput.error(ProfileUpdate("قارئ", "reader", "😀".repeat(160))) shouldBe null
+        AccountProfileInput.error(ProfileUpdate("قارئ", "reader", "😀".repeat(161))) shouldBe "النبذة: 160 حرفًا كحد أقصى"
+        AccountProfileInput.error(ProfileUpdate("قارئ", "reader", "   ")) shouldBe null
+    }
+
 }

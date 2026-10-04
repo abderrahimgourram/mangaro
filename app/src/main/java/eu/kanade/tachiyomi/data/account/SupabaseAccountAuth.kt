@@ -219,6 +219,7 @@ class SupabaseAccountAuth private constructor(private val client: SupabaseClient
             client.from("profiles").update(buildJsonObject {
                 put("username", AccountProfileInput.username(update.username!!))
                 put("display_name", update.displayName!!.trim())
+                put("bio", update.bio?.trim()?.takeIf { it.isNotEmpty() })
             }) { filter { eq("user_id", user.id) }; select() }.decodeSingle<ProfileRow>()
             loadProfile(user)
         }
@@ -253,6 +254,45 @@ class SupabaseAccountAuth private constructor(private val client: SupabaseClient
         }
     }
 
+    override suspend fun uploadCover(webp: ByteArray): AccountOperation = mutations.withLock {
+        val user = client.auth.currentUserOrNull() ?: return@withLock AccountOperation.Failed("سجّل دخولك أولًا")
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(webp, 0, webp.size, bounds)
+        if (webp.size !in 1..1_048_576 || bounds.outMimeType != "image/webp" || bounds.outWidth !in 1..1200 || bounds.outHeight !in 1..500) {
+            return@withLock AccountOperation.Failed("اختر غلافًا صالحًا بحجم مناسب")
+        }
+        attempt {
+            val path = "${user.id}/cover.webp"
+            client.storage.from("profile-media").upload(path, webp) { upsert = true; contentType = ContentType.parse("image/webp") }
+            client.from("profiles").update(buildJsonObject { put("cover_path", path) }) {
+                filter { eq("user_id", user.id) }; select()
+            }.decodeSingle<ProfileRow>()
+            loadProfile(user)
+        }
+    }
+
+    override suspend fun removeCover(): AccountOperation = mutations.withLock {
+        val user = client.auth.currentUserOrNull() ?: return@withLock AccountOperation.Failed("سجّل دخولك أولًا")
+        attempt {
+            client.from("profiles").update(buildJsonObject { put("cover_path", kotlinx.serialization.json.JsonNull) }) {
+                filter { eq("user_id", user.id) }; select()
+            }.decodeSingle<ProfileRow>()
+            loadProfile(user)
+            client.storage.from("profile-media").delete(listOf("${user.id}/cover.webp"))
+        }
+    }
+
+    override suspend fun profileStatistics(): ProfileStatistics? {
+        // Optional read-only statistics must not hold up profile saves or sign-out.
+        val user = client.auth.currentUserOrNull() ?: return null
+        return try {
+            val counts = client.postgrest.rpc("profile_own_statistics").decodeAs<StatisticsRow>()
+            if (client.auth.currentUserOrNull()?.id == user.id) ProfileStatistics(counts.comments, counts.ratings) else null
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { null }
+    }
+    @Serializable private data class StatisticsRow(val comments: Long, val ratings: Long)
+
     private suspend fun loadProfile(user: UserInfo): MangaroProfile {
         val row = client.from("profiles").select { filter { eq("user_id", user.id) } }.decodeSingle<ProfileRow>()
         check(row.userId == user.id)
@@ -266,7 +306,10 @@ class SupabaseAccountAuth private constructor(private val client: SupabaseClient
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) { null }
         val profile = MangaroProfile(user.id, user.email, row.displayName, row.username, avatar,
-            xp = progression?.total_xp ?: previous?.xp ?: 0, level = progression?.level ?: previous?.level ?: 1, googleAvatarUrl = row.googleAvatarUrl?.takeIf { Uri.parse(it).scheme == "https" })
+            xp = progression?.total_xp ?: previous?.xp ?: 0, level = progression?.level ?: previous?.level ?: 1, googleAvatarUrl = row.googleAvatarUrl?.takeIf { Uri.parse(it).scheme == "https" }, bio = row.bio,
+            coverUrl = row.coverPath?.takeIf { it == "${user.id}/cover.webp" }?.let {
+                client.storage.from("profile-media").publicUrl(it) + "?v=" + Uri.encode(row.updatedAt)
+            })
         // Total XP/level come only from server state; offline refresh retains the last confirmed values.
         if (client.auth.currentUserOrNull()?.id == user.id) {
             session.value = AccountSession.Authenticated(profile)
@@ -295,6 +338,8 @@ class SupabaseAccountAuth private constructor(private val client: SupabaseClient
         val username: String? = null,
         @SerialName("display_name") val displayName: String? = null,
         @SerialName("avatar_path") val avatarPath: String? = null,
+        val bio: String? = null,
+        @SerialName("cover_path") val coverPath: String? = null,
         @SerialName("google_avatar_url") val googleAvatarUrl: String? = null,
         @SerialName("updated_at") val updatedAt: String,
     )

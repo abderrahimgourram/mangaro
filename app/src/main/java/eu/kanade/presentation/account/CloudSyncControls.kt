@@ -43,8 +43,8 @@ fun CloudSyncControls(userId: String, repository: AccountCloudSync) {
     LaunchedEffect(userId, status.loaded, status.decisionMade) {
         if (status.loaded && status.error == null && !status.decisionMade && !shown) { shown = true; confirm = true }
     }
-    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = MangaroDesignSystem.SurfaceDark) {
-        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = MangaroDesignSystem.BackgroundDark) {
+        Column(Modifier.padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("المزامنة السحابية", style = MaterialTheme.typography.titleSmall, color = Color.White)
                 Box(Modifier.size(6.dp).background(

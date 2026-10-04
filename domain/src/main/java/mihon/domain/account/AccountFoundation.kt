@@ -24,6 +24,8 @@ data class MangaroProfile(
     val xp: Long,
     val level: Int,
     val googleAvatarUrl: String? = null,
+    val bio: String? = null,
+    val coverUrl: String? = null,
 ) {
     init {
         require(userId.isNotBlank())
@@ -79,7 +81,8 @@ object MangaroLevelProgress {
 }
 
 // Editable profile properties exclude server-owned progression and account identity.
-data class ProfileUpdate(val displayName: String?, val username: String?)
+data class ProfileUpdate(val displayName: String?, val username: String?, val bio: String? = null)
+data class ProfileStatistics(val comments: Long, val ratings: Long)
 /** Same conservative rules as the server CHECK constraints; display names are not handles. */
 object AccountProfileInput {
     fun username(value: String): String = value.trim().lowercase(java.util.Locale.ROOT)
@@ -90,6 +93,7 @@ object AccountProfileInput {
             update.username == null || !username(update.username).matches(handle) ->
                 "اسم المستخدم: 3–24 حرفًا إنجليزيًا صغيرًا أو رقمًا أو شرطة سفلية"
             name.isEmpty() || name.codePointCount(0, name.length) > 40 -> "أدخل اسم عرض من 1 إلى 40 حرفًا"
+            update.bio.orEmpty().trim().let { it.codePointCount(0, it.length) > 160 } -> "النبذة: 160 حرفًا كحد أقصى"
             else -> null
         }
     }
@@ -119,6 +123,9 @@ interface AccountAuth {
     suspend fun updateProfile(update: ProfileUpdate): AccountOperation
     suspend fun uploadAvatar(webp: ByteArray): AccountOperation
     suspend fun removeAvatar(): AccountOperation
+    suspend fun uploadCover(webp: ByteArray): AccountOperation = AccountOperation.NotConfigured
+    suspend fun removeCover(): AccountOperation = AccountOperation.NotConfigured
+    suspend fun profileStatistics(): ProfileStatistics? = null
 }
 
 /** No network, credentials, account fabrication, token storage or local-data mutation. */

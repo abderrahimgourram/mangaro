@@ -11,6 +11,18 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
+import tachiyomi.domain.manga.interactor.GetLibraryManga
+import mihon.domain.account.ProfileStatistics
+import eu.kanade.tachiyomi.data.account.prepareAccountCover
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -110,7 +122,7 @@ fun AccountPanel(onBack: () -> Unit) {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Outlined.ArrowBack, "رجوع", tint = Color(0xFFD6C9E0))
                     }
-                    Text("الحساب", style = MaterialTheme.typography.titleLarge, color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(if (session is AccountSession.Authenticated) "الملف الشخصي" else "الحساب", style = MaterialTheme.typography.titleLarge, color = Color.White, fontWeight = FontWeight.Bold)
                 }
                 if (session !is AccountSession.Authenticated) {
                     Image(painterResource(R.drawable.ic_splash_logo), null, Modifier.size(72.dp))
@@ -118,7 +130,7 @@ fun AccountPanel(onBack: () -> Unit) {
                 }
                 when (val current = session) {
                     is AccountSession.Authenticated -> {
-                        AccountProfileEditor(current.profile, account, submitting,
+                        AccountProfileEditor(current.profile, account, submitting, error ?: authError,
                             onAction = { action ->
                                 if (actionGate.tryStart()) {
                                     submitting = true
@@ -178,17 +190,20 @@ fun AccountPanel(onBack: () -> Unit) {
         }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AccountProfileEditor(
     profile: MangaroProfile,
     account: AccountFoundation,
     submitting: Boolean,
+    errorMessage: String?,
     onAction: (suspend () -> AccountOperation) -> Unit,
 ) {
     val context = LocalContext.current
     var username by rememberSaveable(profile.userId, profile.username) { mutableStateOf(profile.username.orEmpty()) }
     var displayName by rememberSaveable(profile.userId, profile.displayName) { mutableStateOf(profile.displayName.orEmpty()) }
-    val update = remember(username, displayName) { ProfileUpdate(displayName, username) }
+    var bio by rememberSaveable(profile.userId, profile.bio) { mutableStateOf(profile.bio.orEmpty()) }
+    val update = remember(username, displayName, bio) { ProfileUpdate(displayName, username, bio) }
     val validation = remember(update) { AccountProfileInput.error(update) }
     val avatarPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) onAction {
@@ -198,33 +213,30 @@ private fun AccountProfileEditor(
             account.auth.uploadAvatar(webp)
         }
     }
-    var editing by rememberSaveable(profile.userId) { mutableStateOf(profile.username == null) }
+    val coverPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) onAction {
+            val webp = try { prepareAccountCover(context, uri) }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (_: Exception) { return@onAction AccountOperation.Failed("اختر غلاف JPEG أو PNG أو WebP لا يتجاوز 4 ميغابايت") }
+            account.auth.uploadCover(webp)
+        }
+    }
+    var editing by rememberSaveable(profile.userId) { mutableStateOf(false) }
     val secondary = Color(0xFFB7A9C4)
     val muted = Color(0xFF8F819E)
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(MangaroDesignSystem.SurfaceDark)) {
-        Box(Modifier.fillMaxWidth().height(152.dp)) {
-            // Decorative local artwork only; no user cover or remote image request.
-            Canvas(Modifier.fillMaxWidth().height(112.dp).clipToBounds().background(Brush.horizontalGradient(
-                listOf(MangaroDesignSystem.SurfaceDark, Color(0xFF30203E), MangaroDesignSystem.SurfaceHigh)))) {
-                drawCircle(Color(0xFF49315C).copy(alpha = 0.24f), radius = size.width * 0.42f,
-                    center = Offset(size.width * 0.8f, -size.height * 0.3f))
-                drawCircle(MangaroDesignSystem.BackgroundDark.copy(alpha = 0.28f), radius = size.width * 0.36f,
-                    center = Offset(size.width * 0.15f, size.height * 1.25f))
-                drawLine(MangaroDesignSystem.GoldPrimary.copy(alpha = 0.1f),
-                    Offset(size.width * 0.32f, 0f), Offset(size.width * 0.62f, size.height), strokeWidth = 1.dp.toPx())
-                drawLine(Color(0xFF89709F).copy(alpha = 0.12f),
-                    Offset(size.width * 0.36f, 0f), Offset(size.width * 0.66f, size.height), strokeWidth = 1.dp.toPx())
-            }
+        Box(Modifier.fillMaxWidth().height(242.dp)) {
+            ProfileCover(profile, Modifier.fillMaxWidth().height(200.dp))
             Box(Modifier.align(Alignment.BottomStart).padding(start = 16.dp).size(100.dp)
                 .clip(RoundedCornerShape(28.dp)).background(MangaroDesignSystem.SurfaceDark)
                 .border(1.dp, MangaroDesignSystem.GoldPrimary.copy(alpha = 0.3f), RoundedCornerShape(28.dp)).padding(5.dp)) {
                 AccountAvatar(profile, Modifier.fillMaxSize().clip(RoundedCornerShape(23.dp)).background(MangaroDesignSystem.SurfaceHigh))
             }
-            TextButton(enabled = !submitting, onClick = { editing = !editing },
+            TextButton(enabled = !submitting, onClick = { editing = true },
                 modifier = Modifier.align(Alignment.BottomEnd).padding(end = 14.dp, bottom = 4.dp),
                 contentPadding = PaddingValues(horizontal = 12.dp), shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.textButtonColors(contentColor = secondary, containerColor = MangaroDesignSystem.SurfaceHigh)) {
-                Text(if (editing) "إغلاق التعديل" else "تعديل الملف الشخصي", style = MaterialTheme.typography.labelMedium)
+                Text("تعديل الملف", style = MaterialTheme.typography.labelMedium)
             }
         }
         Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 16.dp),
@@ -232,6 +244,9 @@ private fun AccountProfileEditor(
             Text(profile.displayName ?: profile.username.orEmpty(), color = Color.White,
                 style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
             profile.username?.let { UsernameHandle(it, color = secondary, style = MaterialTheme.typography.bodyMedium) }
+            profile.bio?.takeIf { it.isNotBlank() }?.let {
+                Text(it, color = secondary, style = MaterialTheme.typography.bodyMedium)
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(profile.rankTitle, color = muted, style = MaterialTheme.typography.labelMedium)
                 Text("·", color = muted, style = MaterialTheme.typography.labelMedium)
@@ -239,11 +254,12 @@ private fun AccountProfileEditor(
             }
         }
     }
+    AccountProfileStatistics(profile.userId, account)
     Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = MangaroDesignSystem.SurfaceDark) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("المستوى والخبرة", style = MaterialTheme.typography.titleSmall, color = Color.White)
-                Text("المستوى ${profile.level}", style = MaterialTheme.typography.labelMedium, color = MangaroDesignSystem.GoldPrimary)
+                Text("الخبرة", style = MaterialTheme.typography.titleSmall, color = Color.White)
+                Text("Lv.${profile.level} · ${profile.rankTitle}", style = MaterialTheme.typography.labelMedium.copy(textDirection = androidx.compose.ui.text.style.TextDirection.Content), color = MangaroDesignSystem.GoldPrimary)
             }
             if (profile.level == MangaroRanks.MAX_LEVEL) {
                 Text("${profile.rankTitle} · المستوى الأقصى", color = secondary, style = MaterialTheme.typography.bodySmall)
@@ -262,44 +278,130 @@ private fun AccountProfileEditor(
         }
     }
     if (editing) {
-        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("تعديل الملف الشخصي", color = Color.White, style = MaterialTheme.typography.titleSmall)
-            if (profile.username == null) Text("أكمل ملفك باختيار اسم مستخدم فريد. يمكنك مواصلة القراءة كالمعتاد.",
-                color = secondary, style = MaterialTheme.typography.bodySmall)
-            val fieldColors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = MangaroDesignSystem.GoldPrimary.copy(alpha = 0.65f),
-                unfocusedBorderColor = Color(0xFF3C2C49), focusedContainerColor = MangaroDesignSystem.SurfaceDark,
-                unfocusedContainerColor = MangaroDesignSystem.SurfaceDark, focusedLabelColor = secondary,
-                unfocusedLabelColor = muted, cursorColor = MangaroDesignSystem.GoldPrimary)
-            OutlinedTextField(displayName, { displayName = it }, label = { Text("اسم العرض") }, colors = fieldColors,
-                enabled = !submitting, singleLine = true, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp))
-            OutlinedTextField(username, { username = it }, label = { Text("اسم المستخدم") }, colors = fieldColors,
-                supportingText = { Text("3–24 حرفًا إنجليزيًا أو رقمًا أو شرطة سفلية") },
-                enabled = !submitting, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
-                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp))
-            if (validation != null && username.isNotEmpty()) Text(validation, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                Button(enabled = !submitting && validation == null, onClick = { onAction { account.auth.updateProfile(update) } },
-                    shape = RoundedCornerShape(12.dp), contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = MangaroDesignSystem.GoldPrimary, contentColor = MangaroDesignSystem.BackgroundDark)) {
-                    // Fixed content width keeps the action balanced while its request is in flight.
-                    Box(Modifier.size(width = 88.dp, height = 24.dp), contentAlignment = Alignment.Center) {
-                        if (submitting) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                        else Text("حفظ التعديل")
+        ModalBottomSheet(onDismissRequest = { editing = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = MangaroDesignSystem.SurfaceDark) {
+            Column(Modifier.fillMaxWidth().imePadding().navigationBarsPadding().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("تعديل الملف", color = Color.White, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                if (profile.username == null) Text("أكمل ملفك باختيار اسم مستخدم فريد. يمكنك مواصلة القراءة كالمعتاد.",
+                    color = secondary, style = MaterialTheme.typography.bodySmall)
+                val fieldColors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MangaroDesignSystem.GoldPrimary.copy(alpha = 0.65f),
+                    unfocusedBorderColor = Color(0xFF3C2C49), focusedContainerColor = MangaroDesignSystem.SurfaceDark,
+                    unfocusedContainerColor = MangaroDesignSystem.SurfaceDark, focusedLabelColor = secondary,
+                    unfocusedLabelColor = muted, cursorColor = MangaroDesignSystem.GoldPrimary)
+                OutlinedTextField(displayName, { displayName = it }, label = { Text("اسم العرض") }, colors = fieldColors,
+                    enabled = !submitting, singleLine = true, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp))
+                OutlinedTextField(username, { username = it }, label = { Text("اسم المستخدم") }, colors = fieldColors,
+                    supportingText = { Text("3–24 حرفًا إنجليزيًا أو رقمًا أو شرطة سفلية") },
+                    enabled = !submitting, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
+                    modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp))
+                OutlinedTextField(bio, { bio = it }, label = { Text("نبذة عنك") }, colors = fieldColors,
+                    supportingText = { Text("${bio.trim().codePointCount(0, bio.trim().length)} / 160") },
+                    enabled = !submitting, minLines = 2, maxLines = 4, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp))
+                if (validation != null && username.isNotEmpty()) Text(validation, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Button(enabled = !submitting && validation == null, onClick = { onAction { account.auth.updateProfile(update).also { if (it == AccountOperation.Completed) editing = false } } },
+                        shape = RoundedCornerShape(12.dp), contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = MangaroDesignSystem.GoldPrimary, contentColor = MangaroDesignSystem.BackgroundDark)) {
+                        // Fixed content width keeps the action balanced while its request is in flight.
+                        Box(Modifier.size(width = 88.dp, height = 24.dp), contentAlignment = Alignment.Center) {
+                            if (submitting) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                            else Text("حفظ التعديل")
+                        }
                     }
                 }
-                TextButton(enabled = !submitting, onClick = { avatarPicker.launch("image/*") }) { Text("تغيير الصورة", color = secondary) }
+                HorizontalDivider(color = Color(0xFF2C2035))
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    AccountAvatar(profile, Modifier.size(56.dp).clip(RoundedCornerShape(16.dp)))
+                    TextButton(enabled = !submitting, onClick = { avatarPicker.launch("image/*") }) { Text("تغيير الصورة", color = secondary) }
+                    if (profile.avatarUrl != null && profile.avatarUrl != profile.googleAvatarUrl)
+                        TextButton(enabled = !submitting, onClick = { onAction { account.auth.removeAvatar() } }) { Text("إزالة الصورة", color = muted) }
+                }
+                Text("الغلاف", color = secondary, style = MaterialTheme.typography.titleSmall)
+                ProfileCover(profile, Modifier.fillMaxWidth().height(96.dp).clip(RoundedCornerShape(12.dp)))
+                Row {
+                    TextButton(enabled = !submitting, onClick = { coverPicker.launch("image/*") }) { Text("تغيير الغلاف", color = secondary) }
+                    if (profile.coverUrl != null) TextButton(enabled = !submitting, onClick = { onAction { account.auth.removeCover() } }) { Text("إزالة الغلاف", color = muted) }
+                }
             }
-            TextButton(enabled = !submitting, onClick = { onAction { account.auth.removeAvatar() } }) { Text("إزالة الصورة", color = muted) }
         }
     }
     CloudSyncControls(profile.userId, account.cloudSync)
     HorizontalDivider(color = Color(0xFF2C2035))
     // Email remains confined to the owner's Account screen, below the primary profile content.
-    profile.email?.let { Text(it, color = muted, style = MaterialTheme.typography.bodySmall) }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("معلومات الحساب", color = secondary, style = MaterialTheme.typography.titleSmall)
+        profile.email?.let { Text(it, color = muted, style = MaterialTheme.typography.bodySmall) }
+    }
     TextButton(enabled = !submitting, onClick = { onAction { account.auth.signOut(); AccountOperation.Completed } },
         colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFC69BA7))) { Text("تسجيل الخروج") }
 
+}
+
+@Composable
+private fun ProfileCover(profile: MangaroProfile, modifier: Modifier) {
+    Box(modifier.clipToBounds()) {
+        // Decorative local artwork only; no user cover or remote image request.
+        Canvas(Modifier.matchParentSize().clipToBounds().background(Brush.horizontalGradient(
+            listOf(MangaroDesignSystem.SurfaceDark, Color(0xFF30203E), MangaroDesignSystem.SurfaceHigh)))) {
+            drawCircle(Color(0xFF49315C).copy(alpha = 0.24f), radius = size.width * 0.42f,
+                center = Offset(size.width * 0.8f, -size.height * 0.3f))
+            drawCircle(MangaroDesignSystem.BackgroundDark.copy(alpha = 0.28f), radius = size.width * 0.36f,
+                center = Offset(size.width * 0.15f, size.height * 1.25f))
+            // Quiet panel facets evoke manga page composition without borrowed artwork.
+            drawPath(androidx.compose.ui.graphics.Path().apply {
+                moveTo(size.width * 0.06f, size.height * 0.12f)
+                lineTo(size.width * 0.3f, size.height * 0.05f)
+                lineTo(size.width * 0.5f, size.height * 0.92f)
+                lineTo(size.width * 0.2f, size.height * 1.12f)
+                close()
+            }, Color(0xFF654974).copy(alpha = 0.13f))
+            drawPath(androidx.compose.ui.graphics.Path().apply {
+                moveTo(size.width * 0.63f, -size.height * 0.1f)
+                lineTo(size.width * 0.97f, size.height * 0.13f)
+                lineTo(size.width * 0.84f, size.height * 0.88f)
+                lineTo(size.width * 0.54f, size.height * 0.7f)
+                close()
+            }, MangaroDesignSystem.BackgroundDark.copy(alpha = 0.18f))
+            drawLine(MangaroDesignSystem.GoldPrimary.copy(alpha = 0.1f),
+                Offset(size.width * 0.32f, 0f), Offset(size.width * 0.62f, size.height), strokeWidth = 1.dp.toPx())
+            drawLine(Color(0xFF89709F).copy(alpha = 0.12f),
+                Offset(size.width * 0.36f, 0f), Offset(size.width * 0.66f, size.height), strokeWidth = 1.dp.toPx())
+        }
+        profile.coverUrl?.let { AsyncImage(it, null, contentScale = ContentScale.Crop,
+            modifier = Modifier.matchParentSize()) }
+        Box(Modifier.matchParentSize().background(Brush.verticalGradient(
+            listOf(Color.Transparent, MangaroDesignSystem.SurfaceDark.copy(alpha = 0.8f)))))
+    }
+}
+
+@Composable
+private fun AccountProfileStatistics(userId: String, account: AccountFoundation) {
+    val library = remember { Injekt.get<GetLibraryManga>() }
+    val libraryCount by remember(library) { library.subscribe().map { rows -> rows.map { it.id }.distinct().size.toLong() }.distinctUntilChanged() }
+        .collectAsState(initial = null)
+    var counts by remember(userId) { mutableStateOf<ProfileStatistics?>(null) }
+    var loading by remember(userId) { mutableStateOf(true) }
+    var retry by remember(userId) { mutableStateOf(0) }
+    LaunchedEffect(userId, retry) {
+        loading = true
+        try { counts = account.auth.profileStatistics() }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { counts = null }
+        finally { loading = false }
+    }
+    Column {
+        Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf("في المكتبة" to libraryCount, "التعليقات" to counts?.comments, "التقييمات" to counts?.ratings).forEach { (label, value) ->
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(value?.toString() ?: "—", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MangaroDesignSystem.GoldPrimary)
+                    Text(label, style = MaterialTheme.typography.labelSmall, color = Color(0xFFB7A9C4))
+                }
+            }
+        }
+        if (!loading && counts == null) TextButton(onClick = { retry++ }) { Text("إعادة تحميل الإحصاءات", style = MaterialTheme.typography.labelSmall) }
+    }
 }
 
 @Composable

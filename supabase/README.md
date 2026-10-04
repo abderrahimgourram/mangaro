@@ -219,3 +219,25 @@ from duplicate posts, ratings or likes. Client regression tests use a local HTTP
 fixture to cover lost responses, confirmed writes followed by failed reads,
 account changes during sync, and unreadable sync metadata. No device testing is
 claimed by these checks.
+
+## Profile presentation
+
+`20261004085113_mangaro_profile_presentation.sql` adds optional public `bio`
+(trimmed, max 160 Unicode characters) and owner-scoped `cover_path` fields.
+The existing profile ownership policy and restricted column grants remain in
+force. `profile-media` accepts bounded image types; owners can write/delete only
+`<auth.uid()>/cover.webp`. Android preprocesses at most 4 MB of JPEG/PNG/WebP
+into a centered 1200×500 WebP (at most 1 MB), including EXIF orientation.
+No cover uses a network-generated placeholder; local decorative artwork remains
+visible while a custom image loads or if it fails.
+
+The authenticated, security-invoker `profile_own_statistics()` reads live own
+comment/reply and current-rating counts, without public/private Auth metadata.
+Library count comes from the existing local observable Library, not a cloud
+counter. Failure shows unavailable values and retry, never fabricated zeroes.
+`supabase/tests/profile_presentation_rls.sql` verifies profile validation, media
+ownership, count isolation and privacy using fully rolled-back fixtures.
+The migration was deployed through the authenticated Supabase connector; its
+recorded server version is also the local filename. Google OAuth, XP rules,
+Community flows and cloud replication are unchanged. Profile/media Android
+runtime verification remains manual.
