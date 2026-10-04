@@ -90,7 +90,10 @@ data class CommunityComment(
     val isOwnedByCurrentUser: Boolean,
     val parentCommentId: String? = null,
     val isLikedByCurrentUser: Boolean = false,
+    val spoiler: Boolean = false,
 ) {
+    fun visibleBody(revealed: Boolean = false): String? = body.takeIf { !spoiler || revealed }
+
     val targetType get() = target.targetType
     val mangaKey get() = target.mangaKey
     val chapterKey get() = target.chapterKey
@@ -212,10 +215,10 @@ interface CommunityRepository {
     suspend fun getRatingSummary(target: CommunityTarget): CommunityOperation
     // Future implementation upserts one rating per authenticated user + target.
     suspend fun rate(target: CommunityTarget, stars: Int): CommunityOperation
-    suspend fun post(target: CommunityTarget, body: String, parentCommentId: String? = null, requestId: String = java.util.UUID.randomUUID().toString()): CommunityOperation
+    suspend fun post(target: CommunityTarget, body: String, parentCommentId: String? = null, requestId: String = java.util.UUID.randomUUID().toString(), spoiler: Boolean = false): CommunityOperation
     suspend fun setLiked(comment: CommunityComment, liked: Boolean): CommunityOperation
     suspend fun report(comment: CommunityComment): CommunityOperation
-    suspend fun editOwned(comment: CommunityComment, body: String): CommunityOperation
+    suspend fun editOwned(comment: CommunityComment, body: String, spoiler: Boolean = comment.spoiler): CommunityOperation
     suspend fun deleteOwned(comment: CommunityComment): CommunityOperation
 }
 class DisabledCommunityRepository : CommunityRepository {
@@ -234,10 +237,10 @@ class DisabledCommunityRepository : CommunityRepository {
         if (stars in 1..5) CommunityOperation.NotConfigured else CommunityOperation.Failed(
             CommunityError(CommunityErrorKind.VALIDATION, CommunityValidationIssue.INVALID_RATING),
         )
-    override suspend fun post(target: CommunityTarget, body: String, parentCommentId: String?, requestId: String): CommunityOperation = validateUnavailable(body)
+    override suspend fun post(target: CommunityTarget, body: String, parentCommentId: String?, requestId: String, spoiler: Boolean): CommunityOperation = validateUnavailable(body)
     override suspend fun setLiked(comment: CommunityComment, liked: Boolean) = CommunityOperation.NotConfigured
     override suspend fun report(comment: CommunityComment) = CommunityOperation.NotConfigured
-    override suspend fun editOwned(comment: CommunityComment, body: String): CommunityOperation = validateUnavailable(body)
+    override suspend fun editOwned(comment: CommunityComment, body: String, spoiler: Boolean): CommunityOperation = validateUnavailable(body)
     override suspend fun deleteOwned(comment: CommunityComment) = CommunityOperation.NotConfigured
     private fun validateUnavailable(body: String): CommunityOperation = when (val result = CommunityCommentInput.validate(body)) {
         is CommentValidation.Valid -> CommunityOperation.NotConfigured

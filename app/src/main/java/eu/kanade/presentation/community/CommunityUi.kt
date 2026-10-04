@@ -1,6 +1,7 @@
 package eu.kanade.presentation.community
 
 import android.text.format.DateUtils
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -20,6 +21,7 @@ import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.Favorite
+import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material.icons.outlined.MoreHoriz
 import eu.kanade.presentation.account.ProfileAvatar
 import androidx.compose.foundation.background
@@ -268,12 +270,12 @@ private fun CommunityContent(
                         CommunityComposer(context.target, actor, repository.available && !actionInFlight && (editingId == null || editing != null), reply, editing, replyId, editingId, submissionVersion,
                             avatar = (session as? AccountSession.Authenticated)?.profile?.let(AccountAuthor::fromProfile),
                             onCancel = { replyId = null; editingId = null },
-                            onSubmit = { body, requestId ->
+                            onSubmit = { body, requestId, spoiler ->
                                 val submittedEdit = editing
                                 val submittedParent = replyId
                                 gated(if (submittedParent != null) AccountFeature.REPLIES else AccountFeature.COMMENTS) {
                                     perform(onSuccess = { submissionVersion++; replyId = null; editingId = null }) {
-                                        submittedEdit?.let { repository.editOwned(it, body) } ?: repository.post(context.target, body, submittedParent, requestId)
+                                        submittedEdit?.let { repository.editOwned(it, body, spoiler) } ?: repository.post(context.target, body, submittedParent, requestId, spoiler)
                                     }
                                 }
                             })
@@ -362,14 +364,14 @@ private fun CommunityContent(
                         CommunityComposer(context.target, actor, repository.available && !actionInFlight && (threadEditingId == null || threadEditing != null),
                             thread, threadEditing, thread.id, threadEditingId, threadSubmissionVersions[thread.id] ?: 0,
                             avatar = (session as? AccountSession.Authenticated)?.profile?.let(AccountAuthor::fromProfile),
-                            onCancel = { threadEditingId = null }, onSubmit = { text, requestId ->
+                            onCancel = { threadEditingId = null }, onSubmit = { text, requestId, spoiler ->
                                 val edited = threadEditing
                                 gated(AccountFeature.REPLIES) {
                                     perform(onSuccess = {
                                         threadSubmissionVersions = threadSubmissionVersions + (thread.id to ((threadSubmissionVersions[thread.id] ?: 0) + 1))
                                         threadEditingId = null
                                     }) {
-                                        edited?.let { repository.editOwned(it, text) } ?: repository.post(context.target, text, thread.id, requestId)
+                                        edited?.let { repository.editOwned(it, text, spoiler) } ?: repository.post(context.target, text, thread.id, requestId, spoiler)
                                     }
                                 }
                             })
@@ -466,9 +468,10 @@ private fun ReplyAttribution(username: String?, name: String, modifier: Modifier
 
 @Composable
 private fun CommunityComposer(target: CommunityTarget, actor: String?, enabled: Boolean, reply: CommunityComment?, editing: CommunityComment?, replyId: String?, editingId: String?, submissionVersion: Int,
-    avatar: AccountAuthor?, onCancel: () -> Unit, onSubmit: (String, String) -> Unit) {
+    avatar: AccountAuthor?, onCancel: () -> Unit, onSubmit: (String, String, Boolean) -> Unit) {
     var body by rememberSaveable(target, actor, replyId, editingId, submissionVersion) { mutableStateOf(editing?.body.orEmpty()) }
     var requestId by rememberSaveable(target, actor, replyId, editingId, submissionVersion) { mutableStateOf(java.util.UUID.randomUUID().toString()) }
+    var spoiler by rememberSaveable(target, actor, replyId, editingId, submissionVersion) { mutableStateOf(editing?.spoiler ?: false) }
     val validation = remember(body) { CommunityCommentInput.validate(body) }
     var focused by remember { mutableStateOf(false) }
     val outline by animateColorAsState(if (focused) MangaroDesignSystem.GoldPrimary.copy(alpha = 0.45f) else Color(0xFF3A2B46), tween(140), label = "composerFocus")
@@ -497,7 +500,7 @@ private fun CommunityComposer(target: CommunityTarget, actor: String?, enabled: 
                     decorationBox = { field ->
                         Box { if (body.isEmpty()) Text("اكتب تعليقًا...", color = Color(0xFF9F90AC), style = MaterialTheme.typography.bodyMedium); field() }
                     })
-                IconButton(onClick = { (validation as? CommentValidation.Valid)?.let { onSubmit(it.body, requestId) } },
+                IconButton(onClick = { (validation as? CommentValidation.Valid)?.let { onSubmit(it.body, requestId, spoiler) } },
                     enabled = canSend, interactionSource = sendInteraction, modifier = Modifier.size(48.dp)) {
                     Box(Modifier.size(32.dp).graphicsLayer { scaleX = sendScale; scaleY = sendScale }
                         .clip(RoundedCornerShape(10.dp)).background(sendColor), contentAlignment = Alignment.Center) {
@@ -506,6 +509,13 @@ private fun CommunityComposer(target: CommunityTarget, actor: String?, enabled: 
                     }
                 }
             }
+        }
+        Row(Modifier.padding(start = 40.dp).heightIn(min = 48.dp).clip(RoundedCornerShape(8.dp))
+            .clickable(enabled = enabled) { spoiler = !spoiler; requestId = java.util.UUID.randomUUID().toString() },
+            verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(checked = spoiler, onCheckedChange = null, enabled = enabled,
+                modifier = Modifier.size(36.dp), colors = CheckboxDefaults.colors(checkedColor = MangaroDesignSystem.GoldPrimary))
+            Text("يحتوي على حرق", color = Color(0xFFB7A9C4), style = MaterialTheme.typography.labelSmall)
         }
         if (body.isNotEmpty() && validation is CommentValidation.Invalid)
             Text(CommunityError(CommunityErrorKind.VALIDATION, validation.issue).userMessage, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
@@ -564,9 +574,21 @@ fun MangaroComment(comment: CommunityComment, enabled: Boolean = true, onLike: (
                 }
             }
         }
-        Column(Modifier.padding(start = 54.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(Modifier.padding(start = 54.dp).animateContentSize(tween(160)), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             replyTo?.let { ReplyAttribution(it.username, it.displayName) }
-            Text(comment.body, style = MaterialTheme.typography.bodyMedium.copy(textDirection = TextDirection.Content, lineHeight = 22.sp), color = Color(0xFFE8E0EE))
+            var revealed by remember(comment.id, comment.spoiler, comment.body, comment.updatedAt) { mutableStateOf(false) }
+            val visibleBody = comment.visibleBody(revealed)
+            if (visibleBody != null) {
+                Text(visibleBody, style = MaterialTheme.typography.bodyMedium.copy(textDirection = TextDirection.Content, lineHeight = 22.sp), color = Color(0xFFE8E0EE))
+            } else {
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(MangaroDesignSystem.SurfaceHigh.copy(alpha = 0.55f))
+                    .clickable { revealed = true }.padding(horizontal = 12.dp).heightIn(min = 48.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Outlined.VisibilityOff, null, Modifier.size(18.dp), tint = MangaroDesignSystem.GoldPrimary.copy(alpha = 0.8f))
+                    Text("يحتوي هذا التعليق على حرق", Modifier.weight(1f), color = Color(0xFFB7A9C4), style = MaterialTheme.typography.bodySmall)
+                    Text("إظهار", color = MangaroDesignSystem.GoldPrimary, style = MaterialTheme.typography.labelMedium)
+                }
+            }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(0.dp)) {
                 CommunityAction(comment.likeCount.toString(), if (comment.isLikedByCurrentUser) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder,
                     enabled, active = comment.isLikedByCurrentUser, onClick = onLike, description = "إعجاب")

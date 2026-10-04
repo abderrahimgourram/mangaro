@@ -335,61 +335,69 @@ class MangaViewModel(
     /**
      * Update favorite status of manga, (removes / adds) manga (to / from) library.
      */
+    private val libraryMutationInFlight = java.util.concurrent.atomic.AtomicBoolean(false)
+
     fun toggleFavorite(
         onRemoved: () -> Unit,
         checkDuplicate: Boolean = true,
     ) {
         val state = successState ?: return
+        if (!libraryMutationInFlight.compareAndSet(false, true)) return
         viewModelScope.launchIO {
-            val manga = state.manga
+            try {
+                val manga = state.manga
 
-            if (isFavorited) {
-                // Remove from library
-                if (updateManga.awaitUpdateFavorite(manga.id, false)) {
-                    // Remove covers and update last modified in db
-                    if (manga.removeCovers() != manga) {
-                        updateManga.awaitUpdateCoverLastModified(manga.id)
+                if (manga.favorite) {
+                    // Remove from library
+                    if (updateManga.awaitUpdateFavorite(manga.id, false)) {
+                        // Remove covers and update last modified in db
+                        if (manga.removeCovers() != manga) {
+                            updateManga.awaitUpdateCoverLastModified(manga.id)
+                        }
+                        withUIContext { onRemoved() }
                     }
-                    withUIContext { onRemoved() }
+                } else {
+                    // Add to library
+                    // First, check if duplicate exists if callback is provided
+                    if (checkDuplicate) {
+                        val duplicates = getDuplicateLibraryManga(manga)
+
+                        if (duplicates.isNotEmpty()) {
+                            updateSuccessState { it.copy(dialog = Dialog.DuplicateManga(manga, duplicates)) }
+                            return@launchIO
+                        }
+                    }
+
+                    // Now check if user previously set categories, when available
+                    val categories = getCategories()
+                    val defaultCategoryId = libraryPreferences.defaultCategory.get().toLong()
+                    val defaultCategory = categories.find { it.id == defaultCategoryId }
+                    when {
+                        // Default category set
+                        defaultCategory != null -> {
+                            val result = updateManga.awaitUpdateFavorite(manga.id, true)
+                            if (!result) return@launchIO
+                            moveMangaToCategory(defaultCategory)
+                        }
+
+                        // Automatic 'Default' or no categories
+                        defaultCategoryId == 0L || categories.isEmpty() -> {
+                            val result = updateManga.awaitUpdateFavorite(manga.id, true)
+                            if (!result) return@launchIO
+                            moveMangaToCategory(null)
+                        }
+
+                        // Choose a category
+                        else -> showChangeCategoryDialog()
+                    }
+
+                    // Finally match with enhanced tracking when available
+                    addTracks.bindEnhancedTrackers(manga, state.source)
                 }
-            } else {
-                // Add to library
-                // First, check if duplicate exists if callback is provided
-                if (checkDuplicate) {
-                    val duplicates = getDuplicateLibraryManga(manga)
-
-                    if (duplicates.isNotEmpty()) {
-                        updateSuccessState { it.copy(dialog = Dialog.DuplicateManga(manga, duplicates)) }
-                        return@launchIO
-                    }
-                }
-
-                // Now check if user previously set categories, when available
-                val categories = getCategories()
-                val defaultCategoryId = libraryPreferences.defaultCategory.get().toLong()
-                val defaultCategory = categories.find { it.id == defaultCategoryId }
-                when {
-                    // Default category set
-                    defaultCategory != null -> {
-                        val result = updateManga.awaitUpdateFavorite(manga.id, true)
-                        if (!result) return@launchIO
-                        moveMangaToCategory(defaultCategory)
-                    }
-
-                    // Automatic 'Default' or no categories
-                    defaultCategoryId == 0L || categories.isEmpty() -> {
-                        val result = updateManga.awaitUpdateFavorite(manga.id, true)
-                        if (!result) return@launchIO
-                        moveMangaToCategory(null)
-                    }
-
-                    // Choose a category
-                    else -> showChangeCategoryDialog()
-                }
-
-                // Finally match with enhanced tracking when available
-                addTracks.bindEnhancedTrackers(manga, state.source)
-            }
+            } catch (cancel: kotlinx.coroutines.CancellationException) { throw cancel }
+            catch (_: Exception) {
+                snackbarHostState.showSnackbar("تعذّر تحديث المكتبة. حاول مجددًا")
+            } finally { libraryMutationInFlight.set(false) }
         }
     }
 

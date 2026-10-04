@@ -126,7 +126,8 @@ class MangaScreen(
             onChapterClicked = { openChapter(context, it) },
             onDownloadChapter = viewModel::runChapterDownloadActions.takeIf { !successState.source.isLocalOrStub() },
             onAddToLibraryClicked = {
-                showLibraryShelves = true
+                if (successState.manga.favorite) viewModel.toggleFavorite(onRemoved = {}, checkDuplicate = false)
+                else showLibraryShelves = true
                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
             },
             onTagSearch = { scope.launch { performGenreSearch(navigator, it, viewModel.source!!) } },

@@ -50,3 +50,17 @@ data class ReaderChapter(val chapter: Chapter) {
         data class Loaded(val pages: List<ReaderPage>) : State
     }
 }
+
+/** Admission for explicit chapter navigation only; loading/rendering stay in the existing pipeline. */
+internal class ReaderChapterSelection {
+    private val busy = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    suspend fun switch(chapters: List<ReaderChapter>, id: Long, load: suspend (ReaderChapter) -> Unit): ReaderChapter? {
+        val selected = chapters.firstOrNull { it.chapter.id == id } ?: return null
+        if (!busy.compareAndSet(false, true)) return null
+        try {
+            load(selected)
+            return selected
+        } finally { busy.set(false) }
+    }
+}

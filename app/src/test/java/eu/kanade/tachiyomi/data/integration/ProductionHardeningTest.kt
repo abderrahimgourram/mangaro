@@ -57,6 +57,66 @@ class ProductionHardeningTest {
         fun comment(id:String="00000000-0000-0000-0000-000000000010")="""{"id":"$id","user_id":"$owner","body":"Real test comment","created_at":"2026-10-01T00:00:00Z","updated_at":"2026-10-01T00:00:00Z","parent_comment_id":null,"display_name":"Reader","username":"reader","avatar_path":null,"google_avatar_url":null,"author_updated_at":null,"like_count":0,"reply_count":0,"liked_by_me":false,"level":1}"""
         override fun close() {runBlocking {client.close()};server.stop(0);executor.shutdownNow()}
     }
+    @Test fun `spoiler post and flag-only edit reconcile server truth without changing identity`() = runTest {
+        Fixture().use { f ->
+            val id = "00000000-0000-0000-0000-000000000010"
+            var hidden = true
+            var failRead = false
+            f.reply = { method, path, body -> when {
+                method == "POST" && path.endsWith("community_comments") -> {
+                    val input = Json.parseToJsonElement(body).let { if (it is JsonArray) it.first().jsonObject else it.jsonObject }
+                    input["spoiler"]!!.jsonPrimitive.boolean shouldBe true
+                    200 to "[{\"id\":\"$id\"}]"
+                }
+                method == "PATCH" -> {
+                    Json.parseToJsonElement(body).jsonObject["spoiler"]!!.jsonPrimitive.boolean shouldBe false
+                    hidden = false; failRead = true
+                    200 to "[{\"id\":\"$id\",\"body\":\"Real test comment\",\"spoiler\":false,\"updated_at\":\"2026-10-02T00:00:00Z\"}]"
+                }
+                failRead -> 503 to "{\"message\":\"offline\"}"
+                path.endsWith("community_comments_page") -> {
+                    val row = JsonObject(Json.parseToJsonElement(f.comment()).jsonObject + ("spoiler" to JsonPrimitive(hidden)))
+                    200 to f.page("[$row]")
+                }
+                else -> 200 to "{\"average\":null,\"count\":0,\"current_user_rating\":null}"
+            } }
+            val repo = SupabaseCommunityRepository(f.client, f.account)
+            repo.post(f.target, "Real test comment", null, id, true) shouldBe CommunityOperation.Completed
+            val posted = repo.observe(f.target).value.comments.single()
+            posted.id shouldBe id
+            posted.visibleBody() shouldBe null
+            posted.visibleBody(true) shouldBe "Real test comment"
+            repo.editOwned(posted, posted.body, false) shouldBe CommunityOperation.Completed
+            repo.observe(f.target).value.comments.single().apply {
+                this.id shouldBe id
+                spoiler shouldBe false
+                visibleBody() shouldBe "Real test comment"
+            }
+        }
+    }
+
+    @Test fun `ambiguous comment retry cannot silently change spoiler intent`() = runTest {
+        Fixture().use { f ->
+            val id = "00000000-0000-0000-0000-000000000010"
+            var writes = 0
+            f.reply = { method, path, _ -> when {
+                method == "POST" && path.endsWith("community_comments") -> {
+                    writes++
+                    if (writes == 1) 503 to "{\"message\":\"lost response\"}"
+                    else 409 to "{\"code\":\"23505\",\"message\":\"duplicate\",\"details\":null,\"hint\":null}"
+                }
+                method == "GET" -> 200 to """[{"id":"$id","user_id":"${f.owner}","target_type":"manga","manga_key":"${f.target.mangaKey.value}","chapter_key":null,"parent_comment_id":null,"body":"Real test comment","spoiler":true}]"""
+                path.endsWith("community_comments_page") -> 200 to f.page("[${JsonObject(Json.parseToJsonElement(f.comment()).jsonObject + ("spoiler" to JsonPrimitive(true)))}]")
+                else -> 200 to "{\"average\":null,\"count\":0,\"current_user_rating\":null}"
+            } }
+            val repo = SupabaseCommunityRepository(f.client, f.account)
+            (repo.post(f.target, "Real test comment", null, id, true) is CommunityOperation.Failed) shouldBe true
+            (repo.post(f.target, "Real test comment", null, id, false) is CommunityOperation.Failed) shouldBe true
+            repo.post(f.target, "Real test comment", null, id, true) shouldBe CommunityOperation.Completed
+            repo.observe(f.target).value.comments.single().spoiler shouldBe true
+        }
+    }
+
     @Test fun `confirmed post remains successful when progression and subsequent read fail`()=runTest {
         Fixture().use {f->
             coEvery {f.auth.refreshProgression()} throws java.io.IOException("offline")

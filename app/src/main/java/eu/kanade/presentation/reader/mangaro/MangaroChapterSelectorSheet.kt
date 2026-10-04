@@ -31,6 +31,10 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,6 +57,7 @@ fun MangaroChapterSelectorSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val listState = rememberLazyListState()
 
+    var selecting by remember { mutableStateOf(false) }
     val currentIdx = chapters.indexOfFirst { it.id == currentChapterId }
     LaunchedEffect(currentIdx) {
         if (currentIdx >= 0) {
@@ -128,9 +133,10 @@ fun MangaroChapterSelectorSheet(
                             .background(
                                 if (isCurrent) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.8f) else Color.Transparent,
                             )
-                            .clickable {
-                                onSelectChapter(chapter.id)
+                            .clickable(enabled = !selecting) {
+                                selecting = true
                                 onDismissRequest()
+                                if (!isCurrent) onSelectChapter(chapter.id)
                             }
                             .padding(horizontal = 14.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,

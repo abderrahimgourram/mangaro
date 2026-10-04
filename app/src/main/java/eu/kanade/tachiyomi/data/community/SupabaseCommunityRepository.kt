@@ -74,7 +74,7 @@ class SupabaseCommunityRepository(private val client: SupabaseClient, private va
         val avatar = custom ?: google_avatar_url?.takeIf { it.startsWith("https://") }
         return CommunityComment(id, target, AccountAuthor(user_id, display_name, username, avatar, level), body,
             timestamp(created_at), timestamp(updated_at), like_count, reply_count,
-            timestamp(updated_at) > timestamp(created_at), user_id == user, parent_comment_id, user != null && liked_by_me)
+            timestamp(updated_at) > timestamp(created_at), user_id == user, parent_comment_id, user != null && liked_by_me, spoiler)
     }
     private fun timestamp(value: String) = Instant.parse(value).toEpochMilliseconds()
     private fun clearPreviousAccount(item: Entry) {
@@ -236,7 +236,7 @@ class SupabaseCommunityRepository(private val client: SupabaseClient, private va
             if (target.targetType == CommunityTargetType.MANGA) CommunityEvent.MangaRated(target, stars) else CommunityEvent.ChapterRated(target, stars)
         }
     }
-    override suspend fun post(target: CommunityTarget, body: String, parentCommentId: String?, requestId: String): CommunityOperation {
+    override suspend fun post(target: CommunityTarget, body: String, parentCommentId: String?, requestId: String, spoiler: Boolean): CommunityOperation {
         val input = CommunityCommentInput.validate(body)
         if (input is CommentValidation.Invalid) return CommunityOperation.Failed(CommunityError(CommunityErrorKind.VALIDATION, input.issue))
         return write(target, if (parentCommentId == null) AccountFeature.COMMENTS else AccountFeature.REPLIES, parentCommentId, refreshProgression = true) { user ->
@@ -244,7 +244,7 @@ class SupabaseCommunityRepository(private val client: SupabaseClient, private va
             val validatedBody = (input as CommentValidation.Valid).body
             try {
                 client.from("community_comments").insert(buildJsonObject {
-                    put("id", id)
+                    put("id", id); put("spoiler", spoiler)
                     put("target_type", target.targetType.name.lowercase()); put("manga_key", target.mangaKey.value)
                     put("chapter_key", target.chapterKey?.value); put("user_id", user)
                     put("parent_comment_id", parentCommentId); put("body", validatedBody)
@@ -258,7 +258,7 @@ class SupabaseCommunityRepository(private val client: SupabaseClient, private va
                 }.decodeSingle<PostedComment>()
                 check(existing.id == id && existing.user_id == user && existing.target_type == target.targetType.name.lowercase() &&
                     existing.manga_key == target.mangaKey.value && existing.chapter_key == target.chapterKey?.value &&
-                    existing.parent_comment_id == parentCommentId && existing.body == validatedBody)
+                    existing.parent_comment_id == parentCommentId && existing.body == validatedBody && existing.spoiler == spoiler)
             }
             if (parentCommentId == null) CommunityEvent.CommentCreated(target, id) else CommunityEvent.ReplyCreated(target, id, parentCommentId)
         }
@@ -272,14 +272,14 @@ class SupabaseCommunityRepository(private val client: SupabaseClient, private va
     override suspend fun report(comment: CommunityComment) = write(comment.target, AccountFeature.COMMENTS, comment.parentCommentId) {
         client.postgrest.rpc("community_report_comment", buildJsonObject { put("p_comment_id", comment.id) }); null
     }
-    override suspend fun editOwned(comment: CommunityComment, body: String): CommunityOperation {
+    override suspend fun editOwned(comment: CommunityComment, body: String, spoiler: Boolean): CommunityOperation {
         val input = CommunityCommentInput.validate(body)
         if (input is CommentValidation.Invalid) return CommunityOperation.Failed(CommunityError(CommunityErrorKind.VALIDATION, input.issue))
         return write(comment.target, AccountFeature.COMMENTS, comment.parentCommentId) { user ->
-            client.from("community_comments").update(buildJsonObject { put("body", (input as CommentValidation.Valid).body) }) {
+            client.from("community_comments").update(buildJsonObject { put("body", (input as CommentValidation.Valid).body); put("spoiler", spoiler) }) {
                 filter { eq("id", comment.id); eq("user_id", user) }; select()
             }.decodeSingle<EditedComment>().also { edited ->
-                updateComment(entry(comment.target), edited.id) {it.copy(body = edited.body, updatedAt = timestamp(edited.updated_at), isEdited = true)}
+                updateComment(entry(comment.target), edited.id) {it.copy(body = edited.body, spoiler = edited.spoiler, updatedAt = timestamp(edited.updated_at), isEdited = true)}
             }; null
         }
     }
@@ -315,8 +315,8 @@ class SupabaseCommunityRepository(private val client: SupabaseClient, private va
         val avatar_path: String?, val google_avatar_url: String?, val cover_path: String?, val bio: String?,
         val updated_at: String, val level: Int, val comment_count: Long, val rating_count: Long)
     @Serializable private data class PostedComment(val id: String, val user_id: String, val target_type: String, val manga_key: String,
-        val chapter_key: String?, val parent_comment_id: String?, val body: String)
-    @Serializable private data class EditedComment(val id: String, val body: String, val updated_at: String)
+        val chapter_key: String?, val parent_comment_id: String?, val body: String, val spoiler: Boolean = false)
+    @Serializable private data class EditedComment(val id: String, val body: String, val updated_at: String, val spoiler: Boolean = false)
     @Serializable private data class Identity(val id: String)
     @Serializable private data class Cursor(val created_at: String, val id: String, val like_count: Long? = null)
     @Serializable private data class Rating(val average: Double?, val count: Long, val current_user_rating: Int?)
@@ -324,6 +324,6 @@ class SupabaseCommunityRepository(private val client: SupabaseClient, private va
     @Serializable private data class Row(
         val id: String, val user_id: String, val body: String, val created_at: String, val updated_at: String,
         val parent_comment_id: String?, val display_name: String?, val username: String?, val avatar_path: String?,
-        val google_avatar_url: String?, val author_updated_at: String?, val like_count: Long, val reply_count: Long, val liked_by_me: Boolean, val level: Int = 1,
+        val google_avatar_url: String?, val author_updated_at: String?, val like_count: Long, val reply_count: Long, val liked_by_me: Boolean, val level: Int = 1, val spoiler: Boolean = false,
     )
 }

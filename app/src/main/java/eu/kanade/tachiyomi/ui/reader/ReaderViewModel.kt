@@ -373,23 +373,24 @@ class ReaderViewModel @JvmOverloads constructor(
     /**
      * Called when the user is going to load the prev/next chapter through the toolbar buttons.
      */
-    private suspend fun loadAdjacent(chapter: ReaderChapter) {
-        val loader = loader ?: return
+    private val chapterSelection = eu.kanade.tachiyomi.ui.reader.model.ReaderChapterSelection()
 
-        logcat { "Loading adjacent ${chapter.chapter.url}" }
-
-        mutableState.update { it.copy(isLoadingAdjacentChapter = true) }
-        try {
-            withIOContext {
-                loadChapter(loader, chapter)
-            }
-        } catch (e: Throwable) {
-            if (e is CancellationException) {
-                throw e
-            }
-            logcat(LogPriority.ERROR, e)
-        } finally {
-            mutableState.update { it.copy(isLoadingAdjacentChapter = false) }
+    private suspend fun loadAdjacent(chapter: ReaderChapter): Boolean {
+        val loader = loader ?: return false
+        return try {
+            chapterSelection.switch(chapterList, chapter.chapter.id ?: return false) { selected ->
+                mutableState.update { it.copy(isLoadingAdjacentChapter = true) }
+                try {
+                    withIOContext { loadChapter(loader, selected) }
+                } finally {
+                    mutableState.update { it.copy(isLoadingAdjacentChapter = false) }
+                }
+            } != null
+        } catch (cancel: CancellationException) { throw cancel }
+        catch (error: Exception) {
+            logcat(LogPriority.ERROR, error)
+            eventChannel.trySend(Event.ChapterLoadFailed)
+            false
         }
     }
 
@@ -643,17 +644,17 @@ class ReaderViewModel @JvmOverloads constructor(
     /**
      * Called from the activity to load and set the next chapter as active.
      */
-    suspend fun loadNextChapter() {
-        val nextChapter = state.value.viewerChapters?.nextChapter ?: return
-        loadAdjacent(nextChapter)
+    suspend fun loadNextChapter(): Boolean {
+        val nextChapter = state.value.viewerChapters?.nextChapter ?: return false
+        return loadAdjacent(nextChapter)
     }
 
     /**
      * Called from the activity to load and set the previous chapter as active.
      */
-    suspend fun loadPreviousChapter() {
-        val prevChapter = state.value.viewerChapters?.prevChapter ?: return
-        loadAdjacent(prevChapter)
+    suspend fun loadPreviousChapter(): Boolean {
+        val prevChapter = state.value.viewerChapters?.prevChapter ?: return false
+        return loadAdjacent(prevChapter)
     }
 
     /**
@@ -826,17 +827,14 @@ class ReaderViewModel @JvmOverloads constructor(
         mutableState.update { it.copy(dialog = Dialog.ChapterList) }
     }
 
-    fun getMangaChapters(): List<tachiyomi.domain.chapter.model.Chapter> {
-        val manga = manga ?: return emptyList()
-        return runBlocking { getChaptersByMangaId.await(manga.id) }
-    }
+    fun getMangaChapters(): List<tachiyomi.domain.chapter.model.Chapter> =
+        if (manga == null || state.value.viewerChapters == null) emptyList()
+        else chapterList.mapNotNull { it.chapter.toDomainChapter() }
 
-    fun loadChapterById(chapterId: Long) {
-        val chapter = chapterList.find { it.chapter.id == chapterId } ?: return
-        val loader = loader ?: return
-        tachiyomi.core.common.util.lang.launchIO {
-            loadChapter(loader, chapter)
-        }
+    suspend fun loadChapterById(chapterId: Long): Boolean {
+        if (chapterId == state.value.currentChapter?.chapter?.id) return false
+        val chapter = chapterList.firstOrNull { it.chapter.id == chapterId } ?: return false
+        return loadAdjacent(chapter)
     }
 
     fun closeDialog() {
@@ -1034,6 +1032,7 @@ class ReaderViewModel @JvmOverloads constructor(
     }
 
     sealed interface Event {
+        data object ChapterLoadFailed : Event
         data object ReloadViewerChapters : Event
         data object PageChanged : Event
         data class SetOrientation(val orientation: Int) : Event

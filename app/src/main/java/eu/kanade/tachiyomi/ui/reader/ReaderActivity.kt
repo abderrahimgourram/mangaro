@@ -231,6 +231,7 @@ class ReaderActivity : BaseActivity() {
         viewModel.eventFlow
             .onEach { event ->
                 when (event) {
+                    ReaderViewModel.Event.ChapterLoadFailed -> toast("تعذّر فتح الفصل. حاول مجددًا")
                     ReaderViewModel.Event.ReloadViewerChapters -> {
                         viewModel.state.value.viewerChapters?.let(::setChapters)
                     }
@@ -317,7 +318,25 @@ class ReaderActivity : BaseActivity() {
                     chapters = viewModel.getMangaChapters(),
                     currentChapterId = state.currentChapter?.chapter?.id,
                     onSelectChapter = { chapterId ->
-                        viewModel.loadChapterById(chapterId)
+                        if (!selectingChapter) {
+                            selectingChapter = true
+                            lifecycleScope.launch {
+                                var resumedPage: ReaderPage? = null
+                                try {
+                                    if (viewModel.loadChapterById(chapterId)) {
+                                        viewModel.state.value.viewerChapters?.let { chapters ->
+                                            val pages = chapters.currChapter.pages.orEmpty()
+                                            val pageIndex = chapters.currChapter.requestedPage.coerceIn(0, (pages.size - 1).coerceAtLeast(0))
+                                            // Suppress transient callbacks from the old index while rebinding the viewer.
+                                            setChapters(chapters)
+                                            moveToPageIndex(pageIndex)
+                                            resumedPage = pages.getOrNull(pageIndex)
+                                        }
+                                    }
+                                } finally { selectingChapter = false }
+                                resumedPage?.let(::onPageSelected)
+                            }
+                        }
                     },
                     onDismissRequest = onDismissRequest,
                 )
@@ -716,8 +735,7 @@ class ReaderActivity : BaseActivity() {
      */
     private fun loadNextChapter() {
         lifecycleScope.launch {
-            viewModel.loadNextChapter()
-            moveToPageIndex(0)
+            if (viewModel.loadNextChapter()) moveToPageIndex(0)
         }
     }
 
@@ -727,8 +745,7 @@ class ReaderActivity : BaseActivity() {
      */
     private fun loadPreviousChapter() {
         lifecycleScope.launch {
-            viewModel.loadPreviousChapter()
-            moveToPageIndex(0)
+            if (viewModel.loadPreviousChapter()) moveToPageIndex(0)
         }
     }
 
@@ -736,8 +753,10 @@ class ReaderActivity : BaseActivity() {
      * Called from the viewer whenever a [page] is marked as active. It updates the values of the
      * bottom menu and delegates the change to the presenter.
      */
+    private var selectingChapter = false
+
     fun onPageSelected(page: ReaderPage) {
-        viewModel.onPageSelected(page)
+        if (!selectingChapter) viewModel.onPageSelected(page)
     }
 
     /**

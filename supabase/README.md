@@ -259,3 +259,19 @@ privacy, bounded cursor continuation and no duplicate pages. All fixtures,
 including trigger-generated progression events, are rolled back. No Community
 write rules, rewards, Auth or cloud sync policy is changed. Reader profiles use
 the existing overlay; returning does not recreate the reading session.
+
+## Explicit comment spoilers
+
+`20261004132417_mangaro_comment_spoilers.sql` adds `spoiler boolean NOT NULL
+DEFAULT false` to the existing comments/replies table. Owner-only insert/edit
+column grants and existing RLS remain in force. Both newest/reply and most-liked
+pages include the flag without changing ordering, cursors, counts or public
+profile fields. Flag-only edits update the server timestamp and never award XP.
+The migration was deployed to `pehsxthjetlltlsqcbfa`; its filename matches the
+recorded remote version.
+
+`supabase/tests/comment_spoilers.sql` checks defaults, owner edits, non-owner and
+guest denials, reply metadata, bounded pagination, privacy and unchanged XP on
+editing. All fixtures roll back. Existing Phase 2, retry and public-presentation
+security suites also pass with the new schema. Android conceals the body until
+explicit reveal, including in previews and replies; reveal state is temporary.

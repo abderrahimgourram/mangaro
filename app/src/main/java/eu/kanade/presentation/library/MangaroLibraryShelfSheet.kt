@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import eu.kanade.domain.track.interactor.AddTracks
 import eu.kanade.domain.manga.interactor.UpdateManga
 import eu.kanade.presentation.theme.MangaroDesignSystem
+import eu.kanade.tachiyomi.ui.library.libraryMembershipAfterShelfEdit
 import eu.kanade.tachiyomi.ui.library.MangaroLibraryShelves
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -101,12 +102,14 @@ fun MangaroLibraryShelfSheet(manga: Manga, onDismissRequest: () -> Unit) {
                     } else {
                         // Preserve every custom category, including changes made since opening.
                         val managedIds = shelves.map { it.categoryId }.toSet()
-                        val customIds = Injekt.get<CategoryRepository>().getCategoriesByMangaId(current.id)
-                            .map { it.id }.filter { it > 0 && it !in managedIds }
-                        repository.setMangaCategories(current.id, (customIds + selected).distinct())
-                        if (!current.favorite) {
-                            check(update.awaitUpdateFavorite(current.id, true))
-                            Injekt.get<AddTracks>().bindEnhancedTrackers(current, Injekt.get<SourceManager>().getOrStub(current.source))
+                        val currentIds = Injekt.get<CategoryRepository>().getCategoriesByMangaId(current.id).map { it.id }
+                        val customIds = currentIds.filter { it > 0 && it !in managedIds }
+                        val categories = (customIds + selected).distinct()
+                        repository.setMangaCategories(current.id, categories)
+                        val favorite = libraryMembershipAfterShelfEdit(current.favorite, currentIds.any { it in managedIds }, categories)
+                        if (current.favorite != favorite) {
+                            check(update.awaitUpdateFavorite(current.id, favorite))
+                            if (favorite) Injekt.get<AddTracks>().bindEnhancedTrackers(current, Injekt.get<SourceManager>().getOrStub(current.source))
                         }
                     }
                 }

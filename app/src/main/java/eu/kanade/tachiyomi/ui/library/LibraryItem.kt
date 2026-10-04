@@ -43,3 +43,7 @@ internal fun recentLibraryHistory(
 
 internal val LibraryManga.visibleUnreadCount: Long
     get() = (totalChapters.coerceAtLeast(0) - readCount.coerceAtLeast(0)).coerceAtLeast(0)
+
+/** Emptying the last active shelf removes membership; an unchanged uncategorized entry stays valid. */
+internal fun libraryMembershipAfterShelfEdit(wasFavorite: Boolean, hadManagedShelf: Boolean, categories: List<Long>): Boolean =
+    !(wasFavorite && hadManagedShelf && categories.isEmpty())
