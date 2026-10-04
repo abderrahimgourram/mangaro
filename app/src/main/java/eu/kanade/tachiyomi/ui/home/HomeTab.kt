@@ -53,7 +53,7 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import cafe.adriel.voyager.navigator.tab.LocalTabNavigator
 import cafe.adriel.voyager.navigator.tab.TabOptions
 import eu.kanade.presentation.home.MangaroContinueReading
-import eu.kanade.presentation.home.MangaroFeaturedBanner
+import eu.kanade.presentation.home.MangaroWeeklyPicks
 import eu.kanade.presentation.home.MangaroHomeHeader
 import eu.kanade.presentation.home.MangaroLatestShelf
 import eu.kanade.presentation.home.MangaroNewShelf
@@ -104,6 +104,11 @@ object HomeTab : Tab {
     override fun Content() {
         val viewModel = viewModel<HomeViewModel>()
         val state by viewModel.state.collectAsState()
+        val weekly = viewModel<WeeklyPicksViewModel>()
+        val weeklyState by weekly.state.collectAsState()
+        androidx.compose.runtime.LaunchedEffect(state.popularManga,state.latestManga,state.discoveryFeatured) {
+            weekly.offer(state.popularManga + state.latestManga + listOfNotNull(state.discoveryFeatured))
+        }
         val context = LocalContext.current
         val tabNavigator = LocalTabNavigator.current
         val navigator = LocalNavigator.currentOrThrow
@@ -132,7 +137,7 @@ object HomeTab : Tab {
         val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
         androidx.compose.runtime.DisposableEffect(lifecycleOwner, inbox) {
             val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-                if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) inbox.refreshBadge()
+                if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) { inbox.refreshBadge(); weekly.refresh() }
             }
             inbox.refreshBadge()
             lifecycleOwner.lifecycle.addObserver(observer)
@@ -159,7 +164,7 @@ object HomeTab : Tab {
             PullRefresh(
                 refreshing = state.isSwipeRefreshing,
                 enabled = true,
-                onRefresh = { viewModel.onHomeSwipeRefresh() },
+                onRefresh = { viewModel.onHomeSwipeRefresh(); weekly.refresh(force=true) },
             ) {
                 ScrollbarLazyColumn(
                     modifier = Modifier
@@ -180,38 +185,10 @@ object HomeTab : Tab {
                         )
                     }
 
-                    // Section 1: Cinematic Featured Discovery Hero
-                    item(key = "featured_section_header") {
-                        Spacer(modifier = Modifier.height(4.dp))
-                        MangaroSectionHeader(
-                            title = "اكتشف قصة",
-                            icon = Icons.Outlined.AutoAwesome,
-                        )
-                    }
-
-                    item(key = "featured_banner_card") {
-                        when {
-                            state.discoveryFeatured != null -> {
-                                MangaroFeaturedBanner(
-                                    item = state.discoveryFeatured!!,
-                                    canRotate = state.discoveryLatest.isNotEmpty(),
-                                    onOpenManga = { mangaId ->
-                                        navigator.push(MangaScreen(mangaId, true))
-                                    },
-                                    onNextStory = {
-                                        viewModel.nextFeaturedStory()
-                                    },
-                                )
-                            }
-                            state.isDiscoveryLoading -> {
-                                FeaturedCardSkeleton()
-                            }
-                            state.installedSources.isEmpty() -> {
-                                EmptyDiscoveryCard(
-                                    onExploreExtensionsClick = { viewModel.onHomeSwipeRefresh() },
-                                )
-                            }
-                        }
+                    item(key = "weekly_community_picks") {
+                        MangaroWeeklyPicks(weeklyState,onOpen={ id ->
+                            if(navigator.lastItem !is MangaScreen) navigator.push(MangaScreen(id,true))
+                        },onRetry={ weekly.refresh(force=true); viewModel.refreshDiscovery() })
                     }
 
                     // Section 2: Continue Reading (Compact Strip)
@@ -364,128 +341,6 @@ object HomeTab : Tab {
                 }
             }
         }
-        }
-    }
-
-    @Composable
-    private fun EmptyDiscoveryCard(
-        onExploreExtensionsClick: () -> Unit,
-    ) {
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 4.dp),
-            colors = CardDefaults.cardColors(containerColor = MangaroDesignSystem.SurfaceDark),
-            border = BorderStroke(1.dp, Color(0x28A78BFA)),
-            shape = RoundedCornerShape(16.dp),
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(CircleShape)
-                        .background(MangaroDesignSystem.LavenderPrimary.copy(alpha = 0.15f)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Extension,
-                        contentDescription = null,
-                        tint = MangaroDesignSystem.GoldPrimary,
-                        modifier = Modifier.size(24.dp),
-                    )
-                }
-
-                Text(
-                    text = "ابدأ عالمك مع المانهوا",
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp,
-                    ),
-                    color = Color.White,
-                    textAlign = TextAlign.Center,
-                )
-                Text(
-                    text = "تعذّر تحميل القصص حالياً. حاول مجدداً عند توفر الاتصال.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color(0xFFCBBED5),
-                    textAlign = TextAlign.Center,
-                )
-                Button(
-                    onClick = onExploreExtensionsClick,
-                    colors = ButtonDefaults.buttonColors(containerColor = MangaroDesignSystem.GoldPrimary),
-                    shape = RoundedCornerShape(10.dp),
-                    contentPadding = PaddingValues(horizontal = 18.dp, vertical = 6.dp),
-                ) {
-                    Text(
-                        text = "إعادة المحاولة",
-                        color = Color.Black,
-                        fontWeight = FontWeight.Bold,
-                    )
-                }
-            }
-        }
-    }
-
-    @Composable
-    private fun FeaturedCardSkeleton() {
-        Surface(
-            shape = RoundedCornerShape(18.dp),
-            color = MangaroDesignSystem.SurfaceDark,
-            border = BorderStroke(1.dp, Color(0x28A78BFA)),
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(168.dp)
-                .padding(horizontal = 16.dp, vertical = 4.dp),
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(
-                    modifier = Modifier
-                        .width(96.dp)
-                        .fillMaxHeight()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(MangaroDesignSystem.SurfaceHigh),
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight(),
-                    verticalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .width(80.dp)
-                            .height(16.dp)
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(MangaroDesignSystem.SurfaceHigh),
-                    )
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth(0.9f)
-                            .height(18.dp)
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(MangaroDesignSystem.SurfaceHigh),
-                    )
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth(0.6f)
-                            .height(14.dp)
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(MangaroDesignSystem.SurfaceHigh.copy(alpha = 0.6f)),
-                    )
-                }
-            }
         }
     }
 

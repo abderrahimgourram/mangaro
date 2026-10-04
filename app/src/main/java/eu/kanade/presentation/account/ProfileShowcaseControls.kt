@@ -40,6 +40,8 @@ import uy.kohesive.injekt.api.get
 internal fun ProfileShowcaseControls(profile: MangaroProfile, account: AccountFoundation) {
     val repository = remember(account) { ProfileShowcaseRepository(account) }
     val scope = rememberCoroutineScope()
+    val navigator = cafe.adriel.voyager.navigator.LocalNavigator.current
+    val navigationGate = remember(profile.userId) {AccountActionGate()}
     val context = LocalContext.current
     var snapshot by remember(profile.userId) { mutableStateOf<ProfileShowcaseRepository.Snapshot?>(null) }
     var local by remember(profile.userId) { mutableStateOf<Map<String, Manga>>(emptyMap()) }
@@ -87,6 +89,22 @@ internal fun ProfileShowcaseControls(profile: MangaroProfile, account: AccountFo
                 RankEmblem(profile.level,Modifier.size(20.dp))
                 Text("${snapshot?.favorites?.size ?: 0} / $slots أعمال",color=accent,style=MaterialTheme.typography.labelMedium)
                 Text("حتى 3 أعمال مميزة",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if(snapshot?.enabled==true && snapshot?.favorites.orEmpty().isNotEmpty()) {
+                LibraryShowcase(snapshot!!.favorites.map {ShowcaseDisplayItem(it.manga_key,it.title,cover(it.manga_key),it.featured)},showHeader=false,onOpen={ key ->
+                    val item=snapshot?.favorites?.firstOrNull {it.manga_key==key}
+                    if(item!=null && navigator!=null && navigationGate.tryStart()) scope.launch {
+                        try {
+                            val manga=local[key] ?: eu.kanade.tachiyomi.data.account.PublicFavoriteResolver().resolve(key,item.title)
+                            if((account.session.value as? AccountSession.Authenticated)?.profile?.userId==profile.userId) {
+                                if(manga!=null) navigator.push(eu.kanade.tachiyomi.ui.manga.MangaScreen(manga.id))
+                                else error="يتطلب توفر المحتوى على هذا الجهاز"
+                            }
+                        } catch(cancelled:CancellationException) {throw cancelled}
+                        catch(_:Exception) {error="تعذّر فتح العمل الآن"}
+                        finally {navigationGate.finish()}
+                    }
+                })
             }
             error?.let { Text(it, style = MaterialTheme.typography.bodySmall); if (snapshot == null) TextButton(onClick = { retry++ }) { Text("إعادة المحاولة") } }
         }

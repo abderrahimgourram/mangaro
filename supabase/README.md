@@ -402,3 +402,66 @@ tests verify default privacy, ordering persistence, three-feature and slot limit
 atomic failures, owner isolation and public payload fields. Phase 9 identity and XP
 regressions also passed. Security Advisor has no new findings; only the existing
 leaked-password warning remains. Android runtime/visual verification is manual.
+
+## Phase 9.5 final — weekly community picks and automatic sync
+
+Starts from d95c704, preserving the already-deployed rank tiers and curated Showcase.
+One new migration: `20261004160027_mangaro_community_weekly_ranking`.
+`community_weekly_ranking()` is a stable SECURITY INVOKER public aggregate, safe
+search_path, explicit anon/authenticated EXECUTE grants, no new table or RLS change.
+It returns <=100 opaque manga keys and average/count/weighted score, never rater
+IDs, source identity, private URLs or private user data. Android matches only exact
+keys against real existing catalogue/local manga identities; unresolved keys are
+not replaced by title. No individual rating downloads and no N+1 rating requests.
+
+Production audit: 3 manga ratings across 2 works; vote counts 2 and 1, averages
+5.0 and 3.0, global mean 4.3333. Confidence m is max(2, ceiling(median votes per
+rated work)), currently 2. Score is (v*R + m*C)/(v+m), where C is the global
+rating-weighted mean. At least 2 votes are required for a ranked slot. Ties use
+score DESC, votes DESC, average DESC, then opaque key ASC. m adapts to distribution;
+no arbitrary large fixed threshold. One isolated 5-star vote cannot displace a
+properly rated work. The scale stays 1–5 and ratings still award 0 XP.
+
+Home's old Story banner, next-story action and saved selection logic are removed.
+The replacement uses exactly five substantial snap-scrolling cards when five
+resolvable candidates exist. Every card has position/title; community cards show
+real average/count, weekly fillers explicitly say اختيار الأسبوع and never invent
+ratings. Real Popular/Latest catalogue results supply fallback candidates. Exact
+identity alternatives are retained, with no new source/search engine or title merge.
+
+ISO weeks use UTC Monday–Sunday (including ISO week-year boundaries). SHA-256 of
+week:key determines filler order. A bounded <=160-candidate catalogue pool is
+frozen locally for the week, persisted with the five cards, so launches, refreshes
+and recomposition cannot reshuffle picks. The next week re-seeds from available
+real candidates. Public ranked entries replace fillers as signal becomes usable.
+Cached cards survive offline/ranking failure; optional ranking reads time out in
+12 seconds. Refresh is on Home return (30-minute success throttle) or manual Home
+refresh, no polling/Realtime. Home readiness never waits for this extra read.
+
+Cloud starts automatically on first authenticated login and restored sessions for
+the bound account. The isolated journal keeps `_device/bound` locally. A different
+account (or ambiguous legacy multi-account journal) is paused and requires one
+explicit non-destructive merge; it cannot silently inherit the previous Library.
+The existing configure/seed/merge/queue/worker/suppression/restore paths remain
+unchanged. Unique account work, network constraints and exponential backoff remain.
+Sign-out cancels account work, preserves all local reading/download data, and
+capture never sends a previous account's queue as the next user. No routine enable
+prompt or large Cloud card remains. Account has a compact status/Sync now utility;
+only real account-binding ambiguity exposes a merge decision.
+
+Account's published Showcase covers now occupy the profile surface above stats,
+with existing selection, ordering, three-feature limit, server capacity, private
+defaults and exact-key taps preserved. Shared rank palette, MAX and Developer
+presentation remain as documented above; XP, trusted role and Auth architecture
+are untouched. No Reader, parser, source engine, notification/spoiler semantics,
+GitHub Actions or publisher changes.
+
+Tests cover ranked/filler mixtures, deterministic ties/weeks, singleton rating
+exclusion, exact keys, offline/process cache restoration, titles/no fake ratings,
+fresh/restored automatic startup, duplicate session events, queue coalescing and
+account-switch/sign-out isolation. Existing Home, cloud restore, profile Showcase,
+public identity and rank tests are retained (obsolete Story selection test removed).
+`phase95_weekly_ranking.sql` rolls back all fixtures and checks aggregate formula,
+read/update identity, private payload exclusions, Guest access and cross-user RLS.
+Security Advisor has no new findings; the existing leaked-password warning remains.
+Android visual/runtime checks are user-manual; no ADB/emulator/install used.

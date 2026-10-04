@@ -10,6 +10,7 @@ import java.io.File
 class CloudSyncStore(context: Context) : SQLiteOpenHelper(context, File(context.noBackupFilesDir, "cloud-sync.db").path, null, 1) {
     override fun onCreate(db: SQLiteDatabase) { db.execSQL("CREATE TABLE metadata(account TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY(account,key))") }
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+    @Synchronized fun configuredAccounts(): Set<String> = readableDatabase.rawQuery("SELECT DISTINCT account FROM metadata WHERE key IN ('baseline','seeded','decision') AND account != '_device'", null).use { c -> buildSet { while(c.moveToNext()) add(c.getString(0)) } }
     @Synchronized fun get(user: String, key: String): String? = readableDatabase.rawQuery("SELECT value FROM metadata WHERE account=? AND key=?", arrayOf(user,key)).use { if(it.moveToFirst()) it.getString(0) else null }
     @Synchronized fun put(user: String, key: String, value: String) { writableDatabase.insertWithOnConflict("metadata",null,ContentValues().apply { put("account",user);put("key",key);put("value",value) },SQLiteDatabase.CONFLICT_REPLACE) }
     @Synchronized fun remove(user: String, key: String) { writableDatabase.delete("metadata","account=? AND key=?",arrayOf(user,key)) }

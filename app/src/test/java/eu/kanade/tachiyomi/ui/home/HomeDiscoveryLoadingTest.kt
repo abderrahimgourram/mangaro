@@ -18,14 +18,6 @@ class HomeDiscoveryLoadingTest {
             .shouldContainExactly("A1", "B1", "C1", "A2", "C2", "C3")
     }
 
-    @Test
-    fun `featured selection prefers saved manga and otherwise retains the indexed choice`() {
-        val ids = listOf(30L, 10L, 20L)
-        selectFeaturedIndex(ids, 10L, 0) shouldBe 1
-        selectFeaturedIndex(ids, 99L, 5) shouldBe 2
-        selectFeaturedIndex(ids, -1L, 0) shouldBe 0
-    }
-
     private data class TestSourceResult(
         val sourceId: Long,
         val page: Int,

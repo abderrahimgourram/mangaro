@@ -286,8 +286,8 @@ private fun AccountProfileEditor(
             }
         }
     }
-    AccountProfileStatistics(profile.userId, account)
     ProfileShowcaseControls(profile, account)
+    AccountProfileStatistics(profile.userId, account)
     Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), color = MangaroDesignSystem.SurfaceDark) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {

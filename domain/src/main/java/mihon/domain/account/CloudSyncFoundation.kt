@@ -17,7 +17,7 @@ object LocalCloudChanges {
 
 data class CloudSyncStatus(val enabled: Boolean = false, val decisionMade: Boolean = false,
     val running: Boolean = false, val pending: Int = 0, val lastSuccess: Long? = null,
-    val error: String? = null, val unresolved: Int = 0, val loaded: Boolean = false)
+    val error: String? = null, val needsMerge: Boolean = false, val unresolved: Int = 0, val loaded: Boolean = false)
 
 /** Initial merge is additive; established conflicts require an observed baseline. */
 object CloudSyncPolicy {
@@ -27,4 +27,10 @@ object CloudSyncPolicy {
     fun initialLibrary(local: Boolean, remote: Boolean) = local || remote
     fun mergeHigherPage(localRead: Boolean, remoteRead: Boolean, localPage: Long, remotePage: Long) =
         localRead == remoteRead && localPage > remotePage
+}
+
+/** Device Library is shared: switching its bound account requires an explicit non-destructive merge. */
+object AutomaticCloudBinding {
+    fun requiresMerge(user: String, bound: String?, otherConfiguredAccounts: Set<String>) =
+        (bound != null && bound != user) || (bound == null && otherConfiguredAccounts.any { it != user })
 }

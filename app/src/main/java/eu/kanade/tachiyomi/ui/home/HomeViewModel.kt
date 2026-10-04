@@ -68,7 +68,6 @@ class HomeViewModel(
     }
     val state: StateFlow<HomeState> = _state.asStateFlow()
 
-    private var featuredIndex = 0
     private var allDiscoveryItems = mutableListOf<HomeDiscoveryItem>()
     private val sourcePageMap = mutableMapOf<Long, Int>()
     private val hasMorePagesMap = mutableMapOf<Long, Boolean>()
@@ -400,11 +399,8 @@ class HomeViewModel(
         val completedList = preserve(batchResult.completedItems, old.completedManga)
 
         if (popularList.isNotEmpty()) {
-            val savedMangaId = sourcePreferences.featuredMangaId.get()
-            featuredIndex = selectFeaturedIndex(popularList.map { it.mangaId }, savedMangaId, featuredIndex)
-            val featured = popularList[featuredIndex]
-            sourcePreferences.featuredMangaId.set(featured.mangaId)
-            val popularFiltered = popularList.filterIndexed { index, _ -> index != featuredIndex }
+            val featured = popularList.first()
+            val popularFiltered = popularList.drop(1)
 
             _state.update {
                 it.copy(
@@ -500,32 +496,19 @@ class HomeViewModel(
         }
     }
 
-    fun nextFeaturedStory() {
-        val deduplicated = deduplicateAndUnify(allDiscoveryItems)
-        if (deduplicated.size > 1) {
-            featuredIndex = (featuredIndex + 1) % deduplicated.size
-            val featured = deduplicated[featuredIndex]
-            sourcePreferences.featuredMangaId.set(featured.mangaId)
-            val latest = deduplicated.filterIndexed { index, _ -> index != featuredIndex }
-            _state.update {
-                it.copy(
-                    discoveryFeatured = featured,
-                    discoveryLatest = latest,
-                )
-            }
-        }
-    }
-
     fun onHomeSwipeRefresh() {
+        if (_state.value.isSwipeRefreshing) return
+        _state.update { it.copy(isSwipeRefreshing = true) }
         viewModelScope.launch {
-            _state.update { it.copy(isSwipeRefreshing = true) }
-            nextFeaturedStory()
-            delay(250)
-            _state.update { it.copy(isSwipeRefreshing = false) }
+            try {
+                refreshDiscovery()
+                discoveryJob?.join()
+            } finally { _state.update { it.copy(isSwipeRefreshing = false) } }
         }
     }
 
     fun refreshDiscovery() {
+        if (discoveryJob?.isActive == true) return
         val onlineSources = _state.value.installedSources.mapNotNull {
             sourceManager.get(it.id) as? CatalogueSource
         }.distinctBy { s -> s.id }
@@ -537,12 +520,6 @@ class HomeViewModel(
     private fun deduplicateAndUnify(items: List<HomeDiscoveryItem>): List<HomeDiscoveryItem> {
         return GroupDiscoveryItems.group(items)
     }
-}
-
-internal fun selectFeaturedIndex(mangaIds: List<Long>, savedMangaId: Long, currentIndex: Int): Int {
-    require(mangaIds.isNotEmpty())
-    val savedIndex = mangaIds.indexOf(savedMangaId)
-    return if (savedIndex >= 0) savedIndex else currentIndex.mod(mangaIds.size)
 }
 
 internal fun <T> interleaveSources(sourceLists: List<List<T>>): List<T> {

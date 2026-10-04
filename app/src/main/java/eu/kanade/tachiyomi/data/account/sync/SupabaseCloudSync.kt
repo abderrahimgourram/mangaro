@@ -16,11 +16,11 @@ import java.util.concurrent.TimeUnit
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
-/** Replication is opt-in and never owns local reading data. One existing Supabase client. */
+/** Replication starts automatically for a safely bound account and never owns local reading data. One existing Supabase client. */
 @OptIn(kotlinx.coroutines.FlowPreview::class)
 class SupabaseCloudSync(private val context:Context,private val client:SupabaseClient,private val auth:AccountAuth,
-    private val store:CloudSyncStore,private val local:CloudLocalGateway):AccountCloudSync {
-    private val scope=CoroutineScope(SupervisorJob()+Dispatchers.IO)
+    private val store:CloudSyncStore,private val local:CloudLocalGateway,
+    private val scope: CoroutineScope = CoroutineScope(SupervisorJob()+Dispatchers.IO)):AccountCloudSync {
     private val lock=Mutex()
     private val configuration=Mutex()
     private class InactiveAccount : CancellationException()
@@ -40,7 +40,7 @@ class SupabaseCloudSync(private val context:Context,private val client:SupabaseC
     private fun publish(user:String,running:Boolean?=null,error:String?=null) {
         val previous=state(user).value
         state(user).value=try {CloudSyncStatus(enabled(user),store.get(user,"decision")!=null,running ?: previous.running,
-            store.count(user,"pending/")+store.count(user,"dirty/"),store.get(user,"success")?.toLongOrNull(),error,store.count(user,"unresolved/"),true)}
+            store.count(user,"pending/")+store.count(user,"dirty/"),store.get(user,"success")?.toLongOrNull(),error,needsMerge = AutomaticCloudBinding.requiresMerge(user,store.get("_device","bound"),store.configuredAccounts()), unresolved = store.count(user,"unresolved/"), loaded = true)}
         catch(_:Exception) {previous.copy(running=false,loaded=true,error="تعذر المزامنة — بياناتك المحلية محفوظة")}
     }
     override fun restoredCompletion(userId:String,chapterKey:String)=runCatching {store.get(userId,"restored/$chapterKey")=="true"}.getOrDefault(true)
@@ -78,7 +78,15 @@ class SupabaseCloudSync(private val context:Context,private val client:SupabaseC
                     try {
                         previous?.let {WorkManager.getInstance(context).cancelUniqueWork(workName(it))}
                         previous=user
-                        if(user!=null) { publish(user);if(enabled(user)) schedule(user) }
+                        if(user!=null) {
+                            val ambiguous = AutomaticCloudBinding.requiresMerge(user,store.get("_device","bound"),store.configuredAccounts())
+                            if(ambiguous) {
+                                store.put(user,"enabled","false")
+                                publish(user)
+                            } else {
+                                configure(user,true)
+                            }
+                        }
                     } catch(cancelled:CancellationException) {throw cancelled}
                     catch(_:Exception) {user?.let {publish(it,false,"تعذر المزامنة — بياناتك المحلية محفوظة")}}
                 }
@@ -108,6 +116,7 @@ class SupabaseCloudSync(private val context:Context,private val client:SupabaseC
                 snapshot.forEach { (key,row)->queue(userId,key,row) }
             }
             if(active()!=userId)return@withContext AccountOperation.Failed("تغير الحساب، حاول مجددًا")
+            if(enabled) store.put("_device","bound",userId)
             store.put(userId,"decision","made");store.put(userId,"enabled",enabled.toString());publish(userId)
             if(enabled) schedule(userId,immediate=true) else WorkManager.getInstance(context).cancelUniqueWork(workName(userId))
             AccountOperation.Completed

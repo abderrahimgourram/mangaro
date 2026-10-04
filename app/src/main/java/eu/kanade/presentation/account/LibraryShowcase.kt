@@ -26,11 +26,11 @@ internal data class ShowcaseDisplayItem(val key: String,val title: String,val co
 
 /** Shared public presentation and owner preview. Data is already bounded/projected. */
 @Composable
-internal fun LibraryShowcase(items: List<ShowcaseDisplayItem>, onOpen: ((String)->Unit)? = null) {
+internal fun LibraryShowcase(items: List<ShowcaseDisplayItem>, onOpen: ((String)->Unit)? = null, showHeader: Boolean = true) {
     val featured = items.filter { it.featured }.take(3)
     val shelf = items.filterNot { it.featured }
     Column(verticalArrangement=Arrangement.spacedBy(12.dp)) {
-        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
+        if(showHeader) Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
             Text("مكتبتي العامة",style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold)
             Text("${items.size} أعمال",style=MaterialTheme.typography.labelSmall,color=Color(0xFFB7A9C4))
         }
