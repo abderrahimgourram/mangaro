@@ -32,6 +32,7 @@ class SupabaseCommunityRepository(private val client: SupabaseClient, private va
     private class Entry {
         val state = MutableStateFlow(CommunitySnapshot())
         val lock = Mutex()
+        var order = CommunityCommentOrder.NEWEST
         var loadedAt = 0L
         var actor: String? = null
     }
@@ -56,7 +57,11 @@ class SupabaseCommunityRepository(private val client: SupabaseClient, private va
             put("p_before_created", before?.created_at); put("p_before_id", before?.id)
             put("p_parent_id", parent); put("p_limit", 20)
         })
-        return requests.withPermit { client.postgrest.rpc("community_comments_page", args).decodeAs<Page>() }
+        return requests.withPermit {
+            if (parent == null && entry(target).order == CommunityCommentOrder.MOST_LIKED) {
+                client.postgrest.rpc("community_comments_popular_page", JsonObject(args + ("p_before_likes" to (before?.like_count?.let(::JsonPrimitive) ?: JsonNull)))).decodeAs<Page>()
+            } else client.postgrest.rpc("community_comments_page", args).decodeAs<Page>()
+        }
     }
     private suspend fun rating(target: CommunityTarget): Rating = requests.withPermit {
         client.postgrest.rpc("community_rating_summary", params(target)).decodeAs<Rating>()
@@ -87,7 +92,7 @@ class SupabaseCommunityRepository(private val client: SupabaseClient, private va
         // A response authenticated as the previous user must not supply ownership/likes to the next session.
         if (actor() != user) { item.loadedAt = 0; item.state.value = item.state.value.copy(loading = false, refreshing = false); return }
         item.state.value = CommunitySnapshot(
-            rating = CommunityRatingSummary(summary.average, summary.count, summary.current_user_rating.takeIf { user != null }),
+            order = item.order, rating = CommunityRatingSummary(summary.average, summary.count, summary.current_user_rating.takeIf { user != null }),
             commentCount = comments.comment_count, comments = comments.items.map { it.comment(target, user) },
             hasMore = comments.has_more, nextCursor = comments.cursor(),
         )
@@ -111,6 +116,31 @@ class SupabaseCommunityRepository(private val client: SupabaseClient, private va
     }
     override suspend fun loadInitial(target: CommunityTarget) = read(target) {
         if (it.loadedAt == 0L || it.actor != actor() || System.currentTimeMillis() - it.loadedAt >= 60_000) reload(target, it)
+    }
+    override suspend fun setCommentOrder(target: CommunityTarget, order: CommunityCommentOrder) = read(target) {
+        if (it.order != order) {
+            it.order = order
+            it.loadedAt = 0
+            it.state.value = it.state.value.copy(order = order, comments = emptyList(), nextCursor = null, hasMore = false)
+            reload(target, it)
+        }
+    }
+    override suspend fun publicProfile(userId: String): CommunityProfileResult = withContext(Dispatchers.IO) {
+        try {
+            val id = java.util.UUID.fromString(userId).toString()
+            val row = requests.withPermit {
+                client.postgrest.rpc("community_public_profile", buildJsonObject { put("p_user_id", id) }).decodeAs<PublicProfile?>()
+            } ?: return@withContext CommunityProfileResult.NotFound
+            val version = "?v=" + timestamp(row.updated_at)
+            val custom = row.avatar_path?.takeIf { it == "${row.user_id}/avatar.webp" }?.let { client.storage.from("avatars").publicUrl(it) + version }
+            val google = row.google_avatar_url?.takeIf { it.startsWith("https://") }
+            val cover = row.cover_path?.takeIf { it == "${row.user_id}/cover.webp" }?.let { client.storage.from("profile-media").publicUrl(it) + version }
+            CommunityProfileResult.Loaded(CommunityPublicProfile(
+                AccountAuthor(row.user_id, row.display_name, row.username, custom ?: google, row.level),
+                row.bio, cover, google, row.comment_count, row.rating_count,
+            ))
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (failure: Exception) { CommunityProfileResult.Failed(error(failure)) }
     }
     override suspend fun refresh(target: CommunityTarget) = read(target) { reload(target, it) }
     override suspend fun getRatingSummary(target: CommunityTarget) = read(target) {
@@ -265,11 +295,14 @@ class SupabaseCommunityRepository(private val client: SupabaseClient, private va
         }
         return CommunityError(kind)
     }
+    @Serializable private data class PublicProfile(val user_id: String, val display_name: String?, val username: String?,
+        val avatar_path: String?, val google_avatar_url: String?, val cover_path: String?, val bio: String?,
+        val updated_at: String, val level: Int, val comment_count: Long, val rating_count: Long)
     @Serializable private data class PostedComment(val id: String, val user_id: String, val target_type: String, val manga_key: String,
         val chapter_key: String?, val parent_comment_id: String?, val body: String)
     @Serializable private data class EditedComment(val id: String, val body: String, val updated_at: String)
     @Serializable private data class Identity(val id: String)
-    @Serializable private data class Cursor(val created_at: String, val id: String)
+    @Serializable private data class Cursor(val created_at: String, val id: String, val like_count: Long? = null)
     @Serializable private data class Rating(val average: Double?, val count: Long, val current_user_rating: Int?)
     @Serializable private data class Page(val items: List<Row>, val has_more: Boolean, val next_cursor: Cursor?, val comment_count: Long)
     @Serializable private data class Row(

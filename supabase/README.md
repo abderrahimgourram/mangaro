@@ -241,3 +241,21 @@ The migration was deployed through the authenticated Supabase connector; its
 recorded server version is also the local filename. Google OAuth, XP rules,
 Community flows and cloud replication are unchanged. Profile/media Android
 runtime verification remains manual.
+
+## Community presentation / public profiles
+
+`20261004110246_mangaro_community_public_presentation.sql` adds only two
+security-invoker reads. `community_public_profile(uuid)` explicitly projects
+public profile presentation fields, server-confirmed level and live comment /
+rating counts. It never reads Auth metadata, owner XP or private cloud state.
+`community_comments_popular_page(...)` ranks the whole discussion by likes,
+then creation time and ID, using bounded 20-row keyset pages. Newest comments
+and shallow replies keep the original endpoint. Both paths deduplicate comment
+IDs in the existing repository; changing sort starts a fresh cursor.
+
+`supabase/tests/community_public_presentation.sql` verifies these reads under
+anon RLS, including a highest-liked comment outside the newest initial page,
+privacy, bounded cursor continuation and no duplicate pages. All fixtures,
+including trigger-generated progression events, are rolled back. No Community
+write rules, rewards, Auth or cloud sync policy is changed. Reader profiles use
+the existing overlay; returning does not recreate the reading session.

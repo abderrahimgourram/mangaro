@@ -102,6 +102,22 @@ data class CommunityComment(
     val rankTitle get() = author.rankTitle
 }
 
+enum class CommunityCommentOrder { NEWEST, MOST_LIKED }
+/** Public profile contract reuses the canonical author/rank model and cannot contain private account data. */
+data class CommunityPublicProfile(
+    val author: AccountAuthor,
+    val bio: String?,
+    val coverUrl: String?,
+    val googleAvatarUrl: String?,
+    val commentCount: Long,
+    val ratingCount: Long,
+)
+sealed interface CommunityProfileResult {
+    data class Loaded(val profile: CommunityPublicProfile) : CommunityProfileResult
+    data object NotFound : CommunityProfileResult
+    data class Failed(val error: CommunityError) : CommunityProfileResult
+}
+
 data class CommunityRatingSummary(val average: Double?, val count: Long, val currentUserRating: Int?) {
     init {
         require(count >= 0)
@@ -111,6 +127,7 @@ data class CommunityRatingSummary(val average: Double?, val count: Long, val cur
 }
 /** Null totals mean unknown/unconnected, not fabricated zero activity. */
 data class CommunitySnapshot(
+    val order: CommunityCommentOrder = CommunityCommentOrder.NEWEST,
     val rating: CommunityRatingSummary? = null,
     val commentCount: Long? = null,
     val comments: List<CommunityComment> = emptyList(),
@@ -187,6 +204,8 @@ interface CommunityRepository {
     // loadInitial is idempotent/cache-aware; refresh forces a reload without discarding usable cached data.
     // Implementations coalesce in-flight requests and deduplicate pages by comment ID.
     suspend fun loadInitial(target: CommunityTarget): CommunityOperation
+    suspend fun setCommentOrder(target: CommunityTarget, order: CommunityCommentOrder): CommunityOperation
+    suspend fun publicProfile(userId: String): CommunityProfileResult
     suspend fun refresh(target: CommunityTarget): CommunityOperation
     suspend fun loadMore(target: CommunityTarget, cursor: CommunityCursor): CommunityOperation
     suspend fun loadReplies(target: CommunityTarget, parentId: String, cursor: CommunityCursor? = null): CommunityOperation
@@ -205,6 +224,8 @@ class DisabledCommunityRepository : CommunityRepository {
     override val events: Flow<CommunityEvent> = emptyFlow()
     override fun observe(target: CommunityTarget) = empty
     override suspend fun loadInitial(target: CommunityTarget) = CommunityOperation.NotConfigured
+    override suspend fun setCommentOrder(target: CommunityTarget, order: CommunityCommentOrder) = CommunityOperation.NotConfigured
+    override suspend fun publicProfile(userId: String) = CommunityProfileResult.Failed(CommunityError(CommunityErrorKind.BACKEND_UNAVAILABLE))
     override suspend fun refresh(target: CommunityTarget) = CommunityOperation.NotConfigured
     override suspend fun loadMore(target: CommunityTarget, cursor: CommunityCursor) = CommunityOperation.NotConfigured
     override suspend fun loadReplies(target: CommunityTarget, parentId: String, cursor: CommunityCursor?) = CommunityOperation.NotConfigured

@@ -352,6 +352,11 @@ private fun AccountProfileEditor(
 
 @Composable
 private fun ProfileCover(profile: MangaroProfile?, modifier: Modifier) {
+    ProfileCoverImage(profile?.coverUrl, modifier)
+}
+
+@Composable
+internal fun ProfileCoverImage(coverUrl: String?, modifier: Modifier) {
     Box(modifier.clipToBounds()) {
         // Decorative local artwork only; no user cover or remote image request.
         Canvas(Modifier.matchParentSize().clipToBounds().background(Brush.horizontalGradient(
@@ -380,7 +385,7 @@ private fun ProfileCover(profile: MangaroProfile?, modifier: Modifier) {
             drawLine(Color(0xFF89709F).copy(alpha = 0.12f),
                 Offset(size.width * 0.36f, 0f), Offset(size.width * 0.66f, size.height), strokeWidth = 1.dp.toPx())
         }
-        profile?.coverUrl?.let { AsyncImage(it, null, contentScale = ContentScale.Crop,
+        coverUrl?.let { AsyncImage(it, null, contentScale = ContentScale.Crop,
             modifier = Modifier.matchParentSize()) }
         Box(Modifier.matchParentSize().background(Brush.verticalGradient(
             0f to Color.Transparent,
@@ -509,8 +514,13 @@ fun AccountDrawerArea(session: AccountSession, onLogin: () -> Unit, onProfile: (
 /** Failed custom/Google images fall back without breaking session/profile state. Uses existing Coil. */
 @Composable
 private fun AccountAvatar(profile: MangaroProfile?, modifier: Modifier) {
-    val urls = remember(profile?.avatarUrl, profile?.googleAvatarUrl) {
-        listOfNotNull(profile?.avatarUrl, profile?.googleAvatarUrl).distinct()
+    ProfileAvatar(profile?.avatarUrl, profile?.googleAvatarUrl, modifier)
+}
+
+@Composable
+internal fun ProfileAvatar(avatarUrl: String?, googleAvatarUrl: String? = null, modifier: Modifier) {
+    val urls = remember(avatarUrl, googleAvatarUrl) {
+        listOfNotNull(avatarUrl, googleAvatarUrl).distinct()
     }
     var index by remember(urls) { mutableStateOf(0) }
     androidx.compose.foundation.layout.Box(modifier) {
