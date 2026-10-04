@@ -1,5 +1,7 @@
 package eu.kanade.presentation.more.settings.screen
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.padding
@@ -9,6 +11,9 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ChromeReaderMode
+import androidx.compose.material.icons.outlined.MoreHoriz
+import androidx.compose.material.icons.outlined.PlayCircleOutline
+import androidx.compose.material.icons.outlined.VolunteerActivism
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.CollectionsBookmark
 import androidx.compose.material.icons.outlined.Explore
@@ -26,6 +31,9 @@ import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -78,20 +86,25 @@ object SettingsMainScreen : Screen() {
         val backPress = LocalBackPress.currentOrThrow
         val containerColor = if (twoPane) getPalerSurface() else MaterialTheme.colorScheme.surface
         val topBarState = rememberTopAppBarState()
+        var technicalSettings by rememberSaveable { mutableStateOf(false) }
+        BackHandler(enabled = technicalSettings) { technicalSettings = false }
 
         Scaffold(
             topBarScrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(topBarState),
             topBar = { scrollBehavior ->
                 AppBar(
                     title = stringResource(MR.strings.label_settings),
-                    navigateUp = backPress::invoke,
+                    navigateUp = { if (technicalSettings) technicalSettings = false else backPress() },
                     actions = {
                         AppBarActions(
                             listOf(
                                 AppBar.Action(
-                                    title = stringResource(MR.strings.action_search),
-                                    icon = Icons.Outlined.Search,
-                                    onClick = { navigator.navigate(SettingsSearchScreen(), twoPane) },
+                                    title = if (technicalSettings) stringResource(MR.strings.action_search) else "إعدادات إضافية",
+                                    icon = if (technicalSettings) Icons.Outlined.Search else Icons.Outlined.MoreHoriz,
+                                    onClick = {
+                                        if (technicalSettings) navigator.navigate(SettingsSearchScreen(), twoPane)
+                                        else technicalSettings = true
+                                    },
                                 ),
                             ),
                         )
@@ -102,10 +115,10 @@ object SettingsMainScreen : Screen() {
             containerColor = containerColor,
             content = { contentPadding ->
                 val state = rememberLazyListState()
-                val indexSelected = if (twoPane) {
+                val indexSelected = if (twoPane && technicalSettings) {
                     items.indexOfFirst { it.screen::class == navigator.items.first()::class }
                         .also {
-                            LaunchedEffect(Unit) {
+                            LaunchedEffect(it, technicalSettings) {
                                 if (it >= 0) state.animateScrollToItem(it + 1)
                                 if (it > 0) {
                                     // Lift scroll
@@ -121,43 +134,53 @@ object SettingsMainScreen : Screen() {
                     state = state,
                     contentPadding = contentPadding,
                 ) {
-                    item(key = "privacy_ads") {
-                        TextPreferenceWidget(
-                            title = "الخصوصية والإعلانات",
-                            icon = Icons.Outlined.Security,
-                            onPreferenceClick = { navigator.navigate(AdsSettingsScreen, twoPane) },
-                        )
-                    }
-                    itemsIndexed(
-                        items = items,
-                        key = { _, item -> item.hashCode() },
-                    ) { index, item ->
-                        val selected = indexSelected == index
-                        var modifier: Modifier = Modifier
-                        var contentColor = LocalContentColor.current
-                        if (twoPane) {
-                            modifier = Modifier
-                                .padding(horizontal = 8.dp)
-                                .clip(RoundedCornerShape(24.dp))
-                                .then(
-                                    if (selected) {
-                                        Modifier.background(MaterialTheme.colorScheme.surfaceVariant)
-                                    } else {
-                                        Modifier
-                                    },
-                                )
-                            if (selected) {
-                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                            }
-                        }
-                        CompositionLocalProvider(LocalContentColor provides contentColor) {
+                    if (!technicalSettings) {
+                        item(key = "support") {
                             TextPreferenceWidget(
-                                modifier = modifier,
-                                title = stringResource(item.titleRes),
-                                subtitle = item.formatSubtitle(),
-                                icon = item.icon,
-                                onPreferenceClick = { navigator.navigate(item.screen, twoPane) },
+                                title = "الدعم",
+                                icon = Icons.Outlined.VolunteerActivism,
+                                onPreferenceClick = { navigator.push(mihon.feature.support.SupportUsScreen()) },
                             )
+                        }
+                        item(key = "privacy_ads") {
+                            TextPreferenceWidget(
+                                title = "الإعلانات",
+                                icon = Icons.Outlined.PlayCircleOutline,
+                                onPreferenceClick = { navigator.navigate(AdsSettingsScreen, twoPane) },
+                            )
+                        }
+                    } else {
+                        itemsIndexed(
+                            items = items,
+                            key = { _, item -> item.hashCode() },
+                        ) { index, item ->
+                            val selected = indexSelected == index
+                            var modifier: Modifier = Modifier
+                            var contentColor = LocalContentColor.current
+                            if (twoPane) {
+                                modifier = Modifier
+                                    .padding(horizontal = 8.dp)
+                                    .clip(RoundedCornerShape(24.dp))
+                                    .then(
+                                        if (selected) {
+                                            Modifier.background(MaterialTheme.colorScheme.surfaceVariant)
+                                        } else {
+                                            Modifier
+                                        },
+                                    )
+                                if (selected) {
+                                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                }
+                            }
+                            CompositionLocalProvider(LocalContentColor provides contentColor) {
+                                TextPreferenceWidget(
+                                    modifier = modifier,
+                                    title = stringResource(item.titleRes),
+                                    subtitle = item.formatSubtitle(),
+                                    icon = item.icon,
+                                    onPreferenceClick = { navigator.navigate(item.screen, twoPane) },
+                                )
+                            }
                         }
                     }
                 }

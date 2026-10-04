@@ -1,31 +1,64 @@
 package eu.kanade.presentation.more.settings.screen
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.PlayCircleOutline
+import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.presentation.components.AppBar
+import eu.kanade.presentation.theme.MangaroDesignSystem
 import eu.kanade.presentation.util.LocalBackPress
 import eu.kanade.presentation.util.Screen
-import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.tachiyomi.data.ads.AdManager
 import eu.kanade.tachiyomi.data.ads.adActivity
+import eu.kanade.tachiyomi.util.system.activeNetworkState
+import eu.kanade.tachiyomi.util.system.networkStateFlow
 import tachiyomi.presentation.core.components.material.Scaffold
+
+private enum class RewardButtonState(val label: String) {
+    READY("شاهد الإعلان"),
+    LOADING("جاري تجهيز الإعلان..."),
+    SHOWING("الإعلان قيد العرض"),
+    UNAVAILABLE("الإعلان غير متاح الآن"),
+    ACTIVE("جلسة بدون إعلانات مفعّلة"),
+}
 
 object AdsSettingsScreen : Screen() {
     @Composable
@@ -33,42 +66,113 @@ object AdsSettingsScreen : Screen() {
         val context = LocalContext.current
         val backPress = LocalBackPress.currentOrThrow
         val manager = remember(context) { AdManager.get(context) }
-        val state by manager.state.collectAsState()
+        val state by manager.state.collectAsStateWithLifecycle()
+        val networkFlow = remember(context) { context.applicationContext.networkStateFlow() }
+        val network by networkFlow.collectAsStateWithLifecycle(initialValue = context.activeNetworkState())
         LaunchedEffect(manager, state.consentReady, state.initialized) { manager.preloadRewarded() }
-        val adFree = manager.adFreeActive()
-        val rewardedAvailable = manager.rewardedAvailable()
+        val buttonState = when {
+            manager.adFreeActive() -> RewardButtonState.ACTIVE
+            state.fullscreenShowing -> RewardButtonState.SHOWING
+            !network.isOnline -> RewardButtonState.UNAVAILABLE
+            state.rewardedLoading -> RewardButtonState.LOADING
+            manager.rewardedAvailable() -> RewardButtonState.READY
+            else -> RewardButtonState.UNAVAILABLE
+        }
+        val gold = Color(0xFFD6B56D)
+        val foreground = Color(0xFFEFEAF4)
+        val secondary = Color(0xFFBFB2CC)
         Scaffold(
-            topBar = { AppBar(title = "الخصوصية والإعلانات", navigateUp = backPress::invoke) },
+            containerColor = MangaroDesignSystem.BackgroundDark,
+            topBar = { AppBar(title = "الإعلانات", navigateUp = backPress::invoke) },
         ) { padding ->
-            Column(
-                Modifier.padding(padding).verticalScroll(rememberScrollState()).padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                if (state.privacyOptionsRequired) {
-                    Text("يمكنك مراجعة خيارات الخصوصية والإعلانات في أي وقت.", style = MaterialTheme.typography.bodyMedium)
-                    TextButton(
-                        enabled = !state.fullscreenShowing,
-                        onClick = { context.adActivity()?.let(manager::showPrivacyOptions) },
-                    ) { Text("خيارات الخصوصية") }
-                }
-                Text("جلسة بدون إعلانات", style = MaterialTheme.typography.titleMedium)
-                Text(
-                    "شاهد إعلانًا باختيارك للحصول على 30 دقيقة دون إعلانات نهاية الفصل أو التنزيلات الكبيرة. لا يؤثر ذلك على تقدمك أو نقاطك.",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                if (adFree) {
-                    Text("جلستك بدون إعلانات مفعّلة", color = MaterialTheme.colorScheme.primary)
-                } else {
-                    Button(
+            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
+                Column(
+                    Modifier.widthIn(max = 480.dp).fillMaxWidth()
+                        .verticalScroll(rememberScrollState()).padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        enabled = rewardedAvailable,
-                        onClick = { context.adActivity()?.let(manager::showRewarded) },
-                    ) { Text("شاهد إعلانًا واحصل على جلسة بدون إعلانات") }
-                    if (state.rewardedLoading) {
-                        CircularProgressIndicator()
-                    } else if (!rewardedAvailable) {
-                        Text("الإعلان غير متاح حاليًا. يمكنك المحاولة لاحقًا.", style = MaterialTheme.typography.bodySmall)
-                        TextButton(onClick = manager::preloadRewarded, enabled = state.consentReady && !state.fullscreenShowing) { Text("إعادة المحاولة") }
+                        shape = MangaroDesignSystem.ShapeBanner,
+                        color = MangaroDesignSystem.SurfaceDark,
+                        contentColor = foreground,
+                        border = MangaroDesignSystem.StrokeSubtle,
+                    ) {
+                        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                            Surface(
+                                shape = MangaroDesignSystem.ShapeButton,
+                                color = MangaroDesignSystem.SurfaceHigh,
+                                contentColor = gold,
+                                border = BorderStroke(1.dp, gold.copy(alpha = 0.2f)),
+                            ) {
+                                Icon(Icons.Outlined.PlayCircleOutline, null, Modifier.padding(10.dp).size(24.dp))
+                            }
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("جلسة بدون إعلانات", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    "شاهد إعلانًا واحدًا واستمتع بـ 30 دقيقة بدون إعلانات.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = secondary,
+                                )
+                            }
+                            if (buttonState == RewardButtonState.ACTIVE) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Icon(Icons.Outlined.CheckCircle, null, Modifier.size(20.dp), tint = gold)
+                                    Text(buttonState.label, style = MaterialTheme.typography.bodyMedium, color = gold)
+                                }
+                            } else {
+                                Button(
+                                    modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
+                                    shape = MangaroDesignSystem.ShapeButton,
+                                    enabled = buttonState == RewardButtonState.READY,
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Color(0xFF49325F),
+                                        contentColor = foreground,
+                                        disabledContainerColor = MangaroDesignSystem.SurfaceHigh,
+                                        disabledContentColor = secondary,
+                                    ),
+                                    onClick = { context.adActivity()?.let(manager::showRewarded) },
+                                ) {
+                                    AnimatedContent(
+                                        targetState = buttonState,
+                                        transitionSpec = { fadeIn(tween(160)) togetherWith fadeOut(tween(120)) },
+                                        label = "rewardButton",
+                                    ) { status ->
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        ) {
+                                            if (status == RewardButtonState.LOADING) {
+                                                CircularProgressIndicator(Modifier.size(18.dp), color = secondary, strokeWidth = 2.dp)
+                                            }
+                                            Text(status.label, style = MaterialTheme.typography.labelLarge)
+                                        }
+                                    }
+                                }
+                                if (buttonState == RewardButtonState.UNAVAILABLE) {
+                                    TextButton(
+                                        modifier = Modifier.align(Alignment.CenterHorizontally),
+                                        onClick = manager::preloadRewarded,
+                                        enabled = network.isOnline && state.consentReady && state.initialized && !state.fullscreenShowing,
+                                    ) { Text("إعادة المحاولة", color = secondary) }
+                                }
+                            }
+                        }
+                    }
+                    if (state.privacyOptionsRequired) {
+                        TextButton(
+                            enabled = !state.fullscreenShowing,
+                            onClick = { context.adActivity()?.let(manager::showPrivacyOptions) },
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Icon(Icons.Outlined.Security, null, Modifier.size(18.dp))
+                                Text("إدارة تفضيلات الإعلانات", style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
                     }
                 }
             }

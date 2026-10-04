@@ -74,6 +74,8 @@ data object MoreTab : Tab {
             onClickDataAndStorage = { navigator.push(SettingsScreen(SettingsScreen.Destination.DataAndStorage)) },
             onClickSettings = { navigator.push(SettingsScreen()) },
             onClickAbout = { navigator.push(SettingsScreen(SettingsScreen.Destination.About)) },
+            onClickSupport = { navigator.push(mihon.feature.support.SupportUsScreen()) },
+            onClickAds = { navigator.push(eu.kanade.presentation.more.settings.screen.AdsSettingsScreen) },
         )
     }
 }

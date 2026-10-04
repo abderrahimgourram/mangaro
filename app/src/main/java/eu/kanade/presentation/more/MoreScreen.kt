@@ -1,5 +1,15 @@
 package eu.kanade.presentation.more
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import eu.kanade.presentation.components.AppBar
+import eu.kanade.presentation.components.AppBarActions
+import androidx.compose.material.icons.outlined.MoreHoriz
+import androidx.compose.material.icons.outlined.PlayCircleOutline
+import androidx.compose.material.icons.outlined.VolunteerActivism
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -29,6 +39,52 @@ import tachiyomi.presentation.core.i18n.stringResource
 
 @Composable
 fun MoreScreen(
+    downloadQueueStateProvider: () -> DownloadQueueState,
+    downloadedOnly: Boolean,
+    onDownloadedOnlyChange: (Boolean) -> Unit,
+    incognitoMode: Boolean,
+    onIncognitoModeChange: (Boolean) -> Unit,
+    onClickDownloadQueue: () -> Unit,
+    onClickCategories: () -> Unit,
+    onClickStats: () -> Unit,
+    onClickDataAndStorage: () -> Unit,
+    onClickSettings: () -> Unit,
+    onClickAbout: () -> Unit,
+    onClickSupport: () -> Unit,
+    onClickAds: () -> Unit,
+) {
+    var tools by rememberSaveable { mutableStateOf(false) }
+    BackHandler(enabled = tools) { tools = false }
+    if (tools) {
+        MoreToolsScreen(
+            downloadQueueStateProvider, downloadedOnly, onDownloadedOnlyChange,
+            incognitoMode, onIncognitoModeChange, onClickDownloadQueue,
+            onClickCategories, onClickStats, onClickDataAndStorage, onClickSettings, onClickAbout,
+        )
+        return
+    }
+    Scaffold(topBar = {
+        AppBar(title = "المزيد", actions = {
+            AppBarActions(listOf(AppBar.Action(
+                title = "إعدادات إضافية",
+                icon = Icons.Outlined.MoreHoriz,
+                onClick = { tools = true },
+            )))
+        })
+    }) { padding ->
+        ScrollbarLazyColumn(contentPadding = padding) {
+            item(key = "support") {
+                TextPreferenceWidget(title = "الدعم", icon = Icons.Outlined.VolunteerActivism, onPreferenceClick = onClickSupport)
+            }
+            item(key = "ads") {
+                TextPreferenceWidget(title = "الإعلانات", icon = Icons.Outlined.PlayCircleOutline, onPreferenceClick = onClickAds)
+            }
+        }
+    }
+}
+
+@Composable
+private fun MoreToolsScreen(
     downloadQueueStateProvider: () -> DownloadQueueState,
     downloadedOnly: Boolean,
     onDownloadedOnlyChange: (Boolean) -> Unit,
