@@ -213,14 +213,19 @@ class UpdatesViewModel(
         }
     }
 
-    fun downloadChapters(items: List<UpdatesItem>, action: ChapterDownloadAction) {
+    fun downloadChapters(
+        items: List<UpdatesItem>,
+        action: ChapterDownloadAction,
+        beforeDownload: (Int, () -> Unit) -> Unit = { _, proceed -> proceed() },
+    ) {
         if (items.isEmpty()) return
         viewModelScope.launch {
             when (action) {
                 ChapterDownloadAction.START -> {
-                    downloadChapters(items)
-                    if (items.any { it.downloadStateProvider() == Download.State.ERROR }) {
-                        downloadManager.startDownloads()
+                    val batch = items.distinctBy { it.update.chapterId }
+                    beforeDownload(batch.size) {
+                        downloadChapters(batch)
+                        if (batch.any { it.downloadStateProvider() == Download.State.ERROR }) downloadManager.startDownloads()
                     }
                 }
                 ChapterDownloadAction.START_NOW -> {

@@ -110,6 +110,10 @@ class ReaderViewModel @JvmOverloads constructor(
     private val libraryPreferences: LibraryPreferences = Injekt.get(),
 ) : ViewModel() {
 
+    val adReadingSession = java.util.UUID.randomUUID().toString()
+    private val adManager = eu.kanade.tachiyomi.data.ads.AdManager.get(Injekt.get<Application>()).also { it.startReadingSession(adReadingSession) }
+    private val adEarlierPages = java.util.concurrent.ConcurrentHashMap.newKeySet<Long>()
+
     private val mutableState = MutableStateFlow(State())
     val state = mutableState.asStateFlow()
 
@@ -269,6 +273,7 @@ class ReaderViewModel @JvmOverloads constructor(
     }
 
     override fun onCleared() {
+        adManager.endReadingSession(adReadingSession)
         val currentChapters = state.value.viewerChapters
         if (currentChapters != null) {
             currentChapters.unref()
@@ -455,6 +460,16 @@ class ReaderViewModel @JvmOverloads constructor(
 
         val selectedChapter = page.chapter
         val pages = selectedChapter.pages ?: return
+
+        // Record genuine completion only. This never loads or shows an ad on a Reader page.
+        selectedChapter.chapter.id?.let { chapterId ->
+            if (page.status is Page.State.Ready) {
+                if (page.index < pages.lastIndex) adEarlierPages.add(chapterId)
+                if (page.index == pages.lastIndex && chapterId in adEarlierPages) {
+                    adManager.chapterCompleted(adReadingSession, chapterId)
+                }
+            }
+        }
 
         // Save last page read and mark as read if needed
         viewModelScope.launchNonCancellable {

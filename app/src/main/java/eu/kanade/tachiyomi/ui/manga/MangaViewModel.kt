@@ -700,12 +700,14 @@ class MangaViewModel(
     fun runChapterDownloadActions(
         items: List<ChapterList.Item>,
         action: ChapterDownloadAction,
+        beforeDownload: (Int, () -> Unit) -> Unit = { _, proceed -> proceed() },
     ) {
         when (action) {
             ChapterDownloadAction.START -> {
-                startDownload(items.map { it.chapter }, false)
-                if (items.any { it.downloadState == Download.State.ERROR }) {
-                    downloadManager.startDownloads()
+                val chapters = items.map { it.chapter }.distinctBy { it.id }
+                beforeDownload(chapters.size) {
+                    startDownload(chapters, false)
+                    if (items.any { it.downloadState == Download.State.ERROR }) downloadManager.startDownloads()
                 }
             }
             ChapterDownloadAction.START_NOW -> {
@@ -722,7 +724,10 @@ class MangaViewModel(
         }
     }
 
-    fun runDownloadAction(action: DownloadAction) {
+    fun runDownloadAction(
+        action: DownloadAction,
+        beforeDownload: (Int, () -> Unit) -> Unit = { _, proceed -> proceed() },
+    ) {
         val chaptersToDownload = when (action) {
             DownloadAction.NEXT_1_CHAPTER -> getUnreadChaptersSorted().take(1)
             DownloadAction.NEXT_5_CHAPTERS -> getUnreadChaptersSorted().take(5)
@@ -732,7 +737,7 @@ class MangaViewModel(
             DownloadAction.BOOKMARKED_CHAPTERS -> getBookmarkedChapters()
         }
         if (chaptersToDownload.isNotEmpty()) {
-            startDownload(chaptersToDownload, false)
+            beforeDownload(chaptersToDownload.size) { startDownload(chaptersToDownload, false) }
         }
     }
 

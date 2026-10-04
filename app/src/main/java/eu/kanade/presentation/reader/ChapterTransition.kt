@@ -49,6 +49,7 @@ fun ChapterTransition(
     transition: ChapterTransition,
     currChapterDownloaded: Boolean,
     goingToChapterDownloaded: Boolean,
+    boundaryContent: @Composable () -> Unit = {},
 ) {
     val currChapter = transition.from.chapter.toDomainChapter()
     val goingToChapter = transition.to?.chapter?.toDomainChapter()
@@ -77,6 +78,7 @@ fun ChapterTransition(
                     bottomChapterDownloaded = goingToChapterDownloaded,
                     fallbackLabel = stringResource(MR.strings.transition_no_next),
                     chapterGap = calculateChapterGap(transition.to, transition.from),
+                    boundaryContent = boundaryContent,
                 )
             }
         }
@@ -93,6 +95,7 @@ private fun TransitionText(
     bottomChapterDownloaded: Boolean,
     fallbackLabel: String,
     chapterGap: Int,
+    boundaryContent: @Composable () -> Unit = {},
 ) {
     Column(
         modifier = Modifier
@@ -114,6 +117,8 @@ private fun TransitionText(
                 modifier = Modifier.align(Alignment.CenterHorizontally),
             )
         }
+
+        boundaryContent()
 
         if (bottomChapter != null) {
             if (chapterGap > 0) {

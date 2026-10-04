@@ -54,6 +54,7 @@ data object UpdatesTab : Tab {
     @Composable
     override fun Content() {
         val context = LocalContext.current
+        val downloadAdGate = eu.kanade.tachiyomi.data.ads.rememberDownloadAdGate()
         val navigator = LocalNavigator.currentOrThrow
         val viewModel = viewModel<UpdatesViewModel>()
         val settingsViewModel = viewModel<UpdatesSettingsViewModel>()
@@ -71,7 +72,7 @@ data object UpdatesTab : Tab {
             onUpdateLibrary = refresh.refresh,
             refreshing = refresh.refreshing,
             onNavigateUp = { navigator.pop(); Unit }.takeIf { navigator.lastItem == UpdatesTab },
-            onDownloadChapter = viewModel::downloadChapters,
+            onDownloadChapter = { items, action -> viewModel.downloadChapters(items, action, downloadAdGate) },
             onMultiBookmarkClicked = viewModel::bookmarkUpdates,
             onMultiMarkAsReadClicked = viewModel::markUpdatesRead,
             onMultiDeleteClicked = viewModel::showConfirmDeleteChapters,

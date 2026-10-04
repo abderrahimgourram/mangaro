@@ -22,15 +22,33 @@ class ReaderTransitionView @JvmOverloads constructor(context: Context, attrs: At
     AbstractComposeView(context, attrs) {
 
     private var data: Data? by mutableStateOf(null)
+    private var boundaryVisible by mutableStateOf(false)
+    private val visibilityObserver = android.view.ViewTreeObserver.OnPreDrawListener {
+        val rect = android.graphics.Rect()
+        boundaryVisible = isShown && getGlobalVisibleRect(rect) && rect.width() > 0 && rect.height() > 0
+        true
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        viewTreeObserver.addOnPreDrawListener(visibilityObserver)
+    }
+
+    override fun onDetachedFromWindow() {
+        viewTreeObserver.removeOnPreDrawListener(visibilityObserver)
+        boundaryVisible = false
+        super.onDetachedFromWindow()
+    }
 
     init {
         layoutParams = LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT)
     }
 
-    fun bind(transition: ChapterTransition, downloadManager: DownloadManager, manga: Manga?) {
+    fun bind(transition: ChapterTransition, downloadManager: DownloadManager, manga: Manga?, adSession: String) {
         data = if (manga != null) {
             Data(
                 transition = transition,
+                adSession = adSession,
                 currChapterDownloaded = transition.from.pageLoader?.isLocal == true,
                 goingToChapterDownloaded = manga.isLocal() ||
                     transition.to?.chapter?.let { goingToChapter ->
@@ -61,6 +79,13 @@ class ReaderTransitionView @JvmOverloads constructor(context: Context, attrs: At
                         transition = it.transition,
                         currChapterDownloaded = it.currChapterDownloaded,
                         goingToChapterDownloaded = it.goingToChapterDownloaded,
+                        boundaryContent = {
+                            if (it.transition is ChapterTransition.Next) {
+                                it.transition.from.chapter.id?.let { chapterId ->
+                                    eu.kanade.tachiyomi.data.ads.NativeBoundaryAd(it.adSession, chapterId, boundaryVisible)
+                                }
+                            }
+                        },
                     )
                 }
             }
@@ -69,6 +94,7 @@ class ReaderTransitionView @JvmOverloads constructor(context: Context, attrs: At
 
     private data class Data(
         val transition: ChapterTransition,
+        val adSession: String,
         val currChapterDownloaded: Boolean,
         val goingToChapterDownloaded: Boolean,
     )

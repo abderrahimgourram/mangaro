@@ -106,7 +106,7 @@ object SettingsMainScreen : Screen() {
                     items.indexOfFirst { it.screen::class == navigator.items.first()::class }
                         .also {
                             LaunchedEffect(Unit) {
-                                state.animateScrollToItem(it)
+                                if (it >= 0) state.animateScrollToItem(it + 1)
                                 if (it > 0) {
                                     // Lift scroll
                                     topBarState.contentOffset = topBarState.heightOffsetLimit
@@ -121,6 +121,13 @@ object SettingsMainScreen : Screen() {
                     state = state,
                     contentPadding = contentPadding,
                 ) {
+                    item(key = "privacy_ads") {
+                        TextPreferenceWidget(
+                            title = "الخصوصية والإعلانات",
+                            icon = Icons.Outlined.Security,
+                            onPreferenceClick = { navigator.navigate(AdsSettingsScreen, twoPane) },
+                        )
+                    }
                     itemsIndexed(
                         items = items,
                         key = { _, item -> item.hashCode() },

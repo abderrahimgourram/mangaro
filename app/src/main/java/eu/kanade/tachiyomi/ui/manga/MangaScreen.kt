@@ -83,6 +83,7 @@ class MangaScreen(
 
         val navigator = LocalNavigator.currentOrThrow
         val context = LocalContext.current
+        val downloadAdGate = eu.kanade.tachiyomi.data.ads.rememberDownloadAdGate()
         val haptic = LocalHapticFeedback.current
         val scope = rememberCoroutineScope()
         val viewModel = viewModel<MangaViewModel>(
@@ -125,7 +126,7 @@ class MangaScreen(
             chapterSwipeEndAction = viewModel.chapterSwipeEndAction,
             navigateUp = navigator::pop,
             onChapterClicked = { openChapter(context, it) },
-            onDownloadChapter = viewModel::runChapterDownloadActions.takeIf { !successState.source.isLocalOrStub() },
+            onDownloadChapter = { items: List<ChapterList.Item>, action: eu.kanade.presentation.manga.components.ChapterDownloadAction -> viewModel.runChapterDownloadActions(items, action, downloadAdGate) }.takeIf { !successState.source.isLocalOrStub() },
             onAddToLibraryClicked = {
                 if (successState.manga.favorite) viewModel.toggleFavorite(onRemoved = {}, checkDuplicate = false)
                 else showLibraryShelves = true
@@ -137,7 +138,7 @@ class MangaScreen(
             onContinueReading = { openChapter(context, it) },
             onCoverClicked = viewModel::showCoverDialog,
             onShareClicked = { shareManga(context, viewModel.manga, viewModel.source) }.takeIf { isHttpSource },
-            onDownloadActionClicked = viewModel::runDownloadAction.takeIf { !successState.source.isLocalOrStub() },
+            onDownloadActionClicked = { action: eu.kanade.presentation.manga.DownloadAction -> viewModel.runDownloadAction(action, downloadAdGate) }.takeIf { !successState.source.isLocalOrStub() },
             onEditCategoryClicked = viewModel::showChangeCategoryDialog.takeIf { successState.manga.favorite },
             onMigrateClicked = null,
             onEditNotesClicked = { navigator.push(MangaNotesScreen(manga = successState.manga)) },
