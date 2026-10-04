@@ -346,7 +346,7 @@ private fun AccountProfileEditor(
 }
 
 @Composable
-private fun ProfileCover(profile: MangaroProfile, modifier: Modifier) {
+private fun ProfileCover(profile: MangaroProfile?, modifier: Modifier) {
     Box(modifier.clipToBounds()) {
         // Decorative local artwork only; no user cover or remote image request.
         Canvas(Modifier.matchParentSize().clipToBounds().background(Brush.horizontalGradient(
@@ -375,7 +375,7 @@ private fun ProfileCover(profile: MangaroProfile, modifier: Modifier) {
             drawLine(Color(0xFF89709F).copy(alpha = 0.12f),
                 Offset(size.width * 0.36f, 0f), Offset(size.width * 0.66f, size.height), strokeWidth = 1.dp.toPx())
         }
-        profile.coverUrl?.let { AsyncImage(it, null, contentScale = ContentScale.Crop,
+        profile?.coverUrl?.let { AsyncImage(it, null, contentScale = ContentScale.Crop,
             modifier = Modifier.matchParentSize()) }
         Box(Modifier.matchParentSize().background(Brush.verticalGradient(
             0f to Color.Transparent,
@@ -423,28 +423,56 @@ private fun AccountProfileStatistics(userId: String, account: AccountFoundation)
 @Composable
 fun AccountDrawerArea(session: AccountSession, onLogin: () -> Unit, onProfile: ((MangaroProfile) -> Unit)? = null) {
     val profile = (session as? AccountSession.Authenticated)?.profile
-    Surface(shape = RoundedCornerShape(16.dp), color = MangaroDesignSystem.SurfaceHigh) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                AccountAvatar(profile, Modifier.size(44.dp))
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text(profile?.displayName ?: profile?.username ?: "MANGARO", color = MangaroDesignSystem.GoldPrimary,
-                        style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                    profile?.let { Text("${it.rankTitle} · المستوى ${it.level}", color = Color(0xFFB7A9C4), style = MaterialTheme.typography.labelSmall) }
-                    val handle = profile?.username
-                    if (handle != null) UsernameHandle(handle, color = Color(0xFFB7A9C4), style = MaterialTheme.typography.bodySmall)
-                    else Text(if (profile != null) "الملف الشخصي" else "أنت تستخدم Mangaro كضيف",
-                        color = Color(0xFFB7A9C4), style = MaterialTheme.typography.bodySmall)
-                }
+    val secondary = Color(0xFFB7A9C4)
+    val muted = Color(0xFF8F819E)
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(MangaroDesignSystem.SurfaceDark)) {
+        Box(Modifier.fillMaxWidth().height(178.dp)) {
+            ProfileCover(profile, Modifier.fillMaxWidth().height(146.dp))
+            Box(Modifier.align(Alignment.BottomStart).padding(start = 14.dp).size(72.dp)
+                .clip(RoundedCornerShape(20.dp)).background(MangaroDesignSystem.SurfaceDark)
+                .border(1.dp, MangaroDesignSystem.GoldPrimary.copy(alpha = 0.24f), RoundedCornerShape(20.dp)).padding(4.dp)) {
+                AccountAvatar(profile, Modifier.fillMaxSize().clip(RoundedCornerShape(16.dp)).background(MangaroDesignSystem.SurfaceHigh))
             }
+        }
+        Column(Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp)) {
             when (session) {
-                is AccountSession.Authenticated -> TextButton(enabled = onProfile != null, onClick = { onProfile?.invoke(session.profile) }) {
-                    Text("الملف الشخصي", color = MangaroDesignSystem.GoldPrimary)
+                is AccountSession.Authenticated -> {
+                    Text(profile?.displayName ?: profile?.username.orEmpty(), color = Color.White,
+                        style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold,
+                        maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    profile?.username?.let { UsernameHandle(it, color = secondary, style = MaterialTheme.typography.bodySmall) }
+                    Text("${session.profile.rankTitle} · Lv.${session.profile.level}", color = muted,
+                        style = MaterialTheme.typography.labelSmall.copy(textDirection = androidx.compose.ui.text.style.TextDirection.Content))
+                    profile?.bio?.takeIf { it.isNotBlank() }?.let {
+                        Text(it, color = secondary, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    val account = remember { Injekt.get<AccountFoundation>() }
+                    val sync by remember(session.profile.userId, account) { account.cloudSync.observe(session.profile.userId) }.collectAsState()
+                    if (sync.loaded && sync.enabled) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(5.dp).background(muted, RoundedCornerShape(3.dp)))
+                            Text(when {
+                                sync.running -> "تتم المزامنة..."
+                                sync.error != null || sync.pending > 0 -> "بانتظار المزامنة"
+                                else -> "المزامنة مفعّلة"
+                            }, color = muted, style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                    TextButton(enabled = onProfile != null, onClick = { onProfile?.invoke(session.profile) },
+                        shape = RoundedCornerShape(12.dp), contentPadding = PaddingValues(horizontal = 12.dp),
+                        colors = ButtonDefaults.textButtonColors(contentColor = secondary, containerColor = MangaroDesignSystem.SurfaceHigh)) {
+                        Text("الملف الشخصي", style = MaterialTheme.typography.labelMedium)
+                    }
                 }
                 AccountSession.Loading -> CircularProgressIndicator(Modifier.size(20.dp), color = MangaroDesignSystem.GoldPrimary, strokeWidth = 2.dp)
                 AccountSession.Guest -> {
-                    Text("سجّل الدخول لحفظ مكتبتك والتفاعل مع القراء", color = Color(0xFFB7A9C4), style = MaterialTheme.typography.bodySmall)
-                    TextButton(onClick = onLogin) { Text("تسجيل الدخول", color = MangaroDesignSystem.GoldPrimary) }
+                    Text("أنت تستخدم Mangaro كضيف", color = Color.White, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                    Text("سجّل الدخول لحفظ مكتبتك والتفاعل مع القراء", color = secondary, style = MaterialTheme.typography.bodySmall)
+                    TextButton(onClick = onLogin, shape = RoundedCornerShape(12.dp), contentPadding = PaddingValues(horizontal = 12.dp),
+                        colors = ButtonDefaults.textButtonColors(contentColor = MangaroDesignSystem.GoldPrimary, containerColor = MangaroDesignSystem.SurfaceHigh)) {
+                        Text("المتابعة باستخدام Google", style = MaterialTheme.typography.labelMedium)
+                    }
                 }
             }
         }
