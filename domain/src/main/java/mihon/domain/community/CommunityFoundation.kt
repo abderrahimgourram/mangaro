@@ -122,7 +122,10 @@ data class CommunityPublicProfile(
     val googleAvatarUrl: String?,
     val commentCount: Long,
     val ratingCount: Long,
+    val chaptersRead: Long? = null,
+    val favorites: List<PublicFavorite> = emptyList(),
 )
+data class PublicFavorite(val mangaKey: String, val title: String, val coverUrl: String?)
 sealed interface CommunityProfileResult {
     data class Loaded(val profile: CommunityPublicProfile) : CommunityProfileResult
     data object NotFound : CommunityProfileResult

@@ -297,3 +297,53 @@ spoiler/privacy checks, bounded duplicate-free pagination, immutable identity,
 server read timestamps, individual read and mark-all-read. Local work updates
 are captured from the existing Library updater; they need no backend table.
 History uses the existing local history/chapter data and cloud semantics.
+
+## Phase 9 — identity and opt-in showcase
+
+Forward migrations `20261004144708_mangaro_identity_showcase` and
+`20261004144745_mangaro_reserved_names_rls` were deployed only to mangaro-prod.
+The second documents explicit client denial for the private reservation registry;
+Security Advisor now reports only the existing leaked-password warning.
+
+Production already had a valid canonical unique username index. No duplicate or
+reserved-name accounts were found; no accounts were renamed, deleted or merged.
+Canonical trimming/lowercasing and the existing index remain authoritative; the
+availability RPC is advisory. Reserved names: admin, administrator, moderator,
+support, mangaro, system; jalem is reserved to the independently confirmed owner.
+The developer role is bound to UID ad5f6ca4-dec3-466e-a276-676284faab26, never a
+username/display name. It supplies badge and Level 30 **presentation** only;
+actual XP/ledger/level curve remain unchanged, and no private-data/admin powers
+are granted.
+
+Public Library defaults private. Explicit owner save publishes only selected
+opaque manga keys, title snapshots and controlled cover paths. Private cloud
+Library/categories/history/pages/URLs are never exposed. Favorite slot limits
+are server enforced: 5 initially, 10 at Level 5, 15 at Level 15, 20 at Level 25;
+the trusted developer role allows 20. No essential functionality is gated.
+Showcase covers use a private `showcase-covers` bucket, WebP <=256 KiB, processed
+at 320x480 with existing Coil source/cache handling. Public viewers get one
+bounded batch of signed image URLs (two hours); disabling hides the showcase and
+prevents new non-owner signing. Previously viewed/cached images or unexpired
+signed URLs cannot be recalled immediately.
+
+Public chapters-read is an opt-in aggregate of unique server-known chapter keys:
+active synced `is_read` rows plus live completion claims without a cloud row.
+An explicit cloud unread/tombstone overrides an older completion claim.
+Unsynced historical local reading is not invented; existing cloud sync can make
+it available. No chapter list/page/time appears publicly and no XP is awarded by
+showcase/aggregate computation. Favorites resolve an exact source-scoped key
+locally, then through bounded existing source search on explicit tap; unavailable
+items retain their showcase data and show a generic message, never title-fuzzy
+navigation to another work.
+
+`tests/phase9_identity_showcase.sql` checks normalization/uniqueness/reservations,
+role spoofing, role surviving handle changes, max presentation independent of XP,
+private defaults, cross-owner isolation, malformed metadata, atomic failures,
+slot limits, read-count dedup/unread handling, cover ownership and public payload
+privacy. All fixtures roll back. Existing Community, XP, Cloud, spoiler and reply
+notification tests also passed. The XP test allowlist now recognizes the three
+narrow Phase 9 helpers; generic XP mutation functions remain inaccessible.
+
+A live two-connection case-variant username race was verified: one transaction
+succeeded, the other received 23505 from the existing unique index. Both temporary
+auth identities were removed afterward; remaining fixture count was zero.

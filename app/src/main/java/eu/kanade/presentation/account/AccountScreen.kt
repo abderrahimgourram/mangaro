@@ -20,6 +20,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.LaunchedEffect
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -208,6 +209,18 @@ private fun AccountProfileEditor(
     onAction: (suspend () -> AccountOperation) -> Unit,
 ) {
     val context = LocalContext.current
+    var lastLevel by remember(profile.userId) { mutableIntStateOf(profile.level) }
+    var levelNotice by remember(profile.userId) { mutableStateOf<String?>(null) }
+    LaunchedEffect(profile.userId, profile.level) {
+        val before = lastLevel
+        levelNotice = null
+        lastLevel = profile.level
+        if (profile.role == mihon.domain.account.AccountRole.USER && profile.level > before) {
+            levelNotice = "وصلت إلى المستوى ${profile.level}" + if (mihon.domain.account.ProfileIdentity.tier(profile.level) > mihon.domain.account.ProfileIdentity.tier(before)) " · مظهر رتبة جديد" else ""
+            kotlinx.coroutines.delay(4500)
+            levelNotice = null
+        }
+    }
     var username by rememberSaveable(profile.userId, profile.username) { mutableStateOf(profile.username.orEmpty()) }
     var displayName by rememberSaveable(profile.userId, profile.displayName) { mutableStateOf(profile.displayName.orEmpty()) }
     var bio by rememberSaveable(profile.userId, profile.bio) { mutableStateOf(profile.bio.orEmpty()) }
@@ -229,6 +242,13 @@ private fun AccountProfileEditor(
             account.auth.uploadCover(webp)
         }
     }
+    var available by remember(profile.userId, username) { mutableStateOf<Boolean?>(null) }
+    LaunchedEffect(profile.userId, username) {
+        if (AccountProfileInput.username(username) != profile.username && AccountProfileInput.username(username).matches(Regex("[a-z0-9_]{3,24}"))) {
+            kotlinx.coroutines.delay(350)
+            available = account.auth.usernameAvailable(username)
+        }
+    }
     var editing by rememberSaveable(profile.userId) { mutableStateOf(false) }
     val secondary = Color(0xFFB7A9C4)
     val muted = Color(0xFF8F819E)
@@ -237,7 +257,7 @@ private fun AccountProfileEditor(
             ProfileCover(profile, Modifier.fillMaxWidth().height(180.dp))
             Box(Modifier.align(Alignment.BottomStart).padding(start = 16.dp).size(100.dp)
                 .clip(RoundedCornerShape(24.dp)).background(MangaroDesignSystem.SurfaceDark)
-                .border(1.dp, MangaroDesignSystem.GoldPrimary.copy(alpha = 0.24f), RoundedCornerShape(24.dp)).padding(5.dp)) {
+                .border(1.dp, rankAccent(profile.level).copy(alpha = if (profile.level >= 5) 0.5f else 0.24f), RoundedCornerShape(24.dp)).padding(5.dp)) {
                 AccountAvatar(profile, Modifier.fillMaxSize().clip(RoundedCornerShape(20.dp)).background(MangaroDesignSystem.SurfaceHigh))
             }
         }
@@ -255,17 +275,16 @@ private fun AccountProfileEditor(
                     Text("تعديل الملف", style = MaterialTheme.typography.labelMedium)
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(profile.rankTitle, color = muted, style = MaterialTheme.typography.labelMedium)
-                Text("·", color = muted, style = MaterialTheme.typography.labelMedium)
-                Text("المستوى ${profile.level}", color = MangaroDesignSystem.GoldPrimary.copy(alpha = 0.8f), style = MaterialTheme.typography.labelMedium)
-            }
+            DeveloperBadge(profile.role)
+            RankIdentity(profile.level)
+            levelNotice?.let { Text(it, color = MangaroDesignSystem.GoldPrimary, style = MaterialTheme.typography.labelSmall) }
             profile.bio?.takeIf { it.isNotBlank() }?.let {
                 Text(it, color = secondary.copy(alpha = 0.85f), style = MaterialTheme.typography.bodySmall)
             }
         }
     }
     AccountProfileStatistics(profile.userId, account)
+    ProfileShowcaseControls(profile, account)
     Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), color = MangaroDesignSystem.SurfaceDark) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -307,12 +326,14 @@ private fun AccountProfileEditor(
                     supportingText = { Text("3–24 حرفًا إنجليزيًا أو رقمًا أو شرطة سفلية") },
                     enabled = !submitting, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
                     modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp))
+                available?.let { Text(if (it) "اسم المستخدم متاح" else "اسم المستخدم غير متاح", style = MaterialTheme.typography.labelSmall,
+                    color = if (it) secondary else MaterialTheme.colorScheme.error) }
                 OutlinedTextField(bio, { bio = it }, label = { Text("نبذة عنك") }, colors = fieldColors,
                     supportingText = { Text("${bio.trim().codePointCount(0, bio.trim().length)} / 160") },
                     enabled = !submitting, minLines = 2, maxLines = 4, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp))
                 if (validation != null && username.isNotEmpty()) Text(validation, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Button(enabled = !submitting && validation == null, onClick = { onAction { account.auth.updateProfile(update).also { if (it == AccountOperation.Completed) editing = false } } },
+                    Button(enabled = !submitting && validation == null && available != false, onClick = { onAction { account.auth.updateProfile(update).also { if (it == AccountOperation.Completed) editing = false } } },
                         shape = RoundedCornerShape(12.dp), contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = MangaroDesignSystem.GoldPrimary, contentColor = MangaroDesignSystem.BackgroundDark)) {
                         // Fixed content width keeps the action balanced while its request is in flight.

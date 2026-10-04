@@ -1,5 +1,10 @@
 package eu.kanade.presentation.community
 
+import eu.kanade.presentation.account.DeveloperBadge
+import eu.kanade.presentation.account.RankIdentity
+import eu.kanade.presentation.account.rankAccent
+import androidx.compose.foundation.border
+
 import android.text.format.DateUtils
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.animateColorAsState
@@ -553,7 +558,7 @@ fun MangaroComment(comment: CommunityComment, enabled: Boolean = true, onLike: (
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(48.dp).clip(RoundedCornerShape(16.dp))
                 .clickable(interactionSource = avatarInteraction, indication = ripple(), onClick = onAuthor), contentAlignment = Alignment.Center) {
-                ProfileAvatar(comment.avatarUrl, modifier = Modifier.size(40.dp).graphicsLayer { scaleX = avatarScale; scaleY = avatarScale }
+                ProfileAvatar(comment.avatarUrl, modifier = Modifier.size(40.dp).border(1.dp, rankAccent(comment.level).copy(alpha = if (comment.level >= 5) 0.6f else 0.15f), RoundedCornerShape(13.dp)).graphicsLayer { scaleX = avatarScale; scaleY = avatarScale }
                     .clip(RoundedCornerShape(13.dp)).background(MangaroDesignSystem.SurfaceHigh))
             }
             Column(Modifier.weight(1f).heightIn(min = 48.dp).clip(RoundedCornerShape(6.dp)).clickable(onClick = onAuthor),
@@ -562,11 +567,11 @@ fun MangaroComment(comment: CommunityComment, enabled: Boolean = true, onLike: (
                     Text(comment.displayName, color = Color.White,
                         style = MaterialTheme.typography.titleSmall.copy(textDirection = TextDirection.Content), fontWeight = FontWeight.Bold,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    DeveloperBadge(comment.author.role, compact = true)
                     comment.username?.let { UsernameHandle(it, style = MaterialTheme.typography.labelSmall, color = Color(0xFFB7A9C4)) }
                 }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalArrangement = Arrangement.spacedBy(0.dp)) {
-                    Text(comment.rankTitle, style = metadata, color = if (comment.level <= 5) Color(0xFFABA2B5) else Color(0xFFB7A9C4))
-                    Text("Lv.${comment.level}", color = Color(0xFFB7A9C4), style = metadata.copy(textDirection = TextDirection.Ltr))
+                    RankIdentity(comment.level)
                     Text("·", color = Color(0xFF9F90AC), style = metadata)
                     Text(time, style = metadata, color = Color(0xFF9F90AC))
                     if (comment.isEdited) Text("معدّل", style = metadata, color = Color(0xFF9F90AC))

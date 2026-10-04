@@ -141,7 +141,7 @@ do $$ begin
  if exists(select 1 from public.user_progression p where p.user_id in (current_setting('mangaro.xp.a')::uuid,current_setting('mangaro.xp.b')::uuid)
   and p.total_xp<>(select coalesce(sum(e.xp_amount),0) from public.xp_events e where e.user_id=p.user_id and e.revoked_at is null)) then raise exception 'LEDGER_BALANCE_MISMATCH'; end if;
  if exists(select 1 from pg_class where oid in ('public.user_progression'::regclass,'public.xp_events'::regclass,'public.reader_chapter_completions'::regclass) and not relrowsecurity) then raise exception 'RLS_DISABLED'; end if;
- if exists(select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='mangaro_private' and p.proname not in ('claim_chapter_completion','community_author_levels') and (has_function_privilege('anon',p.oid,'execute') or has_function_privilege('authenticated',p.oid,'execute'))) then raise exception 'INTERNAL_XP_RPC_EXPOSED'; end if;
+ if exists(select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='mangaro_private' and p.proname not in ('claim_chapter_completion','community_author_levels','username_allowed','save_public_showcase','public_read_count') and (has_function_privilege('anon',p.oid,'execute') or has_function_privilege('authenticated',p.oid,'execute'))) then raise exception 'INTERNAL_XP_RPC_EXPOSED'; end if;
  if has_function_privilege('anon','public.rls_auto_enable()','execute') then raise exception 'PLATFORM_HARDENING_REGRESSED'; end if;
 end $$;
 rollback;

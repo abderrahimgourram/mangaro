@@ -72,7 +72,7 @@ class SupabaseCommunityRepository(private val client: SupabaseClient, private va
             client.storage.from("avatars").publicUrl(it) + "?v=" + (author_updated_at?.let(::timestamp) ?: 0)
         }
         val avatar = custom ?: google_avatar_url?.takeIf { it.startsWith("https://") }
-        return CommunityComment(id, target, AccountAuthor(user_id, display_name, username, avatar, level), body,
+        return CommunityComment(id, target, AccountAuthor(user_id, display_name, username, avatar, level, AccountRole.fromServer(role)), body,
             timestamp(created_at), timestamp(updated_at), like_count, reply_count,
             timestamp(updated_at) > timestamp(created_at), user_id == user, parent_comment_id, user != null && liked_by_me, spoiler)
     }
@@ -152,9 +152,17 @@ class SupabaseCommunityRepository(private val client: SupabaseClient, private va
             val custom = row.avatar_path?.takeIf { it == "${row.user_id}/avatar.webp" }?.let { client.storage.from("avatars").publicUrl(it) + version }
             val google = row.google_avatar_url?.takeIf { it.startsWith("https://") }
             val cover = row.cover_path?.takeIf { it == "${row.user_id}/cover.webp" }?.let { client.storage.from("profile-media").publicUrl(it) + version }
+            val safeFavorites = row.favorites.take(20).filter { it.manga_key.matches(Regex("[0-9a-f]{64}")) }
+            val paths = safeFavorites.mapNotNull { it.cover_path?.takeIf { path -> path == "${row.user_id}/${it.manga_key}.webp" } }
+            val covers = try {
+                if (paths.isEmpty()) emptyMap() else client.storage.from("showcase-covers").createSignedUrls(kotlin.time.Duration.parse("2h"), paths)
+                    .filter { it.error == null }.associate { it.path to it.signedURL }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { emptyMap() }
             CommunityProfileResult.Loaded(CommunityPublicProfile(
-                AccountAuthor(row.user_id, row.display_name, row.username, custom ?: google, row.level),
-                row.bio, cover, google, row.comment_count, row.rating_count,
+                AccountAuthor(row.user_id, row.display_name, row.username, custom ?: google, row.level, AccountRole.fromServer(row.role)),
+                row.bio, cover, google, row.comment_count, row.rating_count, row.chapters_read,
+                safeFavorites.map { PublicFavorite(it.manga_key, it.title, covers[it.cover_path]) },
             ))
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (failure: Exception) { CommunityProfileResult.Failed(error(failure)) }
@@ -318,7 +326,9 @@ class SupabaseCommunityRepository(private val client: SupabaseClient, private va
     }
     @Serializable private data class PublicProfile(val user_id: String, val display_name: String?, val username: String?,
         val avatar_path: String?, val google_avatar_url: String?, val cover_path: String?, val bio: String?,
-        val updated_at: String, val level: Int, val comment_count: Long, val rating_count: Long)
+        val updated_at: String, val level: Int, val comment_count: Long, val rating_count: Long,
+        val role: String = "user", val chapters_read: Long? = null, val favorites: List<FavoriteRow> = emptyList())
+    @Serializable private data class FavoriteRow(val manga_key: String, val title: String, val cover_path: String? = null)
     @Serializable private data class PostedComment(val id: String, val user_id: String, val target_type: String, val manga_key: String,
         val chapter_key: String?, val parent_comment_id: String?, val body: String, val spoiler: Boolean = false)
     @Serializable private data class EditedComment(val id: String, val body: String, val updated_at: String, val spoiler: Boolean = false)
@@ -329,6 +339,6 @@ class SupabaseCommunityRepository(private val client: SupabaseClient, private va
     @Serializable private data class Row(
         val id: String, val user_id: String, val body: String, val created_at: String, val updated_at: String,
         val parent_comment_id: String?, val display_name: String?, val username: String?, val avatar_path: String?,
-        val google_avatar_url: String?, val author_updated_at: String?, val like_count: Long, val reply_count: Long, val liked_by_me: Boolean, val level: Int = 1, val spoiler: Boolean = false,
+        val google_avatar_url: String?, val author_updated_at: String?, val like_count: Long, val reply_count: Long, val liked_by_me: Boolean, val level: Int = 1, val spoiler: Boolean = false, val role: String = "user",
     )
 }

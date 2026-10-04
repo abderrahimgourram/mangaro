@@ -186,7 +186,7 @@ class SupabaseAccountAuth private constructor(private val client: SupabaseClient
             }.decodeSingle<ProgressionRow>()
             val latest = (session.value as? AccountSession.Authenticated)?.profile
             if (latest?.userId == current.userId && client.auth.currentUserOrNull()?.id == current.userId) {
-                session.value = AccountSession.Authenticated(latest.copy(xp = progress.total_xp, level = progress.level))
+                session.value = AccountSession.Authenticated(latest.copy(xp = progress.total_xp, level = ProfileIdentity.displayedLevel(progress.level, latest.role)))
             }
             AccountOperation.Completed
         } catch (cancelled: CancellationException) { throw cancelled }
@@ -208,6 +208,12 @@ class SupabaseAccountAuth private constructor(private val client: SupabaseClient
         catch (_: Exception) { AccountOperation.Failed("تعذّر تحديث التقدم") }
     }
 
+    override suspend fun usernameAvailable(username: String): Boolean? = try {
+        val user = (session.value as? AccountSession.Authenticated)?.profile?.userId ?: return null
+        withTimeoutOrNull(8_000) { withSession(user) { client.postgrest.rpc("username_available", buildJsonObject { put("p_username", AccountProfileInput.username(username)) }).decodeAs<Boolean>() } }
+    } catch (cancelled: CancellationException) { throw cancelled }
+    catch (_: Exception) { null }
+    @Serializable private data class RoleRow(val role: String)
     @Serializable private data class ProgressionRow(val total_xp: Long, val level: Int)
     @Serializable private data class CompletionResult(val xp_awarded: Int, val new_total_xp: Long,
         val new_level: Int, val leveled_up: Boolean)
@@ -305,8 +311,12 @@ class SupabaseAccountAuth private constructor(private val client: SupabaseClient
             client.from("user_progression").select { filter { eq("user_id", user.id) } }.decodeSingle<ProgressionRow>()
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) { null }
+        val role = try {
+            client.from("profile_roles").select { filter { eq("user_id", user.id) } }.decodeList<RoleRow>().firstOrNull()?.role.let(AccountRole::fromServer)
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { previous?.role ?: AccountRole.USER }
         val profile = MangaroProfile(user.id, user.email, row.displayName, row.username, avatar,
-            xp = progression?.total_xp ?: previous?.xp ?: 0, level = progression?.level ?: previous?.level ?: 1, googleAvatarUrl = row.googleAvatarUrl?.takeIf { Uri.parse(it).scheme == "https" }, bio = row.bio,
+            xp = progression?.total_xp ?: previous?.xp ?: 0, level = ProfileIdentity.displayedLevel(progression?.level ?: previous?.level ?: 1, role), role = role, googleAvatarUrl = row.googleAvatarUrl?.takeIf { Uri.parse(it).scheme == "https" }, bio = row.bio,
             coverUrl = row.coverPath?.takeIf { it == "${user.id}/cover.webp" }?.let {
                 client.storage.from("profile-media").publicUrl(it) + "?v=" + Uri.encode(row.updatedAt)
             })

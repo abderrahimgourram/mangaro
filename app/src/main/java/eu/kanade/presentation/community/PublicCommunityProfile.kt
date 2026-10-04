@@ -1,5 +1,16 @@
 package eu.kanade.presentation.community
 
+import eu.kanade.presentation.account.DeveloperBadge
+import eu.kanade.presentation.account.RankIdentity
+import eu.kanade.presentation.account.rankAccent
+import eu.kanade.presentation.manga.components.MangaCover
+import eu.kanade.tachiyomi.data.account.PublicFavoriteResolver
+import eu.kanade.tachiyomi.ui.manga.MangaScreen
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import kotlinx.coroutines.launch
+import mihon.domain.account.AccountActionGate
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -43,6 +54,11 @@ class PublicCommunityProfileScreen(internal val userId: String) : Screen() {
 @Composable
 internal fun PublicCommunityProfilePanel(userId: String, onBack: () -> Unit) {
     val repository = remember { Injekt.get<CommunityRepository>() }
+    val navigator = LocalNavigator.currentOrThrow
+    val scope = rememberCoroutineScope()
+    val navigationGate = remember(userId) { AccountActionGate() }
+    var resolving by remember(userId) { mutableStateOf(false) }
+    var favoriteError by remember(userId) { mutableStateOf<String?>(null) }
     var result by remember(userId) { mutableStateOf<CommunityProfileResult?>(null) }
     var loading by remember(userId) { mutableStateOf(true) }
     var retry by remember(userId) { mutableIntStateOf(0) }
@@ -65,7 +81,7 @@ internal fun PublicCommunityProfilePanel(userId: String, onBack: () -> Unit) {
                     ProfileCoverImage(profile.coverUrl, Modifier.fillMaxWidth().height(196.dp))
                     Box(Modifier.align(Alignment.BottomStart).padding(start = 20.dp).size(96.dp)
                         .clip(RoundedCornerShape(24.dp)).background(MangaroDesignSystem.BackgroundDark)
-                        .border(1.dp, MangaroDesignSystem.GoldPrimary.copy(alpha = 0.28f), RoundedCornerShape(24.dp)).padding(5.dp)) {
+                        .border(1.dp, rankAccent(profile.author.level).copy(alpha = 0.5f), RoundedCornerShape(24.dp)).padding(5.dp)) {
                         ProfileAvatar(profile.author.avatarUrl, profile.googleAvatarUrl, Modifier.fillMaxSize().clip(RoundedCornerShape(20.dp)))
                     }
                 }
@@ -74,19 +90,44 @@ internal fun PublicCommunityProfilePanel(userId: String, onBack: () -> Unit) {
                         style = MaterialTheme.typography.headlineMedium.copy(textDirection = TextDirection.Content), fontWeight = FontWeight.Bold)
                     profile.author.username?.let { UsernameHandle(it, color = Color(0xFFB7A9C4), style = MaterialTheme.typography.bodySmall) }
                     profile.bio?.takeIf { it.isNotBlank() }?.let { Text(it, color = Color(0xFFB7A9C4), style = MaterialTheme.typography.bodyMedium) }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(profile.author.rankTitle, color = Color(0xFF9F90AC), style = MaterialTheme.typography.labelMedium)
-                        Text("Lv.${profile.author.level}", color = MangaroDesignSystem.GoldPrimary,
-                            style = MaterialTheme.typography.labelMedium.copy(textDirection = TextDirection.Ltr))
-                    }
+                    DeveloperBadge(profile.author.role)
+                    RankIdentity(profile.author.level)
                     Row(Modifier.fillMaxWidth().padding(top = 12.dp).clip(RoundedCornerShape(16.dp))
                         .background(MangaroDesignSystem.SurfaceDark).padding(vertical = 16.dp)) {
-                        listOf("التعليقات" to profile.commentCount, "التقييمات" to profile.ratingCount).forEach { (label, count) ->
+                        (listOf("التعليقات" to profile.commentCount, "التقييمات" to profile.ratingCount) +
+                            (profile.chaptersRead?.let { listOf("الفصول المقروءة" to it) } ?: emptyList())).forEach { (label, count) ->
                             Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(count.toString(), color = Color.White, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                                 Text(label, color = Color(0xFF9F90AC), style = MaterialTheme.typography.labelSmall)
                             }
                         }
+                    }
+                    if (profile.favorites.isNotEmpty()) {
+                        Text("المفضلة · ${profile.favorites.size}", style = MaterialTheme.typography.titleSmall, color = Color.White, modifier = Modifier.padding(top = 12.dp))
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            items(profile.favorites, key = { it.mangaKey }) { item ->
+                                Column(Modifier.width(112.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    MangaCover.Book(item.coverUrl, Modifier.fillMaxWidth(), onClick = {
+                                        if (navigationGate.tryStart()) {
+                                            resolving = true; favoriteError = null
+                                            scope.launch {
+                                                try {
+                                                    val manga = PublicFavoriteResolver().resolve(item.mangaKey, item.title)
+                                                    if (manga != null) navigator.push(MangaScreen(manga.id))
+                                                    else favoriteError = "هذا العمل غير متاح على هذا الجهاز حاليًا"
+                                                } catch (cancelled: CancellationException) { throw cancelled }
+                                                catch (_: Exception) { favoriteError = "تعذّر فتح العمل — حاول مرة أخرى" }
+                                                finally { resolving = false; navigationGate.finish() }
+                                            }
+                                        }
+                                    })
+                                    Text(item.title, color = Color.White, style = MaterialTheme.typography.bodySmall.copy(textDirection = TextDirection.Content), maxLines = 2,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                }
+                            }
+                        }
+                        if (resolving) LinearProgressIndicator(Modifier.fillMaxWidth(), color = MangaroDesignSystem.GoldPrimary)
+                        favoriteError?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Color(0xFFB7A9C4)) }
                     }
                 }
             }

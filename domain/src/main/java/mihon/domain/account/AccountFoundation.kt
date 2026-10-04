@@ -26,6 +26,7 @@ data class MangaroProfile(
     val googleAvatarUrl: String? = null,
     val bio: String? = null,
     val coverUrl: String? = null,
+    val role: AccountRole = AccountRole.USER,
 ) {
     init {
         require(userId.isNotBlank())
@@ -42,16 +43,41 @@ data class AccountAuthor(
     val username: String?,
     val avatarUrl: String?,
     val level: Int,
+    val role: AccountRole = AccountRole.USER,
 ) {
     init { require(userId.isNotBlank()); require(level in 1..MangaroRanks.MAX_LEVEL) }
     val rankTitle: String get() = MangaroRanks.titleFor(level)
     companion object {
         fun fromProfile(profile: MangaroProfile) = AccountAuthor(
-            profile.userId, profile.displayName, profile.username, profile.avatarUrl, profile.level,
+            profile.userId, profile.displayName, profile.username, profile.avatarUrl, profile.level, profile.role,
         )
     }
 }
 
+/** Trusted role comes from server state, never from display name or handle. */
+enum class AccountRole {
+    USER, DEVELOPER;
+    companion object { fun fromServer(value: String?) = if (value == "developer") DEVELOPER else USER }
+}
+object ProfileIdentity {
+    fun displayedLevel(level: Int, role: AccountRole) = if (role == AccountRole.DEVELOPER) 30 else level
+    fun tier(level: Int): Int = when (level) {
+        in 1..4 -> 0
+        in 5..10 -> 1
+        in 11..15 -> 2
+        in 16..20 -> 3
+        in 21..25 -> 4
+        in 26..29 -> 5
+        30 -> 6
+        else -> error("Invalid level")
+    }
+    fun favoriteSlots(level: Int, role: AccountRole) = when {
+        role == AccountRole.DEVELOPER || level >= 25 -> 20
+        level >= 15 -> 15
+        level >= 5 -> 10
+        else -> 5
+    }
+}
 /** Rank names only; no XP rewards, earning rules or level calculation. */
 object MangaroRanks {
     const val MAX_LEVEL = 30
@@ -126,6 +152,7 @@ interface AccountAuth {
     suspend fun uploadCover(webp: ByteArray): AccountOperation = AccountOperation.NotConfigured
     suspend fun removeCover(): AccountOperation = AccountOperation.NotConfigured
     suspend fun profileStatistics(): ProfileStatistics? = null
+    suspend fun usernameAvailable(username: String): Boolean? = null
 }
 
 /** No network, credentials, account fabrication, token storage or local-data mutation. */
