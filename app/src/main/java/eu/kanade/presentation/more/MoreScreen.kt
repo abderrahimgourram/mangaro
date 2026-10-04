@@ -9,7 +9,6 @@ import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.AppBarActions
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.PlayCircleOutline
-import androidx.compose.material.icons.outlined.VolunteerActivism
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -50,7 +49,6 @@ fun MoreScreen(
     onClickDataAndStorage: () -> Unit,
     onClickSettings: () -> Unit,
     onClickAbout: () -> Unit,
-    onClickSupport: () -> Unit,
     onClickAds: () -> Unit,
 ) {
     var tools by rememberSaveable { mutableStateOf(false) }
@@ -73,9 +71,6 @@ fun MoreScreen(
         })
     }) { padding ->
         ScrollbarLazyColumn(contentPadding = padding) {
-            item(key = "support") {
-                TextPreferenceWidget(title = "الدعم", icon = Icons.Outlined.VolunteerActivism, onPreferenceClick = onClickSupport)
-            }
             item(key = "ads") {
                 TextPreferenceWidget(title = "الإعلانات", icon = Icons.Outlined.PlayCircleOutline, onPreferenceClick = onClickAds)
             }

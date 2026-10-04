@@ -33,6 +33,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,6 +52,8 @@ import eu.kanade.tachiyomi.data.ads.adActivity
 import eu.kanade.tachiyomi.util.system.activeNetworkState
 import eu.kanade.tachiyomi.util.system.networkStateFlow
 import tachiyomi.presentation.core.components.material.Scaffold
+import kotlinx.coroutines.delay
+import android.os.SystemClock
 
 private enum class RewardButtonState(val label: String) {
     READY("شاهد الإعلان"),
@@ -77,6 +80,17 @@ object AdsSettingsScreen : Screen() {
             state.rewardedLoading -> RewardButtonState.LOADING
             manager.rewardedAvailable() -> RewardButtonState.READY
             else -> RewardButtonState.UNAVAILABLE
+        }
+        // Presentation only; the manager remains authoritative for reward expiry.
+        val rewardClock = remember(state.adFreeUntil) { System.currentTimeMillis() to SystemClock.elapsedRealtime() }
+        val remainingMinutes by produceState(0L, state.adFreeUntil) {
+            while (true) {
+                val now = rewardClock.first + SystemClock.elapsedRealtime() - rewardClock.second
+                val remaining = (state.adFreeUntil - now).coerceAtLeast(0)
+                value = (remaining + 59_999L) / 60_000L
+                if (remaining == 0L) break
+                delay(minOf(60_000L, remaining))
+            }
         }
         val gold = Color(0xFFD6B56D)
         val foreground = Color(0xFFEFEAF4)
@@ -123,6 +137,9 @@ object AdsSettingsScreen : Screen() {
                                 ) {
                                     Icon(Icons.Outlined.CheckCircle, null, Modifier.size(20.dp), tint = gold)
                                     Text(buttonState.label, style = MaterialTheme.typography.bodyMedium, color = gold)
+                                }
+                                if (remainingMinutes > 0) {
+                                    Text("باقي $remainingMinutes دقيقة", style = MaterialTheme.typography.bodySmall, color = secondary)
                                 }
                             } else {
                                 Button(

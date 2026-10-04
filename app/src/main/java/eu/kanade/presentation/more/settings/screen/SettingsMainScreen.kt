@@ -13,7 +13,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ChromeReaderMode
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.PlayCircleOutline
-import androidx.compose.material.icons.outlined.VolunteerActivism
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.CollectionsBookmark
 import androidx.compose.material.icons.outlined.Explore
@@ -135,13 +134,6 @@ object SettingsMainScreen : Screen() {
                     contentPadding = contentPadding,
                 ) {
                     if (!technicalSettings) {
-                        item(key = "support") {
-                            TextPreferenceWidget(
-                                title = "الدعم",
-                                icon = Icons.Outlined.VolunteerActivism,
-                                onPreferenceClick = { navigator.push(mihon.feature.support.SupportUsScreen()) },
-                            )
-                        }
                         item(key = "privacy_ads") {
                             TextPreferenceWidget(
                                 title = "الإعلانات",
