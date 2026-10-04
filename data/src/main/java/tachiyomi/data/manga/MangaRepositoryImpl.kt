@@ -1,5 +1,7 @@
 package tachiyomi.data.manga
 
+import mihon.domain.account.LocalCloudChanges
+
 import app.cash.sqldelight.async.coroutines.awaitAsList
 import app.cash.sqldelight.async.coroutines.awaitAsOne
 import app.cash.sqldelight.async.coroutines.awaitAsOneOrNull
@@ -125,11 +127,13 @@ class MangaRepositoryImpl(
                 database.mangas_categoriesQueries.insert(mangaId, categoryId)
             }
         }
+        LocalCloudChanges.changed(LocalCloudChanges.Kind.MANGA, mangaId)
     }
 
     override suspend fun update(update: MangaUpdate): Boolean {
         return try {
             partialUpdate(update)
+            if (update.favorite != null || update.dateAdded != null) LocalCloudChanges.changed(LocalCloudChanges.Kind.MANGA, update.id)
             true
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, e)
@@ -140,6 +144,7 @@ class MangaRepositoryImpl(
     override suspend fun updateAll(mangaUpdates: List<MangaUpdate>): Boolean {
         return try {
             partialUpdate(*mangaUpdates.toTypedArray())
+            mangaUpdates.filter { it.favorite != null || it.dateAdded != null }.forEach { LocalCloudChanges.changed(LocalCloudChanges.Kind.MANGA, it.id) }
             true
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, e)

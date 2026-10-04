@@ -145,3 +145,62 @@ internal-function privileges. No production fixtures remain. No Realtime,
 polling, cloud sync, local SQL migration, publisher or workflow changes.
 
 **Android progression runtime verification pending manual device test.**
+
+## Local-first cloud replication — Phase 4
+
+Migration `20261003234522_mangaro_local_first_cloud_sync.sql` adds only private
+`cloud_library_entries`, `cloud_library_collections`,
+`cloud_library_entry_collections`, `cloud_manga_history`, and
+`cloud_chapter_progress`. Explicit owner RLS and column grants deny guest reads,
+other-user reads/writes, hard deletion, client revision/timestamp writes and
+cross-owner membership references. No public source restoration projection exists.
+`cloud_apply_change` is an authenticated security-invoker compare-and-set RPC;
+`cloud_pull_changes` is an owner-only security-invoker RPC limited to 200 rows.
+Trigger-only `mangaro_private.cloud_stamp` supplies revisions/timestamps. Owner
+advisory transaction locks serialize sequence allocation with pulls to prevent
+late commits below a cursor. Rows are tombstoned, not hard deleted.
+
+Account UI asks for explicit merge consent once per account/device. Later declines
+are remembered; enable/disable and manual sync remain available there. The isolated
+`noBackupFilesDir/cloud-sync.db` journal contains account-scoped consent, collection
+UUID mappings, coalesced dirty hints/outbox, and durable unresolved incoming rows;
+it contains no credentials or downloaded files and changes no Mihon schema.
+Built-in shelves reuse their internal shelf identifiers for deterministic UUIDs.
+Other categories retain individual account-scoped UUIDs, even with identical names.
+The Library's “All” view is not uploaded as a category.
+
+First enable snapshots local state before applying cloud changes. First merge
+unions active Library/membership data, preserves independent history, and retains
+furthest progress/completion. Later changes use observed revisions; stale
+removals/unread mutations cannot blindly replace newer cloud state. On a revision
+conflict, newer server read/unread state wins; higher pages can be reconciled when
+read state agrees. A user may issue a new explicit mutation after that baseline.
+Re-enabling captures changes made while disabled. Sign-out/account switching stops
+that account's work without deleting local/cloud data; requests carry their owner
+and are rejected if a different session is used.
+
+Successful local repository writes persist bounded per-entity hints. Network-only
+unique WorkManager jobs coalesce writes with a 20-second opportunity and exponential
+retry, and also run after enabled session restoration/manual sync. No polling,
+Realtime, per-card request or per-page network call is introduced. Remote writes
+use coroutine-local suppression to avoid echoing back to cloud. Receipt cursors
+advance only after durable local inbox storage; separate applied checkpoints stop
+before unresolved rows. This allows other works to sync while an extension or
+chapter is unavailable without losing that pending restoration.
+
+Restoration matches source ID/URL and verifies the existing opaque Community key.
+It never matches titles, fabricates chapters, or refreshes every source. Missing
+sources/chapters remain unresolved and retry during sync or, for newly available
+chapters, from the cached inbox without requiring a network request. History-only
+works stay outside Library. Remote completion does not call XP claim RPCs and a
+persistent account/chapter marker suppresses later restored-completion claims.
+Historical upload/restoration awards zero XP. Downloads and images are never
+uploaded. Cloud sync never controls Home readiness or Reader rendering.
+
+Verification: `supabase/tests/phase4_cloud_sync.sql` uses rolled-back fixtures with
+real anon/authenticated roles, validates isolation, revision security, CAS,
+constraints, ownership-safe membership, independent history and zero sync XP.
+Focused Android/domain tests cover repeat restoration, category identity, guest /
+account isolation, initial additive policies, remote suppression and restoration
+without XP. Run `:app:assembleDebug` for the APK. Cross-device/offline/runtime sync
+still requires manual device verification; these checks do not claim device testing.

@@ -1,5 +1,7 @@
 package tachiyomi.data.history
 
+import mihon.domain.account.LocalCloudChanges
+
 import app.cash.sqldelight.async.coroutines.awaitAsList
 import app.cash.sqldelight.async.coroutines.awaitAsOne
 import app.cash.sqldelight.async.coroutines.awaitAsOneOrNull
@@ -44,6 +46,7 @@ class HistoryRepositoryImpl(
     override suspend fun resetHistory(historyId: Long) {
         try {
             database.historyQueries.resetHistoryById(historyId)
+            LocalCloudChanges.changed(LocalCloudChanges.Kind.HISTORY_ALL)
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, throwable = e)
         }
@@ -52,6 +55,7 @@ class HistoryRepositoryImpl(
     override suspend fun resetHistoryByMangaId(mangaId: Long) {
         try {
             database.historyQueries.resetHistoryByMangaId(mangaId)
+            LocalCloudChanges.changed(LocalCloudChanges.Kind.HISTORY_MANGA, mangaId)
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, throwable = e)
         }
@@ -60,6 +64,7 @@ class HistoryRepositoryImpl(
     override suspend fun deleteAllHistory(): Boolean {
         return try {
             database.historyQueries.removeAllHistory()
+            LocalCloudChanges.changed(LocalCloudChanges.Kind.HISTORY_ALL)
             true
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, throwable = e)
@@ -74,6 +79,7 @@ class HistoryRepositoryImpl(
                 historyUpdate.readAt,
                 historyUpdate.sessionReadDuration,
             )
+            LocalCloudChanges.changed(LocalCloudChanges.Kind.HISTORY_CHAPTER, historyUpdate.chapterId)
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, throwable = e)
         }

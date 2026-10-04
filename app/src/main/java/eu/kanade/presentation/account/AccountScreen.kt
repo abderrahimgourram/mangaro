@@ -211,6 +211,7 @@ private fun AccountProfileEditor(
         TextButton(enabled = !submitting, onClick = { avatarPicker.launch("image/*") }) { Text("تغيير الصورة") }
         TextButton(enabled = !submitting, onClick = { onAction { account.auth.removeAvatar() } }) { Text("إزالة الصورة") }
     }
+    CloudSyncControls(profile.userId, account.cloudSync)
     TextButton(enabled = !submitting, onClick = { onAction { account.auth.signOut(); AccountOperation.Completed } }) { Text("تسجيل الخروج") }
 }
 

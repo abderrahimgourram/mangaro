@@ -166,7 +166,15 @@ class AppModule(val app: Application) : InjektModule {
                 ?: mihon.domain.community.DisabledCommunityRepository()
         }
         addSingletonFactory<mihon.domain.account.AccountAuth> { eu.kanade.tachiyomi.data.account.SupabaseAccountAuth.create(app) }
-        addSingletonFactory<mihon.domain.account.AccountCloudSync> { mihon.domain.account.DisabledAccountCloudSync() }
+        addSingletonFactory<mihon.domain.account.AccountCloudSync> {
+            val auth = get<mihon.domain.account.AccountAuth>()
+            val backend = auth as? eu.kanade.tachiyomi.data.account.SupabaseAccountAuth
+            if (backend == null) mihon.domain.account.DisabledAccountCloudSync() else {
+                val store = eu.kanade.tachiyomi.data.account.sync.CloudSyncStore(app)
+                val local = eu.kanade.tachiyomi.data.account.sync.CloudLocalGateway(get(), get(), get(), get(), get(), store, get())
+                eu.kanade.tachiyomi.data.account.sync.SupabaseCloudSync(app, backend.communityClient, auth, store, local)
+            }
+        }
         addSingletonFactory { mihon.domain.account.AccountFoundation(get(), get()) }
 
         addSingletonFactory { DownloadProvider(app) }

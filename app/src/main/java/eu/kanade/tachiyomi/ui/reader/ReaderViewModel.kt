@@ -551,6 +551,7 @@ class ReaderViewModel @JvmOverloads constructor(
         val access = account.featureGate.access(AccountFeature.XP) as? AccountAccess.Allowed ?: return
         val target = communityContextFor(currentManga, chapter).target
         val key = target.chapterKey?.value ?: return
+        if (account.cloudSync.restoredCompletion(access.userId, key)) return
         val attempt = "${access.userId}:$key"
         if (!progressionClaims.add(attempt)) return
         viewModelScope.launchIO {

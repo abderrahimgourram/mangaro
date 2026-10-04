@@ -1,5 +1,7 @@
 package tachiyomi.data.chapter
 
+import mihon.domain.account.LocalCloudChanges
+
 import app.cash.sqldelight.async.coroutines.awaitAsList
 import app.cash.sqldelight.async.coroutines.awaitAsOne
 import app.cash.sqldelight.async.coroutines.awaitAsOneOrNull
@@ -42,6 +44,8 @@ class ChapterRepositoryImpl(
                         .awaitAsOne()
                     chapter.copy(id = chapterId)
                 }
+            }.also { inserted ->
+                inserted.map { it.mangaId }.distinct().forEach { LocalCloudChanges.changed(LocalCloudChanges.Kind.RESOLVE, -it) }
             }
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, e)
@@ -51,10 +55,17 @@ class ChapterRepositoryImpl(
 
     override suspend fun update(chapterUpdate: ChapterUpdate) {
         partialUpdate(chapterUpdate)
+        notifyChange(chapterUpdate)
     }
 
     override suspend fun updateAll(chapterUpdates: List<ChapterUpdate>) {
         partialUpdate(*chapterUpdates.toTypedArray())
+        chapterUpdates.forEach(::notifyChange)
+    }
+
+    private fun notifyChange(update: ChapterUpdate) {
+        val kind = if (update.read != null || update.lastPageRead != null || update.totalPages != null) LocalCloudChanges.Kind.CHAPTER else LocalCloudChanges.Kind.RESOLVE
+        LocalCloudChanges.changed(kind, update.id)
     }
 
     private suspend fun partialUpdate(vararg chapterUpdates: ChapterUpdate) {

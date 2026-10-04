@@ -1,5 +1,7 @@
 package tachiyomi.data.category
 
+import mihon.domain.account.LocalCloudChanges
+
 import app.cash.sqldelight.async.coroutines.awaitAsList
 import app.cash.sqldelight.async.coroutines.awaitAsOneOrNull
 import kotlinx.coroutines.flow.Flow
@@ -48,10 +50,12 @@ class CategoryRepositoryImpl(
             order = category.order,
             flags = category.flags,
         )
+        LocalCloudChanges.changed(LocalCloudChanges.Kind.COLLECTIONS)
     }
 
     override suspend fun updateName(categoryId: Long, name: String) {
         database.categoriesQueries.updateName(name = name, categoryId = categoryId)
+        LocalCloudChanges.changed(LocalCloudChanges.Kind.COLLECTIONS)
     }
 
     override suspend fun updateFlags(categoryId: Long, flags: Long) {
@@ -68,10 +72,12 @@ class CategoryRepositoryImpl(
                 database.categoriesQueries.updateOrder(order = index.toLong(), categoryId = categoryId)
             }
         }
+        LocalCloudChanges.changed(LocalCloudChanges.Kind.COLLECTIONS)
     }
 
     override suspend fun delete(categoryId: Long) {
         database.categoriesQueries.delete(categoryId = categoryId)
+        LocalCloudChanges.changed(LocalCloudChanges.Kind.COLLECTION_DELETED, categoryId)
     }
 
     private fun mapCategory(

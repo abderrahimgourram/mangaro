@@ -195,6 +195,12 @@ sealed interface MigrationPreparation {
     data class Offered(val plan: GuestMigrationPlan) : MigrationPreparation
 }
 interface AccountCloudSync {
+    fun start() {}
+    fun observe(userId: String): StateFlow<CloudSyncStatus>
+    suspend fun configure(userId: String, enabled: Boolean): AccountOperation
+    suspend fun syncNow(userId: String): AccountOperation
+    fun restoredCompletion(userId: String, chapterKey: String): Boolean = false
+
     suspend fun prepareFirstLogin(userId: String, snapshot: GuestLibrarySnapshot): MigrationPreparation
     suspend fun applyMigration(plan: GuestMigrationPlan, choice: GuestMigrationChoice): AccountOperation
     suspend fun sync(userId: String, snapshot: GuestLibrarySnapshot): AccountOperation
@@ -202,6 +208,10 @@ interface AccountCloudSync {
 
 /** Deliberately does not read, upload, rewrite or delete any local records. */
 class DisabledAccountCloudSync : AccountCloudSync {
+    override fun observe(userId: String): StateFlow<CloudSyncStatus> = MutableStateFlow(CloudSyncStatus())
+    override suspend fun configure(userId: String, enabled: Boolean) = AccountOperation.NotConfigured
+    override suspend fun syncNow(userId: String) = AccountOperation.NotConfigured
+
     override suspend fun prepareFirstLogin(userId: String, snapshot: GuestLibrarySnapshot): MigrationPreparation = MigrationPreparation.NotConfigured
     override suspend fun applyMigration(plan: GuestMigrationPlan, choice: GuestMigrationChoice): AccountOperation = AccountOperation.NotConfigured
     override suspend fun sync(userId: String, snapshot: GuestLibrarySnapshot): AccountOperation = AccountOperation.NotConfigured

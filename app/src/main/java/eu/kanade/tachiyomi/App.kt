@@ -115,6 +115,7 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
 
         val scope = ProcessLifecycleOwner.get().lifecycleScope
+        scope.launch(kotlinx.coroutines.Dispatchers.IO) { Injekt.get<mihon.domain.account.AccountCloudSync>().start() }
         scope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val engine = Injekt.get<eu.kanade.tachiyomi.source.repair.RuleRepairEngine>()
             Injekt.get<mihon.domain.source.registry.InternalSourceRegistry>().getSources().forEach { engine.initialize(it.id) }
