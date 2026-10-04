@@ -64,8 +64,6 @@ import eu.kanade.presentation.theme.MangaroDesignSystem
 import eu.kanade.presentation.util.Tab
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.library.LibraryTab
-import eu.kanade.tachiyomi.ui.setting.SettingsScreen
-import eu.kanade.presentation.more.settings.screen.about.OpenSourceLicensesScreen
 import eu.kanade.presentation.account.AccountScreen
 import eu.kanade.presentation.home.MangaroHomeDrawer
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
@@ -154,9 +152,7 @@ object HomeTab : Tab {
             onLibrary = { tabNavigator.current = LibraryTab },
             onHistory = { if (navigator.lastItem !is eu.kanade.tachiyomi.ui.history.ReadingHistoryScreen) navigator.push(eu.kanade.tachiyomi.ui.history.ReadingHistoryScreen()) },
             onDownloads = { tabNavigator.current = DownloadsTab },
-            onSettings = { navigator.push(SettingsScreen()) },
-            onAbout = { navigator.push(SettingsScreen(SettingsScreen.Destination.About)) },
-            onLicenses = { navigator.push(OpenSourceLicensesScreen()) },
+            onAds = { navigator.push(eu.kanade.presentation.more.settings.screen.AdsSettingsScreen) },
             onAccount = { navigator.push(AccountScreen()) },
             accountState = accountSession,
             onProfile = { navigator.push(AccountScreen()) },

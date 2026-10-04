@@ -35,10 +35,13 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -48,6 +51,7 @@ import eu.kanade.presentation.theme.MangaroDesignSystem
 import eu.kanade.presentation.util.LocalBackPress
 import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.data.ads.AdManager
+import eu.kanade.tachiyomi.data.ads.AdBlockerNotice
 import eu.kanade.tachiyomi.data.ads.adActivity
 import eu.kanade.tachiyomi.util.system.activeNetworkState
 import eu.kanade.tachiyomi.util.system.networkStateFlow
@@ -58,7 +62,7 @@ import android.os.SystemClock
 private enum class RewardButtonState(val label: String) {
     READY("شاهد الإعلان"),
     LOADING("جاري تجهيز الإعلان..."),
-    SHOWING("الإعلان قيد العرض"),
+    SHOWING("جاري تجهيز الإعلان..."),
     UNAVAILABLE("الإعلان غير متاح الآن"),
     ACTIVE("جلسة بدون إعلانات مفعّلة"),
 }
@@ -67,6 +71,7 @@ object AdsSettingsScreen : Screen() {
     @Composable
     override fun Content() {
         val context = LocalContext.current
+        val uriHandler = LocalUriHandler.current
         val backPress = LocalBackPress.currentOrThrow
         val manager = remember(context) { AdManager.get(context) }
         val state by manager.state.collectAsStateWithLifecycle()
@@ -92,6 +97,15 @@ object AdsSettingsScreen : Screen() {
                 delay(minOf(60_000L, remaining))
             }
         }
+        var blockerNotice by remember { mutableStateOf(false) }
+        LaunchedEffect(state.blockingSuspected, network.isOnline) {
+            if (network.isOnline && state.blockingSuspected && manager.claimBlockerNotice()) blockerNotice = true
+            if (!network.isOnline) blockerNotice = false
+        }
+        if (blockerNotice) AdBlockerNotice(
+            onRetry = { blockerNotice = false; manager.preloadRewarded(explicitRetry = true) },
+            onContinue = { blockerNotice = false },
+        )
         val gold = Color(0xFFD6B56D)
         val foreground = Color(0xFFEFEAF4)
         val secondary = Color(0xFFBFB2CC)
@@ -173,7 +187,7 @@ object AdsSettingsScreen : Screen() {
                                 if (buttonState == RewardButtonState.UNAVAILABLE) {
                                     TextButton(
                                         modifier = Modifier.align(Alignment.CenterHorizontally),
-                                        onClick = manager::preloadRewarded,
+                                        onClick = { manager.preloadRewarded(explicitRetry = true) },
                                         enabled = network.isOnline && state.consentReady && state.initialized && !state.fullscreenShowing,
                                     ) { Text("إعادة المحاولة", color = secondary) }
                                 }
@@ -188,6 +202,18 @@ object AdsSettingsScreen : Screen() {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Icon(Icons.Outlined.Security, null, Modifier.size(18.dp))
                                 Text("إدارة تفضيلات الإعلانات", style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                    Column(Modifier.fillMaxWidth().padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(0.dp)) {
+                        listOf(
+                            "سياسة الخصوصية" to "https://mangaro-web.vercel.app/privacy",
+                            "شروط الاستخدام" to "https://mangaro-web.vercel.app/terms",
+                            "المصادر المفتوحة" to "https://mangaro-web.vercel.app/open-source",
+                            "من نحن" to "https://mangaro-web.vercel.app/about",
+                        ).forEach { (label, url) ->
+                            TextButton(onClick = { uriHandler.openUri(url) }) {
+                                Text(label, style = MaterialTheme.typography.bodySmall, color = secondary)
                             }
                         }
                     }

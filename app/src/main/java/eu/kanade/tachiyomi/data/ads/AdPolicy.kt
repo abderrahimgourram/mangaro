@@ -106,6 +106,7 @@ class AdLoadGate(private val now: () -> Long) {
         return true
     }
     @Synchronized fun finish() { loading = false; nextAttempt = now() + 60_000L }
+    @Synchronized fun explicitRetry() { if (!loading) nextAttempt = 0L }
 }
 
 /** Download continuation is safe against duplicate SDK dismissal/failure/lifecycle callbacks. */

@@ -69,8 +69,8 @@ android {
         manifestPlaceholders["accountAuthScheme"] = "mangaro"
         manifestPlaceholders["admobAppId"] = "ca-app-pub-6220636202579444~2080855468"
 
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.0.1"
 
         buildConfigField("String", "COMMIT_COUNT", "\"${getLatestCommitCount()}\"")
         buildConfigField("String", "COMMIT_SHA", "\"${getLatestCommitSha()}\"")
@@ -189,7 +189,8 @@ android {
 
     splits {
         abi {
-            isEnable = true
+            // App bundles require a single resource output; APK-only builds retain ABI splits.
+            isEnable = gradle.startParameter.taskNames.none { it.substringAfterLast(':').startsWith("bundle", ignoreCase = true) }
             isUniversalApk = true
             reset()
             include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")

@@ -34,6 +34,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -41,6 +43,7 @@ import kotlinx.coroutines.withContext
 class AdManager internal constructor(
     context: Context,
     private val initializationDispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.IO,
+    private val blockingDns: () -> Boolean = { AdBlockerSignals.blockingPrivateDns(context.applicationContext) },
 ) {
     companion object {
         @Volatile private var instance: AdManager? = null
@@ -57,6 +60,7 @@ class AdManager internal constructor(
     // Changes to the wall clock cannot extend a reward during the current process.
     private fun now() = wallOrigin + SystemClock.elapsedRealtime() - elapsedOrigin
     private val policy = AdPolicy(::now)
+    private val blocker = AdBlockerEvidence(::now)
     private val ids = AdIds.forBuild(BuildConfig.BUILD_TYPE)
     private val consent = UserMessagingPlatform.getConsentInformation(app)
     private val mutableState = MutableStateFlow(AdState())
@@ -201,6 +205,7 @@ class AdManager internal constructor(
                 consentReady = consent.canRequestAds() && !consentBusy,
                 privacyOptionsRequired = consent.privacyOptionsRequirementStatus == ConsentInformation.PrivacyOptionsRequirementStatus.REQUIRED,
                 initialized = initialized,
+                blockingSuspected = blockingSuspected(),
                 nativeReady = native != null,
                 rewardedReady = rewarded != null,
                 adFreeUntil = policy.adFreeUntil,
@@ -221,6 +226,7 @@ class AdManager internal constructor(
         val token = ++sequence
         attempts[placement] = token
         if (placement == AdPlacement.REWARDED_AD_FREE) mutableState.update { it.copy(rewardedLoading = true) }
+        if (placement == AdPlacement.DOWNLOAD_INTERSTITIAL) mutableState.update { it.copy(interstitialLoading = true) }
         scope.launch {
             delay(35_000)
             if (attempts[placement] == token) end(placement, token)
@@ -232,6 +238,7 @@ class AdManager internal constructor(
         attempts.remove(placement)
         gates.getValue(placement).finish()
         if (placement == AdPlacement.REWARDED_AD_FREE) mutableState.update { it.copy(rewardedLoading = false) }
+        if (placement == AdPlacement.DOWNLOAD_INTERSTITIAL) mutableState.update { it.copy(interstitialLoading = false) }
         return true
     }
 
@@ -259,13 +266,19 @@ class AdManager internal constructor(
                         if (!end(placement, token) || !allowed() || !policy.completed(session, chapter)) {
                             nativeAd.destroySafely()
                         } else {
+                            blocker.succeeded()
                             native = nativeAd
                             nativeLoadedAt = now()
                             publish()
                         }
                     }
                 }
-                override fun onAdFailedToLoad(adError: LoadAdError) { scope.launch { end(placement, token) } }
+                override fun onAdFailedToLoad(adError: LoadAdError) { scope.launch {
+                    if (end(placement, token)) {
+                        blocker.failed(adError.code == LoadAdError.ErrorCode.NETWORK_ERROR && online())
+                        publish()
+                    }
+                } }
             })
         }.onFailure { end(placement, token) }
     }
@@ -283,7 +296,8 @@ class AdManager internal constructor(
     fun adFreeActive() = policy.adFree()
     fun adsSuppressed() = !consent.canRequestAds() || consentBusy || policy.adFree()
 
-    fun preloadInterstitial() {
+    fun preloadInterstitial(explicitRetry: Boolean = false) {
+        if (explicitRetry) gates.getValue(AdPlacement.DOWNLOAD_INTERSTITIAL).explicitRetry()
         if (interstitial != null && now() - interstitialLoadedAt < 60 * 60_000L) return
         interstitial?.destroySafely(); interstitial = null
         val placement = AdPlacement.DOWNLOAD_INTERSTITIAL
@@ -292,18 +306,40 @@ class AdManager internal constructor(
             InterstitialAd.load(AdRequest.Builder(ids.interstitial).build(), object : AdLoadCallback<InterstitialAd> {
                 override fun onAdLoaded(ad: InterstitialAd) { scope.launch {
                     if (!end(placement, token) || !allowed()) ad.destroySafely() else {
-                        interstitial = ad; interstitialLoadedAt = now()
+                        blocker.succeeded()
+                        interstitial = ad; interstitialLoadedAt = now(); publish()
                     }
                 } }
-                override fun onAdFailedToLoad(adError: LoadAdError) { scope.launch { end(placement, token) } }
+                override fun onAdFailedToLoad(adError: LoadAdError) { scope.launch {
+                    if (end(placement, token)) {
+                        blocker.failed(adError.code == LoadAdError.ErrorCode.NETWORK_ERROR && online())
+                        publish()
+                    }
+                } }
             })
         }.onFailure { end(placement, token) }
     }
 
-    /** Called after the normal large-batch confirmation. Never waits for loading. */
-    fun download(activity: Activity?, count: Int, operation: String, proceed: () -> Unit) {
+    fun blockingSuspected() = allowed() && runCatching { blockingDns() }.getOrDefault(false) &&
+        blocker.suspected(true, true, true)
+    fun claimBlockerNotice() = blockingSuspected() && blocker.claimNotice()
+
+    /** An explicit retry joins in-flight loading and waits at most twelve seconds. */
+    suspend fun retryDownload(activity: Activity?, count: Int, operation: String, onBlocked: () -> Unit, proceed: () -> Unit) {
+        preloadInterstitial(explicitRetry = true)
+        withTimeoutOrNull(AdBlockerEvidence.RETRY_TIMEOUT) { state.first { !it.interstitialLoading } }
+        download(activity, count, operation, onBlocked, proceed)
+    }
+
+    /** Ordinary offline/no-fill failures stay fail-open; strong evidence pauses an eligible batch. */
+    fun download(activity: Activity?, count: Int, operation: String, onBlocked: (() -> Unit)? = null, proceed: () -> Unit) {
         val next = OnceAction(proceed)
         val ad = interstitial
+        if ((ad == null || now() - interstitialLoadedAt >= 60 * 60_000L) && activity != null && fullscreenAllowed(activity) &&
+            policy.downloadEligible(count, operation, readerActive) && blockingSuspected()) {
+            onBlocked?.invoke()
+            return
+        }
         if (activity == null || !fullscreenAllowed(activity) || ad == null ||
             now() - interstitialLoadedAt >= 60 * 60_000L || !policy.claimDownload(count, operation, readerActive)) {
             next.run()
@@ -323,7 +359,8 @@ class AdManager internal constructor(
         }.onFailure { finishFullscreen(showToken) }
     }
 
-    fun preloadRewarded() {
+    fun preloadRewarded(explicitRetry: Boolean = false) {
+        if (explicitRetry) gates.getValue(AdPlacement.REWARDED_AD_FREE).explicitRetry()
         if (rewarded != null && now() - rewardedLoadedAt < 60 * 60_000L) return
         rewarded?.destroySafely(); rewarded = null
         publish()
@@ -333,6 +370,7 @@ class AdManager internal constructor(
             RewardedAd.load(AdRequest.Builder(ids.rewarded).build(), object : AdLoadCallback<RewardedAd> {
                 override fun onAdLoaded(ad: RewardedAd) { scope.launch {
                     if (!end(placement, token) || !allowed()) ad.destroySafely() else {
+                        blocker.succeeded()
                         rewarded = ad; rewardedLoadedAt = now(); publish()
                         scope.launch {
                             delay(60 * 60_000L)
@@ -340,7 +378,12 @@ class AdManager internal constructor(
                         }
                     }
                 } }
-                override fun onAdFailedToLoad(adError: LoadAdError) { scope.launch { end(placement, token) } }
+                override fun onAdFailedToLoad(adError: LoadAdError) { scope.launch {
+                    if (end(placement, token)) {
+                        blocker.failed(adError.code == LoadAdError.ErrorCode.NETWORK_ERROR && online())
+                        publish()
+                    }
+                } }
             })
         }.onFailure { end(placement, token) }
     }
@@ -412,6 +455,8 @@ data class AdState(
     val nativeReady: Boolean = false,
     val rewardedReady: Boolean = false,
     val rewardedLoading: Boolean = false,
+    val interstitialLoading: Boolean = false,
+    val blockingSuspected: Boolean = false,
     val fullscreenShowing: Boolean = false,
     val fullscreenVisible: Boolean = false,
     val adFreeUntil: Long = 0,

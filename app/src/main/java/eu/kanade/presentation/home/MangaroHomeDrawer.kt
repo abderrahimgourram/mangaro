@@ -36,11 +36,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.History
-import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.outlined.Description
-import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.PlayCircleOutline
 import androidx.compose.material3.DrawerValue
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
@@ -77,9 +74,7 @@ fun MangaroHomeDrawer(
     onLibrary: () -> Unit,
     onHistory: () -> Unit = {},
     onDownloads: () -> Unit,
-    onSettings: () -> Unit,
-    onAbout: () -> Unit,
-    onLicenses: () -> Unit,
+    onAds: () -> Unit,
     onAccount: () -> Unit,
     accountState: AccountSession = AccountSession.Guest,
     onProfile: ((MangaroProfile) -> Unit)? = null,
@@ -150,15 +145,8 @@ fun MangaroHomeDrawer(
                                 .padding(4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 DrawerAction("المكتبة", Icons.Outlined.BookmarkBorder) { select(onLibrary) }
                                 DrawerAction("السجل", Icons.Outlined.History) { select(onHistory) }
+                                DrawerAction("الإعلانات", Icons.Outlined.PlayCircleOutline) { select(onAds) }
                                 DrawerAction("التنزيلات", Icons.Outlined.Download, activeDownloadsCount) { select(onDownloads) }
-                                DrawerAction("الإعدادات", Icons.Outlined.Settings) { select(onSettings) }
-                            }
-                            HorizontalDivider(Modifier.padding(horizontal = 12.dp, vertical = 2.dp), color = Color(0x266D557B))
-                            Text("عن Mangaro", style = MaterialTheme.typography.labelSmall,
-                                color = Color(0xFF9F90AC), modifier = Modifier.padding(horizontal = 12.dp))
-                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                DrawerAction("حول التطبيق", Icons.Outlined.Info, secondary = true) { select(onAbout) }
-                                DrawerAction("التراخيص مفتوحة المصدر", Icons.Outlined.Description, secondary = true) { select(onLicenses) }
                             }
                             Text("الإصدار ${BuildConfig.VERSION_NAME}", modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
                                 style = MaterialTheme.typography.labelSmall, color = Color(0xFF9F90AC))

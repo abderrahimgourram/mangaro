@@ -26,6 +26,7 @@ import com.google.android.ump.UserMessagingPlatform
 import io.kotest.matchers.shouldBe
 import io.mockk.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.*
 import org.junit.jupiter.api.AfterEach
@@ -42,6 +43,7 @@ class AdManagerTest {
     private lateinit var activity: Activity
     private var permitsAds = false
     private var connected = true
+    private var knownBlockingDns = false
     private val lifecycle = slot<Application.ActivityLifecycleCallbacks>()
     private val interstitialLoad = slot<AdLoadCallback<InterstitialAd>>()
     private val nativeLoad = slot<NativeAdLoaderCallback>()
@@ -82,7 +84,73 @@ class AdManagerTest {
         every { InterstitialAd.load(any(), capture(interstitialLoad)) } just Runs
         every { RewardedAd.load(any(), capture(rewardedLoad)) } just Runs
         every { NativeAdLoader.load(any(), capture(nativeLoad)) } just Runs
-        manager = AdManager(app, dispatcher)
+        manager = AdManager(app, dispatcher) { knownBlockingDns }
+    }
+
+    private fun blockingFailures() {
+        knownBlockingDns = true
+        consentReady()
+        val error = mockk<LoadAdError>()
+        every { error.code } returns LoadAdError.ErrorCode.NETWORK_ERROR
+        repeat(2) { index ->
+            if (index > 0) manager.preloadInterstitial(explicitRetry = true)
+            interstitialLoad.captured.onAdFailedToLoad(error)
+            dispatcher.scheduler.runCurrent()
+        }
+    }
+
+    @Test fun `only eligible large batches pause on strong blocking evidence`() {
+        blockingFailures()
+        manager.blockingSuspected() shouldBe true
+        var downloads = 0
+        var warnings = 0
+        manager.download(activity, 50, "small", { warnings++ }) { downloads++ }
+        manager.download(activity, 100, "large", { warnings++ }) { downloads++ }
+        downloads shouldBe 1
+        warnings shouldBe 1
+        connected = false
+        manager.download(activity, 100, "offline", { warnings++ }) { downloads++ }
+        downloads shouldBe 2
+        warnings shouldBe 1
+        connected = true
+        permitsAds = false
+        manager.download(activity, 100, "consent", { warnings++ }) { downloads++ }
+        downloads shouldBe 3
+        warnings shouldBe 1
+    }
+
+    @Test fun `no fill clears blocking evidence and remains fail open`() {
+        blockingFailures()
+        manager.preloadInterstitial(explicitRetry = true)
+        val error = mockk<LoadAdError>()
+        every { error.code } returns LoadAdError.ErrorCode.NO_FILL
+        interstitialLoad.captured.onAdFailedToLoad(error)
+        dispatcher.scheduler.runCurrent()
+        manager.blockingSuspected() shouldBe false
+        var downloads = 0
+        manager.download(activity, 100, "no-fill") { downloads++ }
+        downloads shouldBe 1
+    }
+
+    @Test fun `blocked retry finishes within twelve seconds without starting a download or duplicating loads`() = runTest(dispatcher) {
+        blockingFailures()
+        var downloads = 0
+        var blocked = 0
+        val retry = backgroundScope.launch { manager.retryDownload(activity, 100, "retry", { blocked++ }) { downloads++ } }
+        runCurrent()
+        manager.state.value.interstitialLoading shouldBe true
+        manager.preloadInterstitial(explicitRetry = true)
+        verify(exactly = 3) { InterstitialAd.load(any(), any()) }
+        advanceTimeBy(AdBlockerEvidence.RETRY_TIMEOUT)
+        runCurrent()
+        retry.isCompleted shouldBe true
+        blocked shouldBe 1
+        downloads shouldBe 0
+        // A late preload result never starts the abandoned operation.
+        interstitialLoad.captured.onAdLoaded(mockk(relaxed = true))
+        runCurrent()
+        downloads shouldBe 0
+        manager.blockingSuspected() shouldBe false
     }
 
     @AfterEach fun cleanup() {
