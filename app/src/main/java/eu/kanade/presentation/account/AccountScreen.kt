@@ -42,6 +42,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -132,10 +133,6 @@ fun AccountPanel(onBack: () -> Unit) {
                     }
                     Text(if (session is AccountSession.Authenticated) "الملف الشخصي" else "الحساب", style = MaterialTheme.typography.titleLarge, color = Color.White, fontWeight = FontWeight.Bold)
                 }
-                if (session !is AccountSession.Authenticated) {
-                    Image(painterResource(R.drawable.ic_splash_logo), null, Modifier.size(72.dp))
-                    Text("Mangaro", style = MaterialTheme.typography.headlineSmall, color = MangaroDesignSystem.GoldPrimary, fontWeight = FontWeight.Bold)
-                }
                 when (val current = session) {
                     is AccountSession.Authenticated -> {
                         AccountProfileEditor(current.profile, account, submitting, error ?: authError,
@@ -158,10 +155,7 @@ fun AccountPanel(onBack: () -> Unit) {
                             })
                     }
                     else -> {
-                        Text("أنت تستخدم Mangaro كضيف", color = Color.White, style = MaterialTheme.typography.titleMedium)
-                        Text("سجّل الدخول لحفظ مكتبتك والتفاعل مع القراء", color = Color(0xFFB7A9C4), style = MaterialTheme.typography.bodyMedium)
-                        Text("يمكنك القراءة والتنزيل وتنظيم مكتبتك كضيف. تبقى بياناتك محفوظة على هذا الجهاز.",
-                            color = Color(0xFFB7A9C4), style = MaterialTheme.typography.bodySmall)
+                        GuestAccountIntroduction()
                         Button(
                             enabled = account.auth.googleSignInAvailable && !loading,
                             onClick = {
@@ -181,21 +175,64 @@ fun AccountPanel(onBack: () -> Unit) {
                                     }
                                 }
                             },
-                            modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = RoundedCornerShape(14.dp),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = MangaroDesignSystem.GoldPrimary, contentColor = MangaroDesignSystem.BackgroundDark,
+                                containerColor = Color(0xFFF2F2F2), contentColor = Color(0xFF1F1F1F),
                                 disabledContainerColor = MangaroDesignSystem.SurfaceHigh, disabledContentColor = Color(0xFFB7A9C4),
                             ),
                         ) {
-                            if (loading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                            else Text("المتابعة باستخدام Google")
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                if (loading) {
+                                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Color(0xFF65507D))
+                                } else {
+                                    // https://developers.google.com/static/identity/images/g-logo.png — preserve colors and aspect ratio.
+                                    Image(painterResource(R.drawable.ic_google_sign_in), null, Modifier.size(20.dp), contentScale = ContentScale.Fit)
+                                }
+                                Text("المتابعة باستخدام Google", Modifier.weight(1f, fill = false), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium)
+                            }
                         }
+                        Text("يمكنك المتابعة كضيف. تبقى مكتبتك وتقدم القراءة محفوظين على هذا الجهاز.",
+                            color = Color(0xFFB7A9C4), style = MaterialTheme.typography.bodySmall)
                         if (!account.auth.googleSignInAvailable) Text("تسجيل الدخول غير متاح حاليًا", color = Color(0xFFB7A9C4), style = MaterialTheme.typography.bodySmall)
                     }
                 }
                 (error ?: authError)?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
         }
+}
+
+@Composable
+private fun GuestAccountIntroduction() {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Surface(color = MangaroDesignSystem.SurfaceDark, shape = RoundedCornerShape(16.dp)) {
+                Image(painterResource(R.drawable.ic_splash_logo), null, Modifier.padding(8.dp).size(40.dp))
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text("Mangaro", color = MangaroDesignSystem.GoldPrimary, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                Text("مساحتك للقراءة", color = Color(0xFFB7A9C4), style = MaterialTheme.typography.bodySmall)
+            }
+        }
+        Text("أنت تستخدم Mangaro كضيف", color = Color(0xFFF2EDF7), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        Text("اربط حسابك باستخدام Google لمتابعة قراءتك والتفاعل مع المجتمع.",
+            color = Color(0xFFC6B9D2), style = MaterialTheme.typography.bodyMedium)
+        Surface(color = Color(0xFF19141F), shape = RoundedCornerShape(18.dp)) {
+            Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                GuestAccountBenefit(Icons.Outlined.Sync, "مزامنة المكتبة وتقدم القراءة")
+                GuestAccountBenefit(Icons.Outlined.ChatBubbleOutline, "التعليق والتقييم والتفاعل")
+                GuestAccountBenefit(Icons.Outlined.Bookmarks, "استعادة بيانات الحساب على الأجهزة الأخرى")
+            }
+        }
+    }
+}
+
+@Composable
+private fun GuestAccountBenefit(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Icon(icon, null, Modifier.size(20.dp), tint = Color(0xFFAE91CC))
+        Text(label, color = Color(0xFFDDD3E7), style = MaterialTheme.typography.bodyMedium)
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
