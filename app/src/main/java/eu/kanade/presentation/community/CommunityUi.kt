@@ -14,6 +14,8 @@ import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.activity.compose.BackHandler
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
@@ -88,8 +90,9 @@ fun MangaCommunitySection(manga: Manga) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReaderCommunitySheet(context: CommunityContext, onDismiss: () -> Unit) {
-    var accountVisible by remember { mutableStateOf(false) }
+    var accountVisible by rememberSaveable(context.target) { mutableStateOf(false) }
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = MangaroDesignSystem.BackgroundDark) {
+        BackHandler(enabled = accountVisible) { accountVisible = false }
         if (accountVisible) Box(Modifier.fillMaxWidth().heightIn(max = 620.dp)) {
             AccountPanel(onBack = { accountVisible = false })
         } else Column(Modifier.fillMaxWidth().heightIn(max = 620.dp)) {
@@ -111,12 +114,16 @@ private fun CommunityContent(
     var loginPrompt by remember { mutableStateOf(false) }
     var profilePrompt by remember { mutableStateOf(false) }
     var actionInFlight by remember(context.target) { mutableStateOf(false) }
-    var submissionVersion by remember(context.target) { mutableIntStateOf(0) }
-    var expandedReplies by remember(context.target) { mutableStateOf(emptySet<String>()) }
+    val actor = (session as? AccountSession.Authenticated)?.profile?.userId
+    var submissionVersion by rememberSaveable(context.target, actor) { mutableIntStateOf(0) }
+    var expandedReplies by rememberSaveable(context.target, actor) { mutableStateOf(emptyList<String>()) }
     var ratingVisible by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
-    var reply by remember(context.target) { mutableStateOf<CommunityComment?>(null) }
-    var editing by remember(context.target) { mutableStateOf<CommunityComment?>(null) }
+    var replyId by rememberSaveable(context.target, actor) { mutableStateOf<String?>(null) }
+    var editingId by rememberSaveable(context.target, actor) { mutableStateOf<String?>(null) }
+    val selectedComments = snapshot.comments + snapshot.replies.values.flatten()
+    val reply = selectedComments.firstOrNull { it.id == replyId }
+    val editing = selectedComments.firstOrNull { it.id == editingId }
     fun gated(feature: AccountFeature, action: () -> Unit) {
         when (account.featureGate.request(feature)) {
             is AccountAccess.LoginRequired -> { profilePrompt = false; loginPrompt = true }
@@ -128,6 +135,7 @@ private fun CommunityContent(
     fun perform(onSuccess: () -> Unit = {}, action: suspend () -> CommunityOperation) {
         if (actionInFlight) return
         actionInFlight = true
+        val actionOwner = (account.session.value as? AccountSession.Authenticated)?.profile?.userId
         scope.launch {
             // No optimistic counts/comments, fake success or local social persistence.
             try {
@@ -140,7 +148,10 @@ private fun CommunityContent(
                         }
                         result.error.userMessage
                     }
-                    CommunityOperation.Completed -> { onSuccess(); null }
+                    CommunityOperation.Completed -> {
+                        if ((account.session.value as? AccountSession.Authenticated)?.profile?.userId == actionOwner) onSuccess()
+                        null
+                    }
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -149,10 +160,12 @@ private fun CommunityContent(
             } finally { actionInFlight = false }
         }
     }
-    LaunchedEffect(repository, context.target, session) {
+    LaunchedEffect(repository, context.target, actor) {
         // loadInitial is idempotent/cache-aware; all paging state belongs to the existing repository.
         try {
             val result = repository.loadInitial(context.target)
+            // Restore only previously expanded threads, without refetching every reply on recomposition.
+            expandedReplies.forEach { repository.loadReplies(context.target, it) }
             if (result is CommunityOperation.Failed) message = result.error.userMessage
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -170,11 +183,11 @@ private fun CommunityContent(
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                         Text("التقييم", style = MaterialTheme.typography.titleMedium, color = Color.White)
                         snapshot.rating?.let {
-                            Text(it.average?.let { average -> "★ ${"%.1f".format(average)} · ${it.count} تقييم" } ?: "${it.count} تقييم",
+                            Text(it.average?.let { average -> "★ ${"%.1f".format(average)} · ${it.count} تقييم" } ?: "لا توجد تقييمات بعد",
                                 color = MangaroDesignSystem.GoldPrimary)
-                        } ?: Text("لا تتوفر تقييمات بعد", color = Color(0xFFB7A9C4), style = MaterialTheme.typography.bodySmall)
+                        } ?: Text(if(snapshot.loading) "جارٍ تحميل التقييم" else if(snapshot.error!=null) "تعذّر تحميل التقييم" else "لا توجد تقييمات بعد", color = Color(0xFFB7A9C4), style = MaterialTheme.typography.bodySmall)
                     }
-                    TextButton(onClick = { gated(ratingFeature) { ratingVisible = true } }) {
+                    TextButton(enabled = !actionInFlight, onClick = { gated(ratingFeature) { ratingVisible = true } }) {
                         Text(if (chapter) "قيّم الفصل" else "قيّم العمل", color = MangaroDesignSystem.GoldPrimary)
                     }
                 }
@@ -191,24 +204,26 @@ private fun CommunityContent(
                     Text(it.userMessage, color = MaterialTheme.colorScheme.error)
                     TextButton(onClick = { perform { repository.refresh(context.target) } }, enabled = !actionInFlight) { Text("إعادة المحاولة") }
                 }
-                if (!snapshot.loading && !snapshot.refreshing && snapshot.comments.isEmpty()) Text(
+                if (!snapshot.loading && !snapshot.refreshing && snapshot.error == null && snapshot.comments.isEmpty()) Text(
                     if (chapter) "لا توجد تعليقات على هذا الفصل بعد" else "لا توجد تعليقات بعد",
                     style = MaterialTheme.typography.bodySmall, color = Color(0xFFB7A9C4))
                 if (!repository.available) Text("التعليقات والتقييمات ستتوفر لاحقًا", style = MaterialTheme.typography.labelSmall, color = Color(0xFF9F90AC))
                 if (!expanded) {
                     snapshot.comments.take(2).forEach { comment ->
-                        MangaroComment(comment, onLike = { gated(AccountFeature.REACTIONS) { perform { repository.setLiked(comment, !comment.isLikedByCurrentUser) } } },
+                        MangaroComment(comment, enabled = !actionInFlight, onLike = { gated(AccountFeature.REACTIONS) { perform { repository.setLiked(comment, !comment.isLikedByCurrentUser) } } },
                             onReply = { gated(AccountFeature.REPLIES) { onAllComments?.invoke() } })
                     }
                 }
                 if (expanded) {
                     if (session is AccountSession.Authenticated) {
-                        CommunityComposer(context.target, repository.available && !actionInFlight, reply, editing, submissionVersion,
-                            onCancel = { reply = null; editing = null },
-                            onSubmit = { body ->
-                                gated(if (reply != null) AccountFeature.REPLIES else AccountFeature.COMMENTS) {
-                                    perform(onSuccess = { submissionVersion++; reply = null; editing = null }) {
-                                        editing?.let { repository.editOwned(it, body) } ?: repository.post(context.target, body, reply?.parentCommentId ?: reply?.id)
+                        CommunityComposer(context.target, actor, repository.available && !actionInFlight && (editingId == null || editing != null), reply, editing, replyId, editingId, submissionVersion,
+                            onCancel = { replyId = null; editingId = null },
+                            onSubmit = { body, requestId ->
+                                val submittedEdit = editing
+                                val submittedParent = replyId
+                                gated(if (submittedParent != null) AccountFeature.REPLIES else AccountFeature.COMMENTS) {
+                                    perform(onSuccess = { submissionVersion++; replyId = null; editingId = null }) {
+                                        submittedEdit?.let { repository.editOwned(it, body) } ?: repository.post(context.target, body, submittedParent, requestId)
                                     }
                                 }
                             })
@@ -221,16 +236,16 @@ private fun CommunityContent(
             item(key = "summary") { body() }
             items(snapshot.comments, key = { it.id }) { comment ->
                 val owned = comment.isOwnedByCurrentUser && account.featureGate.ownsContent(comment.userId)
-                MangaroComment(comment,
+                MangaroComment(comment, enabled = !actionInFlight,
                     onLike = { gated(AccountFeature.REACTIONS) { perform { repository.setLiked(comment, !comment.isLikedByCurrentUser) } } },
-                    onReply = { gated(AccountFeature.REPLIES) { editing = null; reply = comment } },
+                    onReply = { gated(AccountFeature.REPLIES) { editingId = null; replyId = comment.id } },
                     onReport = { gated(AccountFeature.COMMENTS) { perform { repository.report(comment) } } },
-                    onEdit = ({ gated(AccountFeature.COMMENTS) { reply = null; editing = comment } }).takeIf { owned },
+                    onEdit = ({ gated(AccountFeature.COMMENTS) { replyId = null; editingId = comment.id } }).takeIf { owned },
                     onDelete = ({ gated(AccountFeature.COMMENTS) { perform { repository.deleteOwned(comment) } } }).takeIf { owned },
                     onViewReplies = ({
                         if (comment.id in expandedReplies) expandedReplies = expandedReplies - comment.id
                         else {
-                            expandedReplies = expandedReplies + comment.id
+                            expandedReplies = (expandedReplies + comment.id).distinct()
                             perform { repository.loadReplies(context.target, comment.id) }
                         }
                     }).takeIf { comment.replyCount > 0 })
@@ -238,11 +253,11 @@ private fun CommunityContent(
                     Column(Modifier.padding(start = 16.dp)) {
                         snapshot.replies[comment.id].orEmpty().forEach { response ->
                             val replyOwned = response.isOwnedByCurrentUser && account.featureGate.ownsContent(response.userId)
-                            MangaroComment(response,
+                            MangaroComment(response, enabled = !actionInFlight,
                                 onLike = { gated(AccountFeature.REACTIONS) { perform { repository.setLiked(response, !response.isLikedByCurrentUser) } } },
-                                onReply = { gated(AccountFeature.REPLIES) { editing = null; reply = comment } },
+                                onReply = { gated(AccountFeature.REPLIES) { editingId = null; replyId = comment.id } },
                                 onReport = { gated(AccountFeature.COMMENTS) { perform { repository.report(response) } } },
-                                onEdit = ({ gated(AccountFeature.COMMENTS) { reply = null; editing = response } }).takeIf { replyOwned },
+                                onEdit = ({ gated(AccountFeature.COMMENTS) { replyId = null; editingId = response.id } }).takeIf { replyOwned },
                                 onDelete = ({ gated(AccountFeature.COMMENTS) { perform { repository.deleteOwned(response) } } }).takeIf { replyOwned })
                         }
                         if (comment.id in snapshot.loadingReplies) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
@@ -262,20 +277,20 @@ private fun CommunityContent(
             }
         } else body()
         if (loginPrompt) AccountRequiredPrompt(onDismiss = { loginPrompt = false }, onAccount = onAccount, profileIncomplete = profilePrompt)
-        if (ratingVisible) RatingDialog(context, snapshot.rating?.currentUserRating, repository.available,
+        if (ratingVisible) RatingDialog(context, snapshot.rating?.currentUserRating, repository.available && !actionInFlight,
             onDismiss = { ratingVisible = false }, onSubmit = { stars ->
-                gated(ratingFeature) { perform { repository.rate(context.target, stars) }; ratingVisible = false }
+                gated(ratingFeature) { perform(onSuccess = { ratingVisible = false }) { repository.rate(context.target, stars) } }
             })
     }
 }
 
 @Composable
 private fun RatingDialog(context: CommunityContext, current: Int?, enabled: Boolean, onDismiss: () -> Unit, onSubmit: (Int) -> Unit) {
-    var stars by remember(context.target) { mutableIntStateOf(current ?: 0) }
+    var stars by rememberSaveable(context.target) { mutableIntStateOf(current ?: 0) }
     AlertDialog(onDismissRequest = onDismiss, containerColor = MangaroDesignSystem.SurfaceDark,
         title = { Text(if (context.target.targetType == CommunityTargetType.CHAPTER) "قيّم الفصل" else "قيّم العمل") },
         text = { Column { Text(context.title); Row { (1..5).forEach { value ->
-            IconButton(onClick = { stars = value }, modifier = Modifier.size(42.dp)) {
+            IconButton(enabled = enabled, onClick = { stars = value }, modifier = Modifier.size(42.dp)) {
                 Icon(if (value <= stars) Icons.Outlined.Star else Icons.Outlined.StarBorder, "$value من 5", tint = MangaroDesignSystem.GoldPrimary)
             }
         } } } },
@@ -284,27 +299,28 @@ private fun RatingDialog(context: CommunityContext, current: Int?, enabled: Bool
 }
 
 @Composable
-private fun CommunityComposer(target: CommunityTarget, enabled: Boolean, reply: CommunityComment?, editing: CommunityComment?, submissionVersion: Int, onCancel: () -> Unit, onSubmit: (String) -> Unit) {
-    var body by remember(target, reply?.id, editing?.id, submissionVersion) { mutableStateOf(editing?.body.orEmpty()) }
+private fun CommunityComposer(target: CommunityTarget, actor: String?, enabled: Boolean, reply: CommunityComment?, editing: CommunityComment?, replyId: String?, editingId: String?, submissionVersion: Int, onCancel: () -> Unit, onSubmit: (String, String) -> Unit) {
+    var body by rememberSaveable(target, actor, replyId, editingId, submissionVersion) { mutableStateOf(editing?.body.orEmpty()) }
+    var requestId by rememberSaveable(target, actor, replyId, editingId, submissionVersion) { mutableStateOf(java.util.UUID.randomUUID().toString()) }
     val validation = remember(body) { CommunityCommentInput.validate(body) }
     Column {
         reply?.let { Text("رد على ${it.displayName}", style = MaterialTheme.typography.labelSmall) }
-        OutlinedTextField(body, { body = it }, placeholder = { Text("اكتب تعليقًا...") }, modifier = Modifier.fillMaxWidth(),
+        OutlinedTextField(body, { if (body != it) requestId = java.util.UUID.randomUUID().toString(); body = it }, enabled = enabled, placeholder = { Text("اكتب تعليقًا...") }, modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp), minLines = 2, maxLines = 4,
             isError = body.isNotEmpty() && validation is CommentValidation.Invalid,
             supportingText = if (body.isNotEmpty() && validation is CommentValidation.Invalid) {{
                 Text(CommunityError(CommunityErrorKind.VALIDATION, validation.issue).userMessage)
             }} else null)
         Row {
-            TextButton(onClick = { (validation as? CommentValidation.Valid)?.let { onSubmit(it.body) } },
+            TextButton(onClick = { (validation as? CommentValidation.Valid)?.let { onSubmit(it.body, requestId) } },
                 enabled = enabled && validation is CommentValidation.Valid) { Text(if (editing == null) "إرسال" else "حفظ") }
-            TextButton(onClick = { body = ""; onCancel() }) { Text("إلغاء") }
+            TextButton(enabled = enabled, onClick = { body = ""; requestId = java.util.UUID.randomUUID().toString(); onCancel() }) { Text("إلغاء") }
         }
     }
 }
 
 @Composable
-fun MangaroComment(comment: CommunityComment, onLike: () -> Unit, onReply: () -> Unit,
+fun MangaroComment(comment: CommunityComment, enabled: Boolean = true, onLike: () -> Unit, onReply: () -> Unit,
     onReport: (() -> Unit)? = null, onEdit: (() -> Unit)? = null, onDelete: (() -> Unit)? = null, onViewReplies: (() -> Unit)? = null,
 ) {
     val time = remember(comment.createdAt, comment.updatedAt) {
@@ -312,8 +328,10 @@ fun MangaroComment(comment: CommunityComment, onLike: () -> Unit, onReply: () ->
     }
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (comment.avatarUrl != null) AsyncImage(comment.avatarUrl, null, modifier = Modifier.size(32.dp))
-            else Image(painterResource(R.drawable.ic_splash_logo), null, Modifier.size(32.dp))
+            Box(Modifier.size(32.dp)) {
+                Image(painterResource(R.drawable.ic_splash_logo), null, Modifier.matchParentSize())
+                comment.avatarUrl?.let { AsyncImage(it, null, modifier = Modifier.matchParentSize()) }
+            }
             Column {
                 Text(comment.displayName, style = MaterialTheme.typography.titleSmall)
                 comment.username?.let { UsernameHandle(it, style = MaterialTheme.typography.labelSmall, color = Color(0xFF9F90AC)) }
@@ -324,13 +342,13 @@ fun MangaroComment(comment: CommunityComment, onLike: () -> Unit, onReply: () ->
         Text(comment.body, style = MaterialTheme.typography.bodyMedium)
         Text(time + if (comment.isEdited) " · معدّل" else "", style = MaterialTheme.typography.labelSmall, color = Color(0xFF9F90AC))
         FlowRow(verticalArrangement = Arrangement.spacedBy(0.dp)) {
-            TextButton(onClick = onLike) { Icon(Icons.Outlined.FavoriteBorder, "إعجاب", Modifier.size(16.dp)); Text(" ${comment.likeCount}") }
-            TextButton(onClick = onReply) { Text(if (comment.replyCount > 0) "رد · ${comment.replyCount}" else "رد") }
-            onViewReplies?.let { TextButton(onClick = it) { Text("عرض الردود · ${comment.replyCount}") } }
-            onReport?.let { TextButton(onClick = it) { Text("إبلاغ") } }
+            TextButton(enabled = enabled, onClick = onLike) { Icon(Icons.Outlined.FavoriteBorder, "إعجاب", Modifier.size(16.dp)); Text(" ${comment.likeCount}") }
+            TextButton(enabled = enabled, onClick = onReply) { Text(if (comment.replyCount > 0) "رد · ${comment.replyCount}" else "رد") }
+            onViewReplies?.let { TextButton(enabled = enabled, onClick = it) { Text("عرض الردود · ${comment.replyCount}") } }
+            onReport?.let { TextButton(enabled = enabled, onClick = it) { Text("إبلاغ") } }
             if (comment.isOwnedByCurrentUser) {
-                onEdit?.let { TextButton(onClick = it) { Text("تعديل") } }
-                onDelete?.let { TextButton(onClick = it) { Text("حذف") } }
+                onEdit?.let { TextButton(enabled = enabled, onClick = it) { Text("تعديل") } }
+                onDelete?.let { TextButton(enabled = enabled, onClick = it) { Text("حذف") } }
             }
         }
     }

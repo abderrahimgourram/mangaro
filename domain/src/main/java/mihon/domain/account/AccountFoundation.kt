@@ -94,6 +94,13 @@ object AccountProfileInput {
         }
     }
 }
+/** Synchronous admission before launching work, so rapid taps cannot queue duplicate actions. */
+class AccountActionGate {
+    private val active = java.util.concurrent.atomic.AtomicBoolean(false)
+    fun tryStart(): Boolean = active.compareAndSet(false, true)
+    fun finish() { active.set(false) }
+}
+
 sealed interface AccountOperation {
     data object NotConfigured : AccountOperation
     data object Completed : AccountOperation

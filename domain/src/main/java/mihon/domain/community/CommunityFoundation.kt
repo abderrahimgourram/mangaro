@@ -193,7 +193,7 @@ interface CommunityRepository {
     suspend fun getRatingSummary(target: CommunityTarget): CommunityOperation
     // Future implementation upserts one rating per authenticated user + target.
     suspend fun rate(target: CommunityTarget, stars: Int): CommunityOperation
-    suspend fun post(target: CommunityTarget, body: String, parentCommentId: String? = null): CommunityOperation
+    suspend fun post(target: CommunityTarget, body: String, parentCommentId: String? = null, requestId: String = java.util.UUID.randomUUID().toString()): CommunityOperation
     suspend fun setLiked(comment: CommunityComment, liked: Boolean): CommunityOperation
     suspend fun report(comment: CommunityComment): CommunityOperation
     suspend fun editOwned(comment: CommunityComment, body: String): CommunityOperation
@@ -213,7 +213,7 @@ class DisabledCommunityRepository : CommunityRepository {
         if (stars in 1..5) CommunityOperation.NotConfigured else CommunityOperation.Failed(
             CommunityError(CommunityErrorKind.VALIDATION, CommunityValidationIssue.INVALID_RATING),
         )
-    override suspend fun post(target: CommunityTarget, body: String, parentCommentId: String?): CommunityOperation = validateUnavailable(body)
+    override suspend fun post(target: CommunityTarget, body: String, parentCommentId: String?, requestId: String): CommunityOperation = validateUnavailable(body)
     override suspend fun setLiked(comment: CommunityComment, liked: Boolean) = CommunityOperation.NotConfigured
     override suspend fun report(comment: CommunityComment) = CommunityOperation.NotConfigured
     override suspend fun editOwned(comment: CommunityComment, body: String): CommunityOperation = validateUnavailable(body)

@@ -22,24 +22,29 @@ class SupabaseCloudSync(private val context:Context,private val client:SupabaseC
     private val store:CloudSyncStore,private val local:CloudLocalGateway):AccountCloudSync {
     private val scope=CoroutineScope(SupervisorJob()+Dispatchers.IO)
     private val lock=Mutex()
+    private val configuration=Mutex()
+    private class InactiveAccount : CancellationException()
     private val resolutions=MutableSharedFlow<Unit>(extraBufferCapacity=1,onBufferOverflow=kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST)
     private val states=ConcurrentHashMap<String,MutableStateFlow<CloudSyncStatus>>()
     private var started=false
     private var scheduledAt=0L
     private fun active()=(auth.observeSession().value as? AccountSession.Authenticated)?.profile?.userId
     private fun enabled(user:String)=store.get(user,"enabled")=="true"
-    private fun checkOwner(user:String) { if(!CloudSyncPolicy.canSend(user,active(),enabled(user))) throw CancellationException("Sync account inactive") }
+    private fun checkOwner(user:String) { if(!CloudSyncPolicy.canSend(user,active(),enabled(user))) throw InactiveAccount() }
     private fun state(user:String)=states.getOrPut(user){MutableStateFlow(CloudSyncStatus())}
     override fun observe(userId:String):StateFlow<CloudSyncStatus> {
         val flow=state(userId)
         if(!flow.value.loaded) scope.launch {publish(userId)}
         return flow.asStateFlow()
     }
-    private fun publish(user:String,running:Boolean=false,error:String?=null) {
-        state(user).value=CloudSyncStatus(enabled(user),store.get(user,"decision")!=null,running,
-            store.count(user,"pending/")+store.count(user,"dirty/"),store.get(user,"success")?.toLongOrNull(),error,store.count(user,"unresolved/"),true)
+    private fun publish(user:String,running:Boolean?=null,error:String?=null) {
+        val previous=state(user).value
+        state(user).value=try {CloudSyncStatus(enabled(user),store.get(user,"decision")!=null,running ?: previous.running,
+            store.count(user,"pending/")+store.count(user,"dirty/"),store.get(user,"success")?.toLongOrNull(),error,store.count(user,"unresolved/"),true)}
+        catch(_:Exception) {previous.copy(running=false,loaded=true,error="تعذر المزامنة — بياناتك المحلية محفوظة")}
     }
-    override fun restoredCompletion(userId:String,chapterKey:String)=store.get(userId,"restored/$chapterKey")=="true"
+    override fun restoredCompletion(userId:String,chapterKey:String)=runCatching {store.get(userId,"restored/$chapterKey")=="true"}.getOrDefault(true)
+    @Synchronized
     override fun start() {
         if(started)return;started=true
         LocalCloudChanges.capture={ change ->
@@ -56,8 +61,11 @@ class SupabaseCloudSync(private val context:Context,private val client:SupabaseC
         scope.launch {
             resolutions.debounce(500).collect {
                 val user=active() ?: return@collect
-                if(!enabled(user) || store.get(user,"baseline")!="true") return@collect
-                try {lock.withLock {checkOwner(user);captureDirty(user);applyUnresolved(user,false);publish(user)}}
+                try {
+                    if(!enabled(user) || store.get(user,"baseline")!="true") return@collect
+                    lock.withLock {checkOwner(user);captureDirty(user);applyUnresolved(user,false);publish(user)}
+                }
+                catch(_:InactiveAccount) { /* Account switch does not terminate the application collector. */ }
                 catch(cancelled:CancellationException) {throw cancelled}
                 catch(_:Exception) { /* Cached unresolved state remains durable and can retry later. */ }
             }
@@ -67,15 +75,19 @@ class SupabaseCloudSync(private val context:Context,private val client:SupabaseC
             auth.observeSession().collectLatest { session ->
                 val user=(session as? AccountSession.Authenticated)?.profile?.userId
                 if(previous!=user) {
-                    previous?.let {WorkManager.getInstance(context).cancelUniqueWork(workName(it))}
-                    previous=user
-                    if(user!=null) { publish(user);if(enabled(user)) schedule(user) }
+                    try {
+                        previous?.let {WorkManager.getInstance(context).cancelUniqueWork(workName(it))}
+                        previous=user
+                        if(user!=null) { publish(user);if(enabled(user)) schedule(user) }
+                    } catch(cancelled:CancellationException) {throw cancelled}
+                    catch(_:Exception) {user?.let {publish(it,false,"تعذر المزامنة — بياناتك المحلية محفوظة")}}
                 }
             }
         }
     }
     override suspend fun configure(userId:String,enabled:Boolean):AccountOperation=withContext(Dispatchers.IO) {
         if(active()!=userId)return@withContext AccountOperation.Failed("سجّل الدخول أولًا")
+        if(!configuration.tryLock())return@withContext AccountOperation.Failed("جارٍ تجهيز المزامنة")
         try {
             if(enabled && store.get(userId,"baseline")!="true" && store.get(userId,"seeded")==null) {
                 val snapshot=local.all(userId)
@@ -85,6 +97,7 @@ class SupabaseCloudSync(private val context:Context,private val client:SupabaseC
             }
             if(enabled && !enabled(userId) && store.get(userId,"baseline")=="true") {
                 val snapshot=local.knownSnapshot(userId)
+                if(active()!=userId)return@withContext AccountOperation.Failed("تغير الحساب، حاول مجددًا")
                 store.rows(userId,"local/").forEach { (path,value)->
                     val key=path.removePrefix("local/")
                     if(key !in snapshot && !key.startsWith("cloud_chapter_progress/")) {
@@ -94,11 +107,13 @@ class SupabaseCloudSync(private val context:Context,private val client:SupabaseC
                 }
                 snapshot.forEach { (key,row)->queue(userId,key,row) }
             }
+            if(active()!=userId)return@withContext AccountOperation.Failed("تغير الحساب، حاول مجددًا")
             store.put(userId,"decision","made");store.put(userId,"enabled",enabled.toString());publish(userId)
             if(enabled) schedule(userId,immediate=true) else WorkManager.getInstance(context).cancelUniqueWork(workName(userId))
             AccountOperation.Completed
         } catch(cancelled:CancellationException) {throw cancelled}
         catch(_:Exception) {publish(userId,error="تعذر تفعيل المزامنة، حاول مجددًا");AccountOperation.Failed("تعذر تفعيل المزامنة")}
+        finally {configuration.unlock()}
     }
 
     fun schedule(user:String,immediate:Boolean=false,append:Boolean=false) {
@@ -110,8 +125,9 @@ class SupabaseCloudSync(private val context:Context,private val client:SupabaseC
         WorkManager.getInstance(context).enqueueUniqueWork(workName(user),if(append) ExistingWorkPolicy.APPEND_OR_REPLACE else ExistingWorkPolicy.KEEP,request)
     }
     override suspend fun syncNow(userId:String):AccountOperation=withContext(Dispatchers.IO) {
-        lock.withLock {
-            try {
+        if(!lock.tryLock())return@withContext AccountOperation.Completed
+        try {
+            withTimeout(90_000) {
                 checkOwner(userId);publish(userId,true)
                 val initial=store.get(userId,"baseline")!="true"
                 if(!initial) captureDirty(userId)
@@ -119,7 +135,7 @@ class SupabaseCloudSync(private val context:Context,private val client:SupabaseC
                 applyUnresolved(userId,initial)
                 if(initial) {
                     if(store.rows(userId,"more/").values.any {it=="true"}) {
-                        publish(userId);schedule(userId,append=true);return@withLock AccountOperation.Completed
+                        publish(userId,false);schedule(userId,append=true);return@withTimeout AccountOperation.Completed
                     }
                     store.rows(userId,"seed/").forEach { (key,value)->
                         val plain=key.removePrefix("seed/")
@@ -132,12 +148,18 @@ class SupabaseCloudSync(private val context:Context,private val client:SupabaseC
                     store.rows(userId,"seed/").keys.forEach {store.remove(userId,it)}
                 }
                 push(userId)
-                checkOwner(userId);store.put(userId,"success",System.currentTimeMillis().toString());publish(userId)
-                if(store.rows(userId,"pending/").isNotEmpty()||store.rows(userId,"dirty/").isNotEmpty()||store.rows(userId,"more/").values.any {it=="true"}) schedule(userId,append=true)
+                checkOwner(userId)
+                val remaining=store.count(userId,"pending/")>0 || store.count(userId,"dirty/")>0 || store.rows(userId,"more/").values.any {it=="true"}
+                if(!remaining)store.put(userId,"success",System.currentTimeMillis().toString())
+                publish(userId,false)
+                if(remaining)schedule(userId,append=true)
                 AccountOperation.Completed
-            } catch(cancelled:CancellationException) {publish(userId);throw cancelled}
-            catch(_:Exception) {publish(userId,error="تعذر المزامنة — سنحاول مرة أخرى");AccountOperation.Failed("تعذر المزامنة — سنحاول مرة أخرى")}
-        }
+            }
+        } catch(_:InactiveAccount) {publish(userId,false);AccountOperation.Completed}
+        catch(_:TimeoutCancellationException) {publish(userId,false,"تعذر المزامنة — سنحاول مرة أخرى");runCatching {schedule(userId)};AccountOperation.Failed("تعذر المزامنة — سنحاول مرة أخرى")}
+        catch(cancelled:CancellationException) {publish(userId,false);throw cancelled}
+        catch(_:Exception) {publish(userId,false,"تعذر المزامنة — سنحاول مرة أخرى");runCatching {schedule(userId)};AccountOperation.Failed("تعذر المزامنة — سنحاول مرة أخرى")}
+        finally {lock.unlock()}
     }
     private fun initialBody(table:String,body:JsonObject,remote:JsonObject?):JsonObject {
         if(remote==null || remote.text("deleted_at")!=null)return body
@@ -267,10 +289,17 @@ class SupabaseCloudSync(private val context:Context,private val client:SupabaseC
 class CloudSyncWorker(context:Context,parameters:WorkerParameters):CoroutineWorker(context,parameters) {
     override suspend fun doWork():Result {
         val user=inputData.getString("account")?:return Result.failure()
-        val auth=Injekt.get<AccountAuth>()
-        withTimeoutOrNull(15_000) {auth.observeSession().first {it!=AccountSession.Loading}}
-        val repo=Injekt.get<AccountCloudSync>()
-        if((auth.observeSession().value as? AccountSession.Authenticated)?.profile?.userId!=user ) return Result.success()
-        return try { if(repo.syncNow(user)==AccountOperation.Completed)Result.success() else Result.retry() } catch (_: CancellationException) { Result.success() }
+        return try {
+            val auth=Injekt.get<AccountAuth>()
+            val restored=withTimeoutOrNull(15_000) {auth.observeSession().first {it!=AccountSession.Loading}}
+            if(restored==null)return Result.retry()
+            if((auth.observeSession().value as? AccountSession.Authenticated)?.profile?.userId!=user)return Result.success()
+            val repo=Injekt.get<AccountCloudSync>()
+            when(repo.syncNow(user)) {
+                AccountOperation.Completed,AccountOperation.NotConfigured -> Result.success()
+                is AccountOperation.Failed -> Result.retry()
+            }
+        } catch(cancelled:CancellationException) {throw cancelled}
+        catch(_:Exception) {Result.retry()}
     }
 }

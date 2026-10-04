@@ -97,6 +97,15 @@ class SupabaseAccountAuth private constructor(private val client: SupabaseClient
         }
     }
 
+    internal class SessionChangedException : IllegalStateException()
+    /** Existing auth mutex prevents a queued social write running as a newly signed-in account. */
+    internal suspend fun <T> withSession(userId: String, action: suspend () -> T): T = mutations.withLock {
+        if ((session.value as? AccountSession.Authenticated)?.profile?.userId != userId || client.auth.currentUserOrNull()?.id != userId) {
+            throw SessionChangedException()
+        }
+        action()
+    }
+
     override suspend fun signInWithGoogle(): AccountOperation = mutations.withLock {
         attempt {
             errors.value = null
@@ -148,6 +157,9 @@ class SupabaseAccountAuth private constructor(private val client: SupabaseClient
     }
 
     override suspend fun signOut() = mutations.withLock {
+        // Stop account-only UI/work immediately; remote revocation may be offline or slow.
+        session.value = AccountSession.Guest
+        errors.value = null
         try { client.auth.signOut() }
         catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) { /* Clear only this cloud session even if revocation is offline. */ }
@@ -159,9 +171,9 @@ class SupabaseAccountAuth private constructor(private val client: SupabaseClient
         }
     }
 
-    override suspend fun getCurrentProfile(): MangaroProfile? {
-        val user = client.auth.currentUserOrNull() ?: return null
-        return try { loadProfile(user) } catch (cancelled: CancellationException) { throw cancelled }
+    override suspend fun getCurrentProfile(): MangaroProfile? = mutations.withLock {
+        val user = client.auth.currentUserOrNull() ?: return@withLock null
+        try { loadProfile(user) } catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) { errors.value = "تعذّر تحميل ملفك الشخصي"; null }
     }
 

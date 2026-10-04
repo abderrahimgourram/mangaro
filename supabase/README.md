@@ -204,3 +204,18 @@ Focused Android/domain tests cover repeat restoration, category identity, guest 
 account isolation, initial additive policies, remote suppression and restoration
 without XP. Run `:app:assembleDebug` for the APK. Cross-device/offline/runtime sync
 still requires manual device verification; these checks do not claim device testing.
+
+## Phase 5 retry hardening
+
+`20261004004606_mangaro_comment_retry_hardening.sql` permits inserting a saved
+comment request UUID into the existing primary key. Ownership/profile RLS, body
+validation, immutable fields and XP triggers are unchanged. An ambiguous retry
+confirms the existing owner, target, parent and trimmed body; it never updates
+a conflicting comment. Editing a draft starts a new request.
+
+`supabase/tests/phase5_comment_retry.sql` rolls back all fixtures and verifies
+owner/guest boundaries, immutable IDs, retry uniqueness and zero additional XP
+from duplicate posts, ratings or likes. Client regression tests use a local HTTP
+fixture to cover lost responses, confirmed writes followed by failed reads,
+account changes during sync, and unreadable sync metadata. No device testing is
+claimed by these checks.

@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.data.community
 
+import eu.kanade.tachiyomi.data.account.SupabaseAccountAuth
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.exceptions.RestException
 import io.github.jan.supabase.postgrest.from
@@ -68,7 +69,7 @@ class SupabaseCommunityRepository(private val client: SupabaseClient, private va
         val avatar = custom ?: google_avatar_url?.takeIf { it.startsWith("https://") }
         return CommunityComment(id, target, AccountAuthor(user_id, display_name, username, avatar, level), body,
             timestamp(created_at), timestamp(updated_at), like_count, reply_count,
-            timestamp(updated_at) > timestamp(created_at), user_id == user, parent_comment_id, liked_by_me)
+            timestamp(updated_at) > timestamp(created_at), user_id == user, parent_comment_id, user != null && liked_by_me)
     }
     private fun timestamp(value: String) = Instant.parse(value).toEpochMilliseconds()
     private suspend fun reload(target: CommunityTarget, item: Entry) {
@@ -86,7 +87,7 @@ class SupabaseCommunityRepository(private val client: SupabaseClient, private va
         // A response authenticated as the previous user must not supply ownership/likes to the next session.
         if (actor() != user) { item.loadedAt = 0; item.state.value = item.state.value.copy(loading = false, refreshing = false); return }
         item.state.value = CommunitySnapshot(
-            rating = CommunityRatingSummary(summary.average, summary.count, summary.current_user_rating),
+            rating = CommunityRatingSummary(summary.average, summary.count, summary.current_user_rating.takeIf { user != null }),
             commentCount = comments.comment_count, comments = comments.items.map { it.comment(target, user) },
             hasMore = comments.has_more, nextCursor = comments.cursor(),
         )
@@ -114,7 +115,7 @@ class SupabaseCommunityRepository(private val client: SupabaseClient, private va
     override suspend fun refresh(target: CommunityTarget) = read(target) { reload(target, it) }
     override suspend fun getRatingSummary(target: CommunityTarget) = read(target) {
         val user = actor(); val summary = rating(target)
-        if (user == actor()) it.state.value = it.state.value.copy(rating = CommunityRatingSummary(summary.average, summary.count, summary.current_user_rating))
+        if (user == actor()) it.state.value = it.state.value.copy(rating = CommunityRatingSummary(summary.average, summary.count, summary.current_user_rating.takeIf { user != null }))
     }
     override suspend fun loadMore(target: CommunityTarget, cursor: CommunityCursor) = read(target) {
         if (it.actor != actor()) { reload(target, it); return@read }
@@ -140,7 +141,7 @@ class SupabaseCommunityRepository(private val client: SupabaseClient, private va
         replies(target, it, parentId, cursor)
     }
     private fun feature(target: CommunityTarget) = if (target.targetType == CommunityTargetType.MANGA) AccountFeature.MANGA_RATINGS else AccountFeature.CHAPTER_RATINGS
-    private suspend fun write(target: CommunityTarget, feature: AccountFeature, parent: String? = null, refreshProgression: Boolean = false, action: suspend (String) -> CommunityEvent?): CommunityOperation {
+    private suspend fun write(target: CommunityTarget, feature: AccountFeature, parent: String? = null, refreshProgression: Boolean = false, onConfirmed: (Entry) -> Unit = {}, action: suspend (String) -> CommunityEvent?): CommunityOperation {
         val access = account.featureGate.access(feature)
         val user = when (access) {
             is AccountAccess.Allowed -> access.userId
@@ -151,12 +152,25 @@ class SupabaseCommunityRepository(private val client: SupabaseClient, private va
             val item = entry(target)
             item.lock.withLock {
                 try {
-                    val event = requests.withPermit { action(user) }
-                    if (refreshProgression) account.auth.refreshProgression()
+                    val event = requests.withPermit {
+                        if (actor() != user) throw SupabaseAccountAuth.SessionChangedException()
+                        val auth = account.auth as? SupabaseAccountAuth
+                        if (auth != null) auth.withSession(user) { action(user) } else action(user)
+                    }
+                    if (actor() == user) {
+                        onConfirmed(item)
+                        if (refreshProgression) try { account.auth.refreshProgression() }
+                        catch (cancelled: CancellationException) { throw cancelled }
+                        catch (_: Exception) { /* Confirmed social action stays successful; next targeted refresh can retry. */ }
+                    }
                     event?.let { emitted.tryEmit(it) }
                     // The mutation is server-confirmed; a subsequent read failure must not encourage duplicate posting.
                     try { reload(target, item); if (parent != null) replies(target, item, parent, null) }
-                    catch (cancelled: CancellationException) { item.loadedAt = 0; throw cancelled }
+                    catch (cancelled: CancellationException) {
+                        item.loadedAt = 0
+                        item.state.value = item.state.value.copy(loading = false, refreshing = false, loadingMore = false, loadingReplies = emptySet())
+                        throw cancelled
+                    }
                     catch (failure: Exception) {
                         item.loadedAt = 0
                         item.state.value = item.state.value.copy(loading = false, refreshing = false, loadingReplies = emptySet(), error = error(failure))
@@ -169,24 +183,44 @@ class SupabaseCommunityRepository(private val client: SupabaseClient, private va
     }
     override suspend fun rate(target: CommunityTarget, stars: Int): CommunityOperation {
         if (stars !in 1..5) return CommunityOperation.Failed(CommunityError(CommunityErrorKind.VALIDATION, CommunityValidationIssue.INVALID_RATING))
-        return write(target, feature(target)) {
+        return write(target, feature(target), onConfirmed = { item ->
+            item.state.value = item.state.value.copy(rating = item.state.value.rating?.copy(currentUserRating = stars))
+        }) {
             client.postgrest.rpc("community_set_rating", JsonObject(params(target) + ("p_rating" to JsonPrimitive(stars))))
             if (target.targetType == CommunityTargetType.MANGA) CommunityEvent.MangaRated(target, stars) else CommunityEvent.ChapterRated(target, stars)
         }
     }
-    override suspend fun post(target: CommunityTarget, body: String, parentCommentId: String?): CommunityOperation {
+    override suspend fun post(target: CommunityTarget, body: String, parentCommentId: String?, requestId: String): CommunityOperation {
         val input = CommunityCommentInput.validate(body)
         if (input is CommentValidation.Invalid) return CommunityOperation.Failed(CommunityError(CommunityErrorKind.VALIDATION, input.issue))
         return write(target, if (parentCommentId == null) AccountFeature.COMMENTS else AccountFeature.REPLIES, parentCommentId, refreshProgression = true) { user ->
-            val id = client.from("community_comments").insert(buildJsonObject {
-                put("target_type", target.targetType.name.lowercase()); put("manga_key", target.mangaKey.value)
-                put("chapter_key", target.chapterKey?.value); put("user_id", user)
-                put("parent_comment_id", parentCommentId); put("body", (input as CommentValidation.Valid).body)
-            }) { select() }.decodeSingle<Identity>().id
+            val id = java.util.UUID.fromString(requestId).toString()
+            val validatedBody = (input as CommentValidation.Valid).body
+            try {
+                client.from("community_comments").insert(buildJsonObject {
+                    put("id", id)
+                    put("target_type", target.targetType.name.lowercase()); put("manga_key", target.mangaKey.value)
+                    put("chapter_key", target.chapterKey?.value); put("user_id", user)
+                    put("parent_comment_id", parentCommentId); put("body", validatedBody)
+                }) { select() }.decodeSingle<Identity>()
+            } catch (duplicate: PostgrestRestException) {
+                if (duplicate.code != "23505") throw duplicate
+                // The same saved request ID may have committed before its response was lost.
+                // Confirm full ownership/context/body; never upsert or overwrite someone else's ID.
+                val existing = client.from("community_comments").select {
+                    filter { eq("id", id); eq("user_id", user) }
+                }.decodeSingle<PostedComment>()
+                check(existing.id == id && existing.user_id == user && existing.target_type == target.targetType.name.lowercase() &&
+                    existing.manga_key == target.mangaKey.value && existing.chapter_key == target.chapterKey?.value &&
+                    existing.parent_comment_id == parentCommentId && existing.body == validatedBody)
+            }
             if (parentCommentId == null) CommunityEvent.CommentCreated(target, id) else CommunityEvent.ReplyCreated(target, id, parentCommentId)
         }
     }
-    override suspend fun setLiked(comment: CommunityComment, liked: Boolean) = write(comment.target, AccountFeature.REACTIONS, comment.parentCommentId) {
+    override suspend fun setLiked(comment: CommunityComment, liked: Boolean) = write(comment.target, AccountFeature.REACTIONS, comment.parentCommentId,
+        onConfirmed = { item -> updateComment(item, comment.id) {
+            it.copy(isLikedByCurrentUser = liked, likeCount = (it.likeCount + if (it.isLikedByCurrentUser == liked) 0 else if (liked) 1 else -1).coerceAtLeast(0))
+        } }) {
         client.postgrest.rpc("community_like_comment", buildJsonObject { put("p_comment_id", comment.id); put("p_liked", liked) }); null
     }
     override suspend fun report(comment: CommunityComment) = write(comment.target, AccountFeature.COMMENTS, comment.parentCommentId) {
@@ -198,17 +232,30 @@ class SupabaseCommunityRepository(private val client: SupabaseClient, private va
         return write(comment.target, AccountFeature.COMMENTS, comment.parentCommentId) { user ->
             client.from("community_comments").update(buildJsonObject { put("body", (input as CommentValidation.Valid).body) }) {
                 filter { eq("id", comment.id); eq("user_id", user) }; select()
-            }.decodeSingle<Identity>(); null
+            }.decodeSingle<EditedComment>().also { edited ->
+                updateComment(entry(comment.target), edited.id) {it.copy(body = edited.body, updatedAt = timestamp(edited.updated_at), isEdited = true)}
+            }; null
         }
     }
-    override suspend fun deleteOwned(comment: CommunityComment) = write(comment.target, AccountFeature.COMMENTS, comment.parentCommentId, refreshProgression = true) { user ->
-        client.from("community_comments").delete { filter { eq("id", comment.id); eq("user_id", user) }; select() }.decodeSingle<Identity>(); null
+    override suspend fun deleteOwned(comment: CommunityComment) = write(comment.target, AccountFeature.COMMENTS, comment.parentCommentId, refreshProgression = true,
+        onConfirmed = { item ->
+            item.state.value = item.state.value.copy(comments = item.state.value.comments.filterNot {it.id == comment.id},
+                replies = (item.state.value.replies - comment.id).mapValues { (_, rows) -> rows.filterNot {it.id == comment.id} },
+                replyCursors = item.state.value.replyCursors - comment.id, commentCount = null)
+        }) { user ->
+        check(comment.userId == user)
+        // An empty result is also success for a retry of this owner's already-deleted comment.
+        client.from("community_comments").delete { filter { eq("id", comment.id); eq("user_id", user) }; select() }.decodeList<Identity>(); null
+    }
+    private fun updateComment(item: Entry, id: String, transform: (CommunityComment) -> CommunityComment) {
+        item.state.value = item.state.value.copy(comments = item.state.value.comments.map {if(it.id == id) transform(it) else it},
+            replies = item.state.value.replies.mapValues { (_, rows) -> rows.map {if(it.id == id) transform(it) else it} })
     }
     private fun error(failure: Exception): CommunityError {
         val code = (failure as? PostgrestRestException)?.code
         val status = (failure as? RestException)?.statusCode
         val kind = when {
-            status == 401 -> CommunityErrorKind.AUTH_REQUIRED
+            failure is SupabaseAccountAuth.SessionChangedException || status == 401 -> CommunityErrorKind.AUTH_REQUIRED
             status == 429 -> CommunityErrorKind.RATE_LIMITED
             code in setOf("23514", "22023", "23503", "23505") -> CommunityErrorKind.VALIDATION
             status == 403 || code == "42501" -> CommunityErrorKind.PERMISSION_DENIED
@@ -218,6 +265,9 @@ class SupabaseCommunityRepository(private val client: SupabaseClient, private va
         }
         return CommunityError(kind)
     }
+    @Serializable private data class PostedComment(val id: String, val user_id: String, val target_type: String, val manga_key: String,
+        val chapter_key: String?, val parent_comment_id: String?, val body: String)
+    @Serializable private data class EditedComment(val id: String, val body: String, val updated_at: String)
     @Serializable private data class Identity(val id: String)
     @Serializable private data class Cursor(val created_at: String, val id: String)
     @Serializable private data class Rating(val average: Double?, val count: Long, val current_user_rating: Int?)

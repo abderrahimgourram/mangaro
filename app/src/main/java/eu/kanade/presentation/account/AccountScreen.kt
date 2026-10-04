@@ -39,6 +39,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -60,6 +61,7 @@ import kotlinx.coroutines.CancellationException
 import eu.kanade.tachiyomi.data.account.prepareAccountAvatar
 import mihon.domain.account.ProfileUpdate
 import mihon.domain.account.AccountProfileInput
+import mihon.domain.account.AccountActionGate
 import mihon.domain.account.AccountFoundation
 import mihon.domain.account.AccountOperation
 import mihon.domain.account.AccountSession
@@ -83,6 +85,7 @@ fun AccountPanel(onBack: () -> Unit) {
         val session by account.session.collectAsState()
         val authError by account.auth.error.collectAsState()
         val scope = rememberCoroutineScope()
+        val actionGate = remember { AccountActionGate() }
         var error by remember { mutableStateOf<String?>(null) }
         var submitting by remember { mutableStateOf(false) }
         val loading = session == AccountSession.Loading || submitting
@@ -104,18 +107,20 @@ fun AccountPanel(onBack: () -> Unit) {
                     is AccountSession.Authenticated -> {
                         AccountProfileEditor(current.profile, account, submitting,
                             onAction = { action ->
-                                scope.launch {
+                                if (actionGate.tryStart()) {
                                     submitting = true
-                                    error = null
-                                    try {
-                                        error = when (val result = action()) {
-                                            AccountOperation.Completed -> null
-                                            AccountOperation.NotConfigured -> "الحساب غير متاح حاليًا"
-                                            is AccountOperation.Failed -> result.message
-                                        }
-                                    } catch (cancelled: CancellationException) { throw cancelled }
-                                    catch (_: Exception) { error = "تعذّر تنفيذ العملية، حاول مجددًا" }
-                                    finally { submitting = false }
+                                    scope.launch {
+                                        error = null
+                                        try {
+                                            error = when (val result = action()) {
+                                                AccountOperation.Completed -> null
+                                                AccountOperation.NotConfigured -> "الحساب غير متاح حاليًا"
+                                                is AccountOperation.Failed -> result.message
+                                            }
+                                        } catch (cancelled: CancellationException) { throw cancelled }
+                                        catch (_: Exception) { error = "تعذّر تنفيذ العملية، حاول مجددًا" }
+                                        finally { submitting = false; actionGate.finish() }
+                                    }
                                 }
                             })
                     }
@@ -127,16 +132,20 @@ fun AccountPanel(onBack: () -> Unit) {
                         Button(
                             enabled = account.auth.googleSignInAvailable && !loading,
                             onClick = {
-                                scope.launch {
+                                if (actionGate.tryStart()) {
                                     submitting = true
-                                    error = null
-                                    try {
-                                        when (val result = account.auth.signInWithGoogle()) {
-                                            AccountOperation.NotConfigured -> error = "تسجيل الدخول غير متاح حاليًا"
-                                            is AccountOperation.Failed -> error = result.message
-                                            AccountOperation.Completed -> Unit // Authentication is determined only by the session stream.
-                                        }
-                                    } finally { submitting = false }
+                                    scope.launch {
+                                        error = null
+                                        try {
+                                            when (val result = account.auth.signInWithGoogle()) {
+                                                AccountOperation.NotConfigured -> error = "تسجيل الدخول غير متاح حاليًا"
+                                                is AccountOperation.Failed -> error = result.message
+                                                AccountOperation.Completed -> Unit // Authentication is determined only by the session stream.
+                                            }
+                                        } catch (cancelled: CancellationException) { throw cancelled }
+                                        catch (_: Exception) { error = "تعذّر تسجيل الدخول، حاول مجددًا" }
+                                        finally { submitting = false; actionGate.finish() }
+                                    }
                                 }
                             },
                             modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp),
@@ -164,8 +173,8 @@ private fun AccountProfileEditor(
     onAction: (suspend () -> AccountOperation) -> Unit,
 ) {
     val context = LocalContext.current
-    var username by remember(profile.userId, profile.username) { mutableStateOf(profile.username.orEmpty()) }
-    var displayName by remember(profile.userId, profile.displayName) { mutableStateOf(profile.displayName.orEmpty()) }
+    var username by rememberSaveable(profile.userId, profile.username) { mutableStateOf(profile.username.orEmpty()) }
+    var displayName by rememberSaveable(profile.userId, profile.displayName) { mutableStateOf(profile.displayName.orEmpty()) }
     val update = remember(username, displayName) { ProfileUpdate(displayName, username) }
     val validation = remember(update) { AccountProfileInput.error(update) }
     val avatarPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -182,7 +191,7 @@ private fun AccountProfileEditor(
     // Email is visible only in this owner's account area, never public comments/profiles.
     profile.email?.let { Text(it, color = Color(0xFFB7A9C4)) }
     Text("المستوى ${profile.level} · ${profile.rankTitle}", color = Color(0xFFB7A9C4), style = MaterialTheme.typography.bodySmall)
-    Text("${profile.xp} XP", color = Color(0xFFB7A9C4), style = MaterialTheme.typography.labelSmall)
+    Text("إجمالي الخبرة: ${profile.xp} XP", color = Color(0xFFB7A9C4), style = MaterialTheme.typography.labelSmall)
     if (profile.level == MangaroRanks.MAX_LEVEL) {
         Text("المستوى الأقصى", color = MangaroDesignSystem.GoldPrimary, style = MaterialTheme.typography.labelSmall)
     } else {
@@ -191,7 +200,7 @@ private fun AccountProfileEditor(
         LinearProgressIndicator(progress = { (earned.toFloat() / required).coerceIn(0f, 1f) },
             modifier = Modifier.fillMaxWidth().height(4.dp), color = MangaroDesignSystem.GoldPrimary,
             trackColor = MangaroDesignSystem.SurfaceHigh)
-        Text("$earned / $required XP", color = Color(0xFFB7A9C4), style = MaterialTheme.typography.labelSmall)
+        Text("خبرة هذا المستوى: $earned / $required XP", color = Color(0xFFB7A9C4), style = MaterialTheme.typography.labelSmall)
     }
     if (profile.username == null) Text("أكمل ملفك باختيار اسم مستخدم فريد. يمكنك مواصلة القراءة كالمعتاد.",
         color = MangaroDesignSystem.GoldPrimary, style = MaterialTheme.typography.bodySmall)
@@ -253,9 +262,14 @@ private fun AccountAvatar(profile: MangaroProfile?, modifier: Modifier) {
         listOfNotNull(profile?.avatarUrl, profile?.googleAvatarUrl).distinct()
     }
     var index by remember(urls) { mutableStateOf(0) }
-    if (index < urls.size) AsyncImage(urls[index], null, modifier = modifier,
-        onError = { index += 1 })
-    else Image(painterResource(R.drawable.ic_splash_logo), null, modifier)
+    androidx.compose.foundation.layout.Box(modifier) {
+        Image(painterResource(R.drawable.ic_splash_logo), null, Modifier.matchParentSize())
+        if (index < urls.size) {
+            val loadingIndex = index
+            AsyncImage(urls[loadingIndex], null, modifier = Modifier.matchParentSize(),
+                onError = { if (index == loadingIndex) index = loadingIndex + 1 })
+        }
+    }
 }
 
 /** One reusable account-required prompt, delegating authentication to the existing account UI. */
