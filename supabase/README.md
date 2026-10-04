@@ -275,3 +275,25 @@ guest denials, reply metadata, bounded pagination, privacy and unchanged XP on
 editing. All fixtures roll back. Existing Phase 2, retry and public-presentation
 security suites also pass with the new schema. Android conceals the body until
 explicit reveal, including in previews and replies; reveal state is temporary.
+
+## Private reply inbox
+
+`20261004135703_mangaro_reply_notifications.sql` creates an owner-private inbox
+from new verified replies only. Self-replies create no event. The trigger-only
+SECURITY DEFINER insert helper has an explicit empty search path and no client
+EXECUTE grants. Recipients can select their rows and update only `read_at`;
+the server assigns the first read timestamp. Clients cannot insert, delete,
+change identity or reset read state. Parent/reply deletion cascades the event.
+
+`reply_inbox_page` is a security-invoker 20-row `(created_at,id)` cursor read with
+joined public actor data. Spoiler bodies are replaced with null previews in SQL
+and independently concealed by Android. `community_comment_context` reuses the
+existing public fields to resolve the exact parent ID and target, including
+threads older than the first comment page. No Auth or private cloud data is read.
+
+The rollback-only `supabase/tests/reply_notifications.sql` covers recipient and
+cross-user RLS, blocked inserts/direct trigger invocation, self-reply suppression,
+spoiler/privacy checks, bounded duplicate-free pagination, immutable identity,
+server read timestamps, individual read and mark-all-read. Local work updates
+are captured from the existing Library updater; they need no backend table.
+History uses the existing local history/chapter data and cloud semantics.

@@ -71,3 +71,7 @@ FROM historyView
 WHERE historyView.readAt > 0
 ORDER BY readAt DESC
 LIMIT 1;
+
+-- Presentation-only batched names; no schema or progress mutation.
+historyChapterNames:
+SELECT chapters._id, chapters.name FROM chapters WHERE chapters._id IN :chapterIds;

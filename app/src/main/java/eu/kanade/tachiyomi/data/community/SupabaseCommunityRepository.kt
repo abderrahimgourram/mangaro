@@ -137,6 +137,11 @@ class SupabaseCommunityRepository(private val client: SupabaseClient, private va
             reload(target, it)
         }
     }
+    override suspend fun commentById(target: CommunityTarget, id: String): CommunityComment? {
+        val user = actor()
+        val row = client.postgrest.rpc("community_comment_context", buildJsonObject { put("p_id", id); put("p_manga_key", target.mangaKey.value); put("p_chapter_key", target.chapterKey?.value) }).decodeAs<Row?>()
+        return row?.takeIf { user == actor() }?.comment(target, user)
+    }
     override suspend fun publicProfile(userId: String): CommunityProfileResult = withContext(Dispatchers.IO) {
         try {
             val id = java.util.UUID.fromString(userId).toString()

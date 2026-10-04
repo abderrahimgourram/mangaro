@@ -80,7 +80,7 @@ fun communityContextFor(manga: Manga, chapter: Chapter? = null): CommunityContex
     )
 }
 
-class CommunityCommentsScreen(private val context: CommunityContext) : Screen() {
+class CommunityCommentsScreen(private val context: CommunityContext, private val initialThreadId: String? = null) : Screen() {
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
@@ -90,7 +90,7 @@ class CommunityCommentsScreen(private val context: CommunityContext) : Screen() 
                 Text(if (context.target.targetType == CommunityTargetType.CHAPTER) "تعليقات الفصل" else "تعليقات العمل",
                     style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
             }
-            CommunityContent(context, expanded = true, onAccount = { navigator.push(AccountScreen()) },
+            CommunityContent(context, expanded = true, initialThreadId = initialThreadId, onAccount = { navigator.push(AccountScreen()) },
                 onProfile = { userId -> openCommunityProfile(navigator, userId) })
         }
     }
@@ -143,7 +143,7 @@ private fun openCommunityProfile(navigator: cafe.adriel.voyager.navigator.Naviga
 @Composable
 private fun CommunityContent(
     context: CommunityContext, expanded: Boolean, onAccount: () -> Unit, onAllComments: (() -> Unit)? = null,
-    onProfile: (String) -> Unit,
+    onProfile: (String) -> Unit, initialThreadId: String? = null,
 ) {
     val repository = remember { Injekt.get<CommunityRepository>() }
     val account = remember { Injekt.get<AccountFoundation>() }
@@ -155,7 +155,7 @@ private fun CommunityContent(
     var profilePrompt by remember(context.target, actor) { mutableStateOf(false) }
     var actionInFlight by remember(context.target) { mutableStateOf(false) }
     var submissionVersion by rememberSaveable(context.target, actor) { mutableIntStateOf(0) }
-    var threadId by rememberSaveable(context.target, actor) { mutableStateOf<String?>(null) }
+    var threadId by rememberSaveable(context.target, actor) { mutableStateOf<String?>(initialThreadId) }
     var threadAnchor by remember(context.target, actor) { mutableStateOf<CommunityComment?>(null) }
     var threadEditingId by rememberSaveable(context.target, actor) { mutableStateOf<String?>(null) }
     var threadSubmissionVersions by rememberSaveable(context.target, actor) { mutableStateOf(mapOf<String, Int>()) }
@@ -211,7 +211,11 @@ private fun CommunityContent(
         try {
             val result = repository.loadInitial(context.target)
             // Restore only previously expanded threads, without refetching every reply on recomposition.
-            threadId?.let { repository.loadReplies(context.target, it) }
+            threadId?.let {
+                if (threadAnchor == null) threadAnchor = repository.commentById(context.target, it)
+                if (threadAnchor != null || snapshot.comments.any { comment -> comment.id == it }) repository.loadReplies(context.target, it)
+                else { threadId = null; message = "لم يعد هذا التعليق متاحًا" }
+            }
             if (result is CommunityOperation.Failed) message = result.error.userMessage
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -256,6 +260,16 @@ private fun CommunityContent(
                 if (!snapshot.loading && !snapshot.refreshing && snapshot.error == null && snapshot.comments.isEmpty()) Text(
                     if (chapter) "لا توجد تعليقات على هذا الفصل بعد" else "لا توجد تعليقات بعد",
                     style = MaterialTheme.typography.bodySmall, color = Color(0xFFB7A9C4))
+                if (initialThreadId != null && threadId != null && threadAnchor == null && !snapshot.loading && !snapshot.refreshing) {
+                    TextButton(enabled = !actionInFlight, onClick = {
+                        val id = threadId ?: return@TextButton
+                        perform {
+                            threadAnchor = repository.commentById(context.target, id)
+                            if (threadAnchor != null) repository.loadReplies(context.target, id)
+                            else { threadId = null; message = "لم يعد هذا التعليق متاحًا"; CommunityOperation.Completed }
+                        }
+                    }) { Text("فتح الردود") }
+                }
                 if (!repository.available) Text("التعليقات والتقييمات ستتوفر لاحقًا", style = MaterialTheme.typography.labelSmall, color = Color(0xFF9F90AC))
                 if (!expanded) {
                     snapshot.comments.take(2).forEach { comment ->

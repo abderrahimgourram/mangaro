@@ -15,4 +15,5 @@ data class HistoryWithRelations(
     val lastPageRead: Long = 0L,
     val read: Boolean = false,
     val totalPages: Long = 0L,
+    val chapterName: String? = null,
 )

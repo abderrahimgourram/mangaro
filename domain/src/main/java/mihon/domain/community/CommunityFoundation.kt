@@ -16,6 +16,10 @@ enum class CommunityTargetType { MANGA, CHAPTER }
 /** Versioned opaque backend keys; source identifiers never become visible UI metadata. */
 data class CommunityMangaKey private constructor(val value: String) : Serializable {
     companion object {
+        fun fromOpaque(value: String): CommunityMangaKey {
+            require(value.matches(Regex("[0-9a-f]{64}")))
+            return CommunityMangaKey(value)
+        }
         fun fromSource(sourceId: Long, mangaUrl: String, stableSourceId: String? = null): CommunityMangaKey {
             val identity = stableSourceId?.takeIf { it.isNotBlank() }
             return CommunityMangaKey(communityHash("manga-v1", sourceId.toString(),
@@ -28,6 +32,10 @@ data class CommunityChapterKey private constructor(
     val mangaKey: CommunityMangaKey,
 ) : Serializable {
     companion object {
+        fun fromOpaque(mangaKey: CommunityMangaKey, value: String): CommunityChapterKey {
+            require(value.matches(Regex("[0-9a-f]{64}")))
+            return CommunityChapterKey(value, mangaKey)
+        }
         fun fromSource(mangaKey: CommunityMangaKey, chapterUrl: String, stableSourceId: String? = null): CommunityChapterKey {
             val identity = stableSourceId?.takeIf { it.isNotBlank() }
             return CommunityChapterKey(communityHash("chapter-v1", mangaKey.value,
@@ -200,6 +208,7 @@ sealed interface CommunityEvent {
     data class ChapterRated(val target: CommunityTarget, val stars: Int) : CommunityEvent
 }
 interface CommunityRepository {
+    suspend fun commentById(target: CommunityTarget, id: String): CommunityComment? = null
     val available: Boolean
     val events: Flow<CommunityEvent>
     fun observe(target: CommunityTarget): StateFlow<CommunitySnapshot>

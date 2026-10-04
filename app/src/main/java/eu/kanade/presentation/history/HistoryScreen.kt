@@ -32,6 +32,7 @@ import tachiyomi.presentation.core.screens.LoadingScreen
 @Composable
 fun HistoryScreen(
     state: HistoryViewModel.State,
+    onBack: (() -> Unit)? = null,
     snackbarHostState: SnackbarHostState,
     onSearchQueryChange: (String?) -> Unit,
     onClickCover: (mangaId: Long) -> Unit,
@@ -42,7 +43,8 @@ fun HistoryScreen(
     Scaffold(
         topBar = { scrollBehavior ->
             SearchToolbar(
-                titleContent = { AppBarTitle(stringResource(MR.strings.history)) },
+                titleContent = { AppBarTitle("السجل") },
+                navigateUp = onBack,
                 searchQuery = state.searchQuery,
                 onChangeSearchQuery = onSearchQueryChange,
                 actions = {
@@ -104,7 +106,7 @@ private fun HistoryScreenContent(
     ) {
         items(
             items = history,
-            key = { "history-${it.hashCode()}" },
+            key = { when (it) { is HistoryUiModel.Item -> "history-${it.item.mangaId}"; is HistoryUiModel.Header -> "day-${it.date}" } },
             contentType = {
                 when (it) {
                     is HistoryUiModel.Header -> "header"

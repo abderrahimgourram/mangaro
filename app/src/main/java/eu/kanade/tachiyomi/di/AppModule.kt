@@ -175,6 +175,8 @@ class AppModule(val app: Application) : InjektModule {
                 eu.kanade.tachiyomi.data.account.sync.SupabaseCloudSync(app, backend.communityClient, auth, store, local)
             }
         }
+        addSingletonFactory { eu.kanade.tachiyomi.data.inbox.WorkUpdateInbox(app) }
+        addSingletonFactory { eu.kanade.tachiyomi.data.inbox.ReplyInbox(get<mihon.domain.account.AccountAuth>() as? eu.kanade.tachiyomi.data.account.SupabaseAccountAuth) }
         addSingletonFactory { mihon.domain.account.AccountFoundation(get(), get()) }
 
         addSingletonFactory { DownloadProvider(app) }

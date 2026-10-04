@@ -6,6 +6,7 @@ import app.cash.sqldelight.async.coroutines.awaitAsList
 import app.cash.sqldelight.async.coroutines.awaitAsOne
 import app.cash.sqldelight.async.coroutines.awaitAsOneOrNull
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import logcat.LogPriority
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.data.Database
@@ -23,6 +24,12 @@ class HistoryRepositoryImpl(
         return database.historyViewQueries
             .history(query, HistoryMapper::mapHistoryWithRelations)
             .subscribeToList()
+            .map { rows ->
+                val names = rows.map { it.chapterId }.distinct().chunked(400).flatMap { ids ->
+                    database.historyViewQueries.historyChapterNames(ids).awaitAsList()
+                }.associate { it._id to it.name }
+                rows.map { it.copy(chapterName = names[it.chapterId]) }
+            }
     }
 
     override suspend fun getLastHistory(): HistoryWithRelations? {

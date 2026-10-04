@@ -266,6 +266,8 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
                                             .sortedByDescending { it.sourceOrder }
 
                                         if (newChapters.isNotEmpty()) {
+                                            // Optional local inbox persistence must never fail the manga update.
+                                            runCatching { Injekt.get<eu.kanade.tachiyomi.data.inbox.WorkUpdateInbox>().record(manga, newChapters) }
                                             val chaptersToDownload = filterChaptersForDownload.await(manga, newChapters)
 
                                             if (chaptersToDownload.isNotEmpty()) {

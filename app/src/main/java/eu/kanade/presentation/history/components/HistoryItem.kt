@@ -3,7 +3,8 @@ package eu.kanade.presentation.history.components
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material3.TextButton
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -26,13 +27,12 @@ import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.manga.components.MangaCover
 import eu.kanade.presentation.theme.TachiyomiPreviewTheme
 import eu.kanade.presentation.util.formatChapterNumber
-import eu.kanade.tachiyomi.util.lang.toTimestampString
 import tachiyomi.domain.history.model.HistoryWithRelations
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.padding
 import tachiyomi.presentation.core.i18n.stringResource
 
-private val HistoryItemHeight = 96.dp
+private val HistoryItemHeight = 132.dp
 
 @Composable
 fun HistoryItem(
@@ -46,12 +46,12 @@ fun HistoryItem(
     Row(
         modifier = modifier
             .clickable(onClick = onClickResume)
-            .height(HistoryItemHeight)
+            .heightIn(min = HistoryItemHeight)
             .padding(horizontal = MaterialTheme.padding.medium, vertical = MaterialTheme.padding.small),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         MangaCover.Book(
-            modifier = Modifier.fillMaxHeight(),
+            modifier = Modifier.height(96.dp),
             data = history.coverData,
             onClick = onClickCover,
         )
@@ -68,20 +68,20 @@ fun HistoryItem(
                 overflow = TextOverflow.Ellipsis,
                 style = textStyle,
             )
-            val readAt = remember { history.readAt?.toTimestampString() ?: "" }
+            val readAt = remember(history.readAt) { history.readAt?.let { eu.kanade.presentation.inbox.inboxTime(it.time) } ?: "" }
             Text(
-                text = if (history.chapterNumber > -1) {
-                    stringResource(
-                        MR.strings.recent_manga_time,
-                        formatChapterNumber(history.chapterNumber),
-                        readAt,
-                    )
-                } else {
-                    readAt
-                },
+                text = history.chapterName?.takeIf { it.isNotBlank() } ?: if (history.chapterNumber > -1) "الفصل ${formatChapterNumber(history.chapterNumber)}" else "آخر فصل قرأته",
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(top = 4.dp),
                 style = textStyle,
             )
+            if (history.totalPages > 0) {
+                Text("الصفحة ${(history.lastPageRead + 1).coerceIn(1, history.totalPages)} من ${history.totalPages}", style = MaterialTheme.typography.bodySmall)
+            } else if (history.lastPageRead >= 0) {
+                Text("الصفحة ${history.lastPageRead + 1}", style = MaterialTheme.typography.bodySmall)
+            }
+            Text("آخر قراءة: $readAt", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            TextButton(onClick = onClickResume) { Text("متابعة") }
         }
 
         if (!history.coverData.isMangaFavorite) {

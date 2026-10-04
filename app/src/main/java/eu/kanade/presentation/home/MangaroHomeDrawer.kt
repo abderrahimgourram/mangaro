@@ -35,6 +35,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Settings
@@ -74,6 +75,7 @@ import kotlinx.coroutines.launch
 fun MangaroHomeDrawer(
     activeDownloadsCount: Int,
     onLibrary: () -> Unit,
+    onHistory: () -> Unit = {},
     onDownloads: () -> Unit,
     onSettings: () -> Unit,
     onAbout: () -> Unit,
@@ -147,6 +149,7 @@ fun MangaroHomeDrawer(
                                 .border(1.dp, Color(0x1A89709F), RoundedCornerShape(20.dp))
                                 .padding(4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 DrawerAction("المكتبة", Icons.Outlined.BookmarkBorder) { select(onLibrary) }
+                                DrawerAction("السجل", Icons.Outlined.History) { select(onHistory) }
                                 DrawerAction("التنزيلات", Icons.Outlined.Download, activeDownloadsCount) { select(onDownloads) }
                                 DrawerAction("الإعدادات", Icons.Outlined.Settings) { select(onSettings) }
                             }

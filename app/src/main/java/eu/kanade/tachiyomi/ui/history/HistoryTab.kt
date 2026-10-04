@@ -59,7 +59,10 @@ data object HistoryTab : Tab {
     }
 
     @Composable
-    override fun Content() {
+    override fun Content() { HistoryContent() }
+
+    @Composable
+    internal fun HistoryContent(onBack: (() -> Unit)? = null) {
         val navigator = LocalNavigator.currentOrThrow
         val context = LocalContext.current
         val viewModel = viewModel<HistoryViewModel>()
@@ -67,9 +70,10 @@ data object HistoryTab : Tab {
 
         HistoryScreen(
             state = state,
+            onBack = onBack,
             snackbarHostState = snackbarHostState,
             onSearchQueryChange = viewModel::updateSearchQuery,
-            onClickCover = { navigator.push(MangaScreen(it)) },
+            onClickCover = { if (navigator.lastItem !is MangaScreen) navigator.push(MangaScreen(it)) },
             onClickResume = viewModel::getNextChapterForManga,
             onDialogChange = viewModel::setDialog,
             onClickFavorite = viewModel::addFavorite,
@@ -154,9 +158,25 @@ data object HistoryTab : Tab {
     private suspend fun openChapter(context: Context, chapter: Chapter?) {
         if (chapter != null) {
             val intent = ReaderActivity.newIntent(context, chapter.mangaId, chapter.id)
+                // Existing Reader SavedState route also resumes completed chapters at their saved page.
+                .putExtra("page_index", historyResumePage(chapter))
             context.startActivity(intent)
         } else {
             snackbarHostState.showSnackbar(context.stringResource(MR.strings.no_next_chapter))
         }
     }
 }
+
+
+/** Drawer destination using the established local history flow and Reader route. */
+class ReadingHistoryScreen : eu.kanade.presentation.util.Screen() {
+    @Composable override fun Content() {
+        val navigator = LocalNavigator.currentOrThrow
+        androidx.compose.runtime.CompositionLocalProvider(androidx.compose.ui.platform.LocalLayoutDirection provides androidx.compose.ui.unit.LayoutDirection.Rtl) {
+            HistoryTab.HistoryContent(onBack = { navigator.pop() })
+        }
+    }
+}
+
+
+internal fun historyResumePage(chapter: Chapter): Int = chapter.lastPageRead.coerceIn(0, Int.MAX_VALUE.toLong()).toInt()

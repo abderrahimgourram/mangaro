@@ -9,6 +9,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Menu
+import androidx.compose.material.icons.outlined.NotificationsNone
+import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.Badge
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -26,6 +29,8 @@ import eu.kanade.presentation.theme.MangaroDesignSystem
 fun MangaroHomeHeader(
     onSearchClick: () -> Unit,
     onMenuClick: () -> Unit,
+    onNotificationsClick: () -> Unit = {},
+    hasUnreadNotifications: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -46,6 +51,11 @@ fun MangaroHomeHeader(
             color = Color.White,
             maxLines = 1,
         )
+        IconButton(onClick = onNotificationsClick) {
+            BadgedBox(badge = { if (hasUnreadNotifications) Badge(containerColor = MangaroDesignSystem.GoldPrimary) }) {
+                Icon(Icons.Outlined.NotificationsNone, if (hasUnreadNotifications) "إشعارات غير مقروءة" else "الإشعارات", Modifier.size(21.dp), tint = Color(0xFFD5CADE))
+            }
+        }
         IconButton(onClick = onSearchClick) {
             Icon(Icons.Outlined.Search, "بحث", Modifier.size(21.dp), tint = Color(0xFFD5CADE))
         }

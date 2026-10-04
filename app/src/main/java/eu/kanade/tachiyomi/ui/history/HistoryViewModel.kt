@@ -49,6 +49,7 @@ class HistoryViewModel(
     private val getDuplicateLibraryManga: GetDuplicateLibraryManga = Injekt.get(),
     private val getHistory: GetHistory = Injekt.get(),
     private val getManga: GetManga = Injekt.get(),
+    private val getChapter: tachiyomi.domain.chapter.interactor.GetChapter = Injekt.get(),
     private val getNextChapters: GetNextChapters = Injekt.get(),
     private val libraryPreferences: LibraryPreferences = Injekt.get(),
     private val removeHistory: RemoveHistory = Injekt.get(),
@@ -80,7 +81,7 @@ class HistoryViewModel(
     }
 
     private fun List<HistoryWithRelations>.toHistoryUiModels(): List<HistoryUiModel> {
-        return map { HistoryUiModel.Item(it) }
+        return recentReadingHistory(this).map { HistoryUiModel.Item(it) }
             .insertSeparators { before, after ->
                 val beforeDate = before?.item?.readAt?.time?.toLocalDate()
                 val afterDate = after?.item?.readAt?.time?.toLocalDate()
@@ -96,9 +97,15 @@ class HistoryViewModel(
         return withIOContext { getNextChapters.await(onlyUnread = false).firstOrNull() }
     }
 
+    private val openingHistory = java.util.concurrent.atomic.AtomicBoolean(false)
     fun getNextChapterForManga(mangaId: Long, chapterId: Long) {
+        if (!openingHistory.compareAndSet(false, true)) return
         viewModelScope.launchIO {
-            sendNextChapterEvent(getNextChapters.await(mangaId, chapterId, onlyUnread = false))
+            try {
+                val chapter = getChapter.await(chapterId)?.takeIf { it.mangaId == mangaId }
+                _events.send(Event.OpenChapter(chapter))
+                kotlinx.coroutines.delay(500)
+            } finally { openingHistory.set(false) }
         }
     }
 
@@ -259,3 +266,9 @@ class HistoryViewModel(
         data object HistoryCleared : Event
     }
 }
+
+
+/** One latest local reading position per manga, without requiring Library membership. */
+internal fun recentReadingHistory(items: List<HistoryWithRelations>): List<HistoryWithRelations> =
+    items.sortedWith(compareByDescending<HistoryWithRelations> { it.readAt?.time ?: 0 }.thenByDescending { it.id })
+        .distinctBy { it.mangaId }

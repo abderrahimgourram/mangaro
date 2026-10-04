@@ -126,9 +126,25 @@ object HomeTab : Tab {
 
         val account = androidx.compose.runtime.remember { uy.kohesive.injekt.Injekt.get<mihon.domain.account.AccountFoundation>() }
         val accountSession by account.session.collectAsState()
+        val inbox = viewModel<eu.kanade.presentation.inbox.InboxViewModel>(key = "home-inbox")
+        val inboxState by inbox.state.collectAsState()
+        val workNotices by inbox.work.notices.collectAsState()
+        val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+        androidx.compose.runtime.DisposableEffect(lifecycleOwner, inbox) {
+            val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+                if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) inbox.refreshBadge()
+            }
+            inbox.refreshBadge()
+            lifecycleOwner.lifecycle.addObserver(observer)
+            onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+        }
+        val currentInboxOwner = (accountSession as? mihon.domain.account.AccountSession.Authenticated)?.profile?.userId
+        val hasUnreadInbox = workNotices.any { it.readAt == null } || (inboxState.owner == currentInboxOwner && inboxState.unread > 0)
+
         MangaroHomeDrawer(
             activeDownloadsCount = state.activeDownloadsCount,
             onLibrary = { tabNavigator.current = LibraryTab },
+            onHistory = { if (navigator.lastItem !is eu.kanade.tachiyomi.ui.history.ReadingHistoryScreen) navigator.push(eu.kanade.tachiyomi.ui.history.ReadingHistoryScreen()) },
             onDownloads = { tabNavigator.current = DownloadsTab },
             onSettings = { navigator.push(SettingsScreen()) },
             onAbout = { navigator.push(SettingsScreen(SettingsScreen.Destination.About)) },
@@ -159,6 +175,8 @@ object HomeTab : Tab {
                                 tabNavigator.current = SearchTab
                             },
                             onMenuClick = openDrawer,
+                            hasUnreadNotifications = hasUnreadInbox,
+                            onNotificationsClick = { if (navigator.lastItem !is eu.kanade.presentation.inbox.NotificationCenterScreen) navigator.push(eu.kanade.presentation.inbox.NotificationCenterScreen()) },
                         )
                     }
 
