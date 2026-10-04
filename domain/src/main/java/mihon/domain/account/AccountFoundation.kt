@@ -63,11 +63,11 @@ object ProfileIdentity {
     fun displayedLevel(level: Int, role: AccountRole) = if (role == AccountRole.DEVELOPER) 30 else level
     fun tier(level: Int): Int = when (level) {
         in 1..4 -> 0
-        in 5..10 -> 1
-        in 11..15 -> 2
-        in 16..20 -> 3
-        in 21..25 -> 4
-        in 26..29 -> 5
+        in 5..9 -> 1
+        in 10..14 -> 2
+        in 15..19 -> 3
+        in 20..24 -> 4
+        in 25..29 -> 5
         30 -> 6
         else -> error("Invalid level")
     }
@@ -153,6 +153,7 @@ interface AccountAuth {
     suspend fun removeCover(): AccountOperation = AccountOperation.NotConfigured
     suspend fun profileStatistics(): ProfileStatistics? = null
     suspend fun usernameAvailable(username: String): Boolean? = null
+    fun consumeRankMilestone(userId: String): RankMilestone? = null
 }
 
 /** No network, credentials, account fabrication, token storage or local-data mutation. */

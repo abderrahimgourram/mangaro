@@ -48,7 +48,7 @@ class ProfileShowcaseAdapterTest {
             repository.save(mockk<Context>(),uid,true,draft.favorites,emptyMap())
             val payload=Json.parseToJsonElement(requests.single {it.first.endsWith("save_public_showcase")}.second).jsonObject
             payload.keys shouldBe setOf("p_enabled","p_favorites")
-            payload["p_favorites"]!!.jsonArray.single().jsonObject.keys shouldBe setOf("manga_key","title","cover_path")
+            payload["p_favorites"]!!.jsonArray.single().jsonObject.keys shouldBe setOf("manga_key","title","cover_path","featured")
             requests.none {it.first.contains("cloud_") || it.first.contains("xp_")} shouldBe true
             val before=requests.size
             listOf(AccountSession.Guest,AccountSession.Authenticated(MangaroProfile("other-account",null,"Other","other",null,0,1))).forEach { next ->

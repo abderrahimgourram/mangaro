@@ -26,16 +26,22 @@ import java.io.ByteArrayOutputStream
 
 /** An opt-in showcase, separate from private cloud Library replication. */
 class ProfileShowcaseRepository(private val account: AccountFoundation) {
-    @Serializable data class Favorite(val manga_key: String, val title: String, val cover_path: String? = null, val sort_order: Int = 0)
+    @Serializable data class Favorite(val manga_key: String, val title: String, val cover_path: String? = null, val sort_order: Int = 0, val featured: Boolean = false)
     @Serializable private data class Setting(val enabled: Boolean)
-    data class Snapshot(val enabled: Boolean, val favorites: List<Favorite>)
+    data class Snapshot(val enabled: Boolean, val favorites: List<Favorite>, val covers: Map<String, String> = emptyMap())
     private val backend get() = account.auth as? SupabaseAccountAuth
     suspend fun load(user: String): Snapshot = withContext(Dispatchers.IO) {
         val auth = backend ?: error("Not configured")
         withTimeoutOrNull(15_000) { auth.withSession(user) {
             val enabled = auth.communityClient.from("public_showcase_settings").select { filter { eq("user_id", user) } }.decodeList<Setting>().firstOrNull()?.enabled ?: false
             val favorites = auth.communityClient.from("public_favorites").select { filter { eq("user_id", user) } }.decodeList<Favorite>().sortedBy { it.sort_order }
-            Snapshot(enabled, favorites)
+            val paths = favorites.mapNotNull { it.cover_path }
+            val covers = try {
+                if (paths.isEmpty()) emptyMap() else auth.communityClient.storage.from("showcase-covers").createSignedUrls(kotlin.time.Duration.parse("2h"), paths)
+                    .filter { it.error == null }.associate { it.path to it.signedURL }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { emptyMap() }
+            Snapshot(enabled, favorites, covers)
         } } ?: error("Showcase load timed out")
     }
     suspend fun save(context: Context, user: String, enabled: Boolean, favorites: List<Favorite>, local: Map<String, Manga>) = withContext(Dispatchers.IO) {
@@ -51,7 +57,7 @@ class ProfileShowcaseRepository(private val account: AccountFoundation) {
                         destination
                     } else null
                 } else null
-                buildJsonObject { put("manga_key", favorite.manga_key); put("title", favorite.title); put("cover_path", path) }
+                buildJsonObject { put("manga_key", favorite.manga_key); put("title", favorite.title); put("cover_path", path); put("featured", favorite.featured) }
             }
             auth.withSession(user) { auth.communityClient.postgrest.rpc("save_public_showcase", buildJsonObject { put("p_enabled", enabled); put("p_favorites", JsonArray(rows)) }) }
             check((account.session.value as? AccountSession.Authenticated)?.profile?.userId == user)

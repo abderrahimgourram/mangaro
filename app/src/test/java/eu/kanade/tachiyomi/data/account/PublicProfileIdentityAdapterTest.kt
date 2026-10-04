@@ -20,7 +20,7 @@ class PublicProfileIdentityAdapterTest {
         val key="a".repeat(64)
         server.createContext("/") { exchange ->
             val storage=exchange.requestURI.path.contains("/storage/")
-            val body=if(storage) "{}" else """{"user_id":"$uid","display_name":"Developer","username":"jalem","avatar_path":null,"google_avatar_url":null,"cover_path":null,"bio":"قارئ","updated_at":"2026-10-04T00:00:00Z","level":30,"role":"developer","comment_count":3,"rating_count":4,"chapters_read":427,"favorites":[{"manga_key":"$key","title":"Exact Work","cover_path":"$uid/$key.webp"}],"email":"PRIVATE","source_url":"PRIVATE"}"""
+            val body=if(storage) "{}" else """{"user_id":"$uid","display_name":"Developer","username":"jalem","avatar_path":null,"google_avatar_url":null,"cover_path":null,"bio":"قارئ","updated_at":"2026-10-04T00:00:00Z","level":30,"role":"developer","comment_count":3,"rating_count":4,"chapters_read":427,"showcase_enabled":true,"favorites":[{"manga_key":"$key","title":"Exact Work","cover_path":"$uid/$key.webp","featured":true}],"email":"PRIVATE","source_url":"PRIVATE"}"""
             val bytes=body.toByteArray();exchange.responseHeaders.add("Content-Type","application/json")
             exchange.sendResponseHeaders(if(storage) 403 else 200,bytes.size.toLong());exchange.responseBody.use { it.write(bytes) }
         }
@@ -33,6 +33,8 @@ class PublicProfileIdentityAdapterTest {
                 author.role shouldBe AccountRole.DEVELOPER
                 author.level shouldBe 30
                 chaptersRead shouldBe 427
+                showcaseEnabled shouldBe true
+                favorites.single().featured shouldBe true
                 favorites.single().mangaKey shouldBe key
                 favorites.single().coverUrl shouldBe null
                 favorites.single().title shouldBe "Exact Work"

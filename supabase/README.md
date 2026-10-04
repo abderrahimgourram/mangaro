@@ -347,3 +347,58 @@ narrow Phase 9 helpers; generic XP mutation functions remain inaccessible.
 A live two-connection case-variant username race was verified: one transaction
 succeeded, the other received 23505 from the existing unique index. Both temporary
 auth identities were removed afterward; remaining fixture count was zero.
+
+
+## Phase 9.5 — rank identity and Library Showcase
+
+One forward migration: `20261004153836_mangaro_showcase_featured`, deployed to
+mangaro-prod. Adds `featured boolean default false` to existing public_favorites;
+existing sort_order and visibility are reused. Owner-only atomic save derives
+identity from auth.uid(), retains deployed slot limits, accepts at most three
+featured works, and rejects unknown/private fields. Public projection adds only
+featured flags and published Showcase availability for the quiet empty state.
+All private Library/history/progress/URLs remain protected; no new Library model.
+
+`RankVisuals` is the shared deterministic palette. Visual tiers use 1–4 / 5–9 /
+10–14 / 15–19 / 20–24 / 25–29 / 30, independent of unchanged canonical Arabic rank
+names. Primary / surface / decorative soft colors:
+
+| Levels | Primary | Surface | Soft |
+|---|---|---|---|
+| 1–4 | #A7A0B8 | #24212B | #6D667A |
+| 5–9 | #C38A62 | #2B211D | #7D5540 |
+| 10–14 | #63B89C | #182824 | #376E60 |
+| 15–19 | #6F9FE8 | #182333 | #405F91 |
+| 20–24 | #A67BE8 | #241C34 | #654B90 |
+| 25–29 | #D6B56D | #2B2518 | #8B743E |
+| 30 | #E4C77A | #2B2419 | #8B743E |
+
+MAX uses secondary #AE86F3; other tiers use their primary as secondary. Frame
+edges, cover fades, page/M emblems, level pills and name accents reuse these
+tokens. Developer role remains independent: a separate M role glyph plus MAX
+presentation, never a fake verified check. No social powers are unlocked.
+
+The editor selects from the actual local Library with covers/search, orders with
+explicit move controls, features a subset up to three, removes items and previews
+the same public layout. Featured cards appear first, followed by a three-column
+cover grid. A disabled Showcase publishes no items or chapters count. Empty
+published shelves show a quiet empty state, never private Library size. Exact-key
+resolution is unchanged. Owner editing is in their existing Account profile;
+public viewers receive no edit controls.
+
+Deployed slot economy is intentionally unchanged: 5 initially, 10 at Level 5,
+15 at Level 15, 20 at Level 25; trusted Developer gets 20. It differs from the
+illustrative 10/20 thresholds in the request. A small account-scoped ephemeral
+tracker records tier increases from confirmed targeted progression reads;
+profile opening consumes one notice, including any real slot increase. Restoration
+alone, Developer max override, account switching, and revoked levels do not create
+milestone notices. XP rewards/caps/curve and Level 30 threshold are untouched.
+
+Focused domain tests cover every tier boundary, palette determinism and >=4.5:1
+text/surface contrast, MAX/role independence, one-shot milestone/account isolation,
+ordered selection and feature/cap bounds. SDK tests retain exact keys, flags and
+private defaults through server responses and account changes. Rolled-back server
+tests verify default privacy, ordering persistence, three-feature and slot limits,
+atomic failures, owner isolation and public payload fields. Phase 9 identity and XP
+regressions also passed. Security Advisor has no new findings; only the existing
+leaked-password warning remains. Android runtime/visual verification is manual.

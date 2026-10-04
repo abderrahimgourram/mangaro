@@ -2,6 +2,7 @@ package eu.kanade.presentation.community
 
 import eu.kanade.presentation.account.DeveloperBadge
 import eu.kanade.presentation.account.RankIdentity
+import eu.kanade.presentation.account.TierAvatarFrame
 import eu.kanade.presentation.account.rankAccent
 import androidx.compose.foundation.border
 
@@ -558,13 +559,15 @@ fun MangaroComment(comment: CommunityComment, enabled: Boolean = true, onLike: (
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(48.dp).clip(RoundedCornerShape(16.dp))
                 .clickable(interactionSource = avatarInteraction, indication = ripple(), onClick = onAuthor), contentAlignment = Alignment.Center) {
-                ProfileAvatar(comment.avatarUrl, modifier = Modifier.size(40.dp).border(1.dp, rankAccent(comment.level).copy(alpha = if (comment.level >= 5) 0.6f else 0.15f), RoundedCornerShape(13.dp)).graphicsLayer { scaleX = avatarScale; scaleY = avatarScale }
-                    .clip(RoundedCornerShape(13.dp)).background(MangaroDesignSystem.SurfaceHigh))
+                TierAvatarFrame(comment.level, Modifier.fillMaxSize()) {
+                    ProfileAvatar(comment.avatarUrl, modifier = Modifier.fillMaxSize().graphicsLayer { scaleX = avatarScale; scaleY = avatarScale }
+                        .clip(RoundedCornerShape(11.dp)).background(MangaroDesignSystem.SurfaceHigh))
+                }
             }
             Column(Modifier.weight(1f).heightIn(min = 48.dp).clip(RoundedCornerShape(6.dp)).clickable(onClick = onAuthor),
                 verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically)) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(0.dp)) {
-                    Text(comment.displayName, color = Color.White,
+                    Text(comment.displayName, color = if (comment.level >= 5) rankAccent(comment.level) else Color.White,
                         style = MaterialTheme.typography.titleSmall.copy(textDirection = TextDirection.Content), fontWeight = FontWeight.Bold,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                     DeveloperBadge(comment.author.role, compact = true)

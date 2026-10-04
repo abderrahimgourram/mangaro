@@ -124,8 +124,9 @@ data class CommunityPublicProfile(
     val ratingCount: Long,
     val chaptersRead: Long? = null,
     val favorites: List<PublicFavorite> = emptyList(),
+    val showcaseEnabled: Boolean = false,
 )
-data class PublicFavorite(val mangaKey: String, val title: String, val coverUrl: String?)
+data class PublicFavorite(val mangaKey: String, val title: String, val coverUrl: String?, val featured: Boolean = false)
 sealed interface CommunityProfileResult {
     data class Loaded(val profile: CommunityPublicProfile) : CommunityProfileResult
     data object NotFound : CommunityProfileResult

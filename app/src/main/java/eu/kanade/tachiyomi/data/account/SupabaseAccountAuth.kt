@@ -51,6 +51,9 @@ import kotlin.time.Duration.Companion.seconds
 
 /** One injectable application client; Google browser OAuth only. No local manga database access. */
 class SupabaseAccountAuth private constructor(private val client: SupabaseClient, private val credentials: AccountSessionStorage) : AccountAuth {
+    private val rankMilestones = RankMilestoneTracker()
+    override fun consumeRankMilestone(userId: String): RankMilestone? =
+        if ((session.value as? AccountSession.Authenticated)?.profile?.userId == userId) rankMilestones.consume(userId) else null
     // Community reuses this application client; authentication lifecycle remains here.
     internal val communityClient: SupabaseClient get() = client
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -87,7 +90,7 @@ class SupabaseAccountAuth private constructor(private val client: SupabaseClient
                             errors.value = "تعذّر تحميل ملفك الشخصي، حاول مجددًا"
                         }
                     }
-                    is SessionStatus.NotAuthenticated -> session.value = AccountSession.Guest
+                    is SessionStatus.NotAuthenticated -> { rankMilestones.reset(); session.value = AccountSession.Guest }
                     is SessionStatus.RefreshFailure -> {
                         session.value = AccountSession.Guest
                         errors.value = "تعذّر استعادة الحساب، يمكنك المتابعة كضيف"
@@ -157,6 +160,7 @@ class SupabaseAccountAuth private constructor(private val client: SupabaseClient
     }
 
     override suspend fun signOut() = mutations.withLock {
+        rankMilestones.reset()
         // Stop account-only UI/work immediately; remote revocation may be offline or slow.
         session.value = AccountSession.Guest
         errors.value = null
@@ -186,6 +190,7 @@ class SupabaseAccountAuth private constructor(private val client: SupabaseClient
             }.decodeSingle<ProgressionRow>()
             val latest = (session.value as? AccountSession.Authenticated)?.profile
             if (latest?.userId == current.userId && client.auth.currentUserOrNull()?.id == current.userId) {
+                rankMilestones.updated(current.userId, progress.level, latest.role)
                 session.value = AccountSession.Authenticated(latest.copy(xp = progress.total_xp, level = ProfileIdentity.displayedLevel(progress.level, latest.role)))
             }
             AccountOperation.Completed
@@ -315,6 +320,8 @@ class SupabaseAccountAuth private constructor(private val client: SupabaseClient
             client.from("profile_roles").select { filter { eq("user_id", user.id) } }.decodeList<RoleRow>().firstOrNull()?.role.let(AccountRole::fromServer)
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) { previous?.role ?: AccountRole.USER }
+        if (previous == null) rankMilestones.reset()
+        if (progression != null) rankMilestones.confirm(user.id, progression.level)
         val profile = MangaroProfile(user.id, user.email, row.displayName, row.username, avatar,
             xp = progression?.total_xp ?: previous?.xp ?: 0, level = ProfileIdentity.displayedLevel(progression?.level ?: previous?.level ?: 1, role), role = role, googleAvatarUrl = row.googleAvatarUrl?.takeIf { Uri.parse(it).scheme == "https" }, bio = row.bio,
             coverUrl = row.coverPath?.takeIf { it == "${user.id}/cover.webp" }?.let {

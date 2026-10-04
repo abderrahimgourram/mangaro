@@ -20,7 +20,6 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.LaunchedEffect
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -209,14 +208,13 @@ private fun AccountProfileEditor(
     onAction: (suspend () -> AccountOperation) -> Unit,
 ) {
     val context = LocalContext.current
-    var lastLevel by remember(profile.userId) { mutableIntStateOf(profile.level) }
     var levelNotice by remember(profile.userId) { mutableStateOf<String?>(null) }
     LaunchedEffect(profile.userId, profile.level) {
-        val before = lastLevel
         levelNotice = null
-        lastLevel = profile.level
-        if (profile.role == mihon.domain.account.AccountRole.USER && profile.level > before) {
-            levelNotice = "وصلت إلى المستوى ${profile.level}" + if (mihon.domain.account.ProfileIdentity.tier(profile.level) > mihon.domain.account.ProfileIdentity.tier(before)) " · مظهر رتبة جديد" else ""
+        val milestone = account.auth.consumeRankMilestone(profile.userId)
+        if (milestone != null) {
+            levelNotice = "وصلت إلى المستوى ${milestone.level}\nتم فتح هوية رتبة جديدة" +
+                (if (milestone.addedSlots > 0) "\nتم فتح ${milestone.addedSlots} خانات إضافية في مكتبتك العامة" else "")
             kotlinx.coroutines.delay(4500)
             levelNotice = null
         }
@@ -255,9 +253,8 @@ private fun AccountProfileEditor(
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(MangaroDesignSystem.SurfaceDark)) {
         Box(Modifier.fillMaxWidth().height(216.dp)) {
             ProfileCover(profile, Modifier.fillMaxWidth().height(180.dp))
-            Box(Modifier.align(Alignment.BottomStart).padding(start = 16.dp).size(100.dp)
-                .clip(RoundedCornerShape(24.dp)).background(MangaroDesignSystem.SurfaceDark)
-                .border(1.dp, rankAccent(profile.level).copy(alpha = if (profile.level >= 5) 0.5f else 0.24f), RoundedCornerShape(24.dp)).padding(5.dp)) {
+            RankCoverAccent(profile.level, Modifier.fillMaxWidth().height(180.dp))
+            TierAvatarFrame(profile.level, Modifier.align(Alignment.BottomStart).padding(start = 16.dp).size(100.dp)) {
                 AccountAvatar(profile, Modifier.fillMaxSize().clip(RoundedCornerShape(20.dp)).background(MangaroDesignSystem.SurfaceHigh))
             }
         }
@@ -276,8 +273,14 @@ private fun AccountProfileEditor(
                 }
             }
             DeveloperBadge(profile.role)
-            RankIdentity(profile.level)
-            levelNotice?.let { Text(it, color = MangaroDesignSystem.GoldPrimary, style = MaterialTheme.typography.labelSmall) }
+            RankIdentity(profile.level, prominent = true)
+            levelNotice?.let { message ->
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color(mihon.domain.account.RankVisuals.resolve(profile.level).surface))
+                    .padding(12.dp),horizontalArrangement=Arrangement.spacedBy(10.dp),verticalAlignment=Alignment.CenterVertically) {
+                    RankEmblem(profile.level,Modifier.size(28.dp))
+                    Text(message,color=rankAccent(profile.level),style=MaterialTheme.typography.labelMedium)
+                }
+            }
             profile.bio?.takeIf { it.isNotBlank() }?.let {
                 Text(it, color = secondary.copy(alpha = 0.85f), style = MaterialTheme.typography.bodySmall)
             }
@@ -289,7 +292,7 @@ private fun AccountProfileEditor(
         Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text("الخبرة", style = MaterialTheme.typography.titleSmall, color = Color.White)
-                Text("Lv.${profile.level}", style = MaterialTheme.typography.labelMedium.copy(textDirection = androidx.compose.ui.text.style.TextDirection.Ltr), color = MangaroDesignSystem.GoldPrimary)
+                Text("Lv.${profile.level}", style = MaterialTheme.typography.labelMedium.copy(textDirection = androidx.compose.ui.text.style.TextDirection.Ltr), color = rankAccent(profile.level))
             }
             if (profile.level == MangaroRanks.MAX_LEVEL) {
                 Text("المستوى الأقصى", color = secondary, style = MaterialTheme.typography.bodySmall)
@@ -297,11 +300,11 @@ private fun AccountProfileEditor(
                 val earned = MangaroLevelProgress.earned(profile)
                 val required = MangaroLevelProgress.required(profile.level)
                 LinearProgressIndicator(progress = { (earned.toFloat() / required).coerceIn(0f, 1f) },
-                    modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)), color = MangaroDesignSystem.GoldPrimary,
+                    modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)), color = rankAccent(profile.level),
                     trackColor = MangaroDesignSystem.SurfaceHigh)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("إلى المستوى التالي", color = secondary, style = MaterialTheme.typography.labelSmall)
-                    Text("$earned / $required XP", color = MangaroDesignSystem.GoldPrimary, style = MaterialTheme.typography.labelMedium.copy(textDirection = androidx.compose.ui.text.style.TextDirection.Ltr))
+                    Text("$earned / $required XP", color = rankAccent(profile.level), style = MaterialTheme.typography.labelMedium.copy(textDirection = androidx.compose.ui.text.style.TextDirection.Ltr))
                 }
             }
             Text("إجمالي الخبرة: ${profile.xp} XP", color = muted, style = MaterialTheme.typography.labelSmall)

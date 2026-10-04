@@ -3,6 +3,10 @@ package eu.kanade.presentation.community
 import eu.kanade.presentation.account.DeveloperBadge
 import eu.kanade.presentation.account.RankIdentity
 import eu.kanade.presentation.account.rankAccent
+import eu.kanade.presentation.account.RankCoverAccent
+import eu.kanade.presentation.account.TierAvatarFrame
+import eu.kanade.presentation.account.LibraryShowcase
+import eu.kanade.presentation.account.ShowcaseDisplayItem
 import eu.kanade.presentation.manga.components.MangaCover
 import eu.kanade.tachiyomi.data.account.PublicFavoriteResolver
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
@@ -79,9 +83,8 @@ internal fun PublicCommunityProfilePanel(userId: String, onBack: () -> Unit) {
             if (profile != null) {
                 Box(Modifier.fillMaxWidth().height(228.dp)) {
                     ProfileCoverImage(profile.coverUrl, Modifier.fillMaxWidth().height(196.dp))
-                    Box(Modifier.align(Alignment.BottomStart).padding(start = 20.dp).size(96.dp)
-                        .clip(RoundedCornerShape(24.dp)).background(MangaroDesignSystem.BackgroundDark)
-                        .border(1.dp, rankAccent(profile.author.level).copy(alpha = 0.5f), RoundedCornerShape(24.dp)).padding(5.dp)) {
+                    RankCoverAccent(profile.author.level, Modifier.fillMaxWidth().height(196.dp))
+                    TierAvatarFrame(profile.author.level, Modifier.align(Alignment.BottomStart).padding(start = 20.dp).size(96.dp)) {
                         ProfileAvatar(profile.author.avatarUrl, profile.googleAvatarUrl, Modifier.fillMaxSize().clip(RoundedCornerShape(20.dp)))
                     }
                 }
@@ -91,43 +94,36 @@ internal fun PublicCommunityProfilePanel(userId: String, onBack: () -> Unit) {
                     profile.author.username?.let { UsernameHandle(it, color = Color(0xFFB7A9C4), style = MaterialTheme.typography.bodySmall) }
                     profile.bio?.takeIf { it.isNotBlank() }?.let { Text(it, color = Color(0xFFB7A9C4), style = MaterialTheme.typography.bodyMedium) }
                     DeveloperBadge(profile.author.role)
-                    RankIdentity(profile.author.level)
+                    RankIdentity(profile.author.level, prominent = true)
                     Row(Modifier.fillMaxWidth().padding(top = 12.dp).clip(RoundedCornerShape(16.dp))
                         .background(MangaroDesignSystem.SurfaceDark).padding(vertical = 16.dp)) {
                         (listOf("التعليقات" to profile.commentCount, "التقييمات" to profile.ratingCount) +
-                            (profile.chaptersRead?.let { listOf("الفصول المقروءة" to it) } ?: emptyList())).forEach { (label, count) ->
+                            (if (profile.showcaseEnabled) listOf("الأعمال المعروضة" to profile.favorites.size.toLong()) else emptyList()) +
+                            (profile.chaptersRead?.let { listOf("فصل مقروء" to it) } ?: emptyList())).forEach { (label, count) ->
                             Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(count.toString(), color = Color.White, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                                 Text(label, color = Color(0xFF9F90AC), style = MaterialTheme.typography.labelSmall)
                             }
                         }
                     }
-                    if (profile.favorites.isNotEmpty()) {
-                        Text("المفضلة · ${profile.favorites.size}", style = MaterialTheme.typography.titleSmall, color = Color.White, modifier = Modifier.padding(top = 12.dp))
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            items(profile.favorites, key = { it.mangaKey }) { item ->
-                                Column(Modifier.width(112.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    MangaCover.Book(item.coverUrl, Modifier.fillMaxWidth(), onClick = {
-                                        if (navigationGate.tryStart()) {
-                                            resolving = true; favoriteError = null
-                                            scope.launch {
-                                                try {
-                                                    val manga = PublicFavoriteResolver().resolve(item.mangaKey, item.title)
-                                                    if (manga != null) navigator.push(MangaScreen(manga.id))
-                                                    else favoriteError = "هذا العمل غير متاح على هذا الجهاز حاليًا"
-                                                } catch (cancelled: CancellationException) { throw cancelled }
-                                                catch (_: Exception) { favoriteError = "تعذّر فتح العمل — حاول مرة أخرى" }
-                                                finally { resolving = false; navigationGate.finish() }
-                                            }
-                                        }
-                                    })
-                                    Text(item.title, color = Color.White, style = MaterialTheme.typography.bodySmall.copy(textDirection = TextDirection.Content), maxLines = 2,
-                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                    if (profile.showcaseEnabled) {
+                        LibraryShowcase(profile.favorites.map { ShowcaseDisplayItem(it.mangaKey,it.title,it.coverUrl,it.featured) }, onOpen = { key ->
+                            val item = profile.favorites.firstOrNull { it.mangaKey == key }
+                            if (item != null && navigationGate.tryStart()) {
+                                resolving = true; favoriteError = null
+                                scope.launch {
+                                    try {
+                                        val manga = PublicFavoriteResolver().resolve(item.mangaKey, item.title)
+                                        if (manga != null) navigator.push(MangaScreen(manga.id))
+                                        else favoriteError = "هذا العمل غير متاح على هذا الجهاز حاليًا"
+                                    } catch (cancelled: CancellationException) { throw cancelled }
+                                    catch (_: Exception) { favoriteError = "تعذّر فتح العمل — حاول مرة أخرى" }
+                                    finally { resolving = false; navigationGate.finish() }
                                 }
                             }
-                        }
-                        if (resolving) LinearProgressIndicator(Modifier.fillMaxWidth(), color = MangaroDesignSystem.GoldPrimary)
-                        favoriteError?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Color(0xFFB7A9C4)) }
+                        })
+                        if (resolving) LinearProgressIndicator(Modifier.fillMaxWidth(), color = rankAccent(profile.author.level))
+                        favoriteError?.let { Text(it,style = MaterialTheme.typography.bodySmall,color = Color(0xFFB7A9C4)) }
                     }
                 }
             }
