@@ -34,6 +34,7 @@ import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.activity.compose.BackHandler
 import androidx.compose.ui.Modifier
@@ -147,17 +148,19 @@ private fun CommunityContent(
     val snapshot by remember(context.target) { repository.observe(context.target) }.collectAsState()
     val session by account.session.collectAsState()
     val scope = rememberCoroutineScope()
-    var loginPrompt by remember { mutableStateOf(false) }
-    var profilePrompt by remember { mutableStateOf(false) }
-    var actionInFlight by remember(context.target) { mutableStateOf(false) }
     val actor = (session as? AccountSession.Authenticated)?.profile?.userId
+    var loginPrompt by remember(context.target, actor) { mutableStateOf(false) }
+    var profilePrompt by remember(context.target, actor) { mutableStateOf(false) }
+    var actionInFlight by remember(context.target) { mutableStateOf(false) }
     var submissionVersion by rememberSaveable(context.target, actor) { mutableIntStateOf(0) }
     var threadId by rememberSaveable(context.target, actor) { mutableStateOf<String?>(null) }
     var threadAnchor by remember(context.target, actor) { mutableStateOf<CommunityComment?>(null) }
     var threadEditingId by rememberSaveable(context.target, actor) { mutableStateOf<String?>(null) }
-    var threadSubmissionVersion by rememberSaveable(context.target, actor) { mutableIntStateOf(0) }
-    var ratingVisible by remember { mutableStateOf(false) }
-    var message by remember { mutableStateOf<String?>(null) }
+    var threadSubmissionVersions by rememberSaveable(context.target, actor) { mutableStateOf(mapOf<String, Int>()) }
+    // Keep draft + idempotency ID when the sheet leaves composition, isolated by account/parent/edit.
+    val replyDrafts = rememberSaveableStateHolder()
+    var ratingVisible by remember(context.target, actor) { mutableStateOf(false) }
+    var message by remember(context.target, actor) { mutableStateOf<String?>(null) }
     var replyId by rememberSaveable(context.target, actor) { mutableStateOf<String?>(null) }
     var editingId by rememberSaveable(context.target, actor) { mutableStateOf<String?>(null) }
     val selectedComments = snapshot.comments + snapshot.replies.values.flatten()
@@ -178,7 +181,9 @@ private fun CommunityContent(
         scope.launch {
             // No optimistic counts/comments, fake success or local social persistence.
             try {
-                message = when (val result = action()) {
+                val result = action()
+                if ((account.session.value as? AccountSession.Authenticated)?.profile?.userId != actionOwner) return@launch
+                message = when (result) {
                     CommunityOperation.NotConfigured -> "المشاركة ستتوفر لاحقًا"
                     is CommunityOperation.Failed -> {
                         if (result.error.kind == CommunityErrorKind.AUTH_REQUIRED || result.error.kind == CommunityErrorKind.PROFILE_INCOMPLETE) {
@@ -353,18 +358,22 @@ private fun CommunityContent(
                 HorizontalDivider(color = Color(0xFF2B2034))
                 Column(Modifier.fillMaxWidth().background(MangaroDesignSystem.SurfaceDark.copy(alpha = 0.45f))
                     .padding(horizontal = 16.dp, vertical = 8.dp).navigationBarsPadding()) {
-                    if (session is AccountSession.Authenticated) CommunityComposer(context.target, actor, repository.available && !actionInFlight,
-                        thread, threadEditing, thread.id, threadEditingId, threadSubmissionVersion,
-                        avatar = (session as? AccountSession.Authenticated)?.profile?.let(AccountAuthor::fromProfile),
-                        onCancel = { threadEditingId = null }, onSubmit = { text, requestId ->
-                            val edited = threadEditing
-                            gated(AccountFeature.REPLIES) {
-                                perform(onSuccess = { threadSubmissionVersion++; threadEditingId = null }) {
-                                    edited?.let { repository.editOwned(it, text) } ?: repository.post(context.target, text, thread.id, requestId)
+                    if (session is AccountSession.Authenticated) replyDrafts.SaveableStateProvider("${context.target}:$actor:${thread.id}:$threadEditingId:${threadSubmissionVersions[thread.id] ?: 0}") {
+                        CommunityComposer(context.target, actor, repository.available && !actionInFlight && (threadEditingId == null || threadEditing != null),
+                            thread, threadEditing, thread.id, threadEditingId, threadSubmissionVersions[thread.id] ?: 0,
+                            avatar = (session as? AccountSession.Authenticated)?.profile?.let(AccountAuthor::fromProfile),
+                            onCancel = { threadEditingId = null }, onSubmit = { text, requestId ->
+                                val edited = threadEditing
+                                gated(AccountFeature.REPLIES) {
+                                    perform(onSuccess = {
+                                        threadSubmissionVersions = threadSubmissionVersions + (thread.id to ((threadSubmissionVersions[thread.id] ?: 0) + 1))
+                                        threadEditingId = null
+                                    }) {
+                                        edited?.let { repository.editOwned(it, text) } ?: repository.post(context.target, text, thread.id, requestId)
+                                    }
                                 }
-                            }
-                        })
-                    else TextButton(onClick = { gated(AccountFeature.REPLIES) {} }) { Text("اكتب ردًا...") }
+                            })
+                    } else TextButton(onClick = { gated(AccountFeature.REPLIES) {} }) { Text("اكتب ردًا...") }
                 }
             }
         }

@@ -77,13 +77,18 @@ class SupabaseCommunityRepository(private val client: SupabaseClient, private va
             timestamp(updated_at) > timestamp(created_at), user_id == user, parent_comment_id, user != null && liked_by_me)
     }
     private fun timestamp(value: String) = Instant.parse(value).toEpochMilliseconds()
-    private suspend fun reload(target: CommunityTarget, item: Entry) {
-        val user = actor()
-        if (item.actor != user) item.state.value = item.state.value.copy(
+    private fun clearPreviousAccount(item: Entry) {
+        if (item.actor == actor()) return
+        item.loadedAt = 0
+        item.state.value = item.state.value.copy(
             rating = item.state.value.rating?.copy(currentUserRating = null),
             comments = item.state.value.comments.map { it.copy(isOwnedByCurrentUser = false, isLikedByCurrentUser = false) },
-            replies = emptyMap(), replyCursors = emptyMap(),
+            replies = emptyMap(), replyCursors = emptyMap(), loadingReplies = emptySet(),
         )
+    }
+    private suspend fun reload(target: CommunityTarget, item: Entry, preserveReplies: Boolean = false) {
+        val user = actor()
+        clearPreviousAccount(item)
         item.state.value = item.state.value.copy(loading = item.state.value.rating == null,
             refreshing = item.state.value.rating != null, error = null)
         val (comments, summary) = coroutineScope {
@@ -95,6 +100,9 @@ class SupabaseCommunityRepository(private val client: SupabaseClient, private va
             order = item.order, rating = CommunityRatingSummary(summary.average, summary.count, summary.current_user_rating.takeIf { user != null }),
             commentCount = comments.comment_count, comments = comments.items.map { it.comment(target, user) },
             hasMore = comments.has_more, nextCursor = comments.cursor(),
+            // A rating/top-level action must not erase a conversation already open in the UI.
+            replies = if (preserveReplies) item.state.value.replies else emptyMap(),
+            replyCursors = if (preserveReplies) item.state.value.replyCursors else emptyMap(),
         )
         item.actor = user
         item.loadedAt = System.currentTimeMillis()
@@ -102,6 +110,7 @@ class SupabaseCommunityRepository(private val client: SupabaseClient, private va
     private suspend fun read(target: CommunityTarget, action: suspend (Entry) -> Unit): CommunityOperation = withContext(Dispatchers.IO) {
         val item = entry(target)
         item.lock.withLock {
+            clearPreviousAccount(item)
             try { action(item); CommunityOperation.Completed }
             catch (cancelled: CancellationException) {
                 item.state.value = item.state.value.copy(loading = false, refreshing = false, loadingMore = false, loadingReplies = emptySet())
@@ -111,6 +120,9 @@ class SupabaseCommunityRepository(private val client: SupabaseClient, private va
                 item.state.value = item.state.value.copy(loading = false, refreshing = false, loadingMore = false,
                     loadingReplies = emptySet(), error = error)
                 CommunityOperation.Failed(error)
+            } finally {
+                // Also discard personal flags when the account changes during a failed/late read.
+                clearPreviousAccount(item)
             }
         }
     }
@@ -145,7 +157,10 @@ class SupabaseCommunityRepository(private val client: SupabaseClient, private va
     override suspend fun refresh(target: CommunityTarget) = read(target) { reload(target, it) }
     override suspend fun getRatingSummary(target: CommunityTarget) = read(target) {
         val user = actor(); val summary = rating(target)
-        if (user == actor()) it.state.value = it.state.value.copy(rating = CommunityRatingSummary(summary.average, summary.count, summary.current_user_rating.takeIf { user != null }))
+        if (user == actor()) {
+            it.state.value = it.state.value.copy(rating = CommunityRatingSummary(summary.average, summary.count, summary.current_user_rating.takeIf { user != null }))
+            it.actor = user
+        }
     }
     override suspend fun loadMore(target: CommunityTarget, cursor: CommunityCursor) = read(target) {
         if (it.actor != actor()) { reload(target, it); return@read }
@@ -195,7 +210,7 @@ class SupabaseCommunityRepository(private val client: SupabaseClient, private va
                     }
                     event?.let { emitted.tryEmit(it) }
                     // The mutation is server-confirmed; a subsequent read failure must not encourage duplicate posting.
-                    try { reload(target, item); if (parent != null) replies(target, item, parent, null) }
+                    try { reload(target, item, preserveReplies = true); if (parent != null) replies(target, item, parent, null) }
                     catch (cancelled: CancellationException) {
                         item.loadedAt = 0
                         item.state.value = item.state.value.copy(loading = false, refreshing = false, loadingMore = false, loadingReplies = emptySet())
@@ -208,6 +223,7 @@ class SupabaseCommunityRepository(private val client: SupabaseClient, private va
                     CommunityOperation.Completed
                 } catch (cancelled: CancellationException) { throw cancelled }
                 catch (failure: Exception) { CommunityOperation.Failed(error(failure)) }
+                finally { clearPreviousAccount(item) }
             }
         }
     }

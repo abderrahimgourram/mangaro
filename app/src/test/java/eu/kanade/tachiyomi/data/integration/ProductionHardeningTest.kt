@@ -121,6 +121,122 @@ class ProductionHardeningTest {
             repo.observe(f.target).value.comments.isEmpty() shouldBe true
         }
     }
+    @Test fun `rating refresh preserves loaded replies and their pagination cursor`() = runTest {
+        Fixture().use { f ->
+            val parent = "00000000-0000-0000-0000-000000000010"
+            val reply = "00000000-0000-0000-0000-000000000011"
+            f.reply = { _, path, body -> when {
+                path.endsWith("community_set_rating") -> 200 to "null"
+                path.endsWith("community_comments_page") && Json.parseToJsonElement(body).jsonObject["p_parent_id"]?.jsonPrimitive?.contentOrNull == parent ->
+                    200 to """{"items":[${f.comment(reply).replace("\"parent_comment_id\":null", "\"parent_comment_id\":\"$parent\"")}],"has_more":true,"next_cursor":{"created_at":"2026-10-01T00:00:00Z","id":"$reply"},"comment_count":1}"""
+                path.endsWith("community_comments_page") -> 200 to f.page("[${f.comment(parent)}]")
+                else -> 200 to """{"average":5.0,"count":1,"current_user_rating":5}"""
+            } }
+            val repo = SupabaseCommunityRepository(f.client, f.account)
+            repo.loadInitial(f.target)
+            repo.loadReplies(f.target, parent)
+            val before = repo.observe(f.target).value
+            before.replies[parent]?.single()?.parentCommentId shouldBe parent
+            repo.rate(f.target, 5) shouldBe CommunityOperation.Completed
+            repo.observe(f.target).value.replies shouldBe before.replies
+            repo.observe(f.target).value.replyCursors shouldBe before.replyCursors
+        }
+    }
+    @Test fun `account change during failed refresh removes previous user personal state`() = runTest {
+        Fixture().use { f ->
+            var switchAccount = false
+            f.reply = { _, path, _ -> when {
+                switchAccount -> {
+                    f.session.value = AccountSession.Authenticated(MangaroProfile("00000000-0000-0000-0000-000000000002", null, "Other", "other", null, 0, 1))
+                    503 to """{"message":"offline"}"""
+                }
+                path.endsWith("community_comments_page") -> 200 to f.page("[${f.comment().replace("\"liked_by_me\":false", "\"liked_by_me\":true")}]")
+                else -> 200 to """{"average":4.0,"count":1,"current_user_rating":4}"""
+            } }
+            val repo = SupabaseCommunityRepository(f.client, f.account)
+            repo.loadInitial(f.target)
+            repo.observe(f.target).value.comments.single().isOwnedByCurrentUser shouldBe true
+            switchAccount = true
+            (repo.refresh(f.target) is CommunityOperation.Failed) shouldBe true
+            val state = repo.observe(f.target).value
+            state.rating?.currentUserRating shouldBe null
+            state.comments.single().isOwnedByCurrentUser shouldBe false
+            state.comments.single().isLikedByCurrentUser shouldBe false
+            state.loading shouldBe false
+            state.refreshing shouldBe false
+        }
+    }
+    @Test fun `new account summary retains only its own current rating`() = runTest {
+        Fixture().use { f ->
+            var stars = 4
+            f.reply = { _, path, _ ->
+                if (path.endsWith("community_comments_page")) 200 to f.page("[${f.comment()}]")
+                else 200 to """{"average":4.5,"count":2,"current_user_rating":$stars}"""
+            }
+            val repo = SupabaseCommunityRepository(f.client, f.account)
+            repo.loadInitial(f.target)
+            f.session.value = AccountSession.Authenticated(MangaroProfile("00000000-0000-0000-0000-000000000002", null, "Other", "other", null, 0, 1))
+            stars = 5
+            repo.getRatingSummary(f.target) shouldBe CommunityOperation.Completed
+            repo.observe(f.target).value.rating?.currentUserRating shouldBe 5
+            repo.observe(f.target).value.comments.single().isOwnedByCurrentUser shouldBe false
+        }
+    }
+    @Test fun `pagination deduplicates overlapping pages and retains content on load more failure`() = runTest {
+        Fixture().use { f ->
+            val first = "00000000-0000-0000-0000-000000000010"
+            val second = "00000000-0000-0000-0000-000000000011"
+            var fail = false
+            f.reply = { _, path, body -> when {
+                path.endsWith("community_comments_page") && fail -> 503 to """{"message":"offline"}"""
+                path.endsWith("community_comments_page") -> {
+                    val next = Json.parseToJsonElement(body).jsonObject["p_before_id"]?.jsonPrimitive?.contentOrNull != null
+                    200 to """{"items":[${f.comment(first)}${if (next) "," + f.comment(second) else ""}],"has_more":true,"next_cursor":{"created_at":"2026-10-01T00:00:00Z","id":"${if (next) second else first}"},"comment_count":2}"""
+                }
+                else -> 200 to """{"average":null,"count":0,"current_user_rating":null}"""
+            } }
+            val repo = SupabaseCommunityRepository(f.client, f.account)
+            repo.loadInitial(f.target)
+            repo.loadMore(f.target, repo.observe(f.target).value.nextCursor!!)
+            val before = repo.observe(f.target).value
+            before.comments.map { it.id } shouldBe listOf(first, second)
+            fail = true
+            (repo.loadMore(f.target, before.nextCursor!!) is CommunityOperation.Failed) shouldBe true
+            repo.observe(f.target).value.comments shouldBe before.comments
+            repo.observe(f.target).value.nextCursor shouldBe before.nextCursor
+            repo.observe(f.target).value.loadingMore shouldBe false
+        }
+    }
+    @Test fun `rapid rating changes serialize and reconcile one current rating`() = runTest {
+        Fixture().use { f ->
+            val stars = AtomicInteger(0)
+            val entered = CompletableDeferred<Unit>()
+            val release = java.util.concurrent.CountDownLatch(1)
+            f.reply = { _, path, body -> when {
+                path.endsWith("community_set_rating") -> {
+                    val selected = Json.parseToJsonElement(body).jsonObject["p_rating"]!!.jsonPrimitive.int
+                    if (selected == 4) {
+                        entered.complete(Unit)
+                        release.await(5, java.util.concurrent.TimeUnit.SECONDS)
+                    }
+                    stars.set(selected)
+                    200 to "null"
+                }
+                path.endsWith("community_comments_page") -> 200 to f.page()
+                else -> 200 to """{"average":${stars.get()}.0,"count":1,"current_user_rating":${stars.get()}}"""
+            } }
+            val repo = SupabaseCommunityRepository(f.client, f.account)
+            val first = async(Dispatchers.Default) { repo.rate(f.target, 4) }
+            withContext(Dispatchers.Default) { withTimeout(5_000) { entered.await() } }
+            val second = async(Dispatchers.Default) { repo.rate(f.target, 5) }
+            release.countDown()
+            first.await() shouldBe CommunityOperation.Completed
+            second.await() shouldBe CommunityOperation.Completed
+            repo.observe(f.target).value.rating?.currentUserRating shouldBe 5
+            repo.observe(f.target).value.rating?.average shouldBe 5.0
+            repo.observe(f.target).value.rating?.count shouldBe 1
+        }
+    }
     @Test fun `manual sync is single flight and wrong account cannot apply response`()=runTest {
         Fixture().use {f->
             val calls=AtomicInteger()
