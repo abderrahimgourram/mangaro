@@ -48,6 +48,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.ArrowForward
+import androidx.compose.material.icons.outlined.CheckCircleOutline
+import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -426,16 +431,16 @@ fun AccountDrawerArea(session: AccountSession, onLogin: () -> Unit, onProfile: (
     val secondary = Color(0xFFB7A9C4)
     val muted = Color(0xFF8F819E)
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(MangaroDesignSystem.SurfaceDark)) {
-        Box(Modifier.fillMaxWidth().height(178.dp)) {
-            ProfileCover(profile, Modifier.fillMaxWidth().height(146.dp))
+        Box(Modifier.fillMaxWidth().height(148.dp)) {
+            ProfileCover(profile, Modifier.fillMaxWidth().height(132.dp))
             Box(Modifier.align(Alignment.BottomStart).padding(start = 14.dp).size(72.dp)
                 .clip(RoundedCornerShape(20.dp)).background(MangaroDesignSystem.SurfaceDark)
                 .border(1.dp, MangaroDesignSystem.GoldPrimary.copy(alpha = 0.24f), RoundedCornerShape(20.dp)).padding(4.dp)) {
                 AccountAvatar(profile, Modifier.fillMaxSize().clip(RoundedCornerShape(16.dp)).background(MangaroDesignSystem.SurfaceHigh))
             }
         }
-        Column(Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Column(Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 4.dp, bottom = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp)) {
             when (session) {
                 is AccountSession.Authenticated -> {
                     Text(profile?.displayName ?: profile?.username.orEmpty(), color = Color.White,
@@ -449,20 +454,29 @@ fun AccountDrawerArea(session: AccountSession, onLogin: () -> Unit, onProfile: (
                     }
                     val account = remember { Injekt.get<AccountFoundation>() }
                     val sync by remember(session.profile.userId, account) { account.cloudSync.observe(session.profile.userId) }.collectAsState()
-                    if (sync.loaded && sync.enabled) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.size(5.dp).background(muted, RoundedCornerShape(3.dp)))
-                            Text(when {
-                                sync.running -> "تتم المزامنة..."
-                                sync.error != null || sync.pending > 0 -> "بانتظار المزامنة"
-                                else -> "المزامنة مفعّلة"
-                            }, color = muted, style = MaterialTheme.typography.labelSmall)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(enabled = onProfile != null, onClick = { onProfile?.invoke(session.profile) },
+                            shape = RoundedCornerShape(12.dp), contentPadding = PaddingValues(horizontal = 0.dp),
+                            colors = ButtonDefaults.textButtonColors(contentColor = secondary)) {
+                            Text("الملف الشخصي", style = MaterialTheme.typography.labelMedium)
+                            Icon(Icons.AutoMirrored.Outlined.ArrowForward, null, Modifier.padding(start = 5.dp).size(14.dp))
                         }
-                    }
-                    TextButton(enabled = onProfile != null, onClick = { onProfile?.invoke(session.profile) },
-                        shape = RoundedCornerShape(12.dp), contentPadding = PaddingValues(horizontal = 12.dp),
-                        colors = ButtonDefaults.textButtonColors(contentColor = secondary, containerColor = MangaroDesignSystem.SurfaceHigh)) {
-                        Text("الملف الشخصي", style = MaterialTheme.typography.labelMedium)
+                        if (sync.loaded && sync.enabled) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(when {
+                                    sync.running -> Icons.Outlined.Sync
+                                    sync.error != null -> Icons.Outlined.ErrorOutline
+                                    sync.pending > 0 -> Icons.Outlined.Schedule
+                                    else -> Icons.Outlined.CheckCircleOutline
+                                }, null, Modifier.size(12.dp), tint = muted)
+                                Text(when {
+                                    sync.running -> "تتم المزامنة..."
+                                    sync.error != null -> "تعذر المزامنة"
+                                    sync.pending > 0 -> "بانتظار المزامنة"
+                                    else -> "المزامنة مفعّلة"
+                                }, color = muted, style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
                     }
                 }
                 AccountSession.Loading -> CircularProgressIndicator(Modifier.size(20.dp), color = MangaroDesignSystem.GoldPrimary, strokeWidth = 2.dp)

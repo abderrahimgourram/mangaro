@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -120,17 +121,19 @@ fun MangaroHomeDrawer(
                     ) {
                         Column(
                             modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
                             AccountDrawerArea(
                                 session = accountState,
                                 onLogin = { select(onAccount) },
                                 onProfile = onProfile?.let { profile -> { user -> select { profile(user) } } },
                             )
-                            Surface(shape = RoundedCornerShape(20.dp), color = MangaroDesignSystem.SurfaceDark) {
-                                Column(Modifier.padding(vertical = 4.dp)) {
+                            Surface(shape = RoundedCornerShape(16.dp), color = MangaroDesignSystem.SurfaceDark) {
+                                Column(Modifier.padding(vertical = 2.dp)) {
                                     DrawerAction("المكتبة", Icons.Outlined.BookmarkBorder) { select(onLibrary) }
+                                    HorizontalDivider(Modifier.padding(horizontal = 14.dp), color = Color(0x186D557B))
                                     DrawerAction("التنزيلات", Icons.Outlined.Download, activeDownloadsCount) { select(onDownloads) }
+                                    HorizontalDivider(Modifier.padding(horizontal = 14.dp), color = Color(0x186D557B))
                                     DrawerAction("الإعدادات", Icons.Outlined.Settings) { select(onSettings) }
                                 }
                             }
@@ -139,9 +142,9 @@ fun MangaroHomeDrawer(
                                 color = Color(0xFFB7A9C4), modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
                             DrawerAction("حول التطبيق", Icons.Outlined.Info) { select(onAbout) }
                             DrawerAction("التراخيص مفتوحة المصدر", Icons.Outlined.Description) { select(onLicenses) }
+                            Text("الإصدار ${BuildConfig.VERSION_NAME}", modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                                style = MaterialTheme.typography.labelSmall, color = Color(0xFF9F90AC))
                         }
-                        Text("الإصدار ${BuildConfig.VERSION_NAME}", modifier = Modifier.padding(horizontal = 28.dp, vertical = 16.dp),
-                            style = MaterialTheme.typography.labelSmall, color = Color(0xFF9F90AC))
                     }
                 }
             },
@@ -180,7 +183,7 @@ private class DrawerEdgeGesture {
 private fun DrawerAction(label: String, icon: ImageVector, count: Int = 0, onClick: () -> Unit) {
     Surface(shape = RoundedCornerShape(12.dp), color = Color.Transparent) {
         Row(
-            modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 13.dp),
+            modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).heightIn(min = 48.dp).padding(horizontal = 14.dp, vertical = 10.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
