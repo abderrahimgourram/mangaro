@@ -1,10 +1,14 @@
 package eu.kanade.presentation.account
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -197,21 +201,43 @@ private fun AccountProfileEditor(
     var editing by rememberSaveable(profile.userId) { mutableStateOf(profile.username == null) }
     val secondary = Color(0xFFB7A9C4)
     val muted = Color(0xFF8F819E)
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(80.dp).border(1.dp, MangaroDesignSystem.GoldPrimary.copy(alpha = 0.28f), RoundedCornerShape(24.dp)).padding(4.dp)) {
-            AccountAvatar(profile, Modifier.fillMaxSize().clip(RoundedCornerShape(20.dp)).background(MangaroDesignSystem.SurfaceHigh))
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(MangaroDesignSystem.SurfaceDark)) {
+        Box(Modifier.fillMaxWidth().height(152.dp)) {
+            // Decorative local artwork only; no user cover or remote image request.
+            Canvas(Modifier.fillMaxWidth().height(112.dp).clipToBounds().background(Brush.horizontalGradient(
+                listOf(MangaroDesignSystem.SurfaceDark, Color(0xFF30203E), MangaroDesignSystem.SurfaceHigh)))) {
+                drawCircle(Color(0xFF49315C).copy(alpha = 0.24f), radius = size.width * 0.42f,
+                    center = Offset(size.width * 0.8f, -size.height * 0.3f))
+                drawCircle(MangaroDesignSystem.BackgroundDark.copy(alpha = 0.28f), radius = size.width * 0.36f,
+                    center = Offset(size.width * 0.15f, size.height * 1.25f))
+                drawLine(MangaroDesignSystem.GoldPrimary.copy(alpha = 0.1f),
+                    Offset(size.width * 0.32f, 0f), Offset(size.width * 0.62f, size.height), strokeWidth = 1.dp.toPx())
+                drawLine(Color(0xFF89709F).copy(alpha = 0.12f),
+                    Offset(size.width * 0.36f, 0f), Offset(size.width * 0.66f, size.height), strokeWidth = 1.dp.toPx())
+            }
+            Box(Modifier.align(Alignment.BottomStart).padding(start = 16.dp).size(100.dp)
+                .clip(RoundedCornerShape(28.dp)).background(MangaroDesignSystem.SurfaceDark)
+                .border(1.dp, MangaroDesignSystem.GoldPrimary.copy(alpha = 0.3f), RoundedCornerShape(28.dp)).padding(5.dp)) {
+                AccountAvatar(profile, Modifier.fillMaxSize().clip(RoundedCornerShape(23.dp)).background(MangaroDesignSystem.SurfaceHigh))
+            }
+            TextButton(enabled = !submitting, onClick = { editing = !editing },
+                modifier = Modifier.align(Alignment.BottomEnd).padding(end = 14.dp, bottom = 4.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp), shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.textButtonColors(contentColor = secondary, containerColor = MangaroDesignSystem.SurfaceHigh)) {
+                Text(if (editing) "إغلاق التعديل" else "تعديل الملف الشخصي", style = MaterialTheme.typography.labelMedium)
+            }
         }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Text(profile.displayName ?: profile.username.orEmpty(), color = Color.White,
-                style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
             profile.username?.let { UsernameHandle(it, color = secondary, style = MaterialTheme.typography.bodyMedium) }
-            Text("${profile.rankTitle} · المستوى ${profile.level}", color = muted, style = MaterialTheme.typography.labelMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(profile.rankTitle, color = muted, style = MaterialTheme.typography.labelMedium)
+                Text("·", color = muted, style = MaterialTheme.typography.labelMedium)
+                Text("المستوى ${profile.level}", color = MangaroDesignSystem.GoldPrimary.copy(alpha = 0.8f), style = MaterialTheme.typography.labelMedium)
+            }
         }
-    }
-    TextButton(enabled = !submitting, onClick = { editing = !editing },
-        contentPadding = PaddingValues(horizontal = 12.dp), shape = RoundedCornerShape(10.dp),
-        colors = ButtonDefaults.textButtonColors(contentColor = MangaroDesignSystem.GoldPrimary)) {
-        Text(if (editing) "إغلاق التعديل" else "تعديل الملف الشخصي", style = MaterialTheme.typography.labelLarge)
     }
     Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = MangaroDesignSystem.SurfaceDark) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
