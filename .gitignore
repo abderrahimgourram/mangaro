@@ -1,0 +1,8 @@
+.vercel/
+node_modules/
+dist/
+.env*
+*.jks
+*.keystore
+signing.properties
+.vercel
