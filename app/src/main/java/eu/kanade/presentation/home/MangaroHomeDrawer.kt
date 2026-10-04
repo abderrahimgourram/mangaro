@@ -34,7 +34,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BookmarkBorder
-import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.PersonOutline
+import androidx.compose.material.icons.outlined.Shield
+import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.PlayCircleOutline
 import androidx.compose.material3.DrawerValue
@@ -45,6 +48,7 @@ import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.rememberCoroutineScope
@@ -80,6 +84,7 @@ fun MangaroHomeDrawer(
     onProfile: ((MangaroProfile) -> Unit)? = null,
     content: @Composable (openDrawer: () -> Unit) -> Unit,
 ) {
+    val uriHandler = LocalUriHandler.current
     val drawer = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val homeViewConfiguration = LocalViewConfiguration.current
@@ -146,9 +151,12 @@ fun MangaroHomeDrawer(
                                 DrawerAction("المكتبة", Icons.Outlined.BookmarkBorder) { select(onLibrary) }
                                 DrawerAction("السجل", Icons.Outlined.History) { select(onHistory) }
                                 DrawerAction("الإعلانات", Icons.Outlined.PlayCircleOutline) { select(onAds) }
-                                DrawerAction("التنزيلات", Icons.Outlined.Download, activeDownloadsCount) { select(onDownloads) }
+                                DrawerAction("من نحن", Icons.Outlined.PersonOutline) { select { uriHandler.openUri("https://mangaro-web.vercel.app/about") } }
+                                DrawerAction("المصادر المفتوحة", Icons.Outlined.Code) { select { uriHandler.openUri("https://mangaro-web.vercel.app/open-source") } }
+                                DrawerAction("سياسة الخصوصية", Icons.Outlined.Shield) { select { uriHandler.openUri("https://mangaro-web.vercel.app/privacy") } }
+                                DrawerAction("شروط الاستخدام", Icons.Outlined.Description) { select { uriHandler.openUri("https://mangaro-web.vercel.app/terms") } }
                             }
-                            Text("الإصدار ${BuildConfig.VERSION_NAME}", modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                            Text("الإصدار ${BuildConfig.VERSION_NAME.substringBefore('-')}", modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
                                 style = MaterialTheme.typography.labelSmall, color = Color(0xFF9F90AC))
                         }
                     }

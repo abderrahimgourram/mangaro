@@ -69,8 +69,8 @@ android {
         manifestPlaceholders["accountAuthScheme"] = "mangaro"
         manifestPlaceholders["admobAppId"] = "ca-app-pub-6220636202579444~2080855468"
 
-        versionCode = 2
-        versionName = "1.0.1"
+        versionCode = 3
+        versionName = "1.0.2"
 
         buildConfigField("String", "COMMIT_COUNT", "\"${getLatestCommitCount()}\"")
         buildConfigField("String", "COMMIT_SHA", "\"${getLatestCommitSha()}\"")
@@ -85,7 +85,9 @@ android {
         buildConfigField("String", "SOURCE_RULES_URL", "\"$ruleFeed\"")
         buildConfigField("String", "SOURCE_RULES_PUBLIC_KEY", "\"$rulePublicKey\"")
 
-        testInstrumentationRunner = if (providers.gradleProperty("sourceAudit").orNull == "true") {
+        testInstrumentationRunner = if (providers.gradleProperty("adsBoundaryAudit").orNull == "true") {
+            "eu.kanade.tachiyomi.data.ads.NativeBoundaryInstrumentation"
+        } else if (providers.gradleProperty("sourceAudit").orNull == "true") {
             "eu.kanade.tachiyomi.source.audit.SourceAuditInstrumentation"
         } else {
             "androidx.test.runner.AndroidJUnitRunner"

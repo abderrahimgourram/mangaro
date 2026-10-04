@@ -113,6 +113,7 @@ class ReaderViewModel @JvmOverloads constructor(
     val adReadingSession = java.util.UUID.randomUUID().toString()
     private val adManager = eu.kanade.tachiyomi.data.ads.AdManager.get(Injekt.get<Application>()).also { it.startReadingSession(adReadingSession) }
     private val adEarlierPages = java.util.concurrent.ConcurrentHashMap.newKeySet<Long>()
+    private var adPageReadyJob: kotlinx.coroutines.Job? = null
 
     private val mutableState = MutableStateFlow(State())
     val state = mutableState.asStateFlow()
@@ -461,12 +462,19 @@ class ReaderViewModel @JvmOverloads constructor(
         val selectedChapter = page.chapter
         val pages = selectedChapter.pages ?: return
 
-        // Record genuine completion only. This never loads or shows an ad on a Reader page.
+        // Selection may precede image loading. Observe the selected page's Ready event too.
+        // No ad request or surface is created here; rendering remains at the Next boundary.
+        adPageReadyJob?.cancel()
         selectedChapter.chapter.id?.let { chapterId ->
-            if (page.status is Page.State.Ready) {
+            fun recordReady() {
                 if (page.index < pages.lastIndex) adEarlierPages.add(chapterId)
                 if (page.index == pages.lastIndex && chapterId in adEarlierPages) {
                     adManager.chapterCompleted(adReadingSession, chapterId)
+                }
+            }
+            if (page.status is Page.State.Ready) recordReady() else {
+                adPageReadyJob = viewModelScope.launch {
+                    eu.kanade.tachiyomi.data.ads.awaitAdPageReady(page, ::recordReady)
                 }
             }
         }

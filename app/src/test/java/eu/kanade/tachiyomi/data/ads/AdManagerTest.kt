@@ -52,6 +52,8 @@ class AdManagerTest {
 
     @BeforeEach fun setup() {
         Dispatchers.setMain(dispatcher)
+        mockkStatic(android.util.Log::class)
+        every { android.util.Log.d(any(), any()) } returns 0
         mockkStatic(SystemClock::class)
         every { SystemClock.elapsedRealtime() } answers { elapsed }
         mockkStatic(UserMessagingPlatform::class)
@@ -85,6 +87,7 @@ class AdManagerTest {
         every { RewardedAd.load(any(), capture(rewardedLoad)) } just Runs
         every { NativeAdLoader.load(any(), capture(nativeLoad)) } just Runs
         manager = AdManager(app, dispatcher) { knownBlockingDns }
+        lifecycle.captured.onActivityResumed(activity)
     }
 
     private fun blockingFailures() {
@@ -362,4 +365,54 @@ class AdManagerTest {
         manager.state.value.adFreeUntil shouldBe expiration
         manager.adsSuppressed() shouldBe true
     }
+    @Test fun `rewarded preload never shows and duplicate taps cannot show twice`() {
+        consentReady()
+        manager.preloadRewarded()
+        val ad = mockk<RewardedAd>(relaxed = true)
+        val events = slot<RewardedAdEventCallback>()
+        every { ad.adEventCallback = capture(events) } just Runs
+        rewardedLoad.captured.onAdLoaded(ad)
+        dispatcher.scheduler.runCurrent()
+        verify(exactly = 0) { ad.show(any(), any()) }
+        manager.showRewarded(activity)
+        manager.showRewarded(activity)
+        verify(exactly = 1) { ad.show(activity, any()) }
+        events.captured.onAdFailedToShowFullScreenContent(mockk(relaxed = true))
+        dispatcher.scheduler.runCurrent()
+        manager.state.value.fullscreenShowing shouldBe false
+        manager.state.value.rewardedReady shouldBe false
+    }
+
+    @Test fun `paused activity cannot show and return releases a missed fullscreen dismissal`() {
+        consentReady()
+        manager.preloadRewarded()
+        val ad = mockk<RewardedAd>(relaxed = true)
+        rewardedLoad.captured.onAdLoaded(ad)
+        dispatcher.scheduler.runCurrent()
+        lifecycle.captured.onActivityPaused(activity)
+        manager.showRewarded(activity)
+        verify(exactly = 0) { ad.show(any(), any()) }
+        lifecycle.captured.onActivityResumed(activity)
+        manager.showRewarded(activity)
+        manager.state.value.fullscreenShowing shouldBe true
+        lifecycle.captured.onActivityPaused(activity)
+        lifecycle.captured.onActivityResumed(activity)
+        manager.state.value.fullscreenShowing shouldBe false
+        manager.state.value.fullscreenVisible shouldBe false
+        manager.state.value.adFreeUntil shouldBe 0
+    }
+
+    @Test fun `unavailable consent and rewarded loader failure remain usable without showing`() {
+        manager.preloadRewarded()
+        manager.state.value.rewardedLoading shouldBe false
+        manager.showRewarded(activity)
+        manager.state.value.fullscreenShowing shouldBe false
+        consentReady()
+        manager.preloadRewarded()
+        rewardedLoad.captured.onAdFailedToLoad(mockk(relaxed = true))
+        dispatcher.scheduler.runCurrent()
+        manager.state.value.rewardedLoading shouldBe false
+        manager.state.value.fullscreenShowing shouldBe false
+    }
+
 }

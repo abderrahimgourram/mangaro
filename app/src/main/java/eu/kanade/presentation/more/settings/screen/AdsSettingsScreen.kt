@@ -41,11 +41,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import cafe.adriel.voyager.navigator.currentOrThrow
+import cafe.adriel.voyager.navigator.LocalNavigator
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.theme.MangaroDesignSystem
 import eu.kanade.presentation.util.LocalBackPress
@@ -71,8 +71,8 @@ object AdsSettingsScreen : Screen() {
     @Composable
     override fun Content() {
         val context = LocalContext.current
-        val uriHandler = LocalUriHandler.current
-        val backPress = LocalBackPress.currentOrThrow
+        val navigator = LocalNavigator.currentOrThrow
+        val backPress = LocalBackPress.current ?: { navigator.pop(); Unit }
         val manager = remember(context) { AdManager.get(context) }
         val state by manager.state.collectAsStateWithLifecycle()
         val networkFlow = remember(context) { context.applicationContext.networkStateFlow() }
@@ -205,18 +205,7 @@ object AdsSettingsScreen : Screen() {
                             }
                         }
                     }
-                    Column(Modifier.fillMaxWidth().padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(0.dp)) {
-                        listOf(
-                            "سياسة الخصوصية" to "https://mangaro-web.vercel.app/privacy",
-                            "شروط الاستخدام" to "https://mangaro-web.vercel.app/terms",
-                            "المصادر المفتوحة" to "https://mangaro-web.vercel.app/open-source",
-                            "من نحن" to "https://mangaro-web.vercel.app/about",
-                        ).forEach { (label, url) ->
-                            TextButton(onClick = { uriHandler.openUri(url) }) {
-                                Text(label, style = MaterialTheme.typography.bodySmall, color = secondary)
-                            }
-                        }
-                    }
+
                 }
             }
         }

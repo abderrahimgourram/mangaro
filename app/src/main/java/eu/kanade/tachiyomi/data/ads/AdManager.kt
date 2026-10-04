@@ -73,6 +73,8 @@ class AdManager internal constructor(
     private var initializationAttempted = false
     private var initialized = false
     private var readerActive = false
+    private var resumedOwner: WeakReference<Activity>? = null
+    private var blockingDnsKnown = false
     private var native: NativeAd? = null
     private var interstitial: InterstitialAd? = null
     private var rewarded: RewardedAd? = null
@@ -94,12 +96,18 @@ class AdManager internal constructor(
         if (policy.adFree()) scope.launch { delay((policy.adFreeUntil - now()).coerceAtLeast(1)); publish() }
         app.registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
             override fun onActivityResumed(activity: Activity) {
+                resumedOwner = WeakReference(activity)
+                // Returning from an SDK fullscreen Activity releases a missed dismissal callback.
+                if (fullscreenOwner?.get() === activity) finishFullscreen()
                 readerActive = activity is ReaderActivity
                 if (consentUiStarted && !consentAttempted && activity is eu.kanade.tachiyomi.ui.main.MainActivity) {
                     gatherConsent(activity)
                 }
             }
-            override fun onActivityPaused(activity: Activity) { if (activity is ReaderActivity) readerActive = false }
+            override fun onActivityPaused(activity: Activity) {
+                if (resumedOwner?.get() === activity) resumedOwner = null
+                if (activity is ReaderActivity) readerActive = false
+            }
             override fun onActivityDestroyed(activity: Activity) {
                 if (fullscreenOwner?.get() === activity) finishFullscreen()
                 if (consentOwner?.get() === activity) {
@@ -195,7 +203,12 @@ class AdManager internal constructor(
             capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
     }
     private fun allowed() = initialized && !consentBusy && policy.requestsAllowed(consent.canRequestAds(), online())
-    private fun usable(activity: Activity) = !activity.isFinishing && !activity.isDestroyed
+    private fun usable(activity: Activity): Boolean {
+        // The manager may be created after the Activity's first onResume callback.
+        val resumed = (activity as? androidx.lifecycle.LifecycleOwner)?.lifecycle?.currentState
+            ?.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED) ?: (resumedOwner?.get() === activity)
+        return resumed && !activity.isFinishing && !activity.isDestroyed
+    }
     private fun fullscreenAllowed(activity: Activity) = allowed() && !readerActive && activity !is ReaderActivity &&
         usable(activity) && !state.value.fullscreenShowing
 
@@ -259,9 +272,11 @@ class AdManager internal constructor(
         native?.destroySafely(); native = null
         val placement = AdPlacement.CHAPTER_BOUNDARY_NATIVE
         val token = begin(placement) ?: return
+        if (BuildConfig.DEBUG) android.util.Log.d("MangaroNative", "boundary load started")
         runCatching {
             NativeAdLoader.load(NativeAdRequest.Builder(ids.native, listOf(NativeAd.NativeAdType.NATIVE)).build(), object : NativeAdLoaderCallback {
                 override fun onNativeAdLoaded(nativeAd: NativeAd) {
+                    if (BuildConfig.DEBUG) android.util.Log.d("MangaroNative", "test native loaded")
                     scope.launch {
                         if (!end(placement, token) || !allowed() || !policy.completed(session, chapter)) {
                             nativeAd.destroySafely()
@@ -273,9 +288,11 @@ class AdManager internal constructor(
                         }
                     }
                 }
-                override fun onAdFailedToLoad(adError: LoadAdError) { scope.launch {
+                override fun onAdFailedToLoad(adError: LoadAdError) {
+                    if (BuildConfig.DEBUG) android.util.Log.d("MangaroNative", "native load failure: ${adError.code}")
+                    scope.launch {
                     if (end(placement, token)) {
-                        blocker.failed(adError.code == LoadAdError.ErrorCode.NETWORK_ERROR && online())
+                        recordLoadFailure(adError)
                         publish()
                     }
                 } }
@@ -312,7 +329,7 @@ class AdManager internal constructor(
                 } }
                 override fun onAdFailedToLoad(adError: LoadAdError) { scope.launch {
                     if (end(placement, token)) {
-                        blocker.failed(adError.code == LoadAdError.ErrorCode.NETWORK_ERROR && online())
+                        recordLoadFailure(adError)
                         publish()
                     }
                 } }
@@ -320,8 +337,16 @@ class AdManager internal constructor(
         }.onFailure { end(placement, token) }
     }
 
-    fun blockingSuspected() = allowed() && runCatching { blockingDns() }.getOrDefault(false) &&
-        blocker.suspected(true, true, true)
+    private suspend fun recordLoadFailure(error: LoadAdError) {
+        val networkError = error.code == LoadAdError.ErrorCode.NETWORK_ERROR && online()
+        blocker.failed(networkError)
+        // This local Binder query stays off Compose and the main thread.
+        blockingDnsKnown = if (networkError) withContext(initializationDispatcher) {
+            runCatching { blockingDns() }.getOrDefault(false)
+        } else false
+    }
+
+    fun blockingSuspected() = allowed() && blocker.suspected(blockingDnsKnown, true, true)
     fun claimBlockerNotice() = blockingSuspected() && blocker.claimNotice()
 
     /** An explicit retry joins in-flight loading and waits at most twelve seconds. */
@@ -380,7 +405,7 @@ class AdManager internal constructor(
                 } }
                 override fun onAdFailedToLoad(adError: LoadAdError) { scope.launch {
                     if (end(placement, token)) {
-                        blocker.failed(adError.code == LoadAdError.ErrorCode.NETWORK_ERROR && online())
+                        recordLoadFailure(adError)
                         publish()
                     }
                 } }

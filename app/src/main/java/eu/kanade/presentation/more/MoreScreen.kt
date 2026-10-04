@@ -8,11 +8,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Label
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.GetApp
+import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.PersonOutline
+import androidx.compose.material.icons.outlined.Shield
+import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.QueryStats
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -44,10 +49,23 @@ fun MoreScreen(
     onClickAbout: () -> Unit,
     onClickAds: () -> Unit,
 ) {
+    val uriHandler = LocalUriHandler.current
     Scaffold(topBar = { AppBar(title = "المزيد")    }) { padding ->
         ScrollbarLazyColumn(contentPadding = padding) {
             item(key = "ads") {
                 TextPreferenceWidget(title = "الإعلانات", icon = Icons.Outlined.PlayCircleOutline, onPreferenceClick = onClickAds)
+            }
+            item(key = "website-about") {
+                TextPreferenceWidget(title = "من نحن", icon = Icons.Outlined.PersonOutline, onPreferenceClick = { uriHandler.openUri("https://mangaro-web.vercel.app/about") })
+            }
+            item(key = "website-licenses") {
+                TextPreferenceWidget(title = "المصادر المفتوحة", icon = Icons.Outlined.Code, onPreferenceClick = { uriHandler.openUri("https://mangaro-web.vercel.app/open-source") })
+            }
+            item(key = "website-privacy") {
+                TextPreferenceWidget(title = "سياسة الخصوصية", icon = Icons.Outlined.Shield, onPreferenceClick = { uriHandler.openUri("https://mangaro-web.vercel.app/privacy") })
+            }
+            item(key = "website-terms") {
+                TextPreferenceWidget(title = "شروط الاستخدام", icon = Icons.Outlined.Description, onPreferenceClick = { uriHandler.openUri("https://mangaro-web.vercel.app/terms") })
             }
         }
     }
