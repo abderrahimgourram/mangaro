@@ -66,6 +66,25 @@ class AdPolicy(private val now: () -> Long) {
         return !adFree() && count > 3 && (count - 4) % 3 == 0 &&
             nativeTimes.size < 4 && separated && (session to chapterId) !in nativeChapters
     }
+    /** Diagnostics only; eligibility and all limits remain in nativeEligible(). */
+    @Synchronized internal fun nativeStatus(session: String, chapterId: Long): NativePolicyStatus {
+        val chapters = sessions[session]
+        val ordinal = chapters?.get(chapterId)
+        val eligible = nativeEligible(session, chapterId)
+        val reason = when {
+            eligible -> "eligible"
+            chapters == null -> "session_missing"
+            adFree() -> "rewarded_ad_free"
+            ordinal == null -> "chapter_not_completed"
+            ordinal <= 3 -> "first_three_grace"
+            (session to chapterId) in nativeChapters -> "boundary_already_claimed"
+            (ordinal - 4) % 3 != 0 -> "three_chapter_interval"
+            nativeTimes.size >= 4 -> "hourly_cap"
+            else -> "completion_gap"
+        }
+        return NativePolicyStatus(chapters?.size ?: 0, ordinal, eligible, reason)
+    }
+
     @Synchronized fun claimNative(session: String, chapterId: Long): Boolean {
         if (!nativeEligible(session, chapterId)) return false
         nativeChapters.add(session to chapterId)
@@ -114,3 +133,5 @@ class OnceAction(private val action: () -> Unit) {
     private val called = java.util.concurrent.atomic.AtomicBoolean()
     fun run() { if (called.compareAndSet(false, true)) action() }
 }
+
+internal data class NativePolicyStatus(val completedCount: Int, val ordinal: Int?, val eligible: Boolean, val reason: String)

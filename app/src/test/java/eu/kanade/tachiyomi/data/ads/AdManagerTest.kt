@@ -415,4 +415,97 @@ class AdManagerTest {
         manager.state.value.fullscreenShowing shouldBe false
     }
 
+    @Test fun `consumed interstitial replenishes after cooldown and a different operation can show`() = runTest(dispatcher) {
+        consentReady()
+        val first = mockk<InterstitialAd>(relaxed = true)
+        val events = slot<InterstitialAdEventCallback>()
+        every { first.adEventCallback = capture(events) } just Runs
+        interstitialLoad.captured.onAdLoaded(first)
+        runCurrent()
+        var downloads = 0
+        manager.download(activity, 100, "operation-a") { downloads++ }
+        events.captured.onAdDismissedFullScreenContent()
+        runCurrent()
+        downloads shouldBe 1
+        manager.state.value.fullscreenShowing shouldBe false
+        manager.state.value.adFreeUntil shouldBe 0
+        verify(exactly = 1) { first.destroy() }
+        elapsed += AdPolicy.FULLSCREEN_GAP
+        advanceTimeBy(AdPolicy.FULLSCREEN_GAP)
+        runCurrent()
+        verify(exactly = 2) { InterstitialAd.load(any(), any()) }
+        val second = mockk<InterstitialAd>(relaxed = true)
+        interstitialLoad.captured.onAdLoaded(second)
+        runCurrent()
+        // Operation A stays handled even when a fresh ad is available.
+        manager.download(activity, 100, "operation-a") { downloads++ }
+        verify(exactly = 0) { second.show(any()) }
+        manager.download(activity, 100, "operation-b") { downloads++ }
+        verify(exactly = 1) { second.show(activity) }
+        manager.state.value.adFreeUntil shouldBe 0
+    }
+
+    @Test fun `native no fill does not claim chapter four and later load can be forwarded`() {
+        consentReady()
+        manager.startReadingSession("reader")
+        (1L..4L).forEach { manager.chapterCompleted("reader", it) }
+        manager.preloadNative("reader", 4)
+        val error = mockk<LoadAdError>()
+        every { error.code } returns LoadAdError.ErrorCode.NO_FILL
+        nativeLoad.captured.onAdFailedToLoad(error)
+        dispatcher.scheduler.runCurrent()
+        manager.claimNative("reader", 4) shouldBe null
+        manager.state.value.nativeReady shouldBe false
+        manager.adsSuppressed() shouldBe false
+        elapsed += 60_000
+        manager.preloadNative("reader", 4)
+        val ad = mockk<NativeAd>(relaxed = true)
+        nativeLoad.captured.onNativeAdLoaded(ad)
+        dispatcher.scheduler.runCurrent()
+        manager.claimNative("reader", 4) shouldBe ad
+        verify(exactly = 0) { ad.destroy() }
+    }
+
+    @Test fun `failed interstitial refill does not mark future operation or reward state`() = runTest(dispatcher) {
+        consentReady()
+        val first = mockk<InterstitialAd>(relaxed = true)
+        val events = slot<InterstitialAdEventCallback>()
+        every { first.adEventCallback = capture(events) } just Runs
+        interstitialLoad.captured.onAdLoaded(first)
+        runCurrent()
+        var downloads = 0
+        manager.download(activity, 100, "a") { downloads++ }
+        events.captured.onAdFailedToShowFullScreenContent(mockk(relaxed = true))
+        runCurrent()
+        downloads shouldBe 1
+        elapsed += AdPolicy.FULLSCREEN_GAP
+        advanceTimeBy(AdPolicy.FULLSCREEN_GAP)
+        runCurrent()
+        val error = mockk<LoadAdError>()
+        every { error.code } returns LoadAdError.ErrorCode.NO_FILL
+        interstitialLoad.captured.onAdFailedToLoad(error)
+        runCurrent()
+        manager.state.value.fullscreenShowing shouldBe false
+        manager.state.value.adFreeUntil shouldBe 0
+        elapsed += 60_000
+        manager.preloadInterstitial()
+        val second = mockk<InterstitialAd>(relaxed = true)
+        interstitialLoad.captured.onAdLoaded(second)
+        runCurrent()
+        manager.download(activity, 100, "b") { downloads++ }
+        verify(exactly = 1) { second.show(activity) }
+        // A third unrelated operation is still capped after two claimed interstitials.
+        lifecycle.captured.onActivityDestroyed(activity)
+        elapsed += AdPolicy.FULLSCREEN_GAP
+        advanceTimeBy(AdPolicy.FULLSCREEN_GAP)
+        runCurrent()
+        val third = mockk<InterstitialAd>(relaxed = true)
+        interstitialLoad.captured.onAdLoaded(third)
+        runCurrent()
+        lifecycle.captured.onActivityResumed(activity)
+        manager.download(activity, 100, "c") { downloads++ }
+        verify(exactly = 0) { third.show(any()) }
+        manager.state.value.adFreeUntil shouldBe 0
+    }
+
 }

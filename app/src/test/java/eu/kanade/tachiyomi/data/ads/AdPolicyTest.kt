@@ -187,4 +187,21 @@ class AdPolicyTest {
         proceed.run() // owner destroyed
         downloads shouldBe 1
     }
+    @Test fun `native diagnostics agree with unchanged grace interval and reward policy`() {
+        val p = policy()
+        (1L..3L).forEach {
+            p.chapterCompleted("reader", it)
+            p.nativeStatus("reader", it).completedCount shouldBe it.toInt()
+            p.nativeStatus("reader", it).reason shouldBe "first_three_grace"
+        }
+        p.chapterCompleted("reader", 4)
+        p.chapterCompleted("reader", 4)
+        p.nativeStatus("reader", 4).completedCount shouldBe 4
+        p.nativeStatus("reader", 4).eligible shouldBe true
+        p.claimNative("reader", 4) shouldBe true
+        p.nativeStatus("reader", 4).reason shouldBe "boundary_already_claimed"
+        p.rewardEarned()
+        p.nativeStatus("reader", 4).reason shouldBe "rewarded_ad_free"
+    }
+
 }

@@ -88,6 +88,8 @@ class AdManager internal constructor(
     private var fullscreenOwner: WeakReference<Activity>? = null
     private var fullscreenContinuation: OnceAction? = null
     private var fullscreenCleanup: (() -> Unit)? = null
+    private var fullscreenDownload = false
+    private var lastNativeDiagnostic: String? = null
 
     init {
         fun times(key: String) = prefs.getString(key, "").orEmpty().split(',').mapNotNull { it.toLongOrNull() }
@@ -262,11 +264,13 @@ class AdManager internal constructor(
     }
     fun chapterCompleted(session: String, chapter: Long) {
         policy.chapterCompleted(session, chapter)
+        debugNativeStatus(session, chapter, "completion")
         scope.launch { publish() }
     }
 
     /** Only called by the end-boundary surface, never by the page renderer/loader. */
     fun preloadNative(session: String, chapter: Long) {
+        debugNativeStatus(session, chapter, "boundary")
         if (!policy.canPreloadNative(session, chapter) || !allowed()) return
         if (native != null && now() - nativeLoadedAt < 60 * 60_000L) return
         native?.destroySafely(); native = null
@@ -302,11 +306,29 @@ class AdManager internal constructor(
 
     fun claimNative(session: String, chapter: Long): NativeAd? {
         val ad = native ?: return null
-        if (!allowed() || now() - nativeLoadedAt >= 60 * 60_000L || !policy.claimNative(session, chapter)) return null
+        if (!allowed() || now() - nativeLoadedAt >= 60 * 60_000L || !policy.claimNative(session, chapter)) {
+            debugNativeStatus(session, chapter, "forwarded=false")
+            return null
+        }
         native = null
         savePolicy()
+        nativeUiEvent("forwarded=true")
         return ad
     }
+    private fun debugNativeStatus(session: String, chapter: Long, event: String) {
+        if (!BuildConfig.DEBUG) return
+        val status = policy.nativeStatus(session, chapter)
+        val message = "$event completed=${status.completedCount} boundaryOrdinal=${status.ordinal} eligible=${status.eligible} reason=${status.reason} cached=${native != null} sdkReady=$initialized consent=${consent.canRequestAds() && !consentBusy} online=${online()}"
+        if (message != lastNativeDiagnostic) {
+            lastNativeDiagnostic = message
+            nativeUiEvent(message)
+        }
+    }
+
+    internal fun nativeUiEvent(event: String) {
+        if (BuildConfig.DEBUG) android.util.Log.d("MangaroNative", event)
+    }
+
     fun rewardedAvailable() = rewarded != null && now() - rewardedLoadedAt < 60 * 60_000L &&
         allowed() && !state.value.fullscreenShowing && policy.rewardedEligible(true, readerActive)
 
@@ -372,7 +394,7 @@ class AdManager internal constructor(
             return
         }
         interstitial = null
-        val showToken = openFullscreen(activity, next) { ad.destroySafely() }
+        val showToken = openFullscreen(activity, next, download = true) { ad.destroySafely() }
         savePolicy()
         runCatching {
             ad.adEventCallback = object : InterstitialAdEventCallback {
@@ -444,7 +466,8 @@ class AdManager internal constructor(
         }
     }
 
-    private fun openFullscreen(activity: Activity, next: OnceAction, cleanup: () -> Unit): Long {
+    private fun openFullscreen(activity: Activity, next: OnceAction, download: Boolean = false, cleanup: () -> Unit): Long {
+        fullscreenDownload = download
         fullscreenOwner = WeakReference(activity)
         fullscreenContinuation = next
         fullscreenCleanup = cleanup
@@ -455,14 +478,21 @@ class AdManager internal constructor(
         if (token != fullscreenGeneration || !state.value.fullscreenShowing) return
         val next = fullscreenContinuation
         val cleanup = fullscreenCleanup
+        val replenishDownload = fullscreenDownload
+        fullscreenDownload = false
         fullscreenContinuation = null; fullscreenCleanup = null; fullscreenOwner = null
         if (next != null) { policy.fullscreenStarted(); savePolicy() }
         runCatching { cleanup?.invoke() }
         mutableState.update { it.copy(fullscreenShowing = false, fullscreenVisible = false) }
         publish()
         next?.run()
-        scope.launch { delay(AdPolicy.FULLSCREEN_GAP); publish() }
-        // No immediate chained reload/show. Future deliberate entry points may preload.
+        scope.launch {
+            delay(AdPolicy.FULLSCREEN_GAP)
+            publish()
+            // One replacement load after this download's cooldown, never another show.
+            // UMP, network, reward and load backoff still gate the request.
+            if (replenishDownload && !state.value.fullscreenShowing && !readerActive) preloadInterstitial()
+        }
     }
     private fun clearLoadedAds() {
         native?.destroySafely(); native = null

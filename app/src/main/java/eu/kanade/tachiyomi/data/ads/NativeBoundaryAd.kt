@@ -32,32 +32,42 @@ fun NativeBoundaryAd(session: String, chapterId: Long, visible: Boolean) {
     val context = LocalContext.current
     val manager = remember(context) { AdManager.get(context) }
     val state by manager.state.collectAsState()
+    val ownership = remember(session, chapterId) { NativeBoundaryOwnership<NativeAd> { it.destroySafely() } }
     var ad by remember(session, chapterId) { mutableStateOf<NativeAd?>(null) }
     LaunchedEffect(session, chapterId, visible, state.revision) {
-        if (!visible || manager.adsSuppressed()) {
-            ad?.destroySafely()
-            ad = null
-        } else {
-            if (ad == null) {
-                ad = manager.claimNative(session, chapterId)
-                if (ad == null) manager.preloadNative(session, chapterId)
-            }
-        }
+        ad = ownership.update(
+            visible = visible,
+            suppressed = manager.adsSuppressed(),
+            claim = { manager.claimNative(session, chapterId) },
+            preload = { manager.preloadNative(session, chapterId) },
+        )
     }
-    DisposableEffect(session, chapterId) {
-        onDispose { ad?.destroySafely(); ad = null }
+    DisposableEffect(ownership) {
+        onDispose { ownership.dispose() }
     }
-    if (!visible || manager.adsSuppressed()) return
+    if (manager.adsSuppressed()) return
     ad?.let { loaded ->
         key(loaded) {
             AndroidView(
                 modifier = Modifier.fillMaxWidth(),
                 factory = { ctx ->
-                    runCatching { createNativeAdView(ctx, loaded) }.getOrElse {
-                        loaded.destroySafely()
-                        android.widget.FrameLayout(ctx)
+                    runCatching { createNativeAdView(ctx, loaded) }.getOrElse { error ->
+                        manager.nativeUiEvent("registration_failed=${error.javaClass.simpleName}")
+                        android.widget.FrameLayout(ctx).also { fallback ->
+                            fallback.post { ownership.dispose(); ad = null }
+                        }
+                    }.also { view ->
+                        var renderedLogged = false
+                        view.addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
+                            if (!renderedLogged && v is NativeAdView && v.isShown && v.width > 0 && v.height > 0) {
+                                renderedLogged = true
+                                manager.nativeUiEvent("attached=true rendered=true width=${v.width} height=${v.height}")
+                            }
+                        }
                     }
                 },
+                // Keep the same SDK view/ad through transient pre-draw visibility changes.
+                update = { it.visibility = if (visible) View.VISIBLE else View.INVISIBLE },
                 onRelease = { runCatching { (it as? NativeAdView)?.destroy() } },
             )
         }
@@ -66,7 +76,9 @@ fun NativeBoundaryAd(session: String, chapterId: Long, visible: Boolean) {
 
 private fun createNativeAdView(context: android.content.Context, ad: NativeAd): NativeAdView {
     fun dp(value: Int) = (value * context.resources.displayMetrics.density).toInt()
-    val view = NativeAdView(context)
+    val view = NativeAdView(context).apply {
+        layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+    }
     val column = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(dp(12), dp(10), dp(12), dp(12))

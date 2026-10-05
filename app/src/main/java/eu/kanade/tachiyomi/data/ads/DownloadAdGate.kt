@@ -88,6 +88,8 @@ fun rememberDownloadAdGate(): (Int, () -> Unit) -> Unit {
     return { count, proceed ->
         if (pending == null) {
             if (count > AdPolicy.DOWNLOAD_THRESHOLD) {
+                // Each new confirmed operation can prepare a fresh ad; identities stay independent.
+                manager.preloadInterstitial()
                 stage = DownloadAdStage.CONFIRM
                 pending = PendingDownload(count, UUID.randomUUID().toString(), OnceAction(proceed))
             } else proceed()
