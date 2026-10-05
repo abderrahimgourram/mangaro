@@ -14,4 +14,4 @@ Dependency notices are copied from the Android release's generated AboutLibrarie
 
 Deploy from the linked project with `vercel deploy --prod`, then ensure `mangaro-web.vercel.app` points to the new deployment with `vercel alias set <deployment-url> mangaro-web.vercel.app`.
 
-Published release: Mangaro 1.0.5 / versionCode 6, signed with the permanent Mangaro certificate. Android Git HEAD: 67e74ea2c3f5336bf3a22eed14b1f8ba653fd4db. The app includes the production website legal URLs.
+Published release: Mangaro 1.0.6 / versionCode 7, signed with the permanent Mangaro certificate. Android Git HEAD: 03683b7f871f004b052a6b52b3938417dee513cf. The app includes the production website legal URLs.
