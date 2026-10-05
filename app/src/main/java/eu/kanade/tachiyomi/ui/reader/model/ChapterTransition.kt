@@ -15,6 +15,13 @@ sealed class ChapterTransition {
         override val to: ReaderChapter?,
     ) : ChapterTransition()
 
+    /** Both sides of a boundary refer to the same completed chapter, never the new current chapter. */
+    val completedBoundaryChapterId: Long?
+        get() = when (this) {
+            is Prev -> to?.chapter?.id
+            is Next -> from.chapter.id
+        }
+
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is ChapterTransition) return false

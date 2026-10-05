@@ -80,10 +80,8 @@ class ReaderTransitionView @JvmOverloads constructor(context: Context, attrs: At
                         currChapterDownloaded = it.currChapterDownloaded,
                         goingToChapterDownloaded = it.goingToChapterDownloaded,
                         boundaryContent = {
-                            if (it.transition is ChapterTransition.Next) {
-                                it.transition.from.chapter.id?.let { chapterId ->
-                                    eu.kanade.tachiyomi.data.ads.NativeBoundaryAd(it.adSession, chapterId, boundaryVisible)
-                                }
+                            it.transition.completedBoundaryChapterId?.let { chapterId ->
+                                eu.kanade.tachiyomi.data.ads.NativeBoundaryAd(it.adSession, chapterId, boundaryVisible)
                             }
                         },
                     )

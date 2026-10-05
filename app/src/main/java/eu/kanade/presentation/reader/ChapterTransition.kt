@@ -66,6 +66,7 @@ fun ChapterTransition(
                     bottomChapterDownloaded = currChapterDownloaded,
                     fallbackLabel = stringResource(MR.strings.transition_no_previous),
                     chapterGap = calculateChapterGap(transition.from, transition.to),
+                    boundaryContent = boundaryContent,
                 )
             }
             is ChapterTransition.Next -> {

@@ -69,8 +69,8 @@ android {
         manifestPlaceholders["accountAuthScheme"] = "mangaro"
         manifestPlaceholders["admobAppId"] = "ca-app-pub-6220636202579444~2080855468"
 
-        versionCode = 3
-        versionName = "1.0.2"
+        versionCode = 4
+        versionName = "1.0.3"
 
         buildConfigField("String", "COMMIT_COUNT", "\"${getLatestCommitCount()}\"")
         buildConfigField("String", "COMMIT_SHA", "\"${getLatestCommitSha()}\"")
