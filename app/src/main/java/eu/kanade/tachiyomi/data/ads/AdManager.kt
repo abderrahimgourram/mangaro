@@ -7,20 +7,6 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Bundle
 import android.os.SystemClock
-import com.google.android.libraries.ads.mobile.sdk.MobileAds
-import com.google.android.libraries.ads.mobile.sdk.common.AdLoadCallback
-import com.google.android.libraries.ads.mobile.sdk.common.AdRequest
-import com.google.android.libraries.ads.mobile.sdk.common.FullScreenContentError
-import com.google.android.libraries.ads.mobile.sdk.common.LoadAdError
-import com.google.android.libraries.ads.mobile.sdk.initialization.InitializationConfig
-import com.google.android.libraries.ads.mobile.sdk.interstitial.InterstitialAd
-import com.google.android.libraries.ads.mobile.sdk.interstitial.InterstitialAdEventCallback
-import com.google.android.libraries.ads.mobile.sdk.nativead.NativeAd
-import com.google.android.libraries.ads.mobile.sdk.nativead.NativeAdLoader
-import com.google.android.libraries.ads.mobile.sdk.nativead.NativeAdLoaderCallback
-import com.google.android.libraries.ads.mobile.sdk.nativead.NativeAdRequest
-import com.google.android.libraries.ads.mobile.sdk.rewarded.RewardedAd
-import com.google.android.libraries.ads.mobile.sdk.rewarded.RewardedAdEventCallback
 import com.google.android.ump.ConsentInformation
 import com.google.android.ump.ConsentRequestParameters
 import com.google.android.ump.UserMessagingPlatform
@@ -63,7 +49,7 @@ class AdManager internal constructor(
     private fun now() = wallOrigin + SystemClock.elapsedRealtime() - elapsedOrigin
     private val policy = AdPolicy(::now)
     private val blocker = AdBlockerEvidence(::now)
-    private val ids = AdIds.forBuild(BuildConfig.BUILD_TYPE)
+    private val provider: AdProvider = if (BuildConfig.START_IO_PRIMARY) StartIoProvider(app) else AdMobProvider(AdIds.forBuild(BuildConfig.BUILD_TYPE))
     private val consent = UserMessagingPlatform.getConsentInformation(app)
     private val mutableState = MutableStateFlow(AdState())
     val state = mutableState.asStateFlow()
@@ -81,7 +67,7 @@ class AdManager internal constructor(
     private var rewardExpiry: Job? = null
     private var nativeDemand: Pair<String, Long>? = null
     private data class NativeReservation(
-        val ad: NativeAd,
+        val ad: ProviderNative,
         val loadedAt: Long,
         val chapterAtReservation: Long?,
         var owner: String?,
@@ -94,9 +80,9 @@ class AdManager internal constructor(
     private var resumedOwner: WeakReference<Activity>? = null
     private var blockingDnsKnown = false
     private var networkWasOnline = false
-    private var native: NativeAd? = null
-    private var interstitial: InterstitialAd? = null
-    private var rewarded: RewardedAd? = null
+    private var native: ProviderNative? = null
+    private var interstitial: ProviderFullscreen? = null
+    private var rewarded: ProviderFullscreen? = null
     private val gates = AdPlacement.entries.associateWith { AdLoadGate(::now) }
     private val attempts = mutableMapOf<AdPlacement, Long>()
     private var sequence = 0L
@@ -231,9 +217,7 @@ class AdManager internal constructor(
         initializationAttempted = true
         scope.launch {
             try {
-                withContext(initializationDispatcher) {
-                    MobileAds.initialize(app, InitializationConfig.Builder(AdIds.APP_ID).build())
-                }
+                provider.initialize(app)
                 initialized = true
                 initializationFailures = 0
                 publish()
@@ -256,7 +240,7 @@ class AdManager internal constructor(
     }
 
     private fun refill() {
-        if (!allowed()) return
+        if (!allowed(automatic = false)) return
         preloadInterstitial()
         preloadRewarded()
         nativeDemand?.let { (session, chapter) -> preloadNative(session, chapter) }
@@ -286,7 +270,7 @@ class AdManager internal constructor(
         recoveryJobs[placement] = scope.launch {
             delay(gates.getValue(placement).retryDelay().coerceAtLeast(1))
             recoveryJobs.remove(placement)
-            if (resumedOwner?.get()?.let(::usable) != true || !allowed()) return@launch
+            if (resumedOwner?.get()?.let(::usable) != true || !allowed(automatic = placement != AdPlacement.REWARDED_AD_FREE)) return@launch
             when (placement) {
                 AdPlacement.DOWNLOAD_INTERSTITIAL -> preloadInterstitial()
                 AdPlacement.REWARDED_AD_FREE -> preloadRewarded()
@@ -301,14 +285,14 @@ class AdManager internal constructor(
         return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
             capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
     }
-    private fun allowed() = initialized && !consentBusy && policy.requestsAllowed(consent.canRequestAds(), online())
+    private fun allowed(automatic: Boolean = true) = initialized && !consentBusy && policy.requestsAllowed(consent.canRequestAds(), online()) && (!automatic || !policy.adFree())
     private fun usable(activity: Activity): Boolean {
         // The manager may be created after the Activity's first onResume callback.
         val resumed = (activity as? androidx.lifecycle.LifecycleOwner)?.lifecycle?.currentState
             ?.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED) ?: (resumedOwner?.get() === activity)
         return resumed && !activity.isFinishing && !activity.isDestroyed
     }
-    private fun fullscreenAllowed(activity: Activity) = allowed() && !readerActive && activity !is ReaderActivity &&
+    private fun fullscreenAllowed(activity: Activity, automatic: Boolean = true) = allowed(automatic) && !readerActive && activity !is ReaderActivity &&
         usable(activity) && !state.value.fullscreenShowing
 
     private fun publish() {
@@ -335,7 +319,7 @@ class AdManager internal constructor(
         publish()
     }
     private fun begin(placement: AdPlacement): Long? {
-        if (!allowed() || !gates.getValue(placement).start()) return null
+        if (!allowed(automatic = placement != AdPlacement.REWARDED_AD_FREE) || !gates.getValue(placement).start()) return null
         val token = ++sequence
         attempts[placement] = token
         if (placement == AdPlacement.REWARDED_AD_FREE) mutableState.update { it.copy(rewardedLoading = true) }
@@ -417,34 +401,21 @@ class AdManager internal constructor(
         val token = begin(placement) ?: return
         nativeUiEvent("native request started")
         runCatching {
-            NativeAdLoader.load(NativeAdRequest.Builder(ids.native, listOf(NativeAd.NativeAdType.NATIVE)).build(), object : NativeAdLoaderCallback {
-                override fun onNativeAdLoaded(nativeAd: NativeAd) {
-                    scope.launch {
-                        if (attempts[placement] != token || !allowed() || !policy.hasSession(session)) {
-                            nativeAd.destroySafely()
-                            end(placement, token)
-                        } else {
-                            blocker.succeeded()
-                            native = nativeAd
-                            nativeLoadedAt = now()
-                            end(placement, token, loaded = true)
-                            publish()
-                            nativeUiEvent("native load success")
-                        }
-                    }
+            provider.loadNative({ ad -> scope.launch {
+                if (attempts[placement] != token || !allowed() || !policy.hasSession(session)) {
+                    ad.destroySafely(); end(placement, token)
+                } else {
+                    blocker.succeeded(); native = ad; nativeLoadedAt = now()
+                    end(placement, token, loaded = true); publish()
                 }
-                override fun onAdFailedToLoad(adError: LoadAdError) {
-                    nativeUiEvent("native load failure: ${adError.code}")
-                    scope.launch {
-                        if (end(placement, token)) { recordLoadFailure(adError); publish() }
-                    }
-                }
-            })
+            } }, { error -> scope.launch {
+                if (end(placement, token)) { recordLoadFailure(error); publish() }
+            } })
         }.onFailure { end(placement, token) }
     }
 
     /** Reserving an SDK object does not count as displaying an advertisement. */
-    fun reserveNative(session: String, chapter: Long, owner: String): NativeAd? {
+    internal fun reserveNative(session: String, chapter: Long, owner: String): ProviderNative? {
         if (!allowed()) return null
         val key = session to chapter
         nativeReservations[key]?.let { reservation ->
@@ -469,7 +440,7 @@ class AdManager internal constructor(
         return ad
     }
 
-    fun nativeOwned(session: String, chapter: Long, owner: String, ad: NativeAd) =
+    internal fun nativeOwned(session: String, chapter: Long, owner: String, ad: ProviderNative) =
         nativeReservations[session to chapter]?.let { it.owner == owner && it.ad === ad } == true
 
     fun nativeAttached(session: String, chapter: Long, owner: String): Boolean {
@@ -525,7 +496,7 @@ class AdManager internal constructor(
     }
 
     fun rewardedAvailable() = rewarded != null && now() - rewardedLoadedAt < 60 * 60_000L &&
-        allowed() && !state.value.fullscreenShowing && policy.rewardedEligible(true, readerActive)
+        allowed(automatic = false) && !state.value.fullscreenShowing && policy.rewardedEligible(true, readerActive)
 
     fun adFreeActive() = policy.adFree()
     fun adsSuppressed() = !consent.canRequestAds() || consentBusy || policy.adFree()
@@ -540,29 +511,21 @@ class AdManager internal constructor(
         val placement = AdPlacement.DOWNLOAD_INTERSTITIAL
         val token = begin(placement) ?: return
         runCatching {
-            InterstitialAd.load(AdRequest.Builder(ids.interstitial).build(), object : AdLoadCallback<InterstitialAd> {
-                override fun onAdLoaded(ad: InterstitialAd) { scope.launch {
-                    if (attempts[placement] != token || !allowed()) {
-                        ad.destroySafely(); end(placement, token)
-                    } else {
-                        blocker.succeeded()
-                        interstitial = ad; interstitialLoadedAt = now()
-                        end(placement, token, loaded = true)
-                        publish()
-                    }
-                } }
-                override fun onAdFailedToLoad(adError: LoadAdError) { scope.launch {
-                    if (end(placement, token)) {
-                        recordLoadFailure(adError)
-                        publish()
-                    }
-                } }
-            })
+            provider.loadInterstitial({ ad -> scope.launch {
+                if (attempts[placement] != token || !allowed()) {
+                    ad.destroySafely(); end(placement, token)
+                } else {
+                    blocker.succeeded(); interstitial = ad; interstitialLoadedAt = now()
+                    end(placement, token, loaded = true); publish()
+                }
+            } }, { error -> scope.launch {
+                if (end(placement, token)) { recordLoadFailure(error); publish() }
+            } })
         }.onFailure { end(placement, token) }
     }
 
-    private suspend fun recordLoadFailure(error: LoadAdError) {
-        val networkError = error.code == LoadAdError.ErrorCode.NETWORK_ERROR && online()
+    private suspend fun recordLoadFailure(error: ProviderFailure) {
+        val networkError = error.network && online()
         blocker.failed(networkError)
         // This local Binder query stays off Compose and the main thread.
         blockingDnsKnown = if (networkError) withContext(initializationDispatcher) {
@@ -608,12 +571,10 @@ class AdManager internal constructor(
         val showToken = openFullscreen(activity, next, download = true, operation = operation) { ad.destroySafely() }
         savePolicy()
         runCatching {
-            ad.adEventCallback = object : InterstitialAdEventCallback {
-                override fun onAdShowedFullScreenContent() { scope.launch { markFullscreenShown(showToken) } }
-                override fun onAdDismissedFullScreenContent() { scope.launch { finishFullscreen(showToken) } }
-                override fun onAdFailedToShowFullScreenContent(fullScreenContentError: FullScreenContentError) { scope.launch { finishFullscreen(showToken) } }
-            }
-            ad.show(activity)
+            ad.show(activity,
+                shown = { scope.launch { markFullscreenShown(showToken) } },
+                finished = { scope.launch { finishFullscreen(showToken) } },
+            )
         }.onFailure { finishFullscreen(showToken) }
     }
 
@@ -628,42 +589,25 @@ class AdManager internal constructor(
         val placement = AdPlacement.REWARDED_AD_FREE
         val token = begin(placement) ?: return
         runCatching {
-            RewardedAd.load(AdRequest.Builder(ids.rewarded).build(), object : AdLoadCallback<RewardedAd> {
-                override fun onAdLoaded(ad: RewardedAd) { scope.launch {
-                    if (attempts[placement] != token || !allowed()) {
-                        ad.destroySafely(); end(placement, token)
-                    } else {
-                        blocker.succeeded()
-                        rewarded = ad; rewardedLoadedAt = now()
-                        end(placement, token, loaded = true)
-                        publish()
-                        scope.launch {
-                            delay(60 * 60_000L)
-                            if (rewarded === ad) { rewarded = null; ad.destroySafely(); publish() }
-                        }
-                    }
-                } }
-                override fun onAdFailedToLoad(adError: LoadAdError) { scope.launch {
-                    if (end(placement, token)) {
-                        recordLoadFailure(adError)
-                        publish()
-                    }
-                } }
-            })
+            provider.loadRewarded({ ad -> scope.launch {
+                if (attempts[placement] != token || !allowed(automatic = false)) {
+                    ad.destroySafely(); end(placement, token)
+                } else {
+                    blocker.succeeded(); rewarded = ad; rewardedLoadedAt = now()
+                    end(placement, token, loaded = true); publish()
+                }
+            } }, { error -> scope.launch {
+                if (end(placement, token)) { recordLoadFailure(error); publish() }
+            } })
         }.onFailure { end(placement, token) }
     }
 
     /** Only the explicit settings CTA calls this. No automatic show or reward on dismissal. */
     fun showRewarded(activity: Activity) {
         val ad = rewarded ?: return
-        if (!fullscreenAllowed(activity) || now() - rewardedLoadedAt >= 60 * 60_000L || !policy.rewardedEligible(true, readerActive)) return
+        if (!fullscreenAllowed(activity, automatic = false) || now() - rewardedLoadedAt >= 60 * 60_000L || !policy.rewardedEligible(true, readerActive)) return
         rewarded = null
         val showToken = openFullscreen(activity, OnceAction {}) { ad.destroySafely() }
-        val callback = object : RewardedAdEventCallback {
-            override fun onAdShowedFullScreenContent() { scope.launch { markFullscreenShown(showToken) } }
-            override fun onAdDismissedFullScreenContent() { scope.launch { finishFullscreen(showToken) } }
-            override fun onAdFailedToShowFullScreenContent(fullScreenContentError: FullScreenContentError) { scope.launch { finishFullscreen(showToken) } }
-        }
         val grant = OnceAction {
             policy.rewardEarned()
             clearLoadedAds()
@@ -671,8 +615,11 @@ class AdManager internal constructor(
             scheduleRewardExpiry()
         }
         runCatching {
-            ad.adEventCallback = callback
-            ad.show(activity) { scope.launch { grant.run() } }
+            ad.show(activity,
+                shown = { scope.launch { markFullscreenShown(showToken) } },
+                finished = { scope.launch { finishFullscreen(showToken) } },
+                earned = { scope.launch { grant.run() } },
+            )
         }.onFailure { finishFullscreen(showToken) }
     }
 
@@ -721,7 +668,7 @@ class AdManager internal constructor(
         // Prepare one replacement now, even while showing the next ad is still cooling
         // down or the user returns to Reader. Loading never claims another operation.
         // Consent, network, ad-free state and failure backoff still gate this request.
-        if (replenishDownload) preloadInterstitial()
+        if (replenishDownload) preloadInterstitial() else preloadRewarded()
         next?.run()
         scope.launch {
             delay(AdPolicy.FULLSCREEN_GAP)

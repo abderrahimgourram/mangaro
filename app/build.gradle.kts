@@ -69,8 +69,10 @@ android {
         manifestPlaceholders["accountAuthScheme"] = "mangaro"
         manifestPlaceholders["admobAppId"] = "ca-app-pub-6220636202579444~2080855468"
 
-        versionCode = 9
-        versionName = "1.0.8"
+        buildConfigField("boolean", "START_IO_PRIMARY", "true")
+        buildConfigField("boolean", "START_IO_TEST_ADS", "false")
+        versionCode = 10
+        versionName = "1.1.1"
 
         buildConfigField("String", "COMMIT_COUNT", "\"${getLatestCommitCount()}\"")
         buildConfigField("String", "COMMIT_SHA", "\"${getLatestCommitSha()}\"")
@@ -276,6 +278,7 @@ baselineProfile {
 dependencies {
     implementation("com.google.android.libraries.ads.mobile.sdk:ads-mobile-sdk:1.5.0")
     implementation("com.google.android.ump:user-messaging-platform:4.0.0")
+    implementation("com.startapp:inapp-sdk:5.3.1")
     // Phase 1 account modules only: no Community, Realtime, Functions or cloud library sync.
     implementation(platform("io.github.jan-tennert.supabase:bom:3.8.0"))
     implementation("io.github.jan-tennert.supabase:auth-kt")

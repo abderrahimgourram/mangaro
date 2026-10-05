@@ -95,3 +95,8 @@
     public <init>();
     public void destroy();
 }
+
+# Official Start.io SDK consumer requirements.
+-keep class com.startapp.** { *; }
+-keep class com.truenet.** { *; }
+-dontwarn com.startapp.**

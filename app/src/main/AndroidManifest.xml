@@ -49,6 +49,11 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Tachiyomi">
 
+        <!-- Code initialization after consent; no automatic startup/return placements. -->
+        <provider android:name="com.startapp.sdk.adsbase.StartAppInitProvider"
+            android:authorities="${applicationId}.startappinitprovider" tools:node="remove" />
+        <meta-data android:name="com.startapp.sdk.RETURN_ADS_ENABLED" android:value="false" />
+        <meta-data android:name="com.startapp.sdk.SPLASH_ENABLED" android:value="false" />
         <!-- UMP requires the AdMob App ID, not an ad-unit ID. -->
         <meta-data android:name="com.google.android.gms.ads.APPLICATION_ID" android:value="${admobAppId}" />
 

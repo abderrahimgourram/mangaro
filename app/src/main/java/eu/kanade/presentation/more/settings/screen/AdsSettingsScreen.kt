@@ -79,7 +79,6 @@ object AdsSettingsScreen : Screen() {
         val network by networkFlow.collectAsStateWithLifecycle(initialValue = context.activeNetworkState())
         LaunchedEffect(manager, state.consentReady, state.initialized) { manager.preloadRewarded() }
         val buttonState = when {
-            manager.adFreeActive() -> RewardButtonState.ACTIVE
             state.fullscreenShowing -> RewardButtonState.SHOWING
             !network.isOnline -> RewardButtonState.UNAVAILABLE
             state.rewardedLoading -> RewardButtonState.LOADING
@@ -143,19 +142,20 @@ object AdsSettingsScreen : Screen() {
                                     color = secondary,
                                 )
                             }
-                            if (buttonState == RewardButtonState.ACTIVE) {
+                            if (manager.adFreeActive()) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 ) {
                                     Icon(Icons.Outlined.CheckCircle, null, Modifier.size(20.dp), tint = gold)
-                                    Text(buttonState.label, style = MaterialTheme.typography.bodyMedium, color = gold)
+                                    Text(RewardButtonState.ACTIVE.label, style = MaterialTheme.typography.bodyMedium, color = gold)
                                 }
                                 if (remainingMinutes > 0) {
                                     Text("باقي $remainingMinutes دقيقة", style = MaterialTheme.typography.bodySmall, color = secondary)
                                 }
-                            } else {
+                            }
+                            run {
                                 Button(
                                     modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
                                     shape = MangaroDesignSystem.ShapeButton,
