@@ -90,8 +90,7 @@ class HomeViewModel(
             PreferredMangaVariants.changes.collectLatest {
                 _state.update { current ->
                     val combined = GroupDiscoveryItems.group(current.popularManga + listOfNotNull(current.discoveryFeatured))
-                    val title = current.discoveryFeatured?.title?.let(GroupDiscoveryItems::normalizeTitle)
-                    val featured = combined.firstOrNull { GroupDiscoveryItems.normalizeTitle(it.title) == title } ?: combined.firstOrNull()
+                    val featured = GroupDiscoveryItems.findSelectedWork(combined, current.discoveryFeatured) ?: combined.firstOrNull()
                     current.copy(discoveryFeatured=featured, popularManga=combined.filterNot { it.mangaId == featured?.mangaId },
                         latestManga=GroupDiscoveryItems.group(current.latestManga), newManga=GroupDiscoveryItems.group(current.newManga),
                         completedManga=GroupDiscoveryItems.group(current.completedManga), discoveryLatest=GroupDiscoveryItems.group(current.discoveryLatest))
@@ -583,6 +582,9 @@ private fun SourceDiscoveryItem.toDomainManga(): Manga {
         thumbnailUrl = thumbnailUrl,
         initialized = false,
         source = sourceId,
+        memo = kotlinx.serialization.json.JsonObject(workIdentity?.let {
+            mapOf(tachiyomi.domain.manga.service.WorkMetadata.MEMO_KEY to it)
+        }.orEmpty()),
     )
 }
 
@@ -595,6 +597,8 @@ data class HomeDiscoveryItem(
     val url: String = "",
     val availableVersions: List<HomeSourceVersion> = emptyList(),
     val alternatives: List<HomeDiscoveryItem> = emptyList(),
+    val canonicalWorkId: String? = null,
+    val actualChapterCount: Int? = null,
 )
 
 data class HomeSourceItem(

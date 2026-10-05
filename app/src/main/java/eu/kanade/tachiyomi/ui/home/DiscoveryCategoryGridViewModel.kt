@@ -250,6 +250,9 @@ class DiscoveryCategoryGridViewModel(
             thumbnailUrl = thumbnailUrl,
             initialized = false,
             source = sourceId,
+            memo = kotlinx.serialization.json.JsonObject(workIdentity?.let {
+                mapOf(tachiyomi.domain.manga.service.WorkMetadata.MEMO_KEY to it)
+            }.orEmpty()),
         )
     }
 

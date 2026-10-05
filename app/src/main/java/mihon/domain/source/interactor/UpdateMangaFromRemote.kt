@@ -191,6 +191,7 @@ class UpdateMangaFromRemote(
                     runCatching { recordUpdates(updatedManga, newChapters) }
                 }
             }
+            eu.kanade.tachiyomi.ui.home.PreferredMangaVariants.remember(updatedManga)
             Result.success(RemoteMangaUpdate(manga = updatedManga, newChapters = newChapters))
         } catch (e: CancellationException) {
             throw e

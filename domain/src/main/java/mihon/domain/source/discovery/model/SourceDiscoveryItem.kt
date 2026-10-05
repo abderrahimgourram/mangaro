@@ -12,4 +12,6 @@ data class SourceDiscoveryItem(
     val status: Int = 0,
     val genre: List<String> = emptyList(),
     val localMangaId: Long? = null,
+    // Optional structured evidence from SManga.memo; no source-local IDs or private metadata.
+    val workIdentity: kotlinx.serialization.json.JsonObject? = null,
 )

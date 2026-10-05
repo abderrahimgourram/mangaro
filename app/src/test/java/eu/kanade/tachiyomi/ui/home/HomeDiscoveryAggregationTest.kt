@@ -27,6 +27,23 @@ class HomeDiscoveryAggregationTest {
     private val getSourceDiscovery = GetSourceDiscovery(getSourceCapabilities, Dispatchers.Unconfined, mihon.domain.source.health.SourceHealthMonitor())
 
     @Test
+    fun `discovery preserves structured work evidence without exposing unrelated memo`() = runTest {
+        val evidence = kotlinx.serialization.json.buildJsonObject {
+            put("aliases", kotlinx.serialization.json.JsonArray(listOf(kotlinx.serialization.json.JsonPrimitive("بديل"))))
+        }
+        val manga = SManga.create().apply {
+            url = "/manga/identity"; title = "Work"
+            memo = kotlinx.serialization.json.JsonObject(mapOf(
+                tachiyomi.domain.manga.service.WorkMetadata.MEMO_KEY to evidence,
+                "id" to kotlinx.serialization.json.JsonPrimitive("source-local"),
+            ))
+        }
+        val result = getSourceDiscovery(TestSource(id=9981, name="Source", popularList=listOf(manga)), DiscoveryCategory.POPULAR)
+        result.items.single().workIdentity shouldBe evidence
+        result.items.single().url shouldBe manga.url
+    }
+
+    @Test
     fun `verify Popular aggregation preserves deterministic source interleaving`() = runTest {
         val mangaA1 = SManga.create().apply { url = "/manga/a1"; title = "Manga A1" }
         val mangaA2 = SManga.create().apply { url = "/manga/a2"; title = "Manga A2" }

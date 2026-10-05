@@ -6,6 +6,11 @@ import org.junit.jupiter.api.Test
 import tachiyomi.domain.manga.model.MangaCover
 
 class GroupDiscoveryItemsTest {
+    private fun known(item: HomeDiscoveryItem): HomeDiscoveryItem = item.copy(url = "/work/${item.mangaId}").also {
+        PreferredMangaVariants.remember(tachiyomi.domain.manga.model.Manga.create().copy(
+            id = it.mangaId, source = it.sourceId, url = it.url, title = it.title, author = "Known Creator",
+        ))
+    }
 
     @Test
     fun `verify title normalization handles case, punctuation, spaces, and Arabic diacritics`() {
@@ -17,11 +22,11 @@ class GroupDiscoveryItemsTest {
     }
 
     @Test
-    fun `preferred identical-title card retains separate hidden source identity`() {
+    fun `corroborated identical-title card retains separate hidden source identity`() {
         val itemA = HomeDiscoveryItem(mangaId = 10L, title = "Solo Leveling", coverData = MangaCover(10L, 1L, false, "http://coverA.jpg", 0L), sourceId = 100L, sourceName = "Azora")
         val itemB = HomeDiscoveryItem(mangaId = 20L, title = "solo leveling", coverData = MangaCover(20L, 1L, false, "http://coverB.jpg", 0L), sourceId = 200L, sourceName = "MangaDar")
 
-        val grouped = GroupDiscoveryItems.group(listOf(itemA, itemB))
+        val grouped = GroupDiscoveryItems.group(listOf(known(itemA), known(itemB)))
 
         grouped.size shouldBe 1
         grouped.first().availableVersions.size shouldBe 0
@@ -55,8 +60,8 @@ class GroupDiscoveryItemsTest {
         val page1Item = HomeDiscoveryItem(mangaId = 10L, title = "Solo Leveling", coverData = MangaCover(10L, 1L, false, "http://coverA.jpg", 0L), sourceId = 100L, sourceName = "Azora")
         val page2Duplicate = HomeDiscoveryItem(mangaId = 20L, title = "Solo-Leveling", coverData = MangaCover(20L, 1L, false, "http://coverB.jpg", 0L), sourceId = 200L, sourceName = "MangaDar")
 
-        val page1Grouped = GroupDiscoveryItems.group(listOf(page1Item))
-        val page2Combined = GroupDiscoveryItems.group(page1Grouped + listOf(page2Duplicate))
+        val page1Grouped = GroupDiscoveryItems.group(listOf(known(page1Item)))
+        val page2Combined = GroupDiscoveryItems.group(page1Grouped + listOf(known(page2Duplicate)))
 
         page2Combined.size shouldBe 1
         page2Combined.first().availableVersions.size shouldBe 0
@@ -72,7 +77,7 @@ class GroupDiscoveryItemsTest {
             HomeDiscoveryItem(mangaId = idx.toLong(), title = "Manga $idx", coverData = MangaCover(idx.toLong(), 1L, false, "http://cover.jpg", 0L), sourceId = 100L, sourceName = "S1")
         }
 
-        val grouped = GroupDiscoveryItems.group(rawItems)
+        val grouped = GroupDiscoveryItems.group(rawItems.map(::known))
         val previewGroups = grouped.take(HOME_DISCOVERY_PREVIEW_LIMIT)
 
         previewGroups.size shouldBe 8

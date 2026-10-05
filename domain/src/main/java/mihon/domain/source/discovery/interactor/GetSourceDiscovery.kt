@@ -193,6 +193,7 @@ class GetSourceDiscovery(
             status = status,
             genre = getGenres() ?: emptyList(),
             localMangaId = null,
+            workIdentity = memo[tachiyomi.domain.manga.service.WorkMetadata.MEMO_KEY] as? kotlinx.serialization.json.JsonObject,
         )
     }
 }
