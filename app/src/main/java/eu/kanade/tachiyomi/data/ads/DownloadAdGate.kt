@@ -59,7 +59,9 @@ fun rememberDownloadAdGate(): (Int, () -> Unit) -> Unit {
         }
         if (retry) scope.launch {
             manager.retryDownload(context.adActivity(), request.count, request.operation, blocked, proceed)
-        } else manager.download(context.adActivity(), request.count, request.operation, blocked, proceed)
+        } else scope.launch {
+            manager.downloadWhenReady(context.adActivity(), request.count, request.operation, blocked, proceed)
+        }
     }
     pending?.let { request ->
         if (warning) {

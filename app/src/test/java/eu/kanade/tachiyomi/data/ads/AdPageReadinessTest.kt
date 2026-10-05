@@ -37,4 +37,25 @@ class AdPageReadinessTest {
         runCurrent()
         completions shouldBe 0
     }
+    @Test fun `one page and resumed last page complete but ordinary opening does not`() {
+        val tracker = AdChapterCompletion()
+        tracker.selected(1, 0, 0)
+        tracker.ready(1, 0, 0) shouldBe true
+        tracker.ready(1, 0, 0) shouldBe false
+        tracker.selected(2, 9, 9)
+        tracker.ready(2, 9, 9) shouldBe true
+        tracker.selected(3, 0, 9)
+        tracker.ready(3, 0, 9) shouldBe false
+    }
+
+    @Test fun `pending last page survives next chapter but backing away cancels completion`() {
+        val tracker = AdChapterCompletion()
+        tracker.selected(1, 9, 9)
+        tracker.selected(2, 0, 9)
+        tracker.ready(1, 9, 9) shouldBe true
+        tracker.selected(3, 9, 9)
+        tracker.selected(3, 8, 9)
+        tracker.ready(3, 9, 9) shouldBe false
+    }
+
 }

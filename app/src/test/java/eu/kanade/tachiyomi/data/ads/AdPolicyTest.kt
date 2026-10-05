@@ -224,4 +224,26 @@ class AdPolicyTest {
         p.downloadEligible(100, "c", false) shouldBe false
     }
 
+    @Test fun `native reservation release does not consume boundary or hourly history`() {
+        val p = policy()
+        p.complete(4)
+        p.reserveNative("reader", 4) shouldBe true
+        p.snapshot().nativeTimes.size shouldBe 0
+        p.releaseNative("reader", 4)
+        p.reserveNative("reader", 4) shouldBe true
+        p.displayNative("reader", 4) shouldBe true
+        p.snapshot().nativeTimes.size shouldBe 1
+        p.reserveNative("reader", 4) shouldBe false
+    }
+
+    @Test fun `preloading near fourth chapter does not relax first three grace`() {
+        val p = policy()
+        p.complete(3)
+        p.canPreloadNative("reader", 4) shouldBe true
+        p.nativeEligible("reader", 4) shouldBe false
+        p.snapshot().nativeTimes.size shouldBe 0
+        p.chapterCompleted("reader", 4)
+        p.nativeEligible("reader", 4) shouldBe true
+    }
+
 }

@@ -146,6 +146,14 @@ class MainActivity : BaseActivity() {
         registerSecureActivity(this)
     }
 
+    override fun onPostResume() {
+        super.onPostResume()
+        // A resumed host is safe for UMP; local Home/migrations continue independently.
+        if (isTaskRoot && !isFinishing) {
+            eu.kanade.tachiyomi.data.ads.AdManager.get(this).gatherConsent(this)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         val isLaunch = savedInstanceState == null
 
@@ -172,9 +180,6 @@ class MainActivity : BaseActivity() {
             var startupCeilingReached by remember { mutableStateOf(false) }
             var showStartupOverlay by rememberSaveable { mutableStateOf(isLaunch) }
             LaunchedEffect(localInitialized, showStartupOverlay) {
-                if (localInitialized && !showStartupOverlay) {
-                    eu.kanade.tachiyomi.data.ads.AdManager.get(this@MainActivity).gatherConsent(this@MainActivity)
-                }
                 if (localInitialized && showStartupOverlay) {
                     // A ceiling only: never delay an already usable Home or cancel its requests.
                     kotlinx.coroutines.delay(8_000)

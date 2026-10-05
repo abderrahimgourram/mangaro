@@ -5,7 +5,8 @@ internal class NativeBoundaryOwnership<T>(private val destroy: (T) -> Unit) {
     var ad: T? = null
         private set
 
-    fun update(visible: Boolean, suppressed: Boolean, claim: () -> T?, preload: () -> Unit): T? {
+    fun update(visible: Boolean, suppressed: Boolean, claim: () -> T?, valid: (T) -> Boolean = { true }, preload: () -> Unit): T? {
+        if (ad?.let { !valid(it) } == true) dispose()
         if (suppressed) {
             dispose()
         } else if (visible && ad == null) {

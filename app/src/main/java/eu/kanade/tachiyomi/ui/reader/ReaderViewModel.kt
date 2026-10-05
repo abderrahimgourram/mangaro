@@ -112,8 +112,8 @@ class ReaderViewModel @JvmOverloads constructor(
 
     val adReadingSession = java.util.UUID.randomUUID().toString()
     private val adManager = eu.kanade.tachiyomi.data.ads.AdManager.get(Injekt.get<Application>()).also { it.startReadingSession(adReadingSession) }
-    private val adEarlierPages = java.util.concurrent.ConcurrentHashMap.newKeySet<Long>()
-    private var adPageReadyJob: kotlinx.coroutines.Job? = null
+    private val adCompletion = eu.kanade.tachiyomi.data.ads.AdChapterCompletion()
+    private val adPageReadyJobs = linkedMapOf<Long, kotlinx.coroutines.Job>()
 
     private val mutableState = MutableStateFlow(State())
     val state = mutableState.asStateFlow()
@@ -462,19 +462,30 @@ class ReaderViewModel @JvmOverloads constructor(
         val selectedChapter = page.chapter
         val pages = selectedChapter.pages ?: return
 
-        // Selection may precede image loading. Observe the selected page's Ready event too.
-        // No ad request or surface is created here; rendering remains at the Next boundary.
-        adPageReadyJob?.cancel()
+        // Only selected chapter ends count; opening an ordinary page does not.
         selectedChapter.chapter.id?.let { chapterId ->
-            fun recordReady() {
-                if (page.index < pages.lastIndex) adEarlierPages.add(chapterId)
-                if (page.index == pages.lastIndex && chapterId in adEarlierPages) {
-                    adManager.chapterCompleted(adReadingSession, chapterId)
-                }
+            adManager.readerPageSelected(adReadingSession, chapterId, page.index == pages.lastIndex)
+            adCompletion.selected(chapterId, page.index, pages.lastIndex)
+            if (page.index >= (pages.lastIndex - 4).coerceAtLeast(0)) {
+                adManager.prepareNative(adReadingSession, chapterId)
             }
-            if (page.status is Page.State.Ready) recordReady() else {
-                adPageReadyJob = viewModelScope.launch {
-                    eu.kanade.tachiyomi.data.ads.awaitAdPageReady(page, ::recordReady)
+            if (page.index != pages.lastIndex) {
+                adPageReadyJobs.remove(chapterId)?.cancel()
+            } else {
+                fun recordReady() {
+                    if (adCompletion.ready(chapterId, page.index, pages.lastIndex)) {
+                        adManager.chapterCompleted(adReadingSession, chapterId)
+                    }
+                }
+                if (page.status is Page.State.Ready) {
+                    adPageReadyJobs.remove(chapterId)?.cancel()
+                    recordReady()
+                } else if (adPageReadyJobs[chapterId]?.isActive != true) {
+                    // Crossing into the following chapter must not cancel a pending end.
+                    if (adPageReadyJobs.size >= 8) adPageReadyJobs.remove(adPageReadyJobs.keys.first())?.cancel()
+                    adPageReadyJobs[chapterId] = viewModelScope.launch {
+                        eu.kanade.tachiyomi.data.ads.awaitAdPageReady(page, ::recordReady)
+                    }
                 }
             }
         }

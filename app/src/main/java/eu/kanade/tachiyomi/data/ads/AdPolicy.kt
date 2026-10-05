@@ -28,6 +28,7 @@ class AdPolicy(private val now: () -> Long) {
     private val sessions = mutableMapOf<String, LinkedHashMap<Long, Int>>()
     private val lastNativeCompletion = mutableMapOf<String, Int>()
     private val nativeChapters = mutableSetOf<Pair<String, Long>>()
+    private val nativeReservations = mutableSetOf<Pair<String, Long>>()
     private val operations = LinkedHashSet<String>()
     private val nativeTimes = mutableListOf<Long>()
     private val interstitialTimes = mutableListOf<Long>()
@@ -47,6 +48,7 @@ class AdPolicy(private val now: () -> Long) {
         sessions.remove(id)
         lastNativeCompletion.remove(id)
         nativeChapters.removeAll { it.first == id }
+        nativeReservations.removeAll { it.first == id }
     }
     @Synchronized fun chapterCompleted(session: String, chapterId: Long) {
         val chapters = sessions[session] ?: return
@@ -54,7 +56,12 @@ class AdPolicy(private val now: () -> Long) {
         if (chapterId !in chapters && chapters.size < 1000) chapters[chapterId] = chapters.size + 1
     }
     @Synchronized fun completed(session: String, chapterId: Long) = sessions[session]?.containsKey(chapterId) == true
-    @Synchronized fun canPreloadNative(session: String, chapterId: Long) = (sessions[session]?.get(chapterId) ?: 0) >= 3
+    @Synchronized fun hasSession(session: String) = session in sessions
+    @Synchronized fun canPreloadNative(session: String, chapterId: Long): Boolean {
+        val chapters = sessions[session] ?: return false
+        // Preparation does not consume a boundary or a frequency allowance.
+        return (chapters[chapterId] ?: chapters.size) >= 3
+    }
     @Synchronized fun adFree() = now() < adFreeUntil
     @Synchronized fun requestsAllowed(consent: Boolean, online: Boolean) = consent && online && !adFree()
 
@@ -85,11 +92,24 @@ class AdPolicy(private val now: () -> Long) {
         return NativePolicyStatus(chapters?.size ?: 0, ordinal, eligible, reason)
     }
 
+    @Synchronized fun reserveNative(session: String, chapterId: Long): Boolean {
+        val key = session to chapterId
+        return nativeEligible(session, chapterId) && nativeReservations.add(key)
+    }
+    @Synchronized fun releaseNative(session: String, chapterId: Long) {
+        nativeReservations.remove(session to chapterId)
+    }
+    @Synchronized fun displayNative(session: String, chapterId: Long): Boolean {
+        val key = session to chapterId
+        if (key !in nativeReservations) return false
+        nativeReservations.remove(key)
+        return claimNative(session, chapterId)
+    }
     @Synchronized fun claimNative(session: String, chapterId: Long): Boolean {
         if (!nativeEligible(session, chapterId)) return false
         nativeChapters.add(session to chapterId)
         lastNativeCompletion[session] = sessions.getValue(session).size
-        // Reserve when attached, conservatively counting even an interrupted display.
+        // Committed only after the registered SDK view is attached and visible.
         nativeTimes.add(now())
         return true
     }
@@ -100,11 +120,15 @@ class AdPolicy(private val now: () -> Long) {
     }
     @Synchronized fun claimDownload(count: Int, operation: String, readerActive: Boolean): Boolean {
         if (!downloadEligible(count, operation, readerActive)) return false
-        operations.add(operation)
+        downloadShown(operation)
+        return true
+    }
+    /** Eligibility is checked before opening; the fullscreen owner serializes confirmed shows. */
+    @Synchronized fun downloadShown(operation: String) {
+        if (!operations.add(operation)) return
         if (operations.size > 100) operations.remove(operations.first())
         interstitialTimes.add(now())
         lastFullscreen = now()
-        return true
     }
     @Synchronized fun fullscreenEligible() = lastFullscreen?.let { now() - it >= FULLSCREEN_GAP } ?: true
     @Synchronized fun rewardedEligible(explicit: Boolean, readerActive: Boolean) = explicit && !readerActive && !adFree() && fullscreenEligible()
@@ -115,7 +139,7 @@ class AdPolicy(private val now: () -> Long) {
 
 data class AdPolicySnapshot(val adFreeUntil: Long, val nativeTimes: List<Long>, val interstitialTimes: List<Long>, val lastFullscreen: Long?)
 
-/** Single attempts with bounded cooldown; no automatic retry timers or SDK preload loops. */
+/** Independent load gate; the manager schedules a bounded number of recovery attempts. */
 class AdLoadGate(private val now: () -> Long) {
     private var loading = false
     private var nextAttempt = 0L
@@ -130,6 +154,7 @@ class AdLoadGate(private val now: () -> Long) {
         // Failed/timed-out requests retain backoff; show cooldown is a separate policy.
         nextAttempt = if (loaded) 0L else now() + 60_000L
     }
+    @Synchronized fun retryDelay() = (nextAttempt - now()).coerceAtLeast(0)
     @Synchronized fun explicitRetry() { if (!loading) nextAttempt = 0L }
 }
 

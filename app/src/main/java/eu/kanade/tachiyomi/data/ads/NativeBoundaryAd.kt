@@ -32,14 +32,18 @@ fun NativeBoundaryAd(session: String, chapterId: Long, visible: Boolean) {
     val context = LocalContext.current
     val manager = remember(context) { AdManager.get(context) }
     val state by manager.state.collectAsState()
-    val ownership = remember(session, chapterId) { NativeBoundaryOwnership<NativeAd> { it.destroySafely() } }
+    val owner = remember(session, chapterId) { java.util.UUID.randomUUID().toString() }
+    val ownership = remember(session, chapterId, owner) {
+        NativeBoundaryOwnership<NativeAd> { manager.releaseNative(session, chapterId, owner) }
+    }
     var ad by remember(session, chapterId) { mutableStateOf<NativeAd?>(null) }
     LaunchedEffect(session, chapterId, visible, state.revision) {
         ad = ownership.update(
             visible = visible,
             suppressed = manager.adsSuppressed(),
-            claim = { manager.claimNative(session, chapterId) },
+            claim = { manager.reserveNative(session, chapterId, owner) },
             preload = { manager.preloadNative(session, chapterId) },
+            valid = { manager.nativeOwned(session, chapterId, owner, it) },
         )
     }
     DisposableEffect(ownership) {
@@ -54,16 +58,28 @@ fun NativeBoundaryAd(session: String, chapterId: Long, visible: Boolean) {
                     runCatching { createNativeAdView(ctx, loaded) }.getOrElse { error ->
                         manager.nativeUiEvent("registration_failed=${error.javaClass.simpleName}")
                         android.widget.FrameLayout(ctx).also { fallback ->
-                            fallback.post { ownership.dispose(); ad = null }
-                        }
-                    }.also { view ->
-                        var renderedLogged = false
-                        view.addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
-                            if (!renderedLogged && v is NativeAdView && v.isShown && v.width > 0 && v.height > 0) {
-                                renderedLogged = true
-                                manager.nativeUiEvent("attached=true rendered=true width=${v.width} height=${v.height}")
+                            fallback.post {
+                                manager.releaseNative(session, chapterId, owner, failed = true)
+                                ownership.dispose(); ad = null
                             }
                         }
+                    }.also { view ->
+                        // The holder may only be partially visible. Commit policy against
+                        // the registered Native slot itself, after attachment and measurement.
+                        val observer = android.view.ViewTreeObserver.OnPreDrawListener {
+                            val rect = android.graphics.Rect()
+                            if (view is NativeAdView && view.isAttachedToWindow && view.isShown &&
+                                view.width > 0 && view.height > 0 && view.getGlobalVisibleRect(rect) &&
+                                rect.width() >= view.width / 2 &&
+                                rect.height() >= minOf(view.height, (120 * ctx.resources.displayMetrics.density).toInt())) {
+                                manager.nativeAttached(session, chapterId, owner)
+                            }
+                            true
+                        }
+                        view.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+                            override fun onViewAttachedToWindow(v: View) { v.viewTreeObserver.addOnPreDrawListener(observer) }
+                            override fun onViewDetachedFromWindow(v: View) { v.viewTreeObserver.removeOnPreDrawListener(observer) }
+                        })
                     }
                 },
                 // Keep the same SDK view/ad through transient pre-draw visibility changes.
