@@ -86,11 +86,17 @@ class SyncChaptersWithSource(
         val nowMillis = now.toInstant(timeZone).toEpochMilliseconds()
 
         val sourceChapters = rawSourceChapters
-            .mapIndexed { i, sChapter ->
+            .map { sChapter ->
                 Chapter.create()
                     .copyFromSChapter(sChapter)
                     .copy(name = with(ChapterSanitizer) { sChapter.name.sanitize(manga.title) })
-                    .copy(mangaId = manga.id, sourceOrder = i.toLong())
+                    .copy(mangaId = manga.id)
+            }
+            // Collapse only byte-equivalent normalized rows. A shared title/number is
+            // never enough; conflicting rows at the same URL still fail validation.
+            .distinct()
+            .mapIndexed { i, chapter ->
+                chapter.copy(sourceOrder = i.toLong())
             }
 
         // A URL collision may contain different remote IDs. Never silently drop a row.
@@ -101,7 +107,9 @@ class SyncChaptersWithSource(
             completeness == ChapterFetchCompleteness.COMPLETE) ChapterFetchCompleteness.PARTIAL else completeness
         val ids = sourceChapters.flatMap { ChapterIdentity.remoteIds(it, source.id) }
         if (ids.toSet().size != ids.size) throw java.io.IOException("Duplicate remote chapter identities; existing chapters preserved")
-        val dbChapters = getChaptersByMangaId.await(manga.id)
+        // The legacy read helper converts failures/cancellation into emptyList(). A source
+        // reconciliation must abort instead of treating unavailable stored rows as absent.
+        val dbChapters = chapterRepository.getChapterByMangaId(manga.id)
 
         val newChapters = mutableListOf<Chapter>()
         val updatedChapters = mutableListOf<Chapter>()

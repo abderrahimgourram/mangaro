@@ -46,6 +46,8 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.filterIsInstance
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -178,6 +180,9 @@ class MangaViewModel(
 
     init {
         viewModelScope.launchIO {
+            // Subscribe after the initial cached snapshot is visible. SQL changes while
+            // Loading must not be discarded and then overwritten by that older snapshot.
+            state.filterIsInstance<State.Success>().first()
             combine(
                 getMangaAndChapters.subscribe(mangaId, applyScanlatorFilter = true).distinctUntilChanged(),
                 downloadCache.changes,
@@ -245,18 +250,19 @@ class MangaViewModel(
             // Start observe tracking since it only needs mangaId
             observeTrackers()
 
-            // One silent check per ViewModel entry; cached data is already visible above.
-            if (needsAutoRefresh && viewModelScope.isActive) {
-                updateSuccessState { it.copy(isRefreshingData = true) }
-                fetchAllFromSource(
-                    manualFetch = false,
-                    fetchDetails = true,
-                    fetchChapters = true,
-                )
+            // One check per ViewModel entry; cached data is already visible above.
+            try {
+                if (needsAutoRefresh && viewModelScope.isActive) {
+                    updateSuccessState { it.copy(isRefreshingData = true) }
+                    fetchAllFromSource(
+                        manualFetch = false,
+                        fetchDetails = true,
+                        fetchChapters = true,
+                    )
+                }
+            } finally {
+                updateSuccessState { it.copy(isRefreshingData = false) }
             }
-
-            // Initial loading finished
-            updateSuccessState { it.copy(isRefreshingData = false) }
         }
     }
 
@@ -292,7 +298,8 @@ class MangaViewModel(
         try {
             withUIContext {
                 val update = updateMangaFromRemote(
-                    source = state.source,
+                    // Resolve the current canonical source on every attempt. A stub captured
+                    // during startup must not keep failing after registration completes.
                     manga = state.manga,
                     fetchDetails = fetchDetails,
                     fetchChapters = fetchChapters,
@@ -309,7 +316,9 @@ class MangaViewModel(
         } catch (e: Exception) {
             if (!manualFetch) {
                 logcat(LogPriority.WARN, e) { "Automatic manga refresh failed; cached chapters retained" }
-                return
+                // With no cached rows, a silent failure looks like a genuinely empty manga.
+                // Reuse the existing generic feedback; filtered/cached lists stay usable.
+                if (state.chapters.isNotEmpty() || state.filterActive) return
             }
             val message = if (e is NoChaptersException) {
                 context.stringResource(MR.strings.no_chapters_error)

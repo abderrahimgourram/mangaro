@@ -82,4 +82,40 @@ class SyncChapterIntegrityTest {
         coVerify(exactly=0) { repo.removeChaptersWithIds(any()) }
     }
 
+
+    @Test fun `database read failure aborts reconciliation instead of adding duplicate cached chapters`() = runTest {
+        val sut = sync()
+        var reads = 0
+        coEvery { repo.getChapterByMangaId(any(), any()) } coAnswers {
+            if (++reads == 2) throw IOException("fixture database failure")
+            listOf(old)
+        }
+        assertThrows<IOException> {
+            sut.await(listOf(old.toSChapter()), manga, source, completeness = ChapterFetchCompleteness.COMPLETE)
+        }
+        coVerify(exactly = 0) { repo.applySourceChanges(any(), any(), any()) }
+        old.read shouldBe true
+    }
+
+    @Test fun `cancellation during database read propagates without chapter writes`() = runTest {
+        val sut = sync()
+        var reads = 0
+        coEvery { repo.getChapterByMangaId(any(), any()) } coAnswers {
+            if (++reads == 2) throw kotlinx.coroutines.CancellationException("fixture cancellation")
+            listOf(old)
+        }
+        assertThrows<kotlinx.coroutines.CancellationException> {
+            sut.await(listOf(old.toSChapter()), manga, source, completeness = ChapterFetchCompleteness.COMPLETE)
+        }
+        coVerify(exactly = 0) { repo.applySourceChanges(any(), any(), any()) }
+    }
+
+    @Test fun `wrong source cannot invalidate or write another manga chapter list`() = runTest {
+        val sut = sync()
+        val other = mockk<Source> { every { id } returns 45L }
+        assertThrows<IllegalArgumentException> { sut.await(listOf(old.toSChapter()), manga, other) }
+        coVerify(exactly = 0) { updates.awaitChapterIntegrity(any(), any(), any()) }
+        coVerify(exactly = 0) { repo.applySourceChanges(any(), any(), any()) }
+    }
+
 }

@@ -204,4 +204,24 @@ class AdPolicyTest {
         p.nativeStatus("reader", 4).reason shouldBe "rewarded_ad_free"
     }
 
+
+    @Test fun `successful replacement preload is separate from fullscreen cooldown and frequency claims`() {
+        val p = policy()
+        p.claimDownload(100, "a", false) shouldBe true
+        val snapshot = p.snapshot()
+        val gate = AdLoadGate { time }
+        gate.start() shouldBe true
+        gate.finish(loaded=true)
+        gate.start() shouldBe true
+        p.snapshot() shouldBe snapshot
+        p.downloadEligible(100, "b", false) shouldBe false
+        time += AdPolicy.FULLSCREEN_GAP
+        p.downloadEligible(100, "b", false) shouldBe true
+        p.claimDownload(100, "b", false) shouldBe true
+        time += AdPolicy.FULLSCREEN_GAP
+        p.downloadEligible(100, "c", false) shouldBe false
+        p.rewardEarned()
+        p.downloadEligible(100, "c", false) shouldBe false
+    }
+
 }

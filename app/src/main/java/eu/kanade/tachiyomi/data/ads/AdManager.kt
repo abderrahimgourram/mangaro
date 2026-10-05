@@ -248,10 +248,10 @@ class AdManager internal constructor(
         }
         return token
     }
-    private fun end(placement: AdPlacement, token: Long): Boolean {
+    private fun end(placement: AdPlacement, token: Long, loaded: Boolean = false): Boolean {
         if (attempts[placement] != token) return false
         attempts.remove(placement)
-        gates.getValue(placement).finish()
+        gates.getValue(placement).finish(loaded = loaded && placement == AdPlacement.DOWNLOAD_INTERSTITIAL)
         if (placement == AdPlacement.REWARDED_AD_FREE) mutableState.update { it.copy(rewardedLoading = false) }
         if (placement == AdPlacement.DOWNLOAD_INTERSTITIAL) mutableState.update { it.copy(interstitialLoading = false) }
         return true
@@ -344,7 +344,7 @@ class AdManager internal constructor(
         runCatching {
             InterstitialAd.load(AdRequest.Builder(ids.interstitial).build(), object : AdLoadCallback<InterstitialAd> {
                 override fun onAdLoaded(ad: InterstitialAd) { scope.launch {
-                    if (!end(placement, token) || !allowed()) ad.destroySafely() else {
+                    if (!end(placement, token, loaded = true) || !allowed()) ad.destroySafely() else {
                         blocker.succeeded()
                         interstitial = ad; interstitialLoadedAt = now(); publish()
                     }
@@ -485,13 +485,14 @@ class AdManager internal constructor(
         runCatching { cleanup?.invoke() }
         mutableState.update { it.copy(fullscreenShowing = false, fullscreenVisible = false) }
         publish()
+        // Prepare one replacement now, even while showing the next ad is still cooling
+        // down or the user returns to Reader. Loading never claims another operation.
+        // Consent, network, ad-free state and failure backoff still gate this request.
+        if (replenishDownload) preloadInterstitial()
         next?.run()
         scope.launch {
             delay(AdPolicy.FULLSCREEN_GAP)
             publish()
-            // One replacement load after this download's cooldown, never another show.
-            // UMP, network, reward and load backoff still gate the request.
-            if (replenishDownload && !state.value.fullscreenShowing && !readerActive) preloadInterstitial()
         }
     }
     private fun clearLoadedAds() {

@@ -3,9 +3,10 @@ package tachiyomi.data.chapter
 object ChapterSanitizer {
 
     fun String.sanitize(title: String): String {
-        return trim()
-            .removePrefix(title)
-            .trim(*CHAPTER_TRIM_CHARS)
+        val original = trim()
+        // A chapter may legitimately be named exactly like its manga (e.g. a one-shot).
+        // Cosmetic cleanup must not turn a usable source row into an invalid empty name.
+        return original.removePrefix(title).trim(*CHAPTER_TRIM_CHARS).ifBlank { original }
     }
 
     private val CHAPTER_TRIM_CHARS = arrayOf(

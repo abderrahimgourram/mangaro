@@ -80,4 +80,48 @@ class SourceChapterTransactionTest {
             repo.getChapterById(old.id)!!.url shouldBe "/chapter/10"
         }
     }
+
+    @Test fun `title only unnumbered decimal zero special and distinct same names survive real reconciliation`() = runTest {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            val repo = ChapterRepositoryImpl(database(driver))
+            val preferences = mockk<tachiyomi.domain.library.service.LibraryPreferences> {
+                every { markDuplicateReadChapterAsRead.get() } returns emptySet()
+            }
+            val excluded = mockk<eu.kanade.domain.manga.interactor.GetExcludedScanlators>()
+            coEvery { excluded.await(any()) } returns emptySet()
+            val sync = eu.kanade.domain.chapter.interactor.SyncChaptersWithSource(
+                mockk(relaxed=true), mockk(relaxed=true), repo,
+                tachiyomi.domain.chapter.interactor.ShouldUpdateDbChapter(), mockk(relaxed=true),
+                tachiyomi.domain.chapter.interactor.UpdateChapter(repo),
+                tachiyomi.domain.chapter.interactor.GetChaptersByMangaId(repo), excluded, preferences,
+            )
+            val source = mockk<eu.kanade.tachiyomi.source.Source> { every { id } returns 44L }
+            val manga = tachiyomi.domain.manga.model.Manga.create().copy(id=1,source=44,url="/manga",title="Work")
+            val rows = listOf(
+                Chapter.create().copy(mangaId=1,url="/one-shot",name="Work",chapterNumber=-1.0,dateUpload=0),
+                chapter(0).copy(name="Prologue"),
+                chapter(1).copy(url="/half",name="Chapter 0.5",chapterNumber=0.5),
+                chapter(10).copy(url="/decimal",name="Chapter 10.5",chapterNumber=10.5),
+                chapter(1).copy(url="/special",name="Epilogue",chapterNumber=-2.0),
+                chapter(1).copy(url="/release-a",name="Chapter 1",scanlator="Team A"),
+                chapter(1).copy(url="/release-b",name="Chapter 1",scanlator="Team B"),
+                chapter(1).copy(url="/unnumbered",name="A new beginning",chapterNumber=-1.0),
+            )
+            val incoming = (rows + rows.first().copy()).map { it.toSChapter() }
+            val inserted = sync.await(incoming,manga,source,
+                completeness=eu.kanade.tachiyomi.source.model.ChapterFetchCompleteness.COMPLETE,declaredChapterCount=rows.size)
+            inserted.size shouldBe rows.size
+            val stored = repo.getChapterByMangaId(1)
+            stored.map { it.url }.toSet() shouldBe rows.map { it.url }.toSet()
+            stored.single { it.url == "/one-shot" }.apply { name shouldBe "Work"; chapterNumber shouldBe -1.0 }
+            stored.single { it.url == "/decimal" }.chapterNumber shouldBe 10.5
+            stored.single { it.url == "/half" }.chapterNumber shouldBe 0.5
+            stored.single { it.url == "/special" }.chapterNumber shouldBe -2.0
+            stored.single { it.url == "/unnumbered" }.chapterNumber shouldBe -1.0
+            stored.sortedBy { it.sourceOrder }.map { it.url } shouldBe rows.map { it.url }
+            sync.await(incoming,manga,source,completeness=eu.kanade.tachiyomi.source.model.ChapterFetchCompleteness.COMPLETE) shouldBe emptyList()
+            repo.getChapterByMangaId(1).size shouldBe rows.size
+        }
+    }
+
 }

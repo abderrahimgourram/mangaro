@@ -415,7 +415,7 @@ class AdManagerTest {
         manager.state.value.fullscreenShowing shouldBe false
     }
 
-    @Test fun `consumed interstitial replenishes after cooldown and a different operation can show`() = runTest(dispatcher) {
+    @Test fun `consumed interstitial preloads during cooldown and a different operation can show afterward`() = runTest(dispatcher) {
         consentReady()
         val first = mockk<InterstitialAd>(relaxed = true)
         val events = slot<InterstitialAdEventCallback>()
@@ -430,12 +430,12 @@ class AdManagerTest {
         manager.state.value.fullscreenShowing shouldBe false
         manager.state.value.adFreeUntil shouldBe 0
         verify(exactly = 1) { first.destroy() }
-        elapsed += AdPolicy.FULLSCREEN_GAP
-        advanceTimeBy(AdPolicy.FULLSCREEN_GAP)
-        runCurrent()
         verify(exactly = 2) { InterstitialAd.load(any(), any()) }
         val second = mockk<InterstitialAd>(relaxed = true)
         interstitialLoad.captured.onAdLoaded(second)
+        runCurrent()
+        elapsed += AdPolicy.FULLSCREEN_GAP
+        advanceTimeBy(AdPolicy.FULLSCREEN_GAP)
         runCurrent()
         // Operation A stays handled even when a fresh ad is available.
         manager.download(activity, 100, "operation-a") { downloads++ }
@@ -478,16 +478,16 @@ class AdManagerTest {
         events.captured.onAdFailedToShowFullScreenContent(mockk(relaxed = true))
         runCurrent()
         downloads shouldBe 1
-        elapsed += AdPolicy.FULLSCREEN_GAP
-        advanceTimeBy(AdPolicy.FULLSCREEN_GAP)
-        runCurrent()
+        verify(exactly = 2) { InterstitialAd.load(any(), any()) }
         val error = mockk<LoadAdError>()
         every { error.code } returns LoadAdError.ErrorCode.NO_FILL
         interstitialLoad.captured.onAdFailedToLoad(error)
         runCurrent()
         manager.state.value.fullscreenShowing shouldBe false
         manager.state.value.adFreeUntil shouldBe 0
-        elapsed += 60_000
+        elapsed += AdPolicy.FULLSCREEN_GAP
+        advanceTimeBy(AdPolicy.FULLSCREEN_GAP)
+        runCurrent()
         manager.preloadInterstitial()
         val second = mockk<InterstitialAd>(relaxed = true)
         interstitialLoad.captured.onAdLoaded(second)
@@ -496,16 +496,41 @@ class AdManagerTest {
         verify(exactly = 1) { second.show(activity) }
         // A third unrelated operation is still capped after two claimed interstitials.
         lifecycle.captured.onActivityDestroyed(activity)
-        elapsed += AdPolicy.FULLSCREEN_GAP
-        advanceTimeBy(AdPolicy.FULLSCREEN_GAP)
-        runCurrent()
         val third = mockk<InterstitialAd>(relaxed = true)
         interstitialLoad.captured.onAdLoaded(third)
+        runCurrent()
+        elapsed += AdPolicy.FULLSCREEN_GAP
+        advanceTimeBy(AdPolicy.FULLSCREEN_GAP)
         runCurrent()
         lifecycle.captured.onActivityResumed(activity)
         manager.download(activity, 100, "c") { downloads++ }
         verify(exactly = 0) { third.show(any()) }
         manager.state.value.adFreeUntil shouldBe 0
+    }
+
+
+    @Test fun `dismissal prepares replacement while Reader is active without showing another ad`() {
+        consentReady()
+        val first = mockk<InterstitialAd>(relaxed=true)
+        val events = slot<InterstitialAdEventCallback>()
+        every { first.adEventCallback = capture(events) } just Runs
+        interstitialLoad.captured.onAdLoaded(first)
+        dispatcher.scheduler.runCurrent()
+        manager.download(activity,100,"a") {}
+        val reader = mockk<eu.kanade.tachiyomi.ui.reader.ReaderActivity>(relaxed=true)
+        lifecycle.captured.onActivityResumed(reader)
+        events.captured.onAdDismissedFullScreenContent()
+        dispatcher.scheduler.runCurrent()
+        verify(exactly=2) { InterstitialAd.load(any(),any()) }
+        val second = mockk<InterstitialAd>(relaxed=true)
+        interstitialLoad.captured.onAdLoaded(second)
+        dispatcher.scheduler.runCurrent()
+        verify(exactly=0) { second.show(any()) }
+        manager.state.value.adFreeUntil shouldBe 0
+        elapsed += AdPolicy.FULLSCREEN_GAP
+        lifecycle.captured.onActivityResumed(activity)
+        manager.download(activity,100,"b") {}
+        verify(exactly=1) { second.show(activity) }
     }
 
 }

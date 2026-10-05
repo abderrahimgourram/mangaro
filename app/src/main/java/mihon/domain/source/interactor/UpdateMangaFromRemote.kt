@@ -122,6 +122,7 @@ class UpdateMangaFromRemote(
         manualFetch: Boolean, fetchWindow: Pair<Long, Long>): Result<RemoteMangaUpdate> {
         return try {
             require(source.id == manga.source) { "Manga source identity mismatch" }
+            requireCurrentIdentity(manga, mangaRepository.getMangaById(manga.id))
             val chapters = chapterRepository.getChapterByMangaId(manga.id)
                 .sortedBy { it.sourceOrder }
             if (manualFetch) mihon.domain.source.health.SourceHealthMonitor.shared.requestProbe(source.id)
@@ -149,7 +150,11 @@ class UpdateMangaFromRemote(
             if (fetchChapters && update.chapterCompleteness == ChapterFetchCompleteness.FAILED) {
                 throw IOException("Source chapter fetch failed; existing chapters preserved")
             }
-            awaitUpdateFromSource(mangaRepository.getMangaById(manga.id), update.manga, manualFetch)
+            // A migration or URL change may have happened while the source request ran.
+            // Never apply that old response to the new identity, including its metadata.
+            val currentManga = mangaRepository.getMangaById(manga.id)
+            requireCurrentIdentity(manga, currentManga)
+            awaitUpdateFromSource(currentManga, update.manga, manualFetch)
             val newChapters = if (fetchChapters) syncChaptersWithSource.await(
                 rawSourceChapters = update.chapters,
                 manga = manga,
@@ -202,6 +207,12 @@ class UpdateMangaFromRemote(
             }
             logcat(LogPriority.ERROR, e)
             Result.failure(e)
+        }
+    }
+
+    private fun requireCurrentIdentity(requested: Manga, current: Manga) {
+        require(current.id == requested.id && current.source == requested.source && current.url == requested.url) {
+            "Manga identity changed during source refresh"
         }
     }
 

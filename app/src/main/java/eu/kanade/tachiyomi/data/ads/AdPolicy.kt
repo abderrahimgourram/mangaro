@@ -124,7 +124,12 @@ class AdLoadGate(private val now: () -> Long) {
         loading = true
         return true
     }
-    @Synchronized fun finish() { loading = false; nextAttempt = now() + 60_000L }
+    @Synchronized fun finish(loaded: Boolean = false) {
+        loading = false
+        // A consumed, successfully loaded interstitial can be replaced immediately.
+        // Failed/timed-out requests retain backoff; show cooldown is a separate policy.
+        nextAttempt = if (loaded) 0L else now() + 60_000L
+    }
     @Synchronized fun explicitRetry() { if (!loading) nextAttempt = 0L }
 }
 
