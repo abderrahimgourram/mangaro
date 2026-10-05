@@ -56,7 +56,7 @@ class PagerTransitionHolder(
     init {
         orientation = VERTICAL
         gravity = Gravity.CENTER
-        val sidePadding = 64.dpToPx
+        val sidePadding = 20.dpToPx
         setPadding(sidePadding, 0, sidePadding, 0)
 
         val transitionView = ReaderTransitionView(context)

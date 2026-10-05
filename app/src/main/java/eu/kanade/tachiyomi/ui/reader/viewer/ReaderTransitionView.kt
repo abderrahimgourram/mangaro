@@ -11,7 +11,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.AbstractComposeView
-import eu.kanade.presentation.reader.ChapterTransition
+import eu.kanade.presentation.reader.MangaroChapterTransition
 import eu.kanade.presentation.theme.TachiyomiTheme
 import eu.kanade.tachiyomi.data.download.DownloadManager
 import eu.kanade.tachiyomi.ui.reader.model.ChapterTransition
@@ -41,7 +41,7 @@ class ReaderTransitionView @JvmOverloads constructor(context: Context, attrs: At
     }
 
     init {
-        layoutParams = LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT)
+        layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
     }
 
     fun bind(transition: ChapterTransition, downloadManager: DownloadManager, manga: Manga?, adSession: String) {
@@ -75,11 +75,11 @@ class ReaderTransitionView @JvmOverloads constructor(context: Context, attrs: At
                     LocalTextStyle provides MaterialTheme.typography.bodySmall,
                     LocalContentColor provides MaterialTheme.colorScheme.onBackground,
                 ) {
-                    ChapterTransition(
+                    MangaroChapterTransition(
                         transition = it.transition,
                         currChapterDownloaded = it.currChapterDownloaded,
                         goingToChapterDownloaded = it.goingToChapterDownloaded,
-                        boundaryContent = {
+                        nativeContent = {
                             it.transition.completedBoundaryChapterId?.let { chapterId ->
                                 eu.kanade.tachiyomi.data.ads.NativeBoundaryAd(it.adSession, chapterId, boundaryVisible)
                             }
