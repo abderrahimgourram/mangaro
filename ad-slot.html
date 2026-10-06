@@ -25,6 +25,7 @@
       justify-content: center;
       text-align: center;
       overflow: hidden;
+      position: relative;
     }
   </style>
 </head>
@@ -41,5 +42,25 @@
     </script>
     <script src="https://bauval.org/22/affabe9b08c394602779ddf4fa263b64"></script>
   </div>
+  <script>
+    (function() {
+      let attempts = 0;
+      const checkAd = setInterval(function() {
+        attempts++;
+        const container = document.getElementById('ad-container');
+        const iframe = container ? container.querySelector('iframe') : null;
+        if (iframe && iframe.offsetWidth > 0 && iframe.offsetHeight > 0) {
+          clearInterval(checkAd);
+          document.body.setAttribute('data-ad-status', 'loaded');
+        } else if (attempts >= 25) {
+          clearInterval(checkAd);
+          if (!iframe) {
+            document.body.setAttribute('data-ad-status', 'failed');
+            console.warn('Adsterra placement failed to produce iframe');
+          }
+        }
+      }, 100);
+    })();
+  </script>
 </body>
 </html>
