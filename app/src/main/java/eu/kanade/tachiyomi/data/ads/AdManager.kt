@@ -76,6 +76,7 @@ class AdManager internal constructor(
     private val nativeReservations = mutableMapOf<Pair<String, Long>, NativeReservation>()
     private val readingChapters = mutableMapOf<String, Long>()
     private var initialized = false
+    private var mappedPersonalization: Boolean? = null
     private var readerActive = false
     private var resumedOwner: WeakReference<Activity>? = null
     private var blockingDnsKnown = false
@@ -211,7 +212,8 @@ class AdManager internal constructor(
 
     private fun updateConsent() {
         publish()
-        if (!consent.canRequestAds() || consentBusy) return
+        if (BuildConfig.START_IO_PRIMARY) syncStartIoConsent()
+        if (!requestConsentReady()) return
         if (initialized) { refill(); return }
         if (initializationAttempted || now() < initializeAfter) return
         initializationAttempted = true
@@ -285,7 +287,23 @@ class AdManager internal constructor(
         return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
             capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
     }
-    private fun allowed(automatic: Boolean = true) = initialized && !consentBusy && policy.requestsAllowed(consent.canRequestAds(), online()) && (!automatic || !policy.adFree())
+    private fun requestConsentReady() = BuildConfig.START_IO_PRIMARY || (!consentBusy && consent.canRequestAds())
+
+    /** Existing CMP personalization choice; absent/declined purpose consent stays non-personalized.
+     * canRequestAds is NOT a personalization choice and never gates Start.io.
+     */
+    private fun syncStartIoConsent() {
+        val choices = androidx.preference.PreferenceManager.getDefaultSharedPreferences(app)
+            .getString("IABTCF_PurposeConsents", "").orEmpty()
+        val personalized = choices.getOrNull(2) == '1' && choices.getOrNull(3) == '1'
+        if (mappedPersonalization != personalized) {
+            mappedPersonalization = personalized
+            provider.updateConsent(personalized, System.currentTimeMillis())
+        }
+    }
+
+    // Ad-free is SHOW suppression, so all formats may remain prepared during the reward.
+    private fun allowed(automatic: Boolean = true) = initialized && requestConsentReady() && online()
     private fun usable(activity: Activity): Boolean {
         // The manager may be created after the Activity's first onResume callback.
         val resumed = (activity as? androidx.lifecycle.LifecycleOwner)?.lifecycle?.currentState
@@ -293,12 +311,12 @@ class AdManager internal constructor(
         return resumed && !activity.isFinishing && !activity.isDestroyed
     }
     private fun fullscreenAllowed(activity: Activity, automatic: Boolean = true) = allowed(automatic) && !readerActive && activity !is ReaderActivity &&
-        usable(activity) && !state.value.fullscreenShowing
+        usable(activity) && !state.value.fullscreenShowing && (!automatic || !policy.adFree())
 
     private fun publish() {
         mutableState.update {
             it.copy(
-                consentReady = consent.canRequestAds() && !consentBusy,
+                consentReady = requestConsentReady(),
                 privacyOptionsRequired = consent.privacyOptionsRequirementStatus == ConsentInformation.PrivacyOptionsRequirementStatus.REQUIRED,
                 initialized = initialized,
                 blockingSuspected = blockingSuspected(),
@@ -318,6 +336,18 @@ class AdManager internal constructor(
             .putLong("fullscreen", snapshot.lastFullscreen ?: 0).apply()
         publish()
     }
+    private var lastShowDiagnostic: String? = null
+    private fun diagnosticName(placement: AdPlacement) = when (placement) {
+        AdPlacement.DOWNLOAD_INTERSTITIAL -> "INTERSTITIAL"
+        AdPlacement.REWARDED_AD_FREE -> "REWARDED"
+        AdPlacement.CHAPTER_BOUNDARY_NATIVE -> "NATIVE"
+    }
+    private fun showSuppressed(placement: AdPlacement, reason: String) {
+        if (!BuildConfig.START_IO_PRIMARY) return
+        val line = "STARTIO_${diagnosticName(placement)}_SHOW_SUPPRESSED: $reason"
+        if (line != lastShowDiagnostic) { lastShowDiagnostic = line; android.util.Log.i("MangaroStartIo", line) }
+    }
+
     private fun begin(placement: AdPlacement): Long? {
         if (!allowed(automatic = placement != AdPlacement.REWARDED_AD_FREE) || !gates.getValue(placement).start()) return null
         val token = ++sequence
@@ -326,7 +356,10 @@ class AdManager internal constructor(
         if (placement == AdPlacement.DOWNLOAD_INTERSTITIAL) mutableState.update { it.copy(interstitialLoading = true) }
         scope.launch {
             delay(35_000)
-            if (attempts[placement] == token) end(placement, token)
+            if (attempts[placement] == token) {
+                if (BuildConfig.START_IO_PRIMARY) android.util.Log.i("MangaroStartIo", "STARTIO_${diagnosticName(placement)}_FAIL: MANGARO_LOAD_TIMEOUT")
+                end(placement, token)
+            }
         }
         return token
     }
@@ -334,6 +367,7 @@ class AdManager internal constructor(
     private fun end(placement: AdPlacement, token: Long, loaded: Boolean = false, retry: Boolean = true): Boolean {
         if (attempts[placement] != token) return false
         attempts.remove(placement)
+        provider.cancelLoad(placement)
         gates.getValue(placement).finish(loaded)
         if (loaded) {
             if (placement != AdPlacement.CHAPTER_BOUNDARY_NATIVE) recoveryCounts.remove(placement)
@@ -428,7 +462,14 @@ class AdManager internal constructor(
             reservation.owner = owner
             return reservation.ad
         }
-        val ad = native ?: return null
+        val ad = native ?: run {
+            showSuppressed(AdPlacement.CHAPTER_BOUNDARY_NATIVE, if (policy.adFree()) "AD_FREE" else "NOT_READY")
+            return null
+        }
+        if (!policy.nativeEligible(session, chapter)) {
+            showSuppressed(AdPlacement.CHAPTER_BOUNDARY_NATIVE, if (policy.adFree()) "AD_FREE" else "NOT_ELIGIBLE")
+            return null
+        }
         if (now() - nativeLoadedAt >= 60 * 60_000L || !policy.reserveNative(session, chapter)) return null
         // One inactive boundary cache per session, without retaining any Android View/Activity.
         nativeReservations.filter { it.key.first == session && it.value.owner == null }.keys.toList()
@@ -499,7 +540,7 @@ class AdManager internal constructor(
         allowed(automatic = false) && !state.value.fullscreenShowing && policy.rewardedEligible(true, readerActive)
 
     fun adFreeActive() = policy.adFree()
-    fun adsSuppressed() = !consent.canRequestAds() || consentBusy || policy.adFree()
+    fun adsSuppressed() = !requestConsentReady() || policy.adFree()
 
     fun preloadInterstitial(explicitRetry: Boolean = false) {
         if (explicitRetry) {
@@ -563,6 +604,12 @@ class AdManager internal constructor(
         }
         if (activity == null || !fullscreenAllowed(activity) || ad == null ||
             now() - interstitialLoadedAt >= 60 * 60_000L || !policy.downloadEligible(count, operation, readerActive)) {
+            showSuppressed(AdPlacement.DOWNLOAD_INTERSTITIAL, when {
+                policy.adFree() -> "AD_FREE"
+                !policy.fullscreenEligible() -> "COOLDOWN"
+                !policy.downloadEligible(count, operation, readerActive) -> "NOT_ELIGIBLE"
+                else -> "NOT_READY"
+            })
             next.run()
             if (count > AdPolicy.DOWNLOAD_THRESHOLD) preloadInterstitial()
             return
@@ -604,8 +651,11 @@ class AdManager internal constructor(
 
     /** Only the explicit settings CTA calls this. No automatic show or reward on dismissal. */
     fun showRewarded(activity: Activity) {
-        val ad = rewarded ?: return
-        if (!fullscreenAllowed(activity, automatic = false) || now() - rewardedLoadedAt >= 60 * 60_000L || !policy.rewardedEligible(true, readerActive)) return
+        val ad = rewarded ?: run { showSuppressed(AdPlacement.REWARDED_AD_FREE, "NOT_READY"); return }
+        if (!fullscreenAllowed(activity, automatic = false) || now() - rewardedLoadedAt >= 60 * 60_000L || !policy.rewardedEligible(true, readerActive)) {
+            showSuppressed(AdPlacement.REWARDED_AD_FREE, if (!policy.fullscreenEligible()) "COOLDOWN" else "NOT_ELIGIBLE")
+            return
+        }
         rewarded = null
         val showToken = openFullscreen(activity, OnceAction {}) { ad.destroySafely() }
         val grant = OnceAction {

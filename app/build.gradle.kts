@@ -71,8 +71,8 @@ android {
 
         buildConfigField("boolean", "START_IO_PRIMARY", "true")
         buildConfigField("boolean", "START_IO_TEST_ADS", "false")
-        versionCode = 10
-        versionName = "1.1.1"
+        versionCode = 11
+        versionName = "1.1.2"
 
         buildConfigField("String", "COMMIT_COUNT", "\"${getLatestCommitCount()}\"")
         buildConfigField("String", "COMMIT_SHA", "\"${getLatestCommitSha()}\"")

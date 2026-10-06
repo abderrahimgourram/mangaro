@@ -24,6 +24,7 @@ import com.startapp.sdk.adsbase.StartAppSDK
 import com.startapp.sdk.adsbase.adlisteners.AdDisplayListener
 import com.startapp.sdk.adsbase.adlisteners.AdEventListener
 import eu.kanade.tachiyomi.BuildConfig
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -32,17 +33,81 @@ import kotlinx.coroutines.withContext
  */
 internal class StartIoProvider(context: Context) : AdProvider {
     private val app = context.applicationContext
-    private var initialized = false
-    override suspend fun initialize(context: Context) = withContext(Dispatchers.Main.immediate) {
-        if (!initialized) {
-            StartAppAd.disableSplash()
-            StartAppAd.disableAutoInterstitial()
-            StartAppSDK.enableReturnAds(false)
-            StartAppSDK.setTestAdsEnabled(BuildConfig.DEBUG || BuildConfig.START_IO_TEST_ADS)
-            // Retain the SDK's own authoritative disclosure/consent UI; never fabricate consent.
-            StartAppSDK.init(app, "209279107", false)
-            initialized = true
+    @Volatile private var initialized = false
+    private var initialization: CompletableDeferred<Unit>? = null
+    private val pendingLoads = java.util.concurrent.ConcurrentHashMap<String, Pair<Ad, AdEventListener>>()
+    private var consentChoice: Pair<Boolean, Long>? = null
+
+    override fun updateConsent(personalized: Boolean, timestamp: Long) {
+        val choice = personalized to timestamp
+        if (consentChoice == choice) return
+        consentChoice = choice
+        if (initialized) applyConsent()
+    }
+
+    private fun applyConsent() {
+        consentChoice?.let { (personalized, timestamp) ->
+            StartAppSDK.setUserConsent(app, "pas", timestamp, personalized)
         }
+    }
+
+    override suspend fun initialize(context: Context) = withContext(Dispatchers.Main.immediate) {
+        if (initialized) return@withContext
+        val ready = initialization ?: CompletableDeferred<Unit>().also { pending ->
+            initialization = pending
+            try {
+                diagnostic("INIT_START")
+                StartAppAd.disableSplash()
+                StartAppAd.disableAutoInterstitial()
+                StartAppSDK.enableReturnAds(false)
+                StartAppSDK.setTestAdsEnabled(BuildConfig.DEBUG || BuildConfig.START_IO_TEST_ADS)
+                StartAppSDK.initParams(app, "209279107")
+                    .setReturnAdsEnabled(false)
+                    .setCallback {
+                        try {
+                            applyConsent()
+                            initialized = true
+                            diagnostic("INIT_READY")
+                            pending.complete(Unit)
+                        } catch (error: Throwable) {
+                            initialization = null
+                            pending.completeExceptionally(error)
+                            diagnostic("INIT_FAIL", error.message ?: error.javaClass.simpleName)
+                        }
+                    }.init()
+            } catch (error: Throwable) {
+                initialization = null
+                pending.completeExceptionally(error)
+                diagnostic("INIT_FAIL", error.message ?: error.javaClass.simpleName)
+            }
+        }
+        // Suspending, never blocking Main. Manager publishes ready/refills only after callback.
+        ready.await()
+    }
+
+    private fun diagnostic(event: String, message: String? = null) {
+        val safe = message?.replace(Regex("https?://[^\\s]+"), "[url]")?.replace('\n', ' ')?.take(512)
+        android.util.Log.i("MangaroStartIo", "STARTIO_$event" + (safe?.let { ": $it" } ?: ""))
+    }
+
+    override fun cancelLoad(placement: AdPlacement) {
+        val key = when (placement) {
+            AdPlacement.DOWNLOAD_INTERSTITIAL -> "INTERSTITIAL"
+            AdPlacement.REWARDED_AD_FREE -> "REWARDED"
+            AdPlacement.CHAPTER_BOUNDARY_NATIVE -> "NATIVE"
+        }
+        pendingLoads.remove(key)
+    }
+
+    private fun releaseLoad(key: String, ad: Ad) {
+        pendingLoads.computeIfPresent(key) { _, owner -> if (owner.first === ad) null else owner }
+    }
+
+    private fun failure(ad: Ad?, placement: String, fallback: String = "SDK supplied no error message"): ProviderFailure {
+        val message = ad?.errorMessage?.takeIf { it.isNotBlank() } ?: fallback
+        // Preserve the complete SDK diagnostic internally; redact URLs from production logs.
+        diagnostic("${placement}_FAIL", message)
+        return ProviderFailure(message = message, placement = placement)
     }
 
     override fun loadInterstitial(loaded: (ProviderFullscreen) -> Unit, failed: (ProviderFailure) -> Unit) =
@@ -51,24 +116,31 @@ internal class StartIoProvider(context: Context) : AdProvider {
         loadFullscreen(StartAppAd.AdMode.REWARDED_VIDEO, loaded, failed)
 
     private fun loadFullscreen(mode: StartAppAd.AdMode, loaded: (ProviderFullscreen) -> Unit, failed: (ProviderFailure) -> Unit) {
+        val key = if (mode == StartAppAd.AdMode.REWARDED_VIDEO) "REWARDED" else "INTERSTITIAL"
+        if (!initialized) { failed(failure(null, key, "SDK initialization callback pending")); return }
         // A fresh wrapper/cache key demand per consumed placement. The manager coalesces loads.
         val sdkAd = StartAppAd(app)
-        sdkAd.loadAd(mode, object : AdEventListener {
+        val listener = object : AdEventListener {
             override fun onReceiveAd(ad: Ad) {
+                releaseLoad(key, sdkAd)
+                diagnostic("${key}_READY")
                 loaded(object : ProviderFullscreen {
                     private var released = false
                     override fun show(activity: Activity, shown: () -> Unit, finished: () -> Unit, earned: () -> Unit) {
                         if (released || activity.isFinishing || activity.isDestroyed || !sdkAd.isReady) {
+                            diagnostic("${key}_SHOW_SUPPRESSED", "NOT_READY")
                             finished(); return
                         }
+                        // SDK setContext holds a weak Activity reference; loading retains application context.
+                        sdkAd.setContext(activity)
                         val done = OnceAction(finished)
                         val reward = OnceAction(earned)
-                        if (mode == StartAppAd.AdMode.REWARDED_VIDEO) sdkAd.setVideoListener { if (!released) reward.run() }
+                        if (mode == StartAppAd.AdMode.REWARDED_VIDEO) sdkAd.setVideoListener { if (!released) { diagnostic("REWARDED_COMPLETED"); reward.run() } }
                         val displayed = sdkAd.showAd(object : AdDisplayListener {
-                            override fun adDisplayed(ad: Ad) { if (!released) shown() }
-                            override fun adHidden(ad: Ad) = done.run()
+                            override fun adDisplayed(ad: Ad) { diagnostic("${key}_DISPLAYED"); if (!released) shown() }
+                            override fun adHidden(ad: Ad) { diagnostic("${key}_DISMISSED"); done.run() }
                             override fun adClicked(ad: Ad) = Unit
-                            override fun adNotDisplayed(ad: Ad) = done.run()
+                            override fun adNotDisplayed(ad: Ad) { diagnostic("${key}_SHOW_FAIL", ad.errorMessage ?: ad.notDisplayedReason?.toString()); done.run() }
                         })
                         if (!displayed) done.run()
                     }
@@ -80,29 +152,58 @@ internal class StartIoProvider(context: Context) : AdProvider {
                     }
                 })
             }
-            override fun onFailedToReceiveAd(ad: Ad?) { sdkAd.setVideoListener(null); failed(ProviderFailure()) }
-        })
+            override fun onFailedToReceiveAd(ad: Ad?) {
+                releaseLoad(key, sdkAd)
+                sdkAd.setVideoListener(null)
+                failed(failure(ad ?: sdkAd, key))
+            }
+        }
+        pendingLoads[key] = sdkAd to listener
+        diagnostic("${key}_LOAD_START")
+        try { sdkAd.loadAd(mode, listener) } catch (error: Throwable) {
+            releaseLoad(key, sdkAd)
+            failed(failure(sdkAd, key, error.message ?: error.javaClass.simpleName))
+        }
     }
 
     override fun loadNative(loaded: (ProviderNative) -> Unit, failed: (ProviderFailure) -> Unit) {
+        if (!initialized) { failed(failure(null, "NATIVE", "SDK initialization callback pending")); return }
         val sdkAd = StartAppNativeAd(app)
         val once = java.util.concurrent.atomic.AtomicBoolean()
-        val started = sdkAd.loadAd(NativeAdPreferences().setAdsNumber(1).setAutoBitmapDownload(true), object : AdEventListener {
+        val listener = object : AdEventListener {
             override fun onReceiveAd(ad: Ad) {
                 val details = sdkAd.nativeAds.firstOrNull()
                 if (once.compareAndSet(false, true)) {
-                    if (details == null) failed(ProviderFailure()) else loaded(Native(details))
+                    releaseLoad("NATIVE", sdkAd)
+                    if (details == null) failed(failure(ad, "NATIVE", "SDK returned no native assets")) else {
+                        diagnostic("NATIVE_READY")
+                        loaded(Native(sdkAd, details))
+                    }
                 }
             }
-            override fun onFailedToReceiveAd(ad: Ad?) { if (once.compareAndSet(false, true)) failed(ProviderFailure()) }
-        })
-        if (!started && once.compareAndSet(false, true)) failed(ProviderFailure())
+            override fun onFailedToReceiveAd(ad: Ad?) {
+                val error = failure(ad ?: sdkAd, "NATIVE")
+                if (once.compareAndSet(false, true)) { releaseLoad("NATIVE", sdkAd); failed(error) }
+            }
+        }
+        pendingLoads["NATIVE"] = sdkAd to listener
+        diagnostic("NATIVE_LOAD_START")
+        try {
+            val started = sdkAd.loadAd(NativeAdPreferences().setAdsNumber(1).setAutoBitmapDownload(true), listener)
+            if (!started && once.compareAndSet(false, true)) {
+                releaseLoad("NATIVE", sdkAd); failed(failure(sdkAd, "NATIVE", "SDK declined native load"))
+            }
+        } catch (error: Throwable) {
+            if (once.compareAndSet(false, true)) {
+                releaseLoad("NATIVE", sdkAd); failed(failure(sdkAd, "NATIVE", error.message ?: error.javaClass.simpleName))
+            }
+        }
     }
 
-    private class Native(private val details: NativeAdDetails) : ProviderNative {
+    private class Native(private val container: StartAppNativeAd, private val details: NativeAdDetails) : ProviderNative {
         private var destroyed = false
         override fun detach() = details.unregisterView()
-        override fun destroy() { destroyed = true; detach() }
+        override fun destroy() { destroyed = true; container.nativeAds.forEach { it.unregisterView() }; detach() }
         override fun createView(context: Context, displayed: () -> Unit, failed: () -> Unit): View {
             check(!destroyed)
             // Real SDK assets and registered interactions; Mangaro never handles ad clicks.
@@ -156,7 +257,7 @@ internal class StartIoProvider(context: Context) : AdProvider {
             }
             column.addView(cta)
             details.registerViewForInteraction(column, listOf(icon, title, image, body, cta), object : NativeAdDisplayListener {
-                override fun adDisplayed(ad: NativeAdInterface) { if (!destroyed) displayed() }
+                override fun adDisplayed(ad: NativeAdInterface) { if (!destroyed) { android.util.Log.i("MangaroStartIo", "STARTIO_NATIVE_DISPLAYED"); displayed() } }
                 override fun adHidden(ad: NativeAdInterface) = Unit
                 override fun adClicked(ad: NativeAdInterface) = Unit
                 override fun adNotDisplayed(ad: NativeAdInterface) { if (!destroyed) failed() }
