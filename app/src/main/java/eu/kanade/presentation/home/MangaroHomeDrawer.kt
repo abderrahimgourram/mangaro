@@ -37,6 +37,7 @@ import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.PersonOutline
 import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.SupportAgent
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material3.DrawerValue
@@ -152,6 +153,7 @@ fun MangaroHomeDrawer(
                                 DrawerAction("المصادر المفتوحة", Icons.Outlined.Code) { select { uriHandler.openUri("https://mangaro-web.vercel.app/open-source") } }
                                 DrawerAction("سياسة الخصوصية", Icons.Outlined.Shield) { select { uriHandler.openUri("https://mangaro-web.vercel.app/privacy") } }
                                 DrawerAction("شروط الاستخدام", Icons.Outlined.Description) { select { uriHandler.openUri("https://mangaro-web.vercel.app/terms") } }
+                                DrawerAction("خدمة العملاء", Icons.Outlined.SupportAgent) { select { uriHandler.openUri("https://mangaro-web.vercel.app/support") } }
                             }
                             Text("الإصدار ${BuildConfig.VERSION_NAME.substringBefore('-')}", modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
                                 style = MaterialTheme.typography.labelSmall, color = Color(0xFF9F90AC))

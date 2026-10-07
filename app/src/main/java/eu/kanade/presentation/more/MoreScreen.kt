@@ -12,6 +12,7 @@ import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.PersonOutline
 import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.SupportAgent
 import androidx.compose.material.icons.outlined.QueryStats
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Storage
@@ -61,6 +62,9 @@ fun MoreScreen(
             }
             item(key = "website-terms") {
                 TextPreferenceWidget(title = "شروط الاستخدام", icon = Icons.Outlined.Description, onPreferenceClick = { uriHandler.openUri("https://mangaro-web.vercel.app/terms") })
+            }
+            item(key = "website-support") {
+                TextPreferenceWidget(title = "خدمة العملاء", icon = Icons.Outlined.SupportAgent, onPreferenceClick = { uriHandler.openUri("https://mangaro-web.vercel.app/support") })
             }
         }
     }
