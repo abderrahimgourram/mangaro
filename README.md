@@ -1,6 +1,6 @@
 # Mangaro official website
 
-Arabic RTL, seven static pages, no runtime framework or third-party analytics.
+Arabic RTL, eight static pages and one server-side support endpoint, no frontend framework or third-party analytics.
 
 ## Build
 
@@ -14,4 +14,6 @@ Dependency notices are copied from the Android release's generated AboutLibrarie
 
 Deploy from the linked project with `vercel deploy --prod`, then ensure `mangaro-web.vercel.app` points to the new deployment with `vercel alias set <deployment-url> mangaro-web.vercel.app`.
 
-Published release: Mangaro 1.1.1 / versionCode 10, signed with the permanent Mangaro certificate. Android Git HEAD: 7fea2dc32731391790d747ae069303eaaead2456. The app includes the production website legal URLs.
+Release metadata is maintained in `release.json`; the APK is signed with the permanent Mangaro certificate. The app includes the production website legal and support URLs.
+
+Customer support: see [SUPPORT_SETUP.md](SUPPORT_SETUP.md) for server-only Gmail SMTP configuration, ticket generation and focused checks.

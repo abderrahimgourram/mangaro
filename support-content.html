@@ -1,0 +1,40 @@
+<section class="support-panel release">
+  <p class="support-intro">أخبرنا بما حدث وسنراجع طلبك. نستخدم بريدك للرد عليك، ولا تحتاج إلى حساب.</p>
+  <form id="support-form" action="/api/support" method="post">
+    <div class="support-field">
+      <label for="support-email">البريد الإلكتروني</label>
+      <input id="support-email" name="email" type="email" dir="ltr" autocomplete="email" maxlength="254" required>
+    </div>
+    <div class="support-field">
+      <label for="support-topic">نوع المشكلة / الموضوع</label>
+      <select id="support-topic" name="topic" required>
+        <option value="" selected disabled>اختر الموضوع</option>
+        <option value="app">مشكلة في التطبيق</option>
+        <option value="reading">مشكلة في القراءة</option>
+        <option value="downloads">مشكلة في التنزيل</option>
+        <option value="account">الحساب</option>
+        <option value="suggestion">اقتراح</option>
+        <option value="other">موضوع آخر</option>
+      </select>
+    </div>
+    <div class="support-field">
+      <label for="support-description">وصف المشكلة</label>
+      <textarea id="support-description" name="message" rows="6" minlength="10" maxlength="4000" required aria-describedby="support-description-hint"></textarea>
+      <small class="quiet" id="support-description-hint">اذكر ما حدث والخطوات التي سبقت المشكلة. لا ترسل كلمات المرور أو رموز الدخول.</small>
+    </div>
+    <div class="support-trap" aria-hidden="true">
+      <label for="support-website">Website</label>
+      <input id="support-website" name="website" tabindex="-1" autocomplete="off">
+    </div>
+    <p id="support-status" class="support-status" role="alert"></p>
+    <button type="submit" class="btn">إرسال الطلب</button>
+    <p class="quiet support-note">يرسل هذا النموذج طلبك مباشرة إلى خدمة العملاء. <a href="/privacy">سياسة الخصوصية</a></p>
+  </form>
+  <div id="support-success" class="support-success" role="status" tabindex="-1" hidden>
+    <h2>تم استلام طلبك</h2>
+    <p>احتفظ برقم الطلب للمتابعة.</p>
+    <code id="support-ticket" dir="ltr"></code>
+  </div>
+  <noscript><p>يتطلب إرسال الطلب تفعيل JavaScript في المتصفح.</p></noscript>
+</section>
+<script src="/support.js" defer></script>
