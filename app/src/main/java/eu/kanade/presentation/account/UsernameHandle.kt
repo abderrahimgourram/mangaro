@@ -12,5 +12,13 @@ import androidx.compose.ui.text.style.TextDirection
 @Composable
 fun UsernameHandle(username: String, modifier: Modifier = Modifier, color: Color = Color.Unspecified,
     style: TextStyle = MaterialTheme.typography.labelSmall) {
-    Text("@$username", modifier, color = color, style = style.copy(textDirection = TextDirection.Ltr))
+    Text(isolateUsername("@$username"), modifier, color = color, style = style.copy(textDirection = TextDirection.Ltr))
 }
+
+/** Presentation-only isolation. Never use this decorated value in input, validation or storage. */
+internal fun isolateUsername(username: String): String = "\u2066$username\u2069"
+
+/** Names retain their own script direction; username fallbacks are always LTR identifiers. */
+internal fun profileNameForDisplay(displayName: String?, username: String?): String =
+    if (displayName == null || displayName == username) isolateUsername(username.orEmpty())
+    else "\u2068$displayName\u2069"

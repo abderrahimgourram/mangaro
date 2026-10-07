@@ -28,6 +28,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.presentation.account.AccountScreen
+import eu.kanade.presentation.account.isolateUsername
 import eu.kanade.presentation.account.ProfileAvatar
 import eu.kanade.presentation.community.CommunityCommentsScreen
 import eu.kanade.presentation.community.CommunityContext
@@ -107,7 +108,7 @@ class NotificationCenterScreen : Screen() {
                                 navigator.push(CommunityCommentsScreen(CommunityContext(notice.target, "الردود على تعليقك"), notice.parentId))
                             }
                         }, leading = { ProfileAvatar(notice.avatar, notice.googleAvatar, modifier = Modifier.size(44.dp).clip(RoundedCornerShape(16.dp))) },
-                            title = "${notice.author} ردّ على تعليقك", detail = notice.preview,
+                            title = "${isolateUsername(notice.author)} ردّ على تعليقك", detail = notice.preview,
                             time = inboxTime(runCatching { Instant.parse(notice.createdAt).toEpochMilliseconds() }.getOrDefault(0)))
                     }
                     item {

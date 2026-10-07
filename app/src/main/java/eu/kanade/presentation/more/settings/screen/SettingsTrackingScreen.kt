@@ -235,6 +235,7 @@ object SettingsTrackingScreen : SearchableSettings {
                             .semantics { contentType = ContentType.Username + ContentType.EmailAddress },
                         value = username,
                         onValueChange = { username = it },
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(textDirection = androidx.compose.ui.text.style.TextDirection.Ltr, textAlign = androidx.compose.ui.text.style.TextAlign.Left),
                         label = { Text(text = stringResource(uNameStringRes)) },
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                         singleLine = true,

@@ -56,10 +56,10 @@ fun TrackingPreferenceWidget(
                 val displayName = tracker.getDisplayUsername()
                 if (isLoggedIn && displayName.isNotBlank()) {
                     Text(
-                        text = displayName,
+                        text = eu.kanade.presentation.account.isolateUsername(displayName),
                         modifier = Modifier.padding(horizontal = 16.dp),
                         maxLines = 1,
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodyMedium.copy(textDirection = androidx.compose.ui.text.style.TextDirection.Ltr),
                         overflow = TextOverflow.Ellipsis,
                     )
                 }

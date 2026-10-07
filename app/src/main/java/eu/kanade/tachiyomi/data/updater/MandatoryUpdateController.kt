@@ -4,8 +4,8 @@ import android.app.Activity
 import android.app.Application
 import android.content.Intent
 import android.os.Bundle
-import android.view.KeyEvent
 import android.view.View
+import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.core.net.toUri
 import androidx.lifecycle.DefaultLifecycleObserver
@@ -13,6 +13,7 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import eu.kanade.tachiyomi.BuildConfig
 import eu.kanade.tachiyomi.ui.base.activity.BaseActivity
+import eu.kanade.tachiyomi.ui.main.MainActivity
 import java.lang.ref.WeakReference
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -20,7 +21,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
-/** Process foreground checks; a successful valid response is the only blocking authority. */
+/** Existing public version checker: optional production notice, never a reading/update gate. */
 internal class MandatoryUpdateController private constructor() :
     DefaultLifecycleObserver, Application.ActivityLifecycleCallbacks {
 
@@ -40,49 +41,49 @@ internal class MandatoryUpdateController private constructor() :
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var checkJob: Job? = null
     private var resumedActivity = WeakReference<Activity>(null)
-    private var mandatory: MangaroVersionConfig? = null
+    private var available: MangaroVersionConfig? = null
+    private var noticeShown = false
     private var dialog: AlertDialog? = null
 
     override fun onStart(owner: LifecycleOwner) {
-        if (checkJob?.isActive == true) return
+        if (BuildConfig.DEBUG || noticeShown || checkJob?.isActive == true) return
         checkJob = scope.launch {
-            // No persisted blocking cache: offline, HTTP errors and invalid responses fail open.
-            mandatory = repository.fetch()?.takeIf { it.requiresUpdate(BuildConfig.VERSION_CODE) }
-            dismissDialog()
-            showIfRequired()
+            // No blocking cache: offline, HTTP errors and invalid responses fail open.
+            available = repository.fetch()?.takeIf { it.latestVersionCode > BuildConfig.VERSION_CODE }
+            showIfAvailable()
         }
     }
 
-    private fun showIfRequired() {
-        val config = mandatory ?: return
-        val activity = resumedActivity.get() ?: return
-        if (dialog != null || activity.isFinishing || activity.isDestroyed) return
+    private fun showIfAvailable() {
+        if (BuildConfig.DEBUG || noticeShown || dialog != null) return
+        val config = available ?: return
+        val activity = resumedActivity.get() as? MainActivity ?: return
+        // Reader and other activities never receive this optional dialog.
+        if (activity.isFinishing || activity.isDestroyed) return
         val updateDialog = AlertDialog.Builder(activity)
-            .setTitle("يتوفر تحديث جديد")
-            .setMessage("يجب تحديث Mangaro إلى أحدث إصدار للمتابعة.")
+            .setTitle("تحديث جديد متاح")
+            .setMessage("يتوفر إصدار جديد من Mangaro. حدّث التطبيق للحصول على أحدث الإصلاحات والتحسينات.\n\nالإصدار ${config.latestVersionName}")
             .setPositiveButton("تحديث الآن", null)
-            .setNeutralButton("إعادة المحاولة", null)
+            .setNegativeButton("لاحقًا") { _, _ -> }
             .create()
-        updateDialog.setCancelable(false)
-        updateDialog.setCanceledOnTouchOutside(false)
-        updateDialog.setOnKeyListener { _, keyCode, _ -> keyCode == KeyEvent.KEYCODE_BACK }
+        updateDialog.setCancelable(true)
+        updateDialog.setCanceledOnTouchOutside(true)
+        updateDialog.setOnDismissListener { if (dialog === updateDialog) dialog = null }
         dialog = updateDialog
         updateDialog.show()
+        // Process-scoped only: Later, rotation and foreground return cannot repeat the notice.
+        noticeShown = true
         updateDialog.window?.decorView?.layoutDirection = View.LAYOUT_DIRECTION_RTL
-        val retry = updateDialog.getButton(AlertDialog.BUTTON_NEUTRAL)
-        retry.visibility = View.GONE
-        fun openDownload() {
+        updateDialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
             try {
                 activity.startActivity(Intent(Intent.ACTION_VIEW, config.downloadUrl.toUri()))
+                dismissDialog()
             } catch (_: android.content.ActivityNotFoundException) {
-                retry.visibility = View.VISIBLE
+                Toast.makeText(activity, "تعذّر فتح رابط التحديث. حاول مجددًا.", Toast.LENGTH_SHORT).show()
             } catch (_: SecurityException) {
-                retry.visibility = View.VISIBLE
+                Toast.makeText(activity, "تعذّر فتح رابط التحديث. حاول مجددًا.", Toast.LENGTH_SHORT).show()
             }
         }
-        // Override AlertDialog's auto-dismiss behavior; opening a browser is not an update.
-        updateDialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener { openDownload() }
-        retry.setOnClickListener { openDownload() }
     }
 
     private fun dismissDialog() {
@@ -93,7 +94,7 @@ internal class MandatoryUpdateController private constructor() :
     override fun onActivityResumed(activity: Activity) {
         if (activity is BaseActivity) {
             resumedActivity = WeakReference(activity)
-            showIfRequired()
+            showIfAvailable()
         }
     }
 
