@@ -4,26 +4,26 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.util.UUID
-import kotlinx.coroutines.launch
 
 internal fun Context.adActivity(): Activity? = when (this) {
     is Activity -> this
@@ -31,70 +31,94 @@ internal fun Context.adActivity(): Activity? = when (this) {
     else -> null
 }
 
-private data class PendingDownload(val count: Int, val operation: String, val proceed: OnceAction)
-private enum class DownloadAdStage { CONFIRM, HIDDEN, BLOCKED, RETRYING }
+private data class PendingWebAdDownload(val count: Int, val id: String, val proceed: OnceAction)
 
-/** Confirmation and bounded retry wrap the existing queue. No files or library data are changed here. */
+/** Offers one actual web display opportunity for each 50 selected chapters; failure continues. */
 @Composable
 fun rememberDownloadAdGate(): (Int, () -> Unit) -> Unit {
     val context = LocalContext.current
-    val manager = remember(context) { AdManager.get(context) }
-    val scope = rememberCoroutineScope()
-    val adState by manager.state.collectAsStateWithLifecycle()
-    var pending by remember { mutableStateOf<PendingDownload?>(null) }
-    var stage by remember { mutableStateOf(DownloadAdStage.CONFIRM) }
-    var warning by remember { mutableStateOf(false) }
-    LaunchedEffect(manager) { manager.preloadInterstitial() }
+    val repository = remember(context) { WebAdConfigRepository.get(context) }
+    val config by repository.config.collectAsState()
+    val consentAllowed by AdPrivacyConsent.adsAllowed.collectAsState()
+    var pending by remember { mutableStateOf<PendingWebAdDownload?>(null) }
+    var confirmed by remember { mutableStateOf(false) }
+    var opportunity by remember { mutableIntStateOf(1) }
 
-    fun attempt(request: PendingDownload, retry: Boolean) {
-        warning = false
-        stage = if (retry) DownloadAdStage.RETRYING else DownloadAdStage.HIDDEN
-        val blocked = {
-            stage = DownloadAdStage.BLOCKED
-            warning = manager.claimBlockerNotice()
-        }
-        val proceed = {
+    fun finishOrContinue(request: PendingWebAdDownload) {
+        if (pending?.id != request.id) return
+        if (opportunity < request.count / 50 && config.enabled) {
+            opportunity++
+        } else {
             pending = null
+            confirmed = false
             request.proceed.run()
         }
-        if (retry) scope.launch {
-            manager.retryDownload(context.adActivity(), request.count, request.operation, blocked, proceed)
-        } else scope.launch {
-            manager.downloadWhenReady(context.adActivity(), request.count, request.operation, blocked, proceed)
+    }
+    fun failOpen(request: PendingWebAdDownload) {
+        if (pending?.id == request.id) {
+            pending = null
+            confirmed = false
+            request.proceed.run()
         }
     }
+
     pending?.let { request ->
-        if (warning) {
-            AdBlockerNotice(onRetry = { attempt(request, true) }, onContinue = { warning = false })
-        } else if (stage != DownloadAdStage.HIDDEN && !adState.fullscreenShowing) {
-            val retrying = stage == DownloadAdStage.RETRYING
-            val confirmed = stage != DownloadAdStage.CONFIRM
+        if (!confirmed) {
             AlertDialog(
-                onDismissRequest = { if (!retrying) pending = null },
-                title = { Text(if (confirmed) "تعذر تجهيز الإعلان" else "تنزيل الفصول") },
-                text = {
-                    if (retrying) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                        Text("جاري تجهيز الإعلان...")
-                    } else Text(if (confirmed) "عطّل مانع الإعلانات ثم حاول مجددًا." else "هل تريد تنزيل ${request.count} فصلًا؟")
-                },
+                modifier = Modifier.widthIn(max = 460.dp),
+                onDismissRequest = { if (pending?.id == request.id) pending = null },
+                title = { Text("تنزيل الفصول") },
+                text = { Text("هل تريد تنزيل ${request.count} فصلًا؟") },
                 confirmButton = {
-                    TextButton(enabled = !retrying, onClick = { attempt(request, confirmed) }) {
-                        Text(if (confirmed) "حاول مجددًا" else "تنزيل")
-                    }
+                    TextButton(onClick = {
+                        if (config.enabled && consentAllowed && request.count >= 50) confirmed = true
+                        else {
+                            pending = null
+                            request.proceed.run()
+                        }
+                    }) { Text("متابعة") }
                 },
-                dismissButton = { TextButton(enabled = !retrying, onClick = { pending = null }) { Text("إلغاء") } },
+                dismissButton = {
+                    TextButton(onClick = { pending = null }) { Text("إلغاء") }
+                },
             )
+        } else {
+            key(request.id, opportunity) {
+                AlertDialog(
+                    modifier = Modifier.widthIn(max = 460.dp),
+                    onDismissRequest = { finishOrContinue(request) },
+                    title = { Text("إعلان") },
+                    text = {
+                        Column(
+                            Modifier.fillMaxWidth().padding(top = 4.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            AdDisplayWebView(
+                                url = config.displayAdUrl,
+                                modifier = Modifier.fillMaxWidth(),
+                                onFailedToLoad = { failOpen(request) },
+                            )
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { finishOrContinue(request) }) {
+                            Text("متابعة التنزيل")
+                        }
+                    },
+                )
+            }
         }
     }
+
     return { count, proceed ->
         if (pending == null) {
-            if (count > AdPolicy.DOWNLOAD_THRESHOLD) {
-                // Each new confirmed operation can prepare a fresh ad; identities stay independent.
-                manager.preloadInterstitial()
-                stage = DownloadAdStage.CONFIRM
-                pending = PendingDownload(count, UUID.randomUUID().toString(), OnceAction(proceed))
-            } else proceed()
+            if (count < 50) {
+                proceed()
+            } else {
+                pending = PendingWebAdDownload(count, UUID.randomUUID().toString(), OnceAction(proceed))
+                confirmed = false
+                opportunity = 1
+            }
         }
     }
 }

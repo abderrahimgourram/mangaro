@@ -23,3 +23,4 @@ internal interface ProviderNative : ProviderAd {
     fun detach()
 }
 internal fun ProviderAd.destroySafely() { runCatching { destroy() } }
+internal fun com.google.android.libraries.ads.mobile.sdk.common.Ad.destroySafely() { runCatching { destroy() } }

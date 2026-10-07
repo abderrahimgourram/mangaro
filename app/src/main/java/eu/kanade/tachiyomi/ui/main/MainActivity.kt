@@ -148,10 +148,7 @@ class MainActivity : BaseActivity() {
 
     override fun onPostResume() {
         super.onPostResume()
-        // A resumed host is safe for UMP; local Home/migrations continue independently.
-        if (isTaskRoot && !isFinishing) {
-            eu.kanade.tachiyomi.data.ads.AdManager.get(this).gatherConsent(this)
-        }
+        if (isTaskRoot && !isFinishing) eu.kanade.tachiyomi.data.ads.AdPrivacyConsent.gather(this)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

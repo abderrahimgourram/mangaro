@@ -111,7 +111,7 @@ class ReaderViewModel @JvmOverloads constructor(
 ) : ViewModel() {
 
     val adReadingSession = java.util.UUID.randomUUID().toString()
-    private val adManager = eu.kanade.tachiyomi.data.ads.AdManager.get(Injekt.get<Application>()).also { it.startReadingSession(adReadingSession) }
+    private val readerAdPolicy = eu.kanade.tachiyomi.data.ads.ReaderWebAdPolicy.get(Injekt.get<Application>()).also { it.startSession(adReadingSession) }
     private val adCompletion = eu.kanade.tachiyomi.data.ads.AdChapterCompletion()
     private val adPageReadyJobs = linkedMapOf<Long, kotlinx.coroutines.Job>()
 
@@ -274,7 +274,7 @@ class ReaderViewModel @JvmOverloads constructor(
     }
 
     override fun onCleared() {
-        adManager.endReadingSession(adReadingSession)
+        readerAdPolicy.endSession(adReadingSession)
         val currentChapters = state.value.viewerChapters
         if (currentChapters != null) {
             currentChapters.unref()
@@ -464,17 +464,13 @@ class ReaderViewModel @JvmOverloads constructor(
 
         // Only selected chapter ends count; opening an ordinary page does not.
         selectedChapter.chapter.id?.let { chapterId ->
-            adManager.readerPageSelected(adReadingSession, chapterId, page.index == pages.lastIndex)
             adCompletion.selected(chapterId, page.index, pages.lastIndex)
-            if (page.index >= (pages.lastIndex - 4).coerceAtLeast(0)) {
-                adManager.prepareNative(adReadingSession, chapterId)
-            }
             if (page.index != pages.lastIndex) {
                 adPageReadyJobs.remove(chapterId)?.cancel()
             } else {
                 fun recordReady() {
                     if (adCompletion.ready(chapterId, page.index, pages.lastIndex)) {
-                        adManager.chapterCompleted(adReadingSession, chapterId)
+                        readerAdPolicy.chapterCompleted(adReadingSession, chapterId)
                     }
                 }
                 if (page.status is Page.State.Ready) {
