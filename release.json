@@ -1,8 +1,8 @@
 {
-  "versionName": "1.20.0",
-  "versionCode": 13,
-  "bytes": 71071624,
-  "sha256": "fe57e61a9f7ec93504d36f61b482012c0d44acac535188fa1034e6806f014519",
+  "versionName": "1.20.1",
+  "versionCode": 14,
+  "bytes": 71088012,
+  "sha256": "d0c990d4ef302e309067348bb08aa46de61b40ec470766ef053ad431873f511b",
   "date": "2026-10-07",
-  "url": "https://github.com/abderrahimgourram/mangaro/releases/download/v1.20.0/Mangaro-release.apk"
+  "url": "https://github.com/abderrahimgourram/mangaro/releases/download/v1.20.1/Mangaro-release.apk"
 }
