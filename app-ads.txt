@@ -1,4 +1,3 @@
-start.io, 118953282, DIRECT
 pubnative.net, 1007349, RESELLER, d641df8625486a7b
 pubmatic.com, 166063, RESELLER, 5d62403b186f2ace
 conversantmedia.com, 100339, RESELLER, 03113cd04947736d
