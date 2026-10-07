@@ -13,6 +13,7 @@ import eu.kanade.tachiyomi.data.download.model.Download
 import eu.kanade.tachiyomi.util.storage.DiskUtil
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -29,6 +30,9 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import tachiyomi.data.Database
 import tachiyomi.data.manga.MangaMapper
 import tachiyomi.domain.chapter.model.Chapter
@@ -52,6 +56,7 @@ class MangaroDownloadsViewModel(
     val state = mutableState.asStateFlow()
     private var lastScan = 0L
     private val completedSizes = mutableMapOf<String, Pair<Long, DiskEntry>>()
+    private val inventoryMutex = Mutex()
 
     init {
         viewModelScope.launch {
@@ -73,14 +78,18 @@ class MangaroDownloadsViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             // A single inventory observer; bursts of completions never trigger scans per row.
             merge(cache.changes, storage.changes).debounce(700).conflate().collect {
+                val requestedAt = android.os.SystemClock.elapsedRealtime()
                 val wait = 15_000L - (android.os.SystemClock.elapsedRealtime() - lastScan)
                 if (lastScan != 0L && wait > 0) delay(wait)
-                scan()
+                inventoryMutex.withLock {
+                    // The explicit final reconciliation already covers notifications during deletion.
+                    if (lastScan < requestedAt) scan()
+                }
             }
         }
     }
 
-    private suspend fun scan() {
+    private suspend fun scan(reconcileIds: Set<Long> = emptySet()): List<CompletedGroup>? {
         mutableState.update { it.copy(scanning = true) }
         try {
             val root = checkNotNull(storage.getDownloadsDirectory()) { "Downloads storage unavailable" }
@@ -106,7 +115,7 @@ class MangaroDownloadsViewModel(
             val nextSizes = mutableMapOf<String, Pair<Long, DiskEntry>>()
             val groups = mangas.mapNotNull { manga ->
                 currentCoroutineContext().ensureActive()
-                if (manager.getDownloadCount(manga) == 0) return@mapNotNull null
+                if (manga.id !in reconcileIds && manager.getDownloadCount(manga) == 0) return@mapNotNull null
                 val source = sources.getOrStub(manga.source)
                 val directories = provider.findMangaDirs(manga.title, source)
                 if (directories.isEmpty()) return@mapNotNull null
@@ -114,7 +123,8 @@ class MangaroDownloadsViewModel(
                     checkNotNull(directory.listFiles()) { "Manga directory could not be listed" }.toList()
                 }.groupBy { it.name }.mapValues { (_, copies) -> copies.first() }
                 val chapters = Injekt.get<ChapterRepository>().getChapterByMangaId(manga.id).mapNotNull { chapter ->
-                    if (!manager.isChapterDownloaded(chapter.name, chapter.scanlator, chapter.url, manga.title, manga.source)) return@mapNotNull null
+                    if (!manager.isChapterDownloaded(chapter.name, chapter.scanlator, chapter.url, manga.title, manga.source,
+                            skipCache = manga.id in reconcileIds)) return@mapNotNull null
                     val file = provider.getValidChapterDirNames(chapter.name, chapter.scanlator, chapter.url)
                         .firstNotNullOfOrNull { files[it] } ?: return@mapNotNull null
                     val entry = entries[file.uri.toString()] ?: return@mapNotNull null
@@ -125,12 +135,15 @@ class MangaroDownloadsViewModel(
             }
             completedSizes.clear()
             completedSizes.putAll(nextSizes)
-            mutableState.update { it.copy(groups = groups, completedCount = manager.getDownloadCount(), usedBytes = used,
+            mutableState.update { state -> state.copy(groups = groups.filterNot { it.manga.id in state.deletingMangaIds },
+                completedCount = if (reconcileIds.isEmpty()) manager.getDownloadCount() else groups.sumOf { it.chapters.size }, usedBytes = used,
                 freeBytes = freeBytes(root), scanning = false, error = null) }
+            return groups
         } catch (cancel: CancellationException) { throw cancel }
         catch (_: Exception) {
             // Keep the previous inventory if the document provider is temporarily unavailable.
             mutableState.update { it.copy(scanning = false, error = "تعذّر تحديث مساحة التنزيلات") }
+            return null
         } finally { lastScan = android.os.SystemClock.elapsedRealtime() }
     }
 
@@ -177,13 +190,49 @@ class MangaroDownloadsViewModel(
         }
     }
 
-    fun delete(groups: List<CompletedGroup>, chapter: CompletedChapter? = null) = action {
-        val queuedIds = manager.queueState.value.map { it.chapter.id }.toSet()
-        groups.forEach { group ->
-            val chapters = (chapter?.let { listOf(it) } ?: group.chapters).map { it.chapter }.filter { it.id !in queuedIds }
-            manager.deleteChapters(chapters, group.manga, sources.getOrStub(group.manga.source))
+    fun delete(groups: List<CompletedGroup>, chapter: CompletedChapter? = null) {
+        val selected = groups.distinctBy { it.manga.id }.filterNot { it.manga.id in mutableState.value.deletingMangaIds }
+        if (selected.isEmpty()) return
+        if (chapter != null) {
+            action {
+                val queuedIds = manager.queueState.value.map { it.chapter.id }.toSet()
+                selected.forEach { group ->
+                    if (chapter.chapter.id !in queuedIds) {
+                        manager.deleteChapters(listOf(chapter.chapter), group.manga, sources.getOrStub(group.manga.source))
+                    }
+                }
+            }
+            return
         }
-        // DownloadCache changes drive the rescan when asynchronous backend deletion completes.
+        val ids = selected.map { it.manga.id }.toSet()
+        // Claim synchronously on confirmation, before dispatching any file work or accepting another tap.
+        mutableState.update { state -> state.copy(groups = state.groups.filterNot { it.manga.id in ids },
+            deletingMangaIds = state.deletingMangaIds + ids, error = null) }
+        viewModelScope.launch(Dispatchers.IO) {
+            // Confirmed deletion finishes even if the Downloads screen is subsequently left.
+            withContext(NonCancellable) {
+                inventoryMutex.withLock {
+                    var failed = false
+                    selected.forEach { group ->
+                        try {
+                            val queuedIds = manager.queueState.value.map { it.chapter.id }.toSet()
+                            val chapters = group.chapters.map { it.chapter }.filter { it.id !in queuedIds }
+                            if (!manager.deleteChaptersAndAwait(chapters, group.manga, sources.getOrStub(group.manga.source))) failed = true
+                        } catch (_: Exception) {
+                            failed = true
+                        }
+                    }
+                    // Bypass a stale download cache for these works; reconcile once from actual files.
+                    val actual = scan(reconcileIds = ids)
+                    mutableState.update { state ->
+                        val pending = state.deletingMangaIds - ids
+                        state.copy(groups = (actual ?: (state.groups + selected).distinctBy { it.manga.id })
+                            .filterNot { it.manga.id in pending }, deletingMangaIds = pending,
+                            error = if (failed) "تعذّر تنفيذ العملية. حاول مجددًا" else state.error)
+                    }
+                }
+            }
+        }
     }
     private fun action(block: () -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -204,5 +253,6 @@ class MangaroDownloadsViewModel(
         val queue: List<Queued> = emptyList(), val groups: List<CompletedGroup> = emptyList(),
         val completedCount: Int = 0, val usedBytes: Long? = null, val freeBytes: Long? = null,
         val clearing: Boolean = false, val running: Boolean = false, val scanning: Boolean = true, val error: String? = null,
+        val deletingMangaIds: Set<Long> = emptySet(),
     )
 }

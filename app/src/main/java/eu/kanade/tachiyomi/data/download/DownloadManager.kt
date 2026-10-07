@@ -17,6 +17,7 @@ import logcat.LogPriority
 import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.core.common.storage.extension
 import tachiyomi.core.common.util.lang.launchIO
+import tachiyomi.core.common.util.lang.withIOContext
 import tachiyomi.core.common.util.system.ImageUtil
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.category.interactor.GetCategories
@@ -222,15 +223,33 @@ class DownloadManager(
      */
     fun deleteChapters(chapters: List<Chapter>, manga: Manga, source: Source) {
         launchIO {
+            deleteChaptersAndAwait(chapters, manga, source)
+        }
+    }
+
+    /** The same protected deletion, with completion available to the Downloads inventory. */
+    suspend fun deleteChaptersAndAwait(chapters: List<Chapter>, manga: Manga, source: Source): Boolean =
+        withIOContext {
             val filteredChapters = getChaptersToDelete(chapters, manga)
             if (filteredChapters.isEmpty()) {
-                return@launchIO
+                return@withIOContext true
             }
 
             removeFromDownloadQueue(filteredChapters)
 
             val (_, chapterDirs) = provider.findChapterDirs(filteredChapters, manga, source)
-            chapterDirs.forEach { it.delete() }
+            var failed = false
+            try {
+                chapterDirs.forEach { if (!it.delete() && it.exists()) failed = true }
+            } catch (error: Exception) {
+                cache.invalidateCache()
+                throw error
+            }
+            if (failed) {
+                // A document provider can return false without throwing. Re-index what remains.
+                cache.invalidateCache()
+                return@withIOContext false
+            }
             cache.removeChapters(filteredChapters, manga)
 
             // Delete manga directory if empty
@@ -238,8 +257,8 @@ class DownloadManager(
             if (remainingDirectories.isNotEmpty() && remainingDirectories.all { it.listFiles()?.isEmpty() == true }) {
                 deleteManga(manga, source, removeQueued = false)
             }
+            true
         }
-    }
 
     /**
      * Deletes the directory of a downloaded manga.
