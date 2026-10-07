@@ -41,7 +41,7 @@ if(downloadAd){
 }
 
 // A voluntary offer opens at most once per tab session, only in this click handler.
-const downloadButtons=[...document.querySelectorAll('[data-download-flow]')];
+const downloadButtons=[...document.querySelectorAll('.download-primary[data-download-flow]')];
 if(downloadButtons.length){
   const sessionKey='mangaro-download-offer-opened';
   let opened=false;
