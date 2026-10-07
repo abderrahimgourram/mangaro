@@ -6,28 +6,77 @@
   <meta name="referrer" content="strict-origin-when-cross-origin">
   <style>
     html, body { width: 100%; margin: 0; padding: 0; overflow: hidden; background: transparent; }
-    #container-e7b52ce64c2389f270c9242f08506453 { width: 100%; max-width: 100%; margin: 0 auto; }
-    #container-e7b52ce64c2389f270c9242f08506453 iframe { max-width: 100%; border: 0; }
+    #mangaro-ad-slot { width: 100%; margin: 0 auto; overflow: hidden; background: transparent; }
+    #mangaro-primary-ad { width: min(300px, 100vw); height: 250px; margin: 0 auto; overflow: hidden; }
+    #mangaro-ad-slot iframe { max-width: 100%; border: 0; }
   </style>
-</head>
-<body>
-  <script async="async" data-cfasync="false" src="https://bauval.org/21/e7b52ce64c2389f270c9242f08506453"></script>
-  <div id="container-e7b52ce64c2389f270c9242f08506453"></div>
   <script>
     (() => {
-      const slot = document.getElementById('container-e7b52ce64c2389f270c9242f08506453');
-      let last = -1;
+      const primaryUrl = 'https://bauval.org/22/affabe9b08c394602779ddf4fa263b64';
+      let fallbackStarted = false;
+      let lastHeight = -1;
+      const slot = () => document.getElementById('mangaro-ad-slot');
       const reportSize = () => {
-        const height = Math.ceil(slot.getBoundingClientRect().height);
-        if (height !== last) {
-          last = height;
+        const element = slot();
+        if (!element) return;
+        const height = Math.ceil(element.getBoundingClientRect().height);
+        if (height !== lastHeight) {
+          lastHeight = height;
           window.MangaroAdBridge?.onSlotSize(height);
         }
       };
-      new ResizeObserver(reportSize).observe(slot);
-      new MutationObserver(reportSize).observe(slot, { childList: true, subtree: true, attributes: true });
+      const fail = () => window.MangaroAdBridge?.onPlacementFailed();
+      window.mangaroStartNativeFallback = () => {
+        if (fallbackStarted) return;
+        fallbackStarted = true;
+        const root = slot();
+        if (!root) return fail();
+        root.replaceChildren();
+        const container = document.createElement('div');
+        container.id = 'container-e7b52ce64c2389f270c9242f08506453';
+        const script = document.createElement('script');
+        script.async = true;
+        script.setAttribute('data-cfasync', 'false');
+        script.src = 'https://bauval.org/21/e7b52ce64c2389f270c9242f08506453';
+        script.onerror = fail;
+        root.append(script, container);
+        reportSize();
+      };
+      window.addEventListener('error', event => {
+        if (event.target instanceof HTMLScriptElement && event.target.src === primaryUrl) {
+          window.mangaroStartNativeFallback();
+        }
+      }, true);
       window.addEventListener('load', reportSize, { once: true });
-      reportSize();
+      new MutationObserver(reportSize).observe(document.documentElement, {
+        childList: true, subtree: true, attributes: true,
+      });
+      window.addEventListener('resize', reportSize);
+    })();
+  </script>
+</head>
+<body>
+  <div id="mangaro-ad-slot">
+    <div id="mangaro-primary-ad">
+      <script>
+        atOptions = {
+          'key' : 'affabe9b08c394602779ddf4fa263b64',
+          'format' : 'iframe',
+          'height' : 250,
+          'width' : 300,
+          'params' : {}
+        };
+      </script>
+      <script id="mangaro-primary-loader" src="https://bauval.org/22/affabe9b08c394602779ddf4fa263b64"></script>
+    </div>
+  </div>
+  <script>
+    (() => {
+      const observer = new ResizeObserver(() => {
+        const height = Math.ceil(document.getElementById('mangaro-ad-slot')?.getBoundingClientRect().height ?? 0);
+        window.MangaroAdBridge?.onSlotSize(height);
+      });
+      observer.observe(document.getElementById('mangaro-ad-slot'));
     })();
   </script>
 </body>
