@@ -2,6 +2,7 @@ package eu.kanade.tachiyomi.data.ads
 
 import android.content.Context
 import eu.kanade.tachiyomi.network.NetworkHelper
+import eu.kanade.tachiyomi.network.interceptor.CloudflareInterceptor
 import java.net.URI
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
@@ -11,6 +12,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import okhttp3.Request
+import okhttp3.CookieJar
+import okhttp3.logging.HttpLoggingInterceptor
 import org.json.JSONObject
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
@@ -54,7 +57,15 @@ class WebAdConfigRepository private constructor(context: Context) {
         scope.launch {
             val fresh = runCatching {
                 val base = Injekt.get<NetworkHelper>().client
-                val client = base.newBuilder().callTimeout(6, TimeUnit.SECONDS).build()
+                val client = base.newBuilder()
+                    .callTimeout(6, TimeUnit.SECONDS)
+                    // The config endpoint is public; never attach source cookies or verbose headers.
+                    .cookieJar(CookieJar.NO_COOKIES)
+                    .apply {
+                        interceptors().removeAll { it is CloudflareInterceptor }
+                        networkInterceptors().removeAll { it is HttpLoggingInterceptor }
+                    }
+                    .build()
                 val request = Request.Builder().url(WebAdConfig.CONFIG_URL).header("Cache-Control", "no-cache").build()
                 client.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) return@use null

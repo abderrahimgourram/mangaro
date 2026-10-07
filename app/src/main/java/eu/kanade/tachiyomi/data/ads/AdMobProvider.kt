@@ -28,7 +28,7 @@ import com.google.android.libraries.ads.mobile.sdk.nativead.NativeAdRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** Rollback only: never constructed while Start.io is selected. */
+/** Dormant rollback provider; it is not wired into active ad placements. */
 internal class AdMobProvider(private val ids: AdIds) : AdProvider {
     override suspend fun initialize(context: android.content.Context) {
         withContext(Dispatchers.IO) { MobileAds.initialize(context, InitializationConfig.Builder(AdIds.APP_ID).build()) }
