@@ -40,13 +40,14 @@ fun rememberDownloadAdGate(): (Int, () -> Unit) -> Unit {
     val repository = remember(context) { WebAdConfigRepository.get(context) }
     val config by repository.config.collectAsState()
     val consentAllowed by AdPrivacyConsent.adsAllowed.collectAsState()
+    val rewardState = remember(context) { AdFreeRewardState.get(context) }
     var pending by remember { mutableStateOf<PendingWebAdDownload?>(null) }
     var confirmed by remember { mutableStateOf(false) }
     var opportunity by remember { mutableIntStateOf(1) }
 
     fun finishOrContinue(request: PendingWebAdDownload) {
         if (pending?.id != request.id) return
-        if (opportunity < request.count / 50 && config.enabled) {
+        if (opportunity < request.count / 50 && config.enabled && consentAllowed && !rewardState.isActive()) {
             opportunity++
         } else {
             pending = null
@@ -71,7 +72,7 @@ fun rememberDownloadAdGate(): (Int, () -> Unit) -> Unit {
                 text = { Text("هل تريد تنزيل ${request.count} فصلًا؟") },
                 confirmButton = {
                     TextButton(onClick = {
-                        if (config.enabled && consentAllowed && request.count >= 50) confirmed = true
+                        if (config.enabled && consentAllowed && request.count >= 50 && !rewardState.isActive()) confirmed = true
                         else {
                             pending = null
                             request.proceed.run()

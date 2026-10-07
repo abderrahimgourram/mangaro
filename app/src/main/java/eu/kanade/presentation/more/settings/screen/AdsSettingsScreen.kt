@@ -15,7 +15,9 @@ import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -35,6 +37,7 @@ import eu.kanade.presentation.theme.MangaroDesignSystem
 import eu.kanade.presentation.util.LocalBackPress
 import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.data.ads.AdPrivacyConsent
+import eu.kanade.tachiyomi.data.ads.AdFreeRewardState
 import eu.kanade.tachiyomi.data.ads.SmartLinkAdLauncher
 import eu.kanade.tachiyomi.data.ads.WebAdConfigRepository
 import eu.kanade.tachiyomi.data.ads.adActivity
@@ -50,6 +53,10 @@ object AdsSettingsScreen : Screen() {
         val config by repository.config.collectAsState()
         val consentAllowed by AdPrivacyConsent.adsAllowed.collectAsState()
         val privacyOptionsRequired by AdPrivacyConsent.privacyOptionsRequired.collectAsState()
+        val rewardState = remember(context) { AdFreeRewardState.get(context) }
+        val verifiedCompletions by rewardState.verifiedCompletions.collectAsState()
+        val activeUntil by rewardState.activeUntil.collectAsState()
+        val rewardActive = System.currentTimeMillis() < activeUntil
         val gold = Color(0xFFD6B56D)
         val foreground = Color(0xFFEFEAF4)
         val secondary = Color(0xFFBFB2CC)
@@ -95,6 +102,33 @@ object AdsSettingsScreen : Screen() {
                                 ) {
                                     Text("فتح عرض إعلاني")
                                 }
+                            }
+                        }
+                    }
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MangaroDesignSystem.ShapeBanner,
+                        color = MangaroDesignSystem.SurfaceDark,
+                        contentColor = foreground,
+                        border = MangaroDesignSystem.StrokeSubtle,
+                    ) {
+                        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text("جلسة بدون إعلانات", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                if (rewardActive) "جلسة بدون إعلانات مفعّلة" else "أكمل 5 عروض مؤهلة للحصول على 30 دقيقة بدون إعلانات",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = secondary,
+                            )
+                            Text("${if (rewardActive) 5 else verifiedCompletions} / 5", style = MaterialTheme.typography.labelLarge, color = gold)
+                            LinearProgressIndicator(
+                                progress = { if (rewardActive) 1f else verifiedCompletions / 5f },
+                                modifier = Modifier.fillMaxWidth(),
+                                color = gold,
+                                trackColor = MangaroDesignSystem.SurfaceHigh,
+                                drawStopIndicator = {},
+                            )
+                            OutlinedButton(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth()) {
+                                Text(if (rewardActive) "الجلسة مفعّلة" else "العروض المؤهلة غير متاحة الآن")
                             }
                         }
                     }

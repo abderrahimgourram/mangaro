@@ -84,6 +84,11 @@ fun AdDisplayWebView(
                                 slotHeight = cssPixels.coerceIn(0, 480)
                             }
                         }
+
+                        @JavascriptInterface
+                        fun onPlacementFailed() {
+                            post { failSlot() }
+                        }
                     }, "MangaroAdBridge")
                     webViewClient = object : WebViewClient() {
                         override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest): Boolean {
