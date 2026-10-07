@@ -152,7 +152,6 @@ object HomeTab : Tab {
             onLibrary = { tabNavigator.current = LibraryTab },
             onHistory = { if (navigator.lastItem !is eu.kanade.tachiyomi.ui.history.ReadingHistoryScreen) navigator.push(eu.kanade.tachiyomi.ui.history.ReadingHistoryScreen()) },
             onDownloads = { tabNavigator.current = DownloadsTab },
-            onAds = { navigator.push(eu.kanade.presentation.more.settings.screen.AdsSettingsScreen) },
             onAccount = { navigator.push(AccountScreen()) },
             accountState = accountSession,
             onProfile = { navigator.push(AccountScreen()) },

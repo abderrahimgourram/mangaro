@@ -113,6 +113,7 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
         setupNotificationChannels()
 
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
+        eu.kanade.tachiyomi.data.updater.MandatoryUpdateController.install(this)
 
         val scope = ProcessLifecycleOwner.get().lifecycleScope
         scope.launch(kotlinx.coroutines.Dispatchers.IO) { Injekt.get<mihon.domain.account.AccountCloudSync>().start() }

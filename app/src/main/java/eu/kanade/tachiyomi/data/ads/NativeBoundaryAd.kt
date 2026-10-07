@@ -28,18 +28,17 @@ fun NativeBoundaryAd(session: String, chapterId: Long, visible: Boolean) {
     val policy = remember(context) { ReaderWebAdPolicy.get(context) }
     val rewardState = remember(context) { AdFreeRewardState.get(context) }
     val webConfig by config.config.collectAsStateWithLifecycle()
-    val consentAllowed by AdPrivacyConsent.adsAllowed.collectAsStateWithLifecycle()
     val completionRevision by policy.completionRevision.collectAsStateWithLifecycle()
     val activeUntil by rewardState.activeUntil.collectAsStateWithLifecycle()
     val adFree = System.currentTimeMillis() < activeUntil
     val request = remember(session, chapterId) { BoundaryRequest() }
 
-    LaunchedEffect(session, chapterId, visible, webConfig.enabled, consentAllowed, completionRevision, activeUntil) {
-        if ((!visible || !webConfig.enabled || !consentAllowed || adFree) && request.reserved && !request.started) {
+    LaunchedEffect(session, chapterId, visible, webConfig.enabled, completionRevision, activeUntil) {
+        if ((!visible || !webConfig.enabled || adFree) && request.reserved && !request.started) {
             policy.releaseBoundaryOpportunity(session, chapterId, request.owner)
             request.reserved = false
         }
-        if (visible && webConfig.enabled && consentAllowed && !adFree && !request.reserved && !request.started && !request.ended) {
+        if (visible && webConfig.enabled && !adFree && !request.reserved && !request.started && !request.ended) {
             request.reserved = policy.reserveBoundaryOpportunity(session, chapterId, request.owner)
         }
     }
@@ -51,7 +50,7 @@ fun NativeBoundaryAd(session: String, chapterId: Long, visible: Boolean) {
     }
 
     // Keep a started request mounted during brief visibility changes; never load it again.
-    if ((visible || request.started) && webConfig.enabled && consentAllowed && !adFree && request.reserved && !request.ended) {
+    if ((visible || request.started) && webConfig.enabled && !adFree && request.reserved && !request.ended) {
         AdDisplayWebView(
             url = webConfig.displayAdUrl,
             modifier = Modifier.fillMaxWidth(),

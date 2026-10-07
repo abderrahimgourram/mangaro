@@ -1,7 +1,6 @@
 package eu.kanade.presentation.more
 
 import eu.kanade.presentation.components.AppBar
-import androidx.compose.material.icons.outlined.PlayCircleOutline
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -47,14 +46,10 @@ fun MoreScreen(
     onClickDataAndStorage: () -> Unit,
     onClickSettings: () -> Unit,
     onClickAbout: () -> Unit,
-    onClickAds: () -> Unit,
 ) {
     val uriHandler = LocalUriHandler.current
     Scaffold(topBar = { AppBar(title = "المزيد")    }) { padding ->
         ScrollbarLazyColumn(contentPadding = padding) {
-            item(key = "ads") {
-                TextPreferenceWidget(title = "الإعلانات", icon = Icons.Outlined.PlayCircleOutline, onPreferenceClick = onClickAds)
-            }
             item(key = "website-about") {
                 TextPreferenceWidget(title = "من نحن", icon = Icons.Outlined.PersonOutline, onPreferenceClick = { uriHandler.openUri("https://mangaro-web.vercel.app/about") })
             }

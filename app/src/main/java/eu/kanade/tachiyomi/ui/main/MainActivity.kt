@@ -146,11 +146,6 @@ class MainActivity : BaseActivity() {
         registerSecureActivity(this)
     }
 
-    override fun onPostResume() {
-        super.onPostResume()
-        if (isTaskRoot && !isFinishing) eu.kanade.tachiyomi.data.ads.AdPrivacyConsent.gather(this)
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         val isLaunch = savedInstanceState == null
 

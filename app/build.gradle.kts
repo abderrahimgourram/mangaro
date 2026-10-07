@@ -67,7 +67,6 @@ android {
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
         buildConfigField("String", "SUPABASE_PUBLISHABLE_KEY", "\"$supabaseKey\"")
         manifestPlaceholders["accountAuthScheme"] = "mangaro"
-        manifestPlaceholders["admobAppId"] = "ca-app-pub-6220636202579444~2080855468"
 
         versionCode = 12
         versionName = "1.1.3"
@@ -279,7 +278,6 @@ baselineProfile {
 
 dependencies {
     implementation("com.google.android.libraries.ads.mobile.sdk:ads-mobile-sdk:1.5.0")
-    implementation("com.google.android.ump:user-messaging-platform:4.0.0")
     // Phase 1 account modules only: no Community, Realtime, Functions or cloud library sync.
     implementation(platform("io.github.jan-tennert.supabase:bom:3.8.0"))
     implementation("io.github.jan-tennert.supabase:auth-kt")

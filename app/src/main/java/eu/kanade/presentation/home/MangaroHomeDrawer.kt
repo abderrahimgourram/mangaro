@@ -39,7 +39,6 @@ import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.History
-import androidx.compose.material.icons.outlined.PlayCircleOutline
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -78,7 +77,6 @@ fun MangaroHomeDrawer(
     onLibrary: () -> Unit,
     onHistory: () -> Unit = {},
     onDownloads: () -> Unit,
-    onAds: () -> Unit,
     onAccount: () -> Unit,
     accountState: AccountSession = AccountSession.Guest,
     onProfile: ((MangaroProfile) -> Unit)? = null,
@@ -150,7 +148,6 @@ fun MangaroHomeDrawer(
                                 .padding(4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 DrawerAction("المكتبة", Icons.Outlined.BookmarkBorder) { select(onLibrary) }
                                 DrawerAction("السجل", Icons.Outlined.History) { select(onHistory) }
-                                DrawerAction("الإعلانات", Icons.Outlined.PlayCircleOutline) { select(onAds) }
                                 DrawerAction("من نحن", Icons.Outlined.PersonOutline) { select { uriHandler.openUri("https://mangaro-web.vercel.app/about") } }
                                 DrawerAction("المصادر المفتوحة", Icons.Outlined.Code) { select { uriHandler.openUri("https://mangaro-web.vercel.app/open-source") } }
                                 DrawerAction("سياسة الخصوصية", Icons.Outlined.Shield) { select { uriHandler.openUri("https://mangaro-web.vercel.app/privacy") } }
