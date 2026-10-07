@@ -23,9 +23,13 @@
         if (height !== lastHeight) {
           lastHeight = height;
           window.MangaroAdBridge?.onSlotSize(height);
+          if (window.parent !== window) window.parent.postMessage({ type: 'mangaro-ad-size', height }, '*');
         }
       };
-      const fail = () => window.MangaroAdBridge?.onPlacementFailed();
+      const fail = () => {
+        window.MangaroAdBridge?.onPlacementFailed();
+        if (window.parent !== window) window.parent.postMessage({ type: 'mangaro-ad-failed' }, '*');
+      };
       window.mangaroStartNativeFallback = () => {
         if (fallbackStarted) return;
         fallbackStarted = true;
