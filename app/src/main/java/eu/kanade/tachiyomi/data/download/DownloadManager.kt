@@ -255,7 +255,7 @@ class DownloadManager(
             // Delete manga directory if empty
             val remainingDirectories = provider.findMangaDirs(manga.title, source)
             if (remainingDirectories.isNotEmpty() && remainingDirectories.all { it.listFiles()?.isEmpty() == true }) {
-                deleteManga(manga, source, removeQueued = false)
+                deleteMangaAndAwait(manga, source, removeQueued = false)
             }
             true
         }
@@ -269,18 +269,22 @@ class DownloadManager(
      */
     fun deleteManga(manga: Manga, source: Source, removeQueued: Boolean = true) {
         launchIO {
-            if (removeQueued) {
-                downloader.removeFromQueue(manga)
-            }
-            provider.findMangaDirs(manga.title, source).forEach { it.delete() }
-            cache.removeManga(manga)
-
-            // Delete source directory if empty
-            provider.findSourceDirs(source).forEach { sourceDir ->
-                if (sourceDir.listFiles()?.isEmpty() == true) sourceDir.delete()
-            }
-            if (provider.findSourceDirs(source).isEmpty()) cache.removeSource(source)
+            deleteMangaAndAwait(manga, source, removeQueued)
         }
+    }
+
+    private suspend fun deleteMangaAndAwait(manga: Manga, source: Source, removeQueued: Boolean) {
+        if (removeQueued) {
+            downloader.removeFromQueue(manga)
+        }
+        provider.findMangaDirs(manga.title, source).forEach { it.delete() }
+        cache.removeManga(manga)
+
+        // Delete source directory if empty
+        provider.findSourceDirs(source).forEach { sourceDir ->
+            if (sourceDir.listFiles()?.isEmpty() == true) sourceDir.delete()
+        }
+        if (provider.findSourceDirs(source).isEmpty()) cache.removeSource(source)
     }
 
     private fun removeFromDownloadQueue(chapters: List<Chapter>) {
