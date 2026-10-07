@@ -39,7 +39,7 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.presentation.account.ProfileAvatar
 import eu.kanade.presentation.account.ProfileCoverImage
 import eu.kanade.presentation.account.UsernameHandle
-import eu.kanade.presentation.account.profileNameForDisplay
+import eu.kanade.presentation.account.ProfileDisplayName
 import eu.kanade.presentation.theme.MangaroDesignSystem
 import eu.kanade.presentation.util.Screen
 import kotlinx.coroutines.CancellationException
@@ -90,7 +90,7 @@ internal fun PublicCommunityProfilePanel(userId: String, onBack: () -> Unit) {
                     }
                 }
                 Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(profileNameForDisplay(profile.author.displayName, profile.author.username), color = Color.White,
+                    ProfileDisplayName(profile.author.displayName, profile.author.username, color = Color.White,
                         style = MaterialTheme.typography.headlineMedium.copy(textDirection = TextDirection.Content), fontWeight = FontWeight.Bold)
                     profile.author.username?.let { UsernameHandle(it, color = Color(0xFFB7A9C4), style = MaterialTheme.typography.bodySmall) }
                     profile.bio?.takeIf { it.isNotBlank() }?.let { Text(it, color = Color(0xFFB7A9C4), style = MaterialTheme.typography.bodyMedium) }

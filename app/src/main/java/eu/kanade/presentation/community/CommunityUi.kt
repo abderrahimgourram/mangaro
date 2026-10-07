@@ -54,7 +54,7 @@ import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.presentation.account.UsernameHandle
-import eu.kanade.presentation.account.profileNameForDisplay
+import eu.kanade.presentation.account.ProfileDisplayName
 import eu.kanade.presentation.account.AccountRequiredPrompt
 import eu.kanade.presentation.account.AccountPanel
 import eu.kanade.presentation.account.AccountScreen
@@ -483,7 +483,7 @@ private fun ReplyAttribution(username: String?, name: String, modifier: Modifier
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
         Text("ردًا على", color = Color(0xFF9F90AC), style = MaterialTheme.typography.labelSmall)
         if (username != null) UsernameHandle(username, color = Color(0xFFB7A9C4), style = MaterialTheme.typography.labelSmall)
-        else Text(name, color = Color(0xFFB7A9C4), style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        else ProfileDisplayName(name, color = Color(0xFFB7A9C4), style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -568,7 +568,7 @@ fun MangaroComment(comment: CommunityComment, enabled: Boolean = true, onLike: (
             Column(Modifier.weight(1f).heightIn(min = 48.dp).clip(RoundedCornerShape(6.dp)).clickable(onClick = onAuthor),
                 verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically)) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(0.dp)) {
-                    Text(profileNameForDisplay(comment.author.displayName, comment.username), color = if (comment.level >= 5) rankAccent(comment.level) else Color.White,
+                    ProfileDisplayName(comment.author.displayName, comment.username, color = if (comment.level >= 5) rankAccent(comment.level) else Color.White,
                         style = MaterialTheme.typography.titleSmall.copy(textDirection = TextDirection.Content), fontWeight = FontWeight.Bold,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                     DeveloperBadge(comment.author.role, compact = true)

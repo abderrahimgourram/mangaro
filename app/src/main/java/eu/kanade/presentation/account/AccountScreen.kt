@@ -299,7 +299,7 @@ private fun AccountProfileEditor(
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text(profileNameForDisplay(profile.displayName, profile.username), color = Color.White,
+                    ProfileDisplayName(profile.displayName, profile.username, color = Color.White,
                         style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     profile.username?.let { UsernameHandle(it, color = secondary, style = MaterialTheme.typography.bodySmall) }
                 }
@@ -361,6 +361,7 @@ private fun AccountProfileEditor(
                     unfocusedContainerColor = MangaroDesignSystem.SurfaceDark, focusedLabelColor = secondary,
                     unfocusedLabelColor = muted, cursorColor = MangaroDesignSystem.GoldPrimary)
                 OutlinedTextField(displayName, { displayName = it }, label = { Text("اسم العرض") }, colors = fieldColors,
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(textDirection = androidx.compose.ui.text.style.TextDirection.ContentOrLtr),
                     enabled = !submitting, singleLine = true, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp))
                 OutlinedTextField(username, { username = it }, label = { Text("اسم المستخدم") }, colors = fieldColors,
                     textStyle = MaterialTheme.typography.bodyLarge.copy(textDirection = androidx.compose.ui.text.style.TextDirection.Ltr, textAlign = androidx.compose.ui.text.style.TextAlign.Left),
@@ -524,7 +525,7 @@ fun AccountDrawerArea(session: AccountSession, onLogin: () -> Unit, onProfile: (
             verticalArrangement = Arrangement.spacedBy(6.dp)) {
             when (session) {
                 is AccountSession.Authenticated -> {
-                    Text(profileNameForDisplay(profile?.displayName, profile?.username), color = Color.White,
+                    ProfileDisplayName(profile?.displayName, profile?.username, color = Color.White,
                         style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold,
                         maxLines = 2, overflow = TextOverflow.Ellipsis)
                     profile?.username?.let { UsernameHandle(it, color = secondary, style = MaterialTheme.typography.bodySmall) }
