@@ -40,13 +40,11 @@ if(downloadAd){
   document.querySelector('#download-ad-frame').append(frame);
 }
 
-// A voluntary offer opens at most once per tab session, only in this click handler.
+// A voluntary offer opens once per page visit, only in this click handler.
 const downloadButtons=[...document.querySelectorAll('.download-primary[data-download-flow]')];
 if(downloadButtons.length){
-  const sessionKey='mangaro-download-offer-opened';
   let opened=false;
-  let storageAvailable=true;
-  try{opened=sessionStorage.getItem(sessionKey)==='1'}catch{storageAvailable=false}
+  const originalButtons=downloadButtons.map(button=>({button,html:button.innerHTML,title:button.getAttribute('title')}));
   const offer=(()=>{
     try{
       const url=new URL(downloadButtons[0].dataset.offerUrl||'');
@@ -62,20 +60,25 @@ if(downloadButtons.length){
     }
     document.querySelectorAll('[data-download-offer-notice]').forEach(note=>{note.hidden=true});
   };
-  if(opened)continueDownload();
-  if(!offer||!storageAvailable){
+  // Back/forward cache restores the old document: treat re-entry as a new page visit.
+  window.addEventListener('pageshow',event=>{
+    if(!event.persisted)return;
+    opened=false;
+    for(const {button,html,title} of originalButtons){
+      button.innerHTML=html;
+      if(title===null)button.removeAttribute('title');else button.setAttribute('title',title);
+    }
+    document.querySelectorAll('[data-download-offer-notice]').forEach(note=>{note.hidden=!offer});
+  });
+  if(!offer){
     document.querySelectorAll('[data-download-offer-notice]').forEach(note=>{note.hidden=true});
   }
   for(const button of downloadButtons){
     button.addEventListener('click',event=>{
       // Preserve native modified-click behavior; it never opens an offer automatically.
       if(event.button!==0||event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return;
-      if(opened||!offer||!storageAvailable)return;
-      // Persist before opening: rapid taps, reloads and other CTAs cannot repeat the offer.
-      try{sessionStorage.setItem(sessionKey,'1')}catch{
-        storageAvailable=false;
-        return;
-      }
+      if(opened||!offer)return;
+      // Set before opening so repeated taps on this loaded page cannot open another tab.
       opened=true;
       event.preventDefault();
       continueDownload();
