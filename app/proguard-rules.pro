@@ -4,6 +4,11 @@
 -keep,allowoptimization class tachiyomi.**
 -keep,allowoptimization class mihon.**
 
+# WebView invokes these methods by JavaScript name, outside R8's call graph.
+-keepclassmembers class eu.kanade.tachiyomi.data.ads.** {
+    @android.webkit.JavascriptInterface <methods>;
+}
+
 # Keep common dependencies used in extensions
 -keep,allowoptimization class androidx.preference.** { public protected *; }
 -keep,allowoptimization class kotlin.** { public protected *; }

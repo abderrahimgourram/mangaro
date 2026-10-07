@@ -71,10 +71,10 @@ fun AdDisplayWebView(
             return@LaunchedEffect
         }
         delay(12_000L)
-        // A sized cross-origin iframe is not affirmative creative evidence. The bounded
-        // Debug preview also ends uncertain presentations, without declaring network NO_FILL.
-        // Its local replacement performs no request, click, reward or impression accounting.
-        if (!failed && (slotHeight == 0 || AdDebugTools.enabled)) failSlot()
+        // The page cannot confirm a cross-origin creative. A nonzero container height
+        // must not bypass the bounded lifetime and strand an empty Release surface.
+        // This is an unknown presentation timeout, not a claimed network NO_FILL.
+        if (!failed) failSlot()
     }
 
     if (failed) {
