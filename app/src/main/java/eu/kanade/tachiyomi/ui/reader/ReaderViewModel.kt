@@ -253,6 +253,8 @@ class ReaderViewModel @JvmOverloads constructor(
     private val downloadAheadAmount = downloadPreferences.autoDownloadWhileReading.get()
 
     init {
+        // Begin the isolated, cached ad-config request while the chapter is loading, not at boundary.
+        eu.kanade.tachiyomi.data.ads.WebAdConfigRepository.get(Injekt.get<Application>()).refresh()
         // To save state
         state.map { it.viewerChapters?.currChapter }
             .distinctUntilChanged()

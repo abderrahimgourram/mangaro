@@ -69,8 +69,8 @@ android {
         manifestPlaceholders["accountAuthScheme"] = "mangaro"
         manifestPlaceholders["admobAppId"] = "ca-app-pub-6220636202579444~2080855468"
 
-        versionCode = 11
-        versionName = "1.1.2"
+        versionCode = 12
+        versionName = "1.1.3"
 
         buildConfigField("String", "COMMIT_COUNT", "\"${getLatestCommitCount()}\"")
         buildConfigField("String", "COMMIT_SHA", "\"${getLatestCommitSha()}\"")
@@ -185,6 +185,10 @@ android {
     }
 
     sourceSets {
+        // Local reward simulation and test artwork are compiled only into Debug.
+        listOf("release", "foss", "preview", "benchmark").forEach {
+            getByName(it).kotlin.srcDir("src/nonDebug/java")
+        }
         getByName("preview").res.directories.add("src/debug/res")
         getByName("benchmark").res.directories.add("src/debug/res")
     }

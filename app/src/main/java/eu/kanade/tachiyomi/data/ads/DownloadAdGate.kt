@@ -13,6 +13,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -36,11 +37,15 @@ private data class PendingWebAdDownload(val count: Int, val id: String, val proc
 /** Offers one actual web display opportunity for each 50 selected chapters; failure continues. */
 @Composable
 fun rememberDownloadAdGate(): (Int, () -> Unit) -> Unit {
+    // The local pre-download experiment exists only in the Debug source set.
+    AdDebugTools.DownloadGate()?.let { return it }
+
     val context = LocalContext.current
     val repository = remember(context) { WebAdConfigRepository.get(context) }
     val config by repository.config.collectAsState()
     val consentAllowed by AdPrivacyConsent.adsAllowed.collectAsState()
     val rewardState = remember(context) { AdFreeRewardState.get(context) }
+    val activeUntil by rewardState.activeUntil.collectAsState()
     var pending by remember { mutableStateOf<PendingWebAdDownload?>(null) }
     var confirmed by remember { mutableStateOf(false) }
     var opportunity by remember { mutableIntStateOf(1) }
@@ -61,6 +66,11 @@ fun rememberDownloadAdGate(): (Int, () -> Unit) -> Unit {
             confirmed = false
             request.proceed.run()
         }
+    }
+
+    LaunchedEffect(activeUntil, pending?.id, confirmed) {
+        val request = pending
+        if (request != null && confirmed && rewardState.isActive()) failOpen(request)
     }
 
     pending?.let { request ->

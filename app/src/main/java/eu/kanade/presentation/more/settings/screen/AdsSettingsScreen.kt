@@ -3,6 +3,7 @@ package eu.kanade.presentation.more.settings.screen
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -22,13 +23,20 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.text.style.TextDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
@@ -37,11 +45,13 @@ import eu.kanade.presentation.theme.MangaroDesignSystem
 import eu.kanade.presentation.util.LocalBackPress
 import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.data.ads.AdPrivacyConsent
+import eu.kanade.tachiyomi.data.ads.AdDebugTools
 import eu.kanade.tachiyomi.data.ads.AdFreeRewardState
 import eu.kanade.tachiyomi.data.ads.SmartLinkAdLauncher
 import eu.kanade.tachiyomi.data.ads.WebAdConfigRepository
 import eu.kanade.tachiyomi.data.ads.adActivity
 import tachiyomi.presentation.core.components.material.Scaffold
+import kotlinx.coroutines.delay
 
 object AdsSettingsScreen : Screen() {
     @Composable
@@ -56,7 +66,18 @@ object AdsSettingsScreen : Screen() {
         val rewardState = remember(context) { AdFreeRewardState.get(context) }
         val verifiedCompletions by rewardState.verifiedCompletions.collectAsState()
         val activeUntil by rewardState.activeUntil.collectAsState()
-        val rewardActive = System.currentTimeMillis() < activeUntil
+        var now by remember(activeUntil) { mutableLongStateOf(System.currentTimeMillis()) }
+        val remainingSeconds = ((activeUntil - now).coerceAtLeast(0L) + 999L) / 1000L
+        val rewardActive = remainingSeconds > 0L
+        LaunchedEffect(activeUntil) {
+            // Presentation ticks read the shared persisted deadline; they never extend it.
+            while (activeUntil > System.currentTimeMillis()) {
+                now = System.currentTimeMillis()
+                delay((activeUntil - now).coerceIn(1L, 1000L))
+            }
+            now = System.currentTimeMillis()
+            rewardState.isActive(now)
+        }
         val gold = Color(0xFFD6B56D)
         val foreground = Color(0xFFEFEAF4)
         val secondary = Color(0xFFBFB2CC)
@@ -93,7 +114,8 @@ object AdsSettingsScreen : Screen() {
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = secondary,
                             )
-                            if (config.enabled && consentAllowed && config.smartLink.isNotBlank()) {
+                            // Debug's single offer button is purely local; it never opens SmartLink.
+                            if (!AdDebugTools.enabled && config.enabled && consentAllowed && config.smartLink.isNotBlank()) {
                                 Button(
                                     modifier = Modifier.fillMaxWidth(),
                                     shape = MangaroDesignSystem.ShapeButton,
@@ -119,7 +141,26 @@ object AdsSettingsScreen : Screen() {
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = secondary,
                             )
-                            Text("${if (rewardActive) 5 else verifiedCompletions} / 5", style = MaterialTheme.typography.labelLarge, color = gold)
+                            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                                Text(
+                                    "\u2066${verifiedCompletions.coerceIn(0, 5)} / 5\u2069",
+                                    style = MaterialTheme.typography.labelLarge.copy(textDirection = TextDirection.Ltr),
+                                    color = gold,
+                                )
+                            }
+                            if (rewardActive) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Text("متبقي", style = MaterialTheme.typography.bodyMedium, color = secondary)
+                                    Text(
+                                        "\u2066${(remainingSeconds / 60).toString().padStart(2, '0')}:${(remainingSeconds % 60).toString().padStart(2, '0')}\u2069",
+                                        style = MaterialTheme.typography.headlineSmall.copy(textDirection = TextDirection.Ltr),
+                                        color = gold,
+                                    )
+                                }
+                            }
                             LinearProgressIndicator(
                                 progress = { if (rewardActive) 1f else verifiedCompletions / 5f },
                                 modifier = Modifier.fillMaxWidth(),
@@ -127,8 +168,12 @@ object AdsSettingsScreen : Screen() {
                                 trackColor = MangaroDesignSystem.SurfaceHigh,
                                 drawStopIndicator = {},
                             )
-                            OutlinedButton(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth()) {
-                                Text(if (rewardActive) "الجلسة مفعّلة" else "العروض المؤهلة غير متاحة الآن")
+                            if (AdDebugTools.enabled) {
+                                AdDebugTools.RewardAction(rewardState, rewardActive)
+                            } else {
+                                OutlinedButton(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth()) {
+                                    Text(if (rewardActive) "الجلسة مفعّلة" else "العروض المؤهلة غير متاحة الآن")
+                                }
                             }
                         }
                     }

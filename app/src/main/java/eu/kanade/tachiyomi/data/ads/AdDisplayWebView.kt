@@ -16,17 +16,20 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.delay
+import java.util.concurrent.atomic.AtomicBoolean
 
 /** One sandboxed WebView. A page/resource load is never reported as a rendered creative. */
 @SuppressLint("SetJavaScriptEnabled")
@@ -35,25 +38,50 @@ fun AdDisplayWebView(
     url: String,
     modifier: Modifier = Modifier,
     onFailedToLoad: (() -> Unit)? = null,
+    onRequestStarted: (() -> Unit)? = null,
+    onReleased: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     var slotHeight by remember(url) { mutableIntStateOf(0) }
     var failed by remember(url) { mutableStateOf(false) }
+    val alive = remember(url) { AtomicBoolean(true) }
+    val latestFailure by rememberUpdatedState(onFailedToLoad)
+    val latestRequestStarted by rememberUpdatedState(onRequestStarted)
+    val latestReleased by rememberUpdatedState(onReleased)
+
+    // Replacing a failed network view with the local Debug surface is not boundary disposal.
+    DisposableEffect(url) {
+        onDispose {
+            alive.set(false)
+            latestReleased?.invoke()
+        }
+    }
 
     fun failSlot() {
-        if (!failed) {
+        if (alive.get() && !failed) {
             failed = true
             slotHeight = 0
-            onFailedToLoad?.invoke()
+            if (!AdDebugTools.enabled) latestFailure?.invoke()
         }
     }
 
     LaunchedEffect(url) {
+        if (safeSlotUri(url) == null) {
+            failSlot()
+            return@LaunchedEffect
+        }
         delay(12_000L)
-        if (slotHeight == 0 && !failed) failSlot()
+        // A sized cross-origin iframe is not affirmative creative evidence. The bounded
+        // Debug preview also ends uncertain presentations, without declaring network NO_FILL.
+        // Its local replacement performs no request, click, reward or impression accounting.
+        if (!failed && (slotHeight == 0 || AdDebugTools.enabled)) failSlot()
     }
 
-    if (failed || safeSlotUri(url) == null) return
+    if (failed) {
+        if (AdDebugTools.enabled) AdDebugTools.DisplayFallback(modifier)
+        return
+    }
+    if (safeSlotUri(url) == null) return
     Box(modifier = modifier.fillMaxWidth().height(slotHeight.dp)) {
         AndroidView(
             modifier = Modifier.fillMaxWidth().height(slotHeight.dp),
@@ -81,7 +109,7 @@ fun AdDisplayWebView(
                         fun onSlotSize(cssPixels: Int) {
                             post {
                                 // Sizing signal only; it is not evidence that an ad was served.
-                                slotHeight = cssPixels.coerceIn(0, 480)
+                                if (alive.get() && !failed) slotHeight = cssPixels.coerceIn(0, 480)
                             }
                         }
 
@@ -125,7 +153,11 @@ fun AdDisplayWebView(
                         }
                     }
                     layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0)
-                    loadUrl(url)
+                    // Commit after the actual request is enqueued, not on a later page callback
+                    // which can be lost if the boundary is disposed immediately afterward.
+                    runCatching { loadUrl(url) }
+                        .onSuccess { latestRequestStarted?.invoke() }
+                        .onFailure { failSlot() }
                 }
             },
             update = { webView ->
@@ -133,7 +165,9 @@ fun AdDisplayWebView(
                 webView.layoutParams = webView.layoutParams.apply { height = px }
             },
             onRelease = { webView ->
+                alive.set(false)
                 runCatching {
+                    webView.webViewClient = WebViewClient()
                     webView.stopLoading()
                     webView.removeJavascriptInterface("MangaroAdBridge")
                     webView.loadUrl("about:blank")
