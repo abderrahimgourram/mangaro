@@ -10,6 +10,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -36,36 +37,46 @@ internal fun ProfileHeader(
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = MangaroDesignSystem.SurfaceDark,
-        shape = RoundedCornerShape(24.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF35283F)),
+        shape = RoundedCornerShape(28.dp),
+        border = androidx.compose.foundation.BorderStroke(.5.dp, Color(0xFF44314F).copy(alpha = .6f)),
     ) {
         Column {
-            Box(Modifier.fillMaxWidth().height(184.dp)) {
-                Box(Modifier.fillMaxWidth().height(144.dp)) {
+            Box(Modifier.fillMaxWidth().height(180.dp)) {
+                Box(Modifier.fillMaxWidth().height(136.dp)) {
                     cover()
                     RankCoverAccent(level, Modifier.fillMaxSize())
+                    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(
+                        listOf(Color.Transparent, MangaroDesignSystem.SurfaceDark.copy(alpha = .5f)),
+                    )))
                 }
-                Box(Modifier.align(Alignment.BottomStart).padding(start = 16.dp)
-                    .shadow(8.dp, RoundedCornerShape(28.dp))
-                    .background(MangaroDesignSystem.SurfaceDark, RoundedCornerShape(28.dp)).padding(4.dp)) {
-                    TierAvatarFrame(level, Modifier.size(88.dp)) { avatar() }
+                Row(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Bottom) {
+                    Box(Modifier.shadow(10.dp, RoundedCornerShape(28.dp))
+                        .background(MangaroDesignSystem.SurfaceDark, RoundedCornerShape(28.dp)).padding(4.dp)) {
+                        TierAvatarFrame(level, Modifier.size(92.dp)) { avatar() }
+                    }
+                    Box(Modifier.weight(1f).padding(bottom = 4.dp), contentAlignment = Alignment.CenterEnd) { action() }
                 }
-                Box(Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 2.dp)) { action() }
             }
-            Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 18.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     ProfileDisplayName(displayName, username, color = Color(0xFFF5EFF9),
-                        style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold,
                         maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    username?.let { UsernameHandle(it, color = Color(0xFFB7A9C4), style = MaterialTheme.typography.bodySmall) }
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(5.dp),
+                        itemVerticalAlignment = Alignment.CenterVertically) {
+                        username?.let { UsernameHandle(it, color = Color(0xFFAE9CBE), style = MaterialTheme.typography.bodySmall) }
+                        DeveloperBadge(role, compact = true)
+                    }
                 }
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp),
-                    itemVerticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.fillMaxWidth().background(Brush.horizontalGradient(listOf(
+                    rankAccent(level).copy(alpha = .09f), Color(0xFF211829).copy(alpha = .45f),
+                )), RoundedCornerShape(18.dp)).padding(horizontal = 12.dp, vertical = 8.dp)) {
                     RankIdentity(level, prominent = true)
-                    DeveloperBadge(role)
                 }
                 bio?.takeIf { it.isNotBlank() }?.let {
-                    Text(it, color = Color(0xFFD0C3DA), style = MaterialTheme.typography.bodyMedium.copy(textDirection = TextDirection.Content))
+                    Text(it, color = Color(0xFFCABCD5), style = MaterialTheme.typography.bodyMedium.copy(textDirection = TextDirection.Content))
                 }
                 content()
             }
@@ -76,14 +87,13 @@ internal fun ProfileHeader(
 /** The public profile supplies only its existing privacy-filtered statistics. */
 @Composable
 internal fun ProfileStatsStrip(items: List<Pair<String, Long?>>) {
-    Surface(Modifier.fillMaxWidth(), color = MangaroDesignSystem.SurfaceDark, shape = RoundedCornerShape(18.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF302538))) {
-        Row(Modifier.padding(horizontal = 8.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+    Surface(Modifier.fillMaxWidth(), color = Color(0xFF1B1523), shape = RoundedCornerShape(22.dp)) {
+        Row(Modifier.padding(horizontal = 8.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
             items.forEachIndexed { index, (label, value) ->
-                if (index > 0) Box(Modifier.width(1.dp).height(28.dp).background(Color(0xFF382B43)))
+                if (index > 0) Box(Modifier.width(1.dp).height(26.dp).background(Color(0xFFAE91CA).copy(alpha = .12f)))
                 Column(Modifier.weight(1f).padding(horizontal = 4.dp), horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(value?.let { WesternDigits.isolate(it.toString()) } ?: "—", color = Color(0xFFF5EFF9),
+                    Text(value?.let { WesternDigits.isolate(it.toString()) } ?: "—", color = Color(0xFFEBDAC0),
                         style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                     Text(label, color = Color(0xFFAFA0BD), style = MaterialTheme.typography.labelSmall,
                         textAlign = TextAlign.Center)

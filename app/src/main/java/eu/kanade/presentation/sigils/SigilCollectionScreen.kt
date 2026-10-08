@@ -158,21 +158,22 @@ class SigilCollectionScreen(private val initialBadgeId: String? = null) : Screen
 /** Exactly three ordered public cosmetics; empty slots reveal no collection or reading data. */
 @Composable fun EquippedSigils(slots: List<String?>,onEmpty: (() -> Unit)? = null,onTap: ((String)->Unit)? = null,animated: Boolean = true) {
     var previewId by remember(slots) {mutableStateOf<String?>(null)}
-    Row(Modifier.fillMaxWidth().padding(vertical=8.dp),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+    Row(Modifier.fillMaxWidth().padding(top=10.dp, bottom=2.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
         repeat(3) {slot ->
             val definition=RealmSigils.byId[slots.getOrNull(slot)]
             val accent = Color(definition?.accent ?: 0xFF9F90AC)
             val legendary = definition?.rarity == mihon.domain.sigils.SigilRarity.LEGENDARY
-            val frame = RoundedCornerShape(18.dp)
-            Box(Modifier.weight(1f).height(84.dp).shadow(if(definition!=null) 3.dp else 0.dp,frame)
-                .background(Brush.verticalGradient(listOf(accent.copy(alpha=if(definition!=null) .14f else .04f),Color(0xFF16111D))),frame)
-                .border(if(legendary) 1.2.dp else 1.dp,
-                    Brush.linearGradient(listOf(accent.copy(alpha=if(definition!=null) .45f else .15f),
-                        (if(legendary) Color(0xFFE4C576) else accent).copy(alpha=.16f))),frame)
+            val frame = RoundedCornerShape(20.dp)
+            Box(Modifier.weight(1f).height(90.dp).shadow(if(definition!=null) 2.dp else 0.dp,frame)
+                .background(Brush.verticalGradient(listOf(accent.copy(alpha=if(definition!=null) .12f else .03f),Color(0xFF19131F))),frame)
+                .border(if(legendary) 1.dp else .5.dp,
+                    Brush.linearGradient(listOf(accent.copy(alpha=if(definition!=null) .4f else .14f),
+                        (if(legendary) Color(0xFFE4C576) else accent).copy(alpha=.12f))),frame)
                 .clip(frame)
                 .clickable(enabled=definition!=null || onEmpty!=null) {if(definition!=null) {if(onTap!=null)onTap(definition.id) else previewId=definition.id} else onEmpty?.invoke()},contentAlignment=Alignment.Center) {
-                if(definition!=null) SigilArtwork(definition,true,Modifier.size(78.dp),animated=animated && previewId==null,compact=true)
-                else Text("ختم ${slot+1}",color=Color(0xFF756782),style=MaterialTheme.typography.labelSmall)
+                if(definition!=null) SigilArtwork(definition,true,Modifier.padding(6.dp).size(78.dp),animated=animated && previewId==null,compact=true)
+                else Text(if(onEmpty!=null) "أضف ختمًا" else "غير مجهز",color=Color(0xFF8C7A9C),style=MaterialTheme.typography.labelSmall,
+                    modifier=Modifier.padding(horizontal=6.dp),textAlign=TextAlign.Center)
             }
         }
     }
@@ -191,7 +192,7 @@ class SigilCollectionScreen(private val initialBadgeId: String? = null) : Screen
 @Composable fun OwnProfileSigils() {
     val repo=remember {Injekt.get<SigilRepository>()};val snapshot=activeSnapshot(repo);val navigator=LocalNavigator.currentOrThrow
     Column {
-        Text("الأختام المجهزة",color=Color(0xFF9F90AC),style=MaterialTheme.typography.labelSmall)
+        Text("الأختام المجهزة",color=Color(0xFFC4B2D3),style=MaterialTheme.typography.labelMedium)
         EquippedSigils(snapshot.slots,onEmpty={navigator.push(SigilCollectionScreen())},onTap={navigator.push(SigilCollectionScreen(it))})
     }
 }
@@ -199,7 +200,7 @@ class SigilCollectionScreen(private val initialBadgeId: String? = null) : Screen
     val repo=remember {Injekt.get<SigilRepository>()};var slots by remember(userId) {mutableStateOf<List<String?>>(listOf(null,null,null))}
     LaunchedEffect(userId) {slots=repo.publicSlots(userId)}
     Column {
-        Text("الأختام المجهزة",color=Color(0xFF9F90AC),style=MaterialTheme.typography.labelSmall)
+        Text("الأختام المجهزة",color=Color(0xFFC4B2D3),style=MaterialTheme.typography.labelMedium)
         EquippedSigils(slots)
     }
 }

@@ -47,6 +47,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -242,7 +243,7 @@ private fun CommunityContent(
                     onRate = { gated(ratingFeature) { ratingVisible = true } })
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("التعليقات", style = MaterialTheme.typography.titleSmall, color = Color.White, fontWeight = FontWeight.Bold)
-                    snapshot.commentCount?.let { Text(it.toString(), color = Color(0xFFB7A9C4), style = MaterialTheme.typography.labelMedium) }
+                    snapshot.commentCount?.let { Text(WesternDigits.isolate(it.toString()), color = Color(0xFFAE9CBE), style = MaterialTheme.typography.labelMedium) }
                     Spacer(Modifier.weight(1f))
                     if (!expanded) TextButton(onClick = { onAllComments?.invoke() }, contentPadding = PaddingValues(horizontal = 8.dp)) {
                         Text("عرض كل التعليقات", color = MangaroDesignSystem.LavenderPrimary, style = MaterialTheme.typography.labelMedium)
@@ -253,8 +254,8 @@ private fun CommunityContent(
                         FilterChip(selected = snapshot.order == order, enabled = !actionInFlight && !snapshot.loading && !snapshot.refreshing,
                             onClick = { perform { repository.setCommentOrder(context.target, order) } },
                             label = { Text(label, style = MaterialTheme.typography.labelMedium) },
-                            shape = RoundedCornerShape(12.dp), colors = FilterChipDefaults.filterChipColors(
-                                containerColor = Color(0xFF201728), labelColor = Color(0xFFB7A9C4),
+                            shape = RoundedCornerShape(24.dp), colors = FilterChipDefaults.filterChipColors(
+                                containerColor = Color(0xFF21192B), labelColor = Color(0xFFB7A9C4),
                                 selectedContainerColor = MangaroDesignSystem.GoldPrimary.copy(alpha = 0.12f), selectedLabelColor = MangaroDesignSystem.GoldPrimary),
                             border = null)
                     }
@@ -266,8 +267,9 @@ private fun CommunityContent(
                     TextButton(onClick = { perform { repository.refresh(context.target) } }, enabled = !actionInFlight) { Text("إعادة المحاولة") }
                 }
                 if (!snapshot.loading && !snapshot.refreshing && snapshot.error == null && snapshot.comments.isEmpty()) {
-                    Column(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(vertical = 22.dp), horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.AutoMirrored.Outlined.Reply, null, Modifier.size(26.dp), tint = Color(0xFFC5ACDD))
                         Text("لا توجد تعليقات بعد", style = MaterialTheme.typography.titleSmall, color = Color(0xFFDDD3E7))
                         Text("كن أول من يشارك رأيه.", style = MaterialTheme.typography.bodySmall, color = Color(0xFF9F90AC))
                     }
@@ -305,7 +307,7 @@ private fun CommunityContent(
                                     }
                                 }
                             })
-                    } else TextButton(onClick = { gated(AccountFeature.COMMENTS) {} }) { Text("اكتب تعليقًا...") }
+                    } else CommunityGuestComposer(onClick = { gated(AccountFeature.COMMENTS) {} })
                 }
                 message?.let { Text(it, color = Color(0xFFB7A9C4), style = MaterialTheme.typography.bodySmall) }
             }
@@ -400,7 +402,7 @@ private fun CommunityContent(
                                     }
                                 }
                             })
-                    } else TextButton(onClick = { gated(AccountFeature.REPLIES) {} }) { Text("اكتب ردًا...") }
+                    } else CommunityGuestComposer(reply = true, onClick = { gated(AccountFeature.REPLIES) {} })
                 }
             }
         }
@@ -415,14 +417,15 @@ private fun CommunityContent(
 @Composable
 private fun CommunityRatingOverview(snapshot: CommunitySnapshot, enabled: Boolean, actionLabel: String, onRate: () -> Unit) {
     val summary = snapshot.rating
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Color(0xFF21182B))
-        .border(1.dp, MangaroDesignSystem.GoldPrimary.copy(alpha = .16f), RoundedCornerShape(20.dp))
-        .padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp))
+        .background(Brush.linearGradient(listOf(Color(0xFF2A2032), Color(0xFF1D1725))))
+        .border(.5.dp, MangaroDesignSystem.GoldPrimary.copy(alpha = .18f), RoundedCornerShape(22.dp))
+        .padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                 Icon(Icons.Outlined.Star, null, Modifier.size(16.dp), tint = MangaroDesignSystem.GoldPrimary)
-                Text("تقييم القرّاء", color = Color(0xFFD3C4DF), style = MaterialTheme.typography.labelMedium)
+                Text("رأي القرّاء", color = Color(0xFFD3C4DF), style = MaterialTheme.typography.labelMedium)
             }
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -442,10 +445,10 @@ private fun CommunityRatingOverview(snapshot: CommunitySnapshot, enabled: Boolea
             CommunityAction(label = actionLabel, icon = Icons.Outlined.StarBorder,
                 enabled = enabled, active = true, onClick = onRate)
             summary?.currentUserRating?.let { stars ->
-                Text("تقييمك", color = Color(0xFFB7A9C4), style = MaterialTheme.typography.labelSmall)
-                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-                    Row { (1..5).forEach { Icon(if (it <= stars) Icons.Outlined.Star else Icons.Outlined.StarBorder,
-                        null, Modifier.size(14.dp), tint = MangaroDesignSystem.GoldPrimary) } }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text("تقييمك", color = Color(0xFFB7A9C4), style = MaterialTheme.typography.labelSmall)
+                    Text(WesternDigits.isolate("$stars / 5"), color = MangaroDesignSystem.GoldPrimary,
+                        style = MaterialTheme.typography.labelSmall.copy(textDirection = TextDirection.Ltr))
                 }
             }
         }
@@ -482,10 +485,25 @@ private fun RatingDialog(context: CommunityContext, current: Int?, enabled: Bool
 
 @Composable
 private fun ReplyAttribution(username: String?, name: String, modifier: Modifier = Modifier) {
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+    FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(3.dp),
+        itemVerticalAlignment = Alignment.CenterVertically) {
         Text("ردًا على", color = Color(0xFF9F90AC), style = MaterialTheme.typography.labelSmall)
         if (username != null) UsernameHandle(username, color = Color(0xFFB7A9C4), style = MaterialTheme.typography.labelSmall)
         else ProfileDisplayName(name, color = Color(0xFFB7A9C4), style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
+private fun CommunityGuestComposer(reply: Boolean = false, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Color(0xFF231A2E))
+        .clickable(onClick = onClick).heightIn(min = 64.dp).padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Icon(Icons.AutoMirrored.Outlined.Send, null, Modifier.size(20.dp), tint = Color(0xFFC5ACDD))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(if (reply) "اكتب ردًا" else "شارك رأيك", color = Color(0xFFEDE3F3),
+                style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+            Text("سجّل الدخول للمشاركة", color = Color(0xFFAC9ABA), style = MaterialTheme.typography.labelSmall)
+        }
     }
 }
 
@@ -497,13 +515,13 @@ private fun CommunityComposer(target: CommunityTarget, actor: String?, enabled: 
     var spoiler by rememberSaveable(target, actor, replyId, editingId, submissionVersion) { mutableStateOf(editing?.spoiler ?: false) }
     val validation = remember(body) { CommunityCommentInput.validate(body) }
     var focused by remember { mutableStateOf(false) }
-    val outline by animateColorAsState(if (focused) MangaroDesignSystem.GoldPrimary.copy(alpha = 0.45f) else Color(0xFF3A2B46), tween(140), label = "composerFocus")
+    val outline by animateColorAsState(if (focused) MangaroDesignSystem.GoldPrimary.copy(alpha = 0.4f) else Color(0xFF4A3759).copy(alpha = .55f), tween(140), label = "composerFocus")
     val canSend = enabled && validation is CommentValidation.Valid
     val sendColor by animateColorAsState(if (canSend) MangaroDesignSystem.GoldPrimary else MangaroDesignSystem.SurfaceHigh, tween(140), label = "composerSend")
     val sendInteraction = remember { MutableInteractionSource() }
     val sendPressed by sendInteraction.collectIsPressedAsState()
     val sendScale by animateFloatAsState(if (sendPressed) 0.94f else 1f, tween(120), label = "composerPress")
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         if (reply != null || editing != null) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.weight(1f)) {
                 if (editing != null) Text("تعديل التعليق", color = Color(0xFF9F90AC), style = MaterialTheme.typography.labelSmall)
@@ -511,29 +529,30 @@ private fun CommunityComposer(target: CommunityTarget, actor: String?, enabled: 
             }
             TextButton(enabled = enabled, onClick = { body = ""; requestId = java.util.UUID.randomUUID().toString(); onCancel() }) { Text("إلغاء", style = MaterialTheme.typography.labelSmall) }
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Top) {
-            ProfileAvatar(avatar?.avatarUrl, modifier = Modifier.padding(top = 8.dp).size(32.dp).clip(RoundedCornerShape(11.dp)).background(MangaroDesignSystem.SurfaceHigh))
-            Row(Modifier.weight(1f).clip(RoundedCornerShape(14.dp)).background(MangaroDesignSystem.SurfaceDark)
-                .border(1.dp, outline, RoundedCornerShape(14.dp)).heightIn(min = 48.dp)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Top) {
+            ProfileAvatar(avatar?.avatarUrl, modifier = Modifier.padding(top = 10.dp).size(36.dp).clip(RoundedCornerShape(12.dp)).background(MangaroDesignSystem.SurfaceHigh))
+            Row(Modifier.weight(1f).clip(RoundedCornerShape(18.dp)).background(Color(0xFF211829))
+                .border(.5.dp, outline, RoundedCornerShape(18.dp)).heightIn(min = 56.dp)
                 .padding(start = 12.dp, end = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                 BasicTextField(body, { if (body != it) requestId = java.util.UUID.randomUUID().toString(); body = it }, enabled = enabled,
-                    modifier = Modifier.weight(1f).onFocusChanged { focused = it.isFocused }.padding(vertical = 6.dp), maxLines = 5,
-                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = Color.White, textDirection = TextDirection.Content, lineHeight = 20.sp),
+                    modifier = Modifier.weight(1f).onFocusChanged { focused = it.isFocused }.padding(vertical = 12.dp), maxLines = 5,
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = Color(0xFFF4EDF8), textDirection = TextDirection.Content, lineHeight = 23.sp),
                     cursorBrush = androidx.compose.ui.graphics.SolidColor(MangaroDesignSystem.GoldPrimary),
                     decorationBox = { field ->
-                        Box { if (body.isEmpty()) Text("اكتب تعليقًا...", color = Color(0xFF9F90AC), style = MaterialTheme.typography.bodyMedium); field() }
+                        Box { if (body.isEmpty()) Text(if (reply != null) "اكتب ردًا…" else "اكتب تعليقًا…",
+                            color = Color(0xFFAA98B9), style = MaterialTheme.typography.bodyMedium); field() }
                     })
                 IconButton(onClick = { (validation as? CommentValidation.Valid)?.let { onSubmit(it.body, requestId, spoiler) } },
                     enabled = canSend, interactionSource = sendInteraction, modifier = Modifier.size(48.dp)) {
-                    Box(Modifier.size(32.dp).graphicsLayer { scaleX = sendScale; scaleY = sendScale }
-                        .clip(RoundedCornerShape(10.dp)).background(sendColor), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(34.dp).graphicsLayer { scaleX = sendScale; scaleY = sendScale }
+                        .clip(RoundedCornerShape(12.dp)).background(sendColor), contentAlignment = Alignment.Center) {
                         Icon(Icons.AutoMirrored.Outlined.Send, if (editing == null) "إرسال" else "حفظ", Modifier.size(18.dp),
                             tint = if (canSend) MangaroDesignSystem.BackgroundDark else Color(0xFF9F90AC))
                     }
                 }
             }
         }
-        Row(Modifier.padding(start = 40.dp).heightIn(min = 48.dp).clip(RoundedCornerShape(8.dp))
+        Row(Modifier.padding(start = 46.dp).heightIn(min = 48.dp).clip(RoundedCornerShape(8.dp))
             .clickable(enabled = enabled) { spoiler = !spoiler; requestId = java.util.UUID.randomUUID().toString() },
             verticalAlignment = Alignment.CenterVertically) {
             Checkbox(checked = spoiler, onCheckedChange = null, enabled = enabled,
@@ -558,11 +577,12 @@ fun MangaroComment(comment: CommunityComment, enabled: Boolean = true, onLike: (
     val avatarPressed by avatarInteraction.collectIsPressedAsState()
     val avatarScale by animateFloatAsState(if (avatarPressed) 0.96f else 1f, tween(120), label = "authorPress")
     val metadata = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, lineHeight = 16.sp)
-    Column(Modifier.fillMaxWidth().padding(horizontal = horizontalInset, vertical = 6.dp)
-        .clip(RoundedCornerShape(20.dp)).background(Color(0xFF1A1422))
-        .border(1.dp, Color(0xFF33263E), RoundedCornerShape(20.dp)).padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = horizontalInset, vertical = 7.dp)
+        .clip(RoundedCornerShape(22.dp))
+        .background(Brush.verticalGradient(listOf(Color(0xFF21192B), Color(0xFF19131F))))
+        .border(.5.dp, Color(0xFFAE91CA).copy(alpha = .12f), RoundedCornerShape(22.dp)).padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Top) {
             Box(Modifier.size(48.dp).clip(RoundedCornerShape(16.dp))
                 .clickable(interactionSource = avatarInteraction, indication = ripple(), onClick = onAuthor), contentAlignment = Alignment.Center) {
                 TierAvatarFrame(comment.level, Modifier.fillMaxSize()) {
@@ -571,21 +591,22 @@ fun MangaroComment(comment: CommunityComment, enabled: Boolean = true, onLike: (
                 }
             }
             Column(Modifier.weight(1f).heightIn(min = 48.dp).clip(RoundedCornerShape(8.dp)).clickable(onClick = onAuthor),
-                verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically)) {
+                verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 ProfileDisplayName(comment.author.displayName, comment.username, color = Color(0xFFF5EFF9),
-                    style = MaterialTheme.typography.titleMedium.copy(textDirection = TextDirection.Content), fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.titleSmall.copy(textDirection = TextDirection.Content), fontWeight = FontWeight.SemiBold,
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    comment.username?.let { UsernameHandle(it, style = metadata, color = Color(0xFFB7A9C4)) }
-                    Text(time, style = metadata, color = Color(0xFF9F90AC))
-                    if (comment.isEdited) Text("معدّل", style = metadata, color = Color(0xFF9F90AC))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(5.dp),
+                    itemVerticalAlignment = Alignment.CenterVertically) {
+                    RankIdentity(comment.level, compact = true)
+                    DeveloperBadge(comment.author.role, compact = true)
                 }
             }
         }
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp),
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(3.dp),
             itemVerticalAlignment = Alignment.CenterVertically) {
-            RankIdentity(comment.level)
-            DeveloperBadge(comment.author.role, compact = true)
+            comment.username?.let { UsernameHandle(it, style = metadata, color = Color(0xFFBAA7CA)) }
+            Text(time, style = metadata, color = Color(0xFF9F8FAE))
+            if (comment.isEdited) Text("معدّل", style = metadata, color = Color(0xFF9F8FAE))
         }
         Column(Modifier.fillMaxWidth().animateContentSize(tween(160)), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             replyTo?.let { ReplyAttribution(it.username, it.displayName) }
@@ -603,9 +624,9 @@ fun MangaroComment(comment: CommunityComment, enabled: Boolean = true, onLike: (
                 }
             }
         }
-        HorizontalDivider(color = Color(0xFF302438))
+        HorizontalDivider(color = Color(0xFFAE91CA).copy(alpha = .1f))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 CommunityAction(WesternDigits.isolate(comment.likeCount.toString()), if (comment.isLikedByCurrentUser) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder,
                     enabled && (!comment.isOwnedByCurrentUser || comment.isLikedByCurrentUser), active = comment.isLikedByCurrentUser, onClick = onLike, description = "إعجاب")
                 CommunityAction("رد", icon = Icons.AutoMirrored.Outlined.Reply, enabled = enabled, onClick = onReply)
@@ -642,7 +663,7 @@ private fun CommunityAction(label: String, icon: ImageVector? = null, enabled: B
     TextButton(enabled = enabled, onClick = onClick, interactionSource = interaction,
         modifier = Modifier.heightIn(min = 48.dp).graphicsLayer { scaleX = scale; scaleY = scale }
             .background(if (active) MangaroDesignSystem.GoldPrimary.copy(alpha = .09f) else Color.Transparent, RoundedCornerShape(12.dp)),
-        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp), shape = RoundedCornerShape(12.dp),
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp), shape = RoundedCornerShape(12.dp),
         colors = ButtonDefaults.textButtonColors(contentColor = color, disabledContentColor = Color(0xFF85758F))) {
         icon?.let { Icon(it, description, Modifier.size(16.dp)); Spacer(Modifier.width(5.dp)) }
         Text(label, style = MaterialTheme.typography.labelMedium)

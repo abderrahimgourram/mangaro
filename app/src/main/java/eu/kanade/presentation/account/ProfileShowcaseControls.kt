@@ -17,6 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDirection
@@ -72,12 +73,12 @@ internal fun ProfileShowcaseControls(profile: MangaroProfile, account: AccountFo
         local.mapValues { (key,manga) -> ProfileShowcaseRepository.Favorite(key,manga.title.take(300)) } + snapshot?.favorites.orEmpty().associateBy { it.manga_key }
     }
     fun cover(key: String): Any? = local[key]?.asMangaCover() ?: metadata[key]?.cover_path?.let { snapshot?.covers?.get(it) }
-    Surface(color = MangaroDesignSystem.SurfaceDark, shape = RoundedCornerShape(20.dp)) {
-        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Surface(color = Color(0xFF1B1523), shape = RoundedCornerShape(22.dp)) {
+        Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
                 Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(3.dp)) {
-                    Text("مكتبتي العامة", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                    Text(if(snapshot?.enabled==true) "${snapshot?.favorites?.size ?: 0} أعمال معروضة" else "خاصة حتى تختار إظهارها",
+                    Text("مكتبتي العامة", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold,color=Color(0xFFF0E7F7))
+                    Text(if(snapshot?.enabled==true) "أعمالك التي يراها القرّاء" else "خاصة حتى تختار إظهارها",
                         style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 TextButton(enabled = snapshot != null && !saving, onClick = {
@@ -85,7 +86,9 @@ internal fun ProfileShowcaseControls(profile: MangaroProfile, account: AccountFo
                     enabled=snapshot?.enabled ?: false
                     draft=ShowcaseDraft(items.map {it.manga_key},items.filter {it.featured}.map {it.manga_key}.toSet())
                     tab=0;preview=false;search="";error=null;open=true
-                }, modifier=Modifier.heightIn(min=48.dp)) { Text("تعديل") }
+                }, modifier=Modifier.heightIn(min=48.dp),shape=RoundedCornerShape(14.dp),
+                    colors=ButtonDefaults.textButtonColors(contentColor=Color(0xFFE3D5EF),containerColor=Color(0xFF291D35)),
+                    contentPadding=PaddingValues(horizontal=12.dp)) { Text("تعديل العرض",style=MaterialTheme.typography.labelMedium) }
             }
             Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                 Text("${WesternDigits.isolate("${snapshot?.favorites?.size ?: 0} / $slots")} أعمال",color=accent,style=MaterialTheme.typography.labelMedium)

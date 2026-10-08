@@ -14,6 +14,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material.icons.outlined.Bookmarks
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.StarOutline
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -177,7 +178,7 @@ fun AccountPanel(onBack: () -> Unit) {
                                     }
                                 }
                             },
-                            modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp), shape = RoundedCornerShape(18.dp),
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp).heightIn(min = 56.dp), shape = RoundedCornerShape(18.dp),
                             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = Color(0xFFF2F2F2), contentColor = Color(0xFF1F1F1F),
@@ -191,11 +192,11 @@ fun AccountPanel(onBack: () -> Unit) {
                                     // https://developers.google.com/static/identity/images/g-logo.png — preserve colors and aspect ratio.
                                     Image(painterResource(R.drawable.ic_google_sign_in), null, Modifier.size(20.dp), contentScale = ContentScale.Fit)
                                 }
-                                Text("المتابعة باستخدام Google", Modifier.weight(1f, fill = false), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium)
+                                Text("المتابعة باستخدام Google", Modifier.weight(1f, fill = false), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
                             }
                         }
-                        Text("تقدر تواصل القراءة كضيف. مكتبتك وتقدمك محفوظان على هذا الجهاز.",
-                            modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        Text("يمكنك مواصلة القراءة كضيف.\nتبقى مكتبتك وتقدّمك محفوظين على هذا الجهاز.",
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                             color = Color(0xFFB7A9C4), style = MaterialTheme.typography.bodySmall)
                         if (!account.auth.googleSignInAvailable) Text("تسجيل الدخول غير متاح حاليًا", color = Color(0xFFB7A9C4), style = MaterialTheme.typography.bodySmall)
                     }
@@ -216,10 +217,10 @@ private fun GuestAccountIntroduction() {
     Column(Modifier.fillMaxWidth().graphicsLayer {
         alpha = entrance
         translationY = if (motion) (1f - entrance) * 8.dp.toPx() else 0f
-    }, verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp))
-            .background(Brush.linearGradient(listOf(Color(0xFF302040), Color(0xFF1B1426), Color(0xFF15111E))))
-            .border(1.dp, Color(0xFF4C365B), RoundedCornerShape(24.dp))) {
+    }, verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(28.dp))
+            .background(Brush.linearGradient(listOf(Color(0xFF332344), Color(0xFF201729), Color(0xFF17121E))))
+            .border(.5.dp, Color(0xFFAC85C9).copy(alpha = .25f), RoundedCornerShape(28.dp))) {
             Canvas(Modifier.matchParentSize()) {
                 // Original local ornament, never a remote illustration or a continuous effect.
                 val origin = Offset(size.width * .18f, size.height * .2f)
@@ -228,42 +229,45 @@ private fun GuestAccountIntroduction() {
                 drawCircle(Color(0xFFAE91CC).copy(alpha = .08f), size.width * .36f, origin,
                     style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()))
             }
-            Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Box(Modifier.size(64.dp).background(Color(0xFF21172E), RoundedCornerShape(20.dp))
-                        .border(1.dp, MangaroDesignSystem.GoldPrimary.copy(alpha = .3f), RoundedCornerShape(20.dp)),
+                    Box(Modifier.size(60.dp).background(Color(0xFF21172E), RoundedCornerShape(20.dp))
+                        .border(.5.dp, MangaroDesignSystem.GoldPrimary.copy(alpha = .3f), RoundedCornerShape(20.dp)),
                         contentAlignment = Alignment.Center) {
-                        Image(painterResource(R.drawable.ic_splash_logo), null, Modifier.size(48.dp), contentScale = ContentScale.Fit)
+                        Image(painterResource(R.drawable.ic_splash_logo), null, Modifier.size(46.dp), contentScale = ContentScale.Fit)
                     }
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("Mangaro", color = MangaroDesignSystem.GoldPrimary, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                        Text("قصصك، أينما كنت", color = Color(0xFFC6B9D2), style = MaterialTheme.typography.labelMedium)
+                        Text("Mangaro", color = MangaroDesignSystem.GoldPrimary,
+                            style = MaterialTheme.typography.titleLarge.copy(textDirection = androidx.compose.ui.text.style.TextDirection.Ltr),
+                            fontWeight = FontWeight.SemiBold)
+                        Text("مساحتك بين القرّاء", color = Color(0xFFB7A3C9), style = MaterialTheme.typography.labelMedium)
                     }
                 }
-                Text("خلّ قراءتك تكمل معك", color = Color(0xFFF5EFF9), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                Text("سجّل دخولك واحتفظ بمكتبتك وتقدمك، وتفاعل مع مجتمع القرّاء.",
-                    color = Color(0xFFC6B9D2), style = MaterialTheme.typography.bodyMedium)
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("قراءاتك، معك دائمًا", color = Color(0xFFF5EFF9), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    Text("سجّل دخولك لتحتفظ بقراءتك وتشارك مجتمع القرّاء.",
+                        color = Color(0xFFC6B9D2), style = MaterialTheme.typography.bodyMedium)
+                }
             }
         }
-        Column(Modifier.padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            GuestAccountBenefit(Icons.Outlined.Bookmarks, "مكتبتك معك", "عد إلى أعمالك المفضلة من أجهزتك.")
-            GuestAccountBenefit(Icons.Outlined.ChatBubbleOutline, "شارك رأيك وتقييماتك", "تحدّث عن القصص مع مجتمع القرّاء.")
-            GuestAccountBenefit(Icons.Outlined.Sync, "احتفظ بتقدم القراءة", "أكمل من حيث توقفت.")
+        Column(Modifier.fillMaxWidth().background(Color(0xFF1D1625), RoundedCornerShape(22.dp))
+            .padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            GuestAccountBenefit(Icons.Outlined.Bookmarks, "مزامنة مكتبتك وتقدّم القراءة")
+            GuestAccountBenefit(Icons.Outlined.ChatBubbleOutline, "المشاركة بالتعليقات والتقييمات")
+            GuestAccountBenefit(Icons.Outlined.Sync, "استعادة بياناتك على أجهزتك الأخرى")
         }
     }
 }
 
 @Composable
-private fun GuestAccountBenefit(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, description: String) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically,
+private fun GuestAccountBenefit(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Box(Modifier.size(40.dp).background(Color(0xFF24192F), RoundedCornerShape(13.dp)), contentAlignment = Alignment.Center) {
-            Icon(icon, null, Modifier.size(20.dp), tint = Color(0xFFD1B4E9))
+        Box(Modifier.size(36.dp).background(Brush.linearGradient(listOf(Color(0xFF362440), Color(0xFF291D34))),
+            RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
+            Icon(icon, null, Modifier.size(18.dp), tint = Color(0xFFD1B4E9))
         }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(label, color = Color(0xFFE7DDEE), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
-            Text(description, color = Color(0xFFAA9AB8), style = MaterialTheme.typography.bodySmall)
-        }
+        Text(label, Modifier.weight(1f), color = Color(0xFFE7DDEE), style = MaterialTheme.typography.bodyMedium)
     }
 }
 
@@ -326,10 +330,12 @@ private fun AccountProfileEditor(
         avatar = { AccountAvatar(profile, Modifier.fillMaxSize().clip(RoundedCornerShape(20.dp)).background(MangaroDesignSystem.SurfaceHigh)) },
         action = {
             TextButton(enabled = !submitting, onClick = { editing = true },
-                modifier = Modifier.heightIn(min = 48.dp),
-                contentPadding = PaddingValues(horizontal = 14.dp), shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFE3D5EF), containerColor = Color(0xFF30213E))) {
-                Text("تعديل الملف", style = MaterialTheme.typography.labelMedium)
+                modifier = Modifier.heightIn(min = 48.dp)
+                    .border(.5.dp, Color(0xFF9D7ABC).copy(alpha = .25f), RoundedCornerShape(14.dp)),
+                contentPadding = PaddingValues(horizontal = 12.dp), shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFE3D5EF), containerColor = Color(0xFF291D35))) {
+                Icon(Icons.Outlined.Edit, null, Modifier.size(16.dp))
+                Text("تعديل الملف", Modifier.padding(start = 6.dp), style = MaterialTheme.typography.labelMedium)
             }
         },
     ) {
@@ -340,12 +346,11 @@ private fun AccountProfileEditor(
                 color = rankAccent(profile.level), style = MaterialTheme.typography.labelMedium)
         }
     }
-    ProfileShowcaseControls(profile, account)
     AccountProfileStatistics(profile.userId, account)
-    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), color = MangaroDesignSystem.SurfaceDark) {
-        Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp), color = Color(0xFF1B1523)) {
+        Column(Modifier.padding(horizontal = 18.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("الخبرة", style = MaterialTheme.typography.titleSmall, color = Color.White)
+                Text("تقدّم المستوى", style = MaterialTheme.typography.titleSmall, color = Color.White, fontWeight = FontWeight.SemiBold)
                 Text("Lv.${profile.level}", style = MaterialTheme.typography.labelMedium.copy(textDirection = androidx.compose.ui.text.style.TextDirection.Ltr), color = rankAccent(profile.level))
             }
             if (profile.level == MangaroRanks.MAX_LEVEL) {
@@ -364,6 +369,7 @@ private fun AccountProfileEditor(
             Text("إجمالي الخبرة: ${profile.xp} XP", color = muted, style = MaterialTheme.typography.labelSmall)
         }
     }
+    ProfileShowcaseControls(profile, account)
     if (editing) {
         ModalBottomSheet(onDismissRequest = { editing = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
             containerColor = MangaroDesignSystem.SurfaceDark) {
@@ -423,7 +429,8 @@ private fun AccountProfileEditor(
     // Email remains confined to the owner's Account screen, below the primary profile content.
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text("معلومات الحساب", color = secondary, style = MaterialTheme.typography.titleSmall)
-        profile.email?.let { Text(it, color = muted, style = MaterialTheme.typography.bodySmall) }
+        profile.email?.let { Text(it, color = muted,
+            style = MaterialTheme.typography.bodySmall.copy(textDirection = androidx.compose.ui.text.style.TextDirection.Ltr)) }
     }
     TextButton(enabled = !submitting, onClick = { onAction { account.auth.signOut(); AccountOperation.Completed } },
         colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFC69BA7))) { Text("تسجيل الخروج") }
@@ -603,7 +610,7 @@ internal fun ProfileAvatar(avatarUrl: String?, googleAvatarUrl: String? = null, 
 fun AccountRequiredPrompt(onDismiss: () -> Unit, onAccount: () -> Unit, profileIncomplete: Boolean = false) {
     AlertDialog(onDismissRequest = onDismiss, containerColor = MangaroDesignSystem.SurfaceDark,
         title = { Text(if (profileIncomplete) "أكمل ملفك الشخصي للمشاركة" else "سجّل دخولك للمشاركة") },
-        text = { Text("التعليقات والتقييمات ونظام المستوى متاحة لأعضاء Mangaro.") },
+        text = { Text(if (profileIncomplete) "اختر اسم مستخدم لتشارك رأيك مع القرّاء." else "انضم إلى القرّاء وشارك تعليقاتك وتقييماتك.") },
         confirmButton = { TextButton(onClick = { onDismiss(); onAccount() }) { Text(if (profileIncomplete) "إكمال الملف الشخصي" else "المتابعة باستخدام Google") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("ليس الآن") } })
 }

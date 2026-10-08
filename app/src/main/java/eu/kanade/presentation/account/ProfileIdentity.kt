@@ -19,6 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.dp
 import mihon.domain.account.*
+import tachiyomi.core.common.util.lang.WesternDigits
 
 internal fun rankAccent(level: Int) = Color(RankVisuals.resolve(level).primary)
 
@@ -61,26 +62,35 @@ internal fun RankCoverAccent(level: Int, modifier: Modifier = Modifier) {
 internal fun DeveloperBadge(role: AccountRole, compact: Boolean = false) {
     if (role != AccountRole.DEVELOPER) return
     val style = RankVisuals.resolve(30)
-    Row(Modifier.background(Color(style.surface),RoundedCornerShape(7.dp))
-        .border(.5.dp,Color(style.secondary).copy(alpha=.55f),RoundedCornerShape(7.dp))
+    Row(Modifier.background(Color(style.secondary).copy(alpha = .08f),RoundedCornerShape(8.dp))
+        .border(.5.dp,Color(style.secondary).copy(alpha=.22f),RoundedCornerShape(8.dp))
         .padding(horizontal=7.dp,vertical=3.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(4.dp)) {
-        Text("M",color=Color(style.secondary),fontWeight=FontWeight.Bold,style=MaterialTheme.typography.labelSmall)
-        Text(if(compact) "مطور" else "مطور Mangaro",color=Color(style.primary),style=MaterialTheme.typography.labelSmall)
+        Text(if(compact) "المطور" else "مطور Mangaro",color=Color(style.secondary),style=MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Medium)
     }
 }
 
 @Composable
-internal fun RankIdentity(level: Int, prominent: Boolean = false) {
+internal fun RankIdentity(level: Int, prominent: Boolean = false, compact: Boolean = false) {
     val style = RankVisuals.resolve(level)
     if (prominent) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            RankEmblem(level, Modifier.size(44.dp), animated = true)
-            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            RankEmblem(level, Modifier.size(48.dp), animated = true)
+            Column(Modifier.weight(1f, fill = false), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(MangaroRanks.titleFor(level), color = Color(style.primary), style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold)
-                Text(if (style.isMax) "Lv.$level · MAX" else "Lv.$level", color = Color(0xFFB7A9C4),
-                    style = MaterialTheme.typography.labelSmall.copy(textDirection = TextDirection.Ltr))
+                Text("المستوى ${WesternDigits.isolate(level.toString())}" + if (style.isMax) " · المستوى الأقصى" else "",
+                    color = Color(0xFFB7A9C4), style = MaterialTheme.typography.labelSmall)
             }
+        }
+        return
+    }
+    if (compact) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalArrangement = Arrangement.spacedBy(2.dp),
+            itemVerticalAlignment = Alignment.CenterVertically) {
+            RankEmblem(level, Modifier.size(20.dp))
+            Text(MangaroRanks.titleFor(level), color = Color(style.primary), style = MaterialTheme.typography.labelSmall)
+            Text("· ${WesternDigits.isolate("Lv.$level")}", color = Color(0xFFAF9CBE), style = MaterialTheme.typography.labelSmall)
         }
         return
     }
