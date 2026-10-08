@@ -62,6 +62,7 @@ import eu.kanade.tachiyomi.util.system.copyToClipboard
 import kotlinx.datetime.toJavaLocalDate
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
+import tachiyomi.core.common.util.lang.WesternDigits
 import java.time.format.DateTimeFormatter
 
 @Composable
@@ -102,7 +103,7 @@ fun TrackInfoDialogHome(
                         val totalChapters = item.track.totalChapters
                         if (totalChapters > 0) {
                             // Add known total chapter count
-                            "$it / $totalChapters"
+                            WesternDigits.isolate("$it / $totalChapters")
                         } else {
                             it
                         }
@@ -113,12 +114,12 @@ fun TrackInfoDialogHome(
                     onScoreClick = { onScoreClick(item) }
                         .takeIf { supportsScoring },
                     startDate = remember(item.track.startDate) {
-                        dateFormat.format(item.track.startDate.toLocalDate().toJavaLocalDate())
+                        WesternDigits.dateTimeFormat(dateFormat).format(item.track.startDate.toLocalDate().toJavaLocalDate())
                     }
                         .takeIf { supportsReadingDates && item.track.startDate != 0L },
                     onStartDateClick = { onStartDateEdit(item) } // TODO
                         .takeIf { supportsReadingDates },
-                    endDate = dateFormat.format(item.track.finishDate.toJavaLocalDate())
+                    endDate = WesternDigits.dateTimeFormat(dateFormat).format(item.track.finishDate.toJavaLocalDate())
                         .takeIf { supportsReadingDates && item.track.finishDate != 0L },
                     onEndDateClick = { onEndDateEdit(item) }
                         .takeIf { supportsReadingDates },

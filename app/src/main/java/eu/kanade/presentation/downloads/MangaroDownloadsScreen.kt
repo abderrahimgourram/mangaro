@@ -32,6 +32,7 @@ import eu.kanade.tachiyomi.ui.download.MangaroDownloadsViewModel.CompletedChapte
 import eu.kanade.tachiyomi.ui.download.MangaroDownloadsViewModel.Queued
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.manga.model.asMangaCover
+import tachiyomi.core.common.util.lang.WesternDigits
 
 private val Gold = MangaroDesignSystem.GoldPrimary
 private val Secondary = Color(0xFFB6A7C6)
@@ -291,4 +292,4 @@ private fun CompletedMangaRow(group: CompletedGroup, expanded: Boolean, onExpand
 }
 
 @Composable
-private fun sizeLabel(bytes: Long): String = Formatter.formatShortFileSize(LocalContext.current, bytes)
+private fun sizeLabel(bytes: Long): String = WesternDigits.normalize(Formatter.formatShortFileSize(LocalContext.current, bytes))

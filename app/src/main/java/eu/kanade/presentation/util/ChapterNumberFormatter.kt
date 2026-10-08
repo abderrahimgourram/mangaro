@@ -1,12 +1,8 @@
 package eu.kanade.presentation.util
 
-import java.text.DecimalFormat
-import java.text.DecimalFormatSymbols
+import tachiyomi.core.common.util.lang.WesternDigits
 
-private val formatter = DecimalFormat(
-    "#.###",
-    DecimalFormatSymbols().apply { decimalSeparator = '.' },
-)
+private val formatter = WesternDigits.decimalFormat("#.###")
 
 fun formatChapterNumber(chapterNumber: Double): String {
     return formatter.format(chapterNumber)

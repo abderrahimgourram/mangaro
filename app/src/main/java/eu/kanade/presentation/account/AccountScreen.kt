@@ -100,6 +100,7 @@ import mihon.domain.account.AccountSession
 import mihon.domain.account.MangaroRanks
 import mihon.domain.account.MangaroLevelProgress
 import mihon.domain.account.MangaroProfile
+import tachiyomi.core.common.util.lang.WesternDigits
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
@@ -372,7 +373,7 @@ private fun AccountProfileEditor(
                 available?.let { Text(if (it) "اسم المستخدم متاح" else "اسم المستخدم غير متاح", style = MaterialTheme.typography.labelSmall,
                     color = if (it) secondary else MaterialTheme.colorScheme.error) }
                 OutlinedTextField(bio, { bio = it }, label = { Text("نبذة عنك") }, colors = fieldColors,
-                    supportingText = { Text("${bio.trim().codePointCount(0, bio.trim().length)} / 160") },
+                    supportingText = { Text(WesternDigits.isolate("${bio.trim().codePointCount(0, bio.trim().length)} / 160")) },
                     enabled = !submitting, minLines = 2, maxLines = 4, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp))
                 if (validation != null && username.isNotEmpty()) Text(validation, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {

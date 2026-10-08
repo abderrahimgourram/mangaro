@@ -37,10 +37,10 @@ import tachiyomi.domain.library.model.LibraryManga
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.i18n.MR
+import tachiyomi.core.common.util.lang.WesternDigits
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import java.math.RoundingMode
-import java.text.NumberFormat
 
 class LibraryUpdateNotifier(
     private val context: Context,
@@ -48,7 +48,7 @@ class LibraryUpdateNotifier(
     private val sourceManager: SourceManager = Injekt.get(),
 ) {
 
-    private val percentFormatter = NumberFormat.getPercentInstance().apply {
+    private val percentFormatter = WesternDigits.percentFormat().apply {
         roundingMode = RoundingMode.DOWN
         maximumFractionDigits = 0
     }

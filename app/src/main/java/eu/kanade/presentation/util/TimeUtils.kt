@@ -10,6 +10,7 @@ import tachiyomi.presentation.core.i18n.stringResource
 import kotlin.time.Clock
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
+import tachiyomi.core.common.util.lang.WesternDigits
 
 fun Duration.toDurationString(context: Context, fallback: String): String {
     return toComponents { days, hours, minutes, seconds, _ ->
@@ -35,6 +36,6 @@ fun relativeTimeSpanString(epochMillis: Long): String {
         now - epochMillis < 1.minutes.inWholeMilliseconds -> stringResource(
             MR.strings.updates_last_update_info_just_now,
         )
-        else -> DateUtils.getRelativeTimeSpanString(epochMillis, now, DateUtils.MINUTE_IN_MILLIS).toString()
+        else -> WesternDigits.normalize(DateUtils.getRelativeTimeSpanString(epochMillis, now, DateUtils.MINUTE_IN_MILLIS).toString())
     }
 }

@@ -32,6 +32,7 @@ import mihon.domain.account.*
 import tachiyomi.domain.manga.interactor.GetLibraryManga
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.manga.model.asMangaCover
+import tachiyomi.core.common.util.lang.WesternDigits
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
@@ -87,7 +88,7 @@ internal fun ProfileShowcaseControls(profile: MangaroProfile, account: AccountFo
             }
             Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                 RankEmblem(profile.level,Modifier.size(20.dp))
-                Text("${snapshot?.favorites?.size ?: 0} / $slots أعمال",color=accent,style=MaterialTheme.typography.labelMedium)
+                Text("${WesternDigits.isolate("${snapshot?.favorites?.size ?: 0} / $slots")} أعمال",color=accent,style=MaterialTheme.typography.labelMedium)
                 Text("حتى 3 أعمال مميزة",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if(snapshot?.enabled==true && snapshot?.favorites.orEmpty().isNotEmpty()) {
@@ -123,8 +124,8 @@ internal fun ProfileShowcaseControls(profile: MangaroProfile, account: AccountFo
             Text("تظهر الأعمال المختارة والعدد الإجمالي للفصول المحفوظة في حسابك فقط. يبقى سجل القراءة والموضع خاصين.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
             Row(Modifier.padding(vertical=10.dp),horizontalArrangement=Arrangement.spacedBy(10.dp),verticalAlignment=Alignment.CenterVertically) {
                 RankEmblem(profile.level,Modifier.size(22.dp))
-                Text("${draft.keys.size} / $slots أعمال",color=accent,style=MaterialTheme.typography.labelLarge)
-                Text("${draft.featured.size} / 3 مميزة",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("${WesternDigits.isolate("${draft.keys.size} / $slots")} أعمال",color=accent,style=MaterialTheme.typography.labelLarge)
+                Text("${WesternDigits.isolate("${draft.featured.size} / 3")} مميزة",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
             }
             error?.let { Text(it,color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall) }
             if(preview) {

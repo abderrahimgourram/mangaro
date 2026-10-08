@@ -15,6 +15,7 @@ import okio.sink
 import okio.source
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.chapter.model.Chapter
+import tachiyomi.core.common.util.lang.WesternDigits
 import java.io.File
 import java.io.IOException
 
@@ -54,7 +55,7 @@ class ChapterCache(
      * Returns real size of directory in human readable format.
      */
     val readableSize: String
-        get() = Formatter.formatFileSize(context, realSize)
+        get() = WesternDigits.normalize(Formatter.formatFileSize(context, realSize))
 
     /**
      * Get page list from cache.

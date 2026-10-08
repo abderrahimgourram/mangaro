@@ -24,9 +24,9 @@ import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.SectionCard
 import tachiyomi.presentation.core.components.material.padding
 import tachiyomi.presentation.core.i18n.stringResource
-import java.util.Locale
 import kotlin.time.DurationUnit
 import kotlin.time.toDuration
+import tachiyomi.core.common.util.lang.WesternDigits
 
 @Composable
 fun StatsScreenContent(
@@ -138,7 +138,7 @@ private fun LazyItemScope.TrackerStats(
     val meanScoreStr = remember(data.trackedTitleCount, data.meanScore) {
         if (data.trackedTitleCount > 0 && !data.meanScore.isNaN()) {
             // All other numbers are localized in English
-            "%.2f ★".format(Locale.ENGLISH, data.meanScore)
+            WesternDigits.format("%.2f ★", data.meanScore)
         } else {
             notApplicable
         }

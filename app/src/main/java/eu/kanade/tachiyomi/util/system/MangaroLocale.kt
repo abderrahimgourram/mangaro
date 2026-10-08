@@ -3,10 +3,11 @@ package eu.kanade.tachiyomi.util.system
 import android.content.Context
 import android.content.res.Configuration
 import android.os.LocaleList
+import tachiyomi.core.common.util.lang.WesternDigits
 import java.util.Locale
 
 object MangaroLocale {
-    val arabic: Locale = Locale.forLanguageTag("ar")
+    val arabic: Locale = WesternDigits.numberingLocale(Locale.forLanguageTag("ar"))
 
     fun wrap(context: Context): Context = context.createConfigurationContext(
         Configuration(context.resources.configuration).apply {

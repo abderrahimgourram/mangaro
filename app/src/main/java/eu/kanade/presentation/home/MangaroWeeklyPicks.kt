@@ -27,7 +27,7 @@ import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.manga.components.MangaCover
 import eu.kanade.presentation.theme.MangaroDesignSystem
 import eu.kanade.tachiyomi.ui.home.WeeklyPicksState
-import java.util.Locale
+import tachiyomi.core.common.util.lang.WesternDigits
 
 @Composable
 internal fun MangaroWeeklyPicks(state: WeeklyPicksState, onOpen: (Long) -> Unit, onRetry: () -> Unit) {
@@ -90,7 +90,7 @@ internal fun MangaroWeeklyPicks(state: WeeklyPicksState, onOpen: (Long) -> Unit,
                                 val rating = card.rating
                                 Text(
                                     if (rating != null) {
-                                        "\u2066★ ${String.format(Locale.ROOT, "%.1f", rating.average)}\u2069 · \u2066${rating.count}\u2069 تقييم"
+                                        "\u2066★ ${WesternDigits.format("%.1f", rating.average)}\u2069 · \u2066${rating.count}\u2069 تقييم"
                                     } else {
                                         "اختيار الأسبوع"
                                     },

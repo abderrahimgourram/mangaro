@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderOrientation
 import eu.kanade.tachiyomi.ui.reader.setting.ReadingMode
+import tachiyomi.core.common.util.lang.WesternDigits
 
 @Composable
 fun MangaroReaderBottomPanel(
@@ -169,7 +170,7 @@ fun MangaroReaderBottomPanel(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Text(
-                        text = "$safeCurrentPage / $safeTotalPages",
+                        text = WesternDigits.isolate("$safeCurrentPage / $safeTotalPages"),
                         style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                         color = MaterialTheme.colorScheme.primary,
                     )

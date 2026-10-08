@@ -107,8 +107,8 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
             mihon.domain.source.health.SourceHealthMonitor.shared.expectCatalogue(it.id)
         }
 
-        // Enforce Arabic as the sole application language
-        AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags("ar"))
+        // Arabic UI and RTL, with Western digits; never change the device locale.
+        AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(eu.kanade.tachiyomi.util.system.MangaroLocale.arabic.toLanguageTag()))
 
         setupNotificationChannels()
 

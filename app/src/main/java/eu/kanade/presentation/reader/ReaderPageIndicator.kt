@@ -14,6 +14,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.sp
 import eu.kanade.presentation.theme.TachiyomiPreviewTheme
+import tachiyomi.core.common.util.lang.WesternDigits
 
 @Composable
 fun ReaderPageIndicator(
@@ -23,7 +24,7 @@ fun ReaderPageIndicator(
 ) {
     if (currentPage <= 0 || totalPages <= 0) return
 
-    val text = "$currentPage / $totalPages"
+    val text = WesternDigits.isolate("$currentPage / $totalPages")
 
     val style = TextStyle(
         color = Color(235, 235, 235),

@@ -39,7 +39,7 @@ import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import mihon.domain.account.AccountSession
-import java.text.SimpleDateFormat
+import tachiyomi.core.common.util.lang.WesternDigits
 import java.util.Date
 import java.util.Locale
 import kotlin.time.Instant
@@ -135,4 +135,4 @@ class NotificationCenterScreen : Screen() {
         if (unread) Box(Modifier.size(6.dp).clip(RoundedCornerShape(3.dp)).background(MangaroDesignSystem.GoldPrimary))
     }
 }
-internal fun inboxTime(millis: Long): String = if (millis > 0) SimpleDateFormat("d MMM، HH:mm", Locale("ar")).format(Date(millis)) else ""
+internal fun inboxTime(millis: Long): String = if (millis > 0) WesternDigits.timestamp(Date(millis), "d MMM، HH:mm", Locale("ar")) else ""

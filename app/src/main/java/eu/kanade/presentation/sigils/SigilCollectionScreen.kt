@@ -33,9 +33,9 @@ import mihon.domain.sigils.*
 import mihon.domain.account.AccountFoundation
 import mihon.domain.account.AccountSession
 import tachiyomi.presentation.core.components.material.Scaffold
+import tachiyomi.core.common.util.lang.WesternDigits
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
-import java.text.DateFormat
 import java.util.Date
 
 class SigilCollectionScreen(private val initialBadgeId: String? = null) : Screen() {
@@ -109,7 +109,7 @@ class SigilCollectionScreen(private val initialBadgeId: String? = null) : Screen
 
 @Composable private fun LtrNumber(text: String,modifier: Modifier=Modifier) {
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-        Text("\u2066$text\u2069",modifier,color=Color(0xFFD4C5E0),style=MaterialTheme.typography.labelLarge,textAlign=TextAlign.Center)
+        Text(WesternDigits.isolate(text),modifier,color=Color(0xFFD4C5E0),style=MaterialTheme.typography.labelLarge,textAlign=TextAlign.Center)
     }
 }
 
@@ -131,7 +131,7 @@ class SigilCollectionScreen(private val initialBadgeId: String? = null) : Screen
                 Text("التصنيفات الشخصية: ${facts.count {it.kind=="category"}.coerceAtMost(3)} من 3 · الأعمال المنظمة: ${facts.count {it.kind=="work" && it.organized}.coerceAtMost(10)} من 10",color=Color(0xFFB7A9C4),style=MaterialTheme.typography.bodySmall)
             }
             unlock?.let {
-                Text(it.unlockedAt?.let {date->"فُتح في ${DateFormat.getDateInstance().format(Date(date))}"} ?: "مكتسب من سجلات موثوقة؛ تاريخ الفتح الأصلي غير معروف",color=Color(0xFF9F90AC),style=MaterialTheme.typography.bodySmall,textAlign=TextAlign.Center)
+                Text(it.unlockedAt?.let {date->"فُتح في ${WesternDigits.date(Date(date))}"} ?: "مكتسب من سجلات موثوقة؛ تاريخ الفتح الأصلي غير معروف",color=Color(0xFF9F90AC),style=MaterialTheme.typography.bodySmall,textAlign=TextAlign.Center)
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                     repeat(3) {slot ->
                         val occupied=snapshot.slots[slot];val equipped=occupied==definition.id

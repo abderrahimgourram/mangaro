@@ -21,7 +21,7 @@ import tachiyomi.presentation.core.components.SettingsChipRow
 import tachiyomi.presentation.core.components.SliderItem
 import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.presentation.core.util.collectAsState
-import java.text.NumberFormat
+import tachiyomi.core.common.util.lang.WesternDigits
 
 @Composable
 internal fun ColumnScope.ReadingModePage(viewModel: ReaderSettingsViewModel) {
@@ -137,7 +137,7 @@ private fun ColumnScope.PagerViewerSettings(viewModel: ReaderSettingsViewModel) 
 
 @Composable
 private fun ColumnScope.WebtoonViewerSettings(viewModel: ReaderSettingsViewModel) {
-    val numberFormat = remember { NumberFormat.getPercentInstance() }
+    val numberFormat = remember { WesternDigits.percentFormat() }
 
     HeadingItem(MR.strings.webtoon_viewer)
 

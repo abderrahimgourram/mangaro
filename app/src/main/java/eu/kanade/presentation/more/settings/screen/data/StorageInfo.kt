@@ -20,6 +20,7 @@ import tachiyomi.presentation.core.components.material.padding
 import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.presentation.core.theme.header
 import tachiyomi.presentation.core.util.secondaryItemAlpha
+import tachiyomi.core.common.util.lang.WesternDigits
 import java.io.File
 
 @Composable
@@ -46,9 +47,9 @@ private fun StorageInfo(
     val context = LocalContext.current
 
     val available = remember(file) { DiskUtil.getAvailableStorageSpace(file) }
-    val availableText = remember(available) { Formatter.formatFileSize(context, available) }
+    val availableText = remember(available) { WesternDigits.normalize(Formatter.formatFileSize(context, available)) }
     val total = remember(file) { DiskUtil.getTotalStorageSpace(file) }
-    val totalText = remember(total) { Formatter.formatFileSize(context, total) }
+    val totalText = remember(total) { WesternDigits.normalize(Formatter.formatFileSize(context, total)) }
 
     Column(
         verticalArrangement = Arrangement.spacedBy(MaterialTheme.padding.extraSmall),

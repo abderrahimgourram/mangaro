@@ -9,8 +9,8 @@ import eu.kanade.tachiyomi.data.track.kitsu.dto.KitsuOAuth
 import eu.kanade.tachiyomi.data.track.model.TrackSearch
 import kotlinx.serialization.json.Json
 import tachiyomi.i18n.MR
+import tachiyomi.core.common.util.lang.WesternDigits
 import uy.kohesive.injekt.injectLazy
-import java.text.DecimalFormat
 import tachiyomi.domain.track.model.Track as DomainTrack
 
 class Kitsu(id: Long) : BaseTracker(id, "Kitsu"), DeletableTracker {
@@ -55,7 +55,7 @@ class Kitsu(id: Long) : BaseTracker(id, "Kitsu"), DeletableTracker {
     override fun getCompletionStatus(): Long = COMPLETED
 
     override fun getScoreList(): List<String> {
-        val df = DecimalFormat("0.#")
+        val df = WesternDigits.decimalFormat("0.#")
         return (listOf("0") + IntRange(2, 20).map { df.format(it / 2f) })
     }
 
@@ -64,7 +64,7 @@ class Kitsu(id: Long) : BaseTracker(id, "Kitsu"), DeletableTracker {
     }
 
     override fun displayScore(track: DomainTrack): String {
-        val df = DecimalFormat("0.#")
+        val df = WesternDigits.decimalFormat("0.#")
         return df.format(track.score)
     }
 

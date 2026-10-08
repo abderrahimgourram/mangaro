@@ -5,7 +5,6 @@ import eu.kanade.presentation.account.RankIdentity
 import eu.kanade.presentation.account.TierAvatarFrame
 import eu.kanade.presentation.account.rankAccent
 import androidx.compose.foundation.border
-
 import android.text.format.DateUtils
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.animateColorAsState
@@ -67,6 +66,7 @@ import mihon.domain.community.*
 import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.chapter.service.ChapterIdentity
 import tachiyomi.domain.manga.model.Manga
+import tachiyomi.core.common.util.lang.WesternDigits
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import java.io.Serializable
@@ -422,7 +422,7 @@ private fun CommunityRatingOverview(snapshot: CommunitySnapshot, enabled: Boolea
             Text("التقييم", color = Color(0xFFB7A9C4), style = MaterialTheme.typography.labelSmall)
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(summary?.average?.let { "%.1f".format(it) } ?: "—", color = Color.White,
+                    Text(summary?.average?.let { WesternDigits.format("%.1f", it) } ?: "—", color = Color.White,
                         style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                     Text("/ 5", color = Color(0xFF9F90AC), style = MaterialTheme.typography.labelSmall)
                 }
@@ -549,7 +549,7 @@ fun MangaroComment(comment: CommunityComment, enabled: Boolean = true, onLike: (
     replyTo: CommunityComment? = null, onAuthor: () -> Unit,
 ) {
     val time = remember(comment.createdAt, comment.updatedAt) {
-        DateUtils.getRelativeTimeSpanString(comment.createdAt, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS).toString()
+        WesternDigits.normalize(DateUtils.getRelativeTimeSpanString(comment.createdAt, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS).toString())
     }
     var menu by remember(comment.id) { mutableStateOf(false) }
     val avatarInteraction = remember(comment.id) { MutableInteractionSource() }

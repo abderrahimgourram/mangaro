@@ -11,6 +11,7 @@ import androidx.compose.ui.unit.dp
 import mihon.domain.account.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import tachiyomi.core.common.util.lang.WesternDigits
 
 /** Quiet infrastructure utility; only an actual account-binding ambiguity asks for a decision. */
 @Composable
@@ -47,7 +48,7 @@ fun CloudSyncControls(userId: String, repository: AccountCloudSync) {
             }) {Text(if(status.needsMerge) "دمج مع هذا الحساب" else "مزامنة الآن",style=MaterialTheme.typography.labelSmall)}
         }
         status.lastSuccess?.let { time ->
-            val formatted=remember(time,context) {DateUtils.formatDateTime(context,time,DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_SHOW_TIME or DateUtils.FORMAT_ABBREV_ALL)}
+            val formatted=remember(time,context) {WesternDigits.normalize(DateUtils.formatDateTime(context,time,DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_SHOW_TIME or DateUtils.FORMAT_ABBREV_ALL))}
             Text("آخر مزامنة: $formatted",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         }
         message?.let {Text(it,style=MaterialTheme.typography.labelSmall)}

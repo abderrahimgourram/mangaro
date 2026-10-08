@@ -12,7 +12,7 @@ import kotlinx.datetime.toLocalDateTime
 import tachiyomi.core.common.i18n.pluralStringResource
 import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.i18n.MR
-import java.text.DateFormat
+import tachiyomi.core.common.util.lang.WesternDigits
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.util.Date
@@ -22,13 +22,13 @@ import kotlin.time.Instant
 
 fun LocalDateTime.toDateTimestampString(dateTimeFormatter: DateTimeFormatter): String {
     val javaLocalDateTime = this.toJavaLocalDateTime()
-    val date = dateTimeFormatter.format(javaLocalDateTime)
-    val time = DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT).format(javaLocalDateTime)
+    val date = WesternDigits.dateTimeFormat(dateTimeFormatter).format(javaLocalDateTime)
+    val time = WesternDigits.dateTimeFormat(DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT)).format(javaLocalDateTime)
     return "$date $time"
 }
 
 fun Date.toTimestampString(): String {
-    return DateFormat.getTimeInstance(DateFormat.SHORT).format(this)
+    return WesternDigits.time(this)
 }
 
 fun Long.convertEpochMillisZone(
@@ -54,13 +54,14 @@ fun LocalDate.toRelativeString(
     relative: Boolean = true,
     dateFormat: DateTimeFormatter = DateTimeFormatter.ofLocalizedDate(FormatStyle.SHORT),
 ): String {
+    val displayFormat = WesternDigits.dateTimeFormat(dateFormat)
     if (!relative) {
-        return dateFormat.format(this.toJavaLocalDate())
+        return displayFormat.format(this.toJavaLocalDate())
     }
     val today = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
     val difference = this.daysUntil(today)
     return when {
-        difference < -7 -> dateFormat.format(this.toJavaLocalDate())
+        difference < -7 -> displayFormat.format(this.toJavaLocalDate())
         difference < 0 -> context.pluralStringResource(
             MR.plurals.upcoming_relative_time,
             difference.absoluteValue,
@@ -74,6 +75,6 @@ fun LocalDate.toRelativeString(
             difference,
         )
 
-        else -> dateFormat.format(this.toJavaLocalDate())
+        else -> displayFormat.format(this.toJavaLocalDate())
     }
 }

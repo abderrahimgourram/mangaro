@@ -8,6 +8,7 @@ import eu.kanade.tachiyomi.data.track.Tracker
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.core.common.preference.Preference as PreferenceData
+import tachiyomi.core.common.util.lang.WesternDigits
 
 sealed class Preference {
     abstract val title: String
@@ -71,7 +72,7 @@ sealed class Preference {
             override val title: String,
             override val subtitle: String? = "%s",
             val subtitleProvider: @Composable (value: T, entries: Map<T, String>) -> String? =
-                { v, e -> subtitle?.format(e[v]) },
+                { v, e -> subtitle?.let { WesternDigits.format(it, e[v]) } },
             override val icon: ImageVector? = null,
             override val enabled: Boolean = true,
             override val onValueChanged: suspend (value: T) -> Boolean = { true },
@@ -93,7 +94,7 @@ sealed class Preference {
             override val title: String,
             override val subtitle: String? = "%s",
             val subtitleProvider: @Composable (value: String, entries: Map<String, String>) -> String? =
-                { v, e -> subtitle?.format(e[v]) },
+                { v, e -> subtitle?.let { WesternDigits.format(it, e[v]) } },
             override val icon: ImageVector? = null,
             override val enabled: Boolean = true,
             override val onValueChanged: suspend (value: String) -> Unit = {},
@@ -117,7 +118,7 @@ sealed class Preference {
                             .takeUnless { it.isBlank() }
                     }
                         ?: stringResource(MR.strings.none)
-                    subtitle?.format(combined)
+                    subtitle?.let { WesternDigits.format(it, combined) }
                 },
             override val icon: ImageVector? = null,
             override val enabled: Boolean = true,
