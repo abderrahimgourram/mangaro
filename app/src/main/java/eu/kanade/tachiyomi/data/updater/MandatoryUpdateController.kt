@@ -69,13 +69,13 @@ internal class MandatoryUpdateController private constructor() :
         if (!mandatory && activity !is MainActivity) return
         if (activity.isFinishing || activity.isDestroyed) return
         val builder = AlertDialog.Builder(activity)
-            .setTitle(if (mandatory) "تحديث مطلوب" else "تحديث جديد متاح")
+            .setTitle(if (mandatory) "تحديث جديد لمانجارو" else "تحديث جديد متاح")
             .setMessage(
-                (if (mandatory) "يتوفر إصدار جديد من Mangaro ويجب تحديث التطبيق للمتابعة."
+                (if (mandatory) "نسخة جديدة بانتظارك، بتجربة أجمل وأداء أفضل. حدّث مانجارو لمتابعة القراءة."
                 else "يتوفر إصدار جديد من Mangaro. حدّث التطبيق للحصول على أحدث الإصلاحات والتحسينات.") +
                     "\n\nالإصدار ${config.latestVersionName}",
             )
-            .setPositiveButton("تحديث الآن", null)
+            .setPositiveButton(if (mandatory) "تحديث مانجارو" else "تحديث الآن", null)
         if (mandatory) builder.setNeutralButton("إعادة المحاولة", null)
         else builder.setNegativeButton("لاحقًا") { _, _ -> }
         val updateDialog = builder.create()

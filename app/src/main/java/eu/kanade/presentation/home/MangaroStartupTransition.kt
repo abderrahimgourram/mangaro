@@ -56,7 +56,7 @@ fun MangaroStartupTransition(ready: Boolean, onDismissed: () -> Unit, modifier: 
     visibility.targetState = !ready
     AnimatedVisibility(
         visibleState = visibility,
-        exit = fadeOut(tween(180)),
+        exit = fadeOut(tween(120)),
         modifier = modifier.fillMaxSize(),
     ) {
         Box(Modifier.fillMaxSize().background(Color(0xFF0F0B13)), contentAlignment = Alignment.Center) {
@@ -90,8 +90,8 @@ private fun LocalIntroVideo(playing: Boolean) {
             playback.release()
         }
     }
-    // Readiness is independent of decoding. Release immediately, retaining the TextureView's
-    // last frame only for the 180 ms fade; no player survives until the end of that transition.
+    // Pause at readiness, keeping the last frame stable during the short fade.
+    // Disposal releases the player and surface; decoding never delays dismissal.
     DisposableEffect(playback, playing) {
         playback.setEnabled(playing)
         onDispose { playback.setEnabled(false) }
@@ -161,16 +161,24 @@ private class IntroPlayback(private val context: Context) : TextureView.SurfaceT
 
     fun setEnabled(value: Boolean) {
         enabled = value
-        if (value) prepareIfNeeded() else release()
+        if (value) {
+            prepareIfNeeded()
+            startIfReady()
+        } else pauseIfPlaying()
     }
 
     fun setForeground(value: Boolean) {
         foreground = value
-        if (value) prepareIfNeeded() else release()
+        if (value) {
+            prepareIfNeeded()
+            startIfReady()
+        } else pauseIfPlaying()
     }
 
     private fun prepareIfNeeded() {
-        if (!enabled || !foreground || failed || ended || player != null || !view.isAvailable) return
+        // Prepare the local decoder as soon as the surface exists, alongside local startup.
+        // Playback still requires a foreground Activity; there is no network or minimum duration.
+        if (!enabled || failed || ended || player != null || !view.isAvailable) return
         try {
             val media = MediaPlayer()
             player = media
@@ -189,16 +197,14 @@ private class IntroPlayback(private val context: Context) : TextureView.SurfaceT
             }
             media.setOnPreparedListener {
                 if (player !== it) return@setOnPreparedListener
-                if (!enabled || !foreground) { release(); return@setOnPreparedListener }
+                if (!enabled) { release(); return@setOnPreparedListener }
                 try {
                     videoWidth = it.videoWidth
                     videoHeight = it.videoHeight
                     resize()
                     it.setVolume(0f, 0f)
                     prepared = true
-                    // A freshly prepared local player starts at zero; no seek/poster delay.
-                    it.start()
-                    Log.d("MangaroStartup", "Intro prepared and started; isPlaying=${it.isPlaying}")
+                    startIfReady()
                 } catch (_: Exception) { fail() }
             }
             media.setOnCompletionListener {
@@ -211,6 +217,24 @@ private class IntroPlayback(private val context: Context) : TextureView.SurfaceT
                 true
             }
             media.prepareAsync()
+        } catch (_: Exception) { fail() }
+    }
+
+    private fun startIfReady() {
+        val media = player ?: return
+        if (!enabled || !foreground || !prepared || surface == null || !view.isAvailable) return
+        try {
+            if (!media.isPlaying) {
+                media.start()
+                Log.d("MangaroStartup", "Intro playback started")
+            }
+        } catch (_: Exception) { fail() }
+    }
+
+    private fun pauseIfPlaying() {
+        val media = player ?: return
+        try {
+            if (prepared && media.isPlaying) media.pause()
         } catch (_: Exception) { fail() }
     }
 
@@ -244,7 +268,18 @@ private class IntroPlayback(private val context: Context) : TextureView.SurfaceT
         surface = null
     }
 
-    override fun onSurfaceTextureAvailable(texture: SurfaceTexture, width: Int, height: Int) = prepareIfNeeded()
+    override fun onSurfaceTextureAvailable(texture: SurfaceTexture, width: Int, height: Int) {
+        if (player == null) {
+            prepareIfNeeded()
+        } else {
+            try {
+                surface = Surface(texture)
+                player?.setSurface(surface)
+                resize()
+                startIfReady()
+            } catch (_: Exception) { fail() }
+        }
+    }
     override fun onSurfaceTextureSizeChanged(texture: SurfaceTexture, width: Int, height: Int) = resize()
     override fun onSurfaceTextureUpdated(texture: SurfaceTexture) {
         // Actual delivered frames, not an optional MEDIA_INFO callback, confirm video visibility.
@@ -257,10 +292,13 @@ private class IntroPlayback(private val context: Context) : TextureView.SurfaceT
         }
     }
     override fun onSurfaceTextureDestroyed(texture: SurfaceTexture): Boolean {
-        release()
-        ended = false
+        // A temporary surface loss must not restart the intro at zero on resume.
+        // Keep the paused player/position until this short-lived composable is disposed.
+        pauseIfPlaying()
+        try { player?.setSurface(null) } catch (_: Exception) { fail() }
+        surface?.release()
+        surface = null
         showFallback = true
-        frameLogged = false
         view.alpha = if (failed) 0f else 1f
         return true
     }

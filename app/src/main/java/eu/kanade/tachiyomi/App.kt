@@ -84,6 +84,9 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
 
     private val disableIncognitoReceiver = DisableIncognitoReceiver()
     private val usableFrame = FirstUsableFrameGate()
+    internal val updateHighlights by lazy {
+        eu.kanade.tachiyomi.data.updater.UpdateHighlightsState(Injekt.get<PreferenceStore>())
+    }
 
     override fun attachBaseContext(base: android.content.Context) {
         super.attachBaseContext(eu.kanade.tachiyomi.util.system.MangaroLocale.wrap(base))
@@ -211,6 +214,8 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
         } finally { android.os.Trace.endSection() }
     }
 
+    internal fun claimStartupIntro(): Boolean = usableFrame.claimIntro()
+
     internal fun onFirstUsableFrame() = usableFrame.open {
         val scope = ProcessLifecycleOwner.get().lifecycleScope
         scope.launch(Dispatchers.IO) {
@@ -231,6 +236,7 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
     private fun initializeMigrator() {
         val preferenceStore = Injekt.get<PreferenceStore>()
         val preference = preferenceStore.getInt(Preference.appStateKey("last_version_code"), 0)
+        updateHighlights.prepare(preference.get(), BuildConfig.VERSION_CODE)
         logcat { "Migration from ${preference.get()} to ${BuildConfig.VERSION_CODE}" }
         Migrator.initialize(
             old = preference.get(),

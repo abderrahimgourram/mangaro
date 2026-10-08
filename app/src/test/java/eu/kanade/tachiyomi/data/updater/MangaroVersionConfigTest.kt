@@ -22,11 +22,11 @@ class MangaroVersionConfigTest {
     }
 
     @Test fun `production minimum requires only older checker capable releases`() {
-        val release = config.replace("1.1.3", "1.20.6").replace(":12", ":16")
+        val release = config.replace("1.1.3", "1.20.7").replace(":12", ":17")
         val parsed = requireNotNull(MangaroVersionConfig.parse(release))
-        listOf(12, 13, 14, 15).forEach { parsed.requiresUpdate(it) shouldBe true }
-        parsed.requiresUpdate(16) shouldBe false
+        listOf(12, 13, 14, 15, 16).forEach { parsed.requiresUpdate(it) shouldBe true }
         parsed.requiresUpdate(17) shouldBe false
+        parsed.requiresUpdate(18) shouldBe false
     }
 
     @Test fun `invalid or missing config fails open`() {

@@ -44,6 +44,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -55,9 +56,11 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import androidx.core.splashscreen.SplashScreen
@@ -121,6 +124,7 @@ import tachiyomi.presentation.core.components.material.padding
 import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.presentation.core.util.collectAsState
 import uy.kohesive.injekt.injectLazy
+import java.util.concurrent.atomic.AtomicBoolean
 
 class MainActivity : BaseActivity() {
 
@@ -165,14 +169,33 @@ class MainActivity : BaseActivity() {
             return
         }
 
+        val playStartupIntro = (application as eu.kanade.tachiyomi.App).claimStartupIntro()
         setComposeContent {
             var localInitialized by remember { mutableStateOf(false) }
+            var navigationInitialized by remember { mutableStateOf(false) }
             var startupReady by remember { mutableStateOf(false) }
-            var showStartupOverlay by rememberSaveable { mutableStateOf(isLaunch) }
+            var showStartupOverlay by remember { mutableStateOf(playStartupIntro) }
+            val highlights = remember { (application as eu.kanade.tachiyomi.App).updateHighlights }
+            val highlightsVersion by highlights.pendingVersion.changes().collectAsState(initial = highlights.pendingVersion.get())
+            val view = LocalView.current
+            val destinationFramePosted = remember { AtomicBoolean(false) }
+            val markStartupReady = remember {
+                Runnable {
+                    startupReady = true
+                    ready = true
+                }
+            }
+            DisposableEffect(view) {
+                onDispose { view.removeCallbacks(markStartupReady) }
+            }
             LaunchedEffect(localInitialized, startupReady, showStartupOverlay) {
                 if (localInitialized && startupReady && !showStartupOverlay) {
                     withFrameNanos { }
                     (application as eu.kanade.tachiyomi.App).onFirstUsableFrame()
+                    if (!fullyDrawnReported) {
+                        fullyDrawnReported = true
+                        reportFullyDrawn()
+                    }
                 }
             }
             LaunchedEffect(Unit) {
@@ -185,7 +208,7 @@ class MainActivity : BaseActivity() {
                     lifecycleScope.launchIO { chapterCache.clear() }
                 }
             }
-            Box(Modifier.fillMaxSize()) {
+            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
                 if (localInitialized) {
                     val context = LocalContext.current
 
@@ -225,11 +248,9 @@ class MainActivity : BaseActivity() {
                                 // Reset Incognito Mode on relaunch
                                 preferences.incognitoMode.set(false)
                             }
-                            // Local migrations/settings have finished and root navigation is installed.
-                            // Home composes here and loads behind the intro independently.
-                            withFrameNanos { }
-                            startupReady = true
-                            ready = true
+                            // Local setup and intent routing are complete. The destination's draw,
+                            // rather than the start of a Compose frame, will finish the intro.
+                            navigationInitialized = true
                         }
                         LaunchedEffect(navigator.lastItem) {
                             (navigator.lastItem as? BrowseSourceScreen)?.sourceId
@@ -256,7 +277,17 @@ class MainActivity : BaseActivity() {
                                     navigator = navigator,
                                     modifier = Modifier
                                         .padding(contentPadding)
-                                        .consumeWindowInsets(contentPadding),
+                                        .consumeWindowInsets(contentPadding)
+                                        .drawWithContent {
+                                            drawContent()
+                                            if (navigationInitialized && size.width > 0 && size.height > 0 &&
+                                                destinationFramePosted.compareAndSet(false, true)
+                                            ) {
+                                                // Run after this traversal has drawn the real UI shell.
+                                                // Neither network data nor video decoding gates readiness.
+                                                view.post(markStartupReady)
+                                            }
+                                        },
                                 )
 
                                 // Draw navigation bar scrim when needed
@@ -302,17 +333,18 @@ class MainActivity : BaseActivity() {
                         }
                     }
                 }
-                if (showStartupOverlay || !localInitialized) {
+                if (showStartupOverlay) {
                     MangaroStartupTransition(
                         ready = localInitialized && startupReady,
                         onDismissed = {
                             showStartupOverlay = false
-                            if (!fullyDrawnReported) {
-                                fullyDrawnReported = true
-                                reportFullyDrawn()
-                            }
                         },
                     )
+                }
+                if (localInitialized && startupReady && !showStartupOverlay &&
+                    highlightsVersion == eu.kanade.tachiyomi.data.updater.UpdateHighlightsState.RELEASE_CODE
+                ) {
+                    eu.kanade.presentation.home.MangaroUpdateHighlights(onContinue = highlights::acknowledge)
                 }
             }
         }
