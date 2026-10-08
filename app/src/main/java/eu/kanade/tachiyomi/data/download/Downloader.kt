@@ -407,6 +407,10 @@ class Downloader(
             val imageRefresh = DownloadImageRefresh(pageList) {
                 download.source.getPageList(download.chapter.toSChapter())
             }
+            // Resume inventory is fixed for this attempt; avoid one directory scan per page.
+            val existingImages = tmpDir.listFiles().orEmpty().mapNotNull { file ->
+                file.name?.let { it to file }
+            }
             // Start downloading images, consider we can have downloaded images already
             pageList.asFlow().flatMapMerge(concurrency = downloadPreferences.parallelPageLimit.get()) { page ->
                 flow {
@@ -420,7 +424,7 @@ class Downloader(
                         }
                     }
 
-                    withIOContext { getOrDownloadImage(page, download, tmpDir, imageRefresh) }
+                    withIOContext { getOrDownloadImage(page, download, tmpDir, imageRefresh, existingImages) }
                     emit(page)
                 }
                     .flowOn(Dispatchers.IO)
@@ -471,7 +475,7 @@ class Downloader(
      * @param download the download of the page.
      * @param tmpDir the temporary directory of the download.
      */
-    private suspend fun getOrDownloadImage(page: Page, download: Download, tmpDir: UniFile, imageRefresh: DownloadImageRefresh) {
+    private suspend fun getOrDownloadImage(page: Page, download: Download, tmpDir: UniFile, imageRefresh: DownloadImageRefresh, existingImages: List<Pair<String, UniFile>>) {
         // If the image URL is empty, do nothing
         if (page.imageUrl == null) {
             return
@@ -481,9 +485,9 @@ class Downloader(
         val filename = "%0${digitCount}d".format(Locale.ENGLISH, page.number)
 
         // Try to find the image file
-        val imageFile = tmpDir.listFiles()?.firstOrNull {
-            isDownloadedPageImage(it.name ?: return@firstOrNull false, filename)
-        }
+        val imageFile = existingImages.firstOrNull { (name, file) ->
+            isDownloadedPageImage(name, filename) && file.exists()
+        }?.second
 
         try {
             // If the image is already downloaded, do nothing. Otherwise download from network

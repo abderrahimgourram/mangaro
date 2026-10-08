@@ -573,11 +573,15 @@ class MangaViewModel(
 
     private fun List<Chapter>.toChapterListItems(manga: Manga): List<ChapterList.Item> {
         val isLocal = manga.isLocal()
+        // One queue snapshot/index instead of a linear queue search for every chapter.
+        val activeDownloads = if (isLocal) emptyMap() else buildMap {
+            downloadManager.queueState.value.forEach { putIfAbsent(it.chapter.id, it) }
+        }
         return map { chapter ->
             val activeDownload = if (isLocal) {
                 null
             } else {
-                downloadManager.getQueuedDownloadOrNull(chapter.id)
+                activeDownloads[chapter.id]
             }
             val downloaded = if (isLocal) {
                 true
