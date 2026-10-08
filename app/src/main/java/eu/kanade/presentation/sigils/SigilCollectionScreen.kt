@@ -5,6 +5,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -112,7 +114,7 @@ class SigilCollectionScreen(private val initialBadgeId: String? = null) : Screen
     val scope=rememberCoroutineScope();var busy by remember {mutableStateOf(false)};var message by remember {mutableStateOf<String?>(null)}
     val unlock=snapshot.unlocks.firstOrNull {it.id==definition.id && !it.revoked}
     ModalBottomSheet(onDismissRequest=onDismiss,containerColor=Color(0xFF15111E)) {
-        Column(Modifier.fillMaxWidth().padding(20.dp).navigationBarsPadding(),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp).navigationBarsPadding(),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(12.dp)) {
             SigilArtwork(definition,unlock!=null,Modifier.size(172.dp))
             Text(definition.name,color=Color.White,style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.Bold)
             Text("${definition.world.title} · ${definition.rarity.title}",color=Color(definition.accent))
@@ -180,7 +182,7 @@ class SigilCollectionScreen(private val initialBadgeId: String? = null) : Screen
     androidx.activity.compose.BackHandler {repo.dismissAnnouncement()}
     LaunchedEffect(definition.id) {repo.markAnnouncementPresented();appeared=true}
     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha=.76f)).clickable {repo.dismissAnnouncement()},contentAlignment=Alignment.Center) {
-        Column(Modifier.fillMaxWidth(.85f).background(Brush.radialGradient(listOf(Color(definition.accent).copy(alpha=.15f),Color(0xFF191120))),RoundedCornerShape(28.dp)).padding(24.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.fillMaxWidth(.85f).verticalScroll(rememberScrollState()).background(Brush.radialGradient(listOf(Color(definition.accent).copy(alpha=.15f),Color(0xFF191120))),RoundedCornerShape(28.dp)).padding(24.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(12.dp)) {
             Text("إنجاز جديد!",color=Color(0xFFE4C576),style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.Bold)
             Text("لقد فتحت ختمًا جديدًا",color=Color(0xFFD4C5E0))
             Box(Modifier.size(190.dp),contentAlignment=Alignment.Center) {
