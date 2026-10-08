@@ -1,0 +1,480 @@
+{
+  "attribution": "Foreground motifs by Lorc and Delapouite, Game-icons.net, CC BY 3.0. Original Mangaro frames, inlays, metalwork and compositions; derivative illustrations also CC BY 3.0. No endorsement implied.",
+  "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+  "authorUrls": {
+    "Lorc": "https://lorcblog.blogspot.com",
+    "Delapouite": "https://delapouite.com"
+  },
+  "collections": [
+    {
+      "title": "عالم البوابات",
+      "assets": [
+        {
+          "id": "gates_awakened",
+          "name": "المستيقظ",
+          "title": "Crystal shine icon",
+          "author": "Lorc",
+          "sourceUrl": "https://game-icons.net/1x1/lorc/crystal-shine.html",
+          "license": "CC-BY-3.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+          "changes": "Original Mangaro frames, filigree, gems, engraved-metal shading and world-specific colors; converted to transparent WebP.",
+          "verifiedDate": "2026-10-08"
+        },
+        {
+          "id": "gates_hunter",
+          "name": "صياد الزنزانات",
+          "title": "Crossed swords icon",
+          "author": "Lorc",
+          "sourceUrl": "https://game-icons.net/1x1/lorc/crossed-swords.html",
+          "license": "CC-BY-3.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+          "changes": "Original Mangaro frames, filigree, gems, engraved-metal shading and world-specific colors; converted to transparent WebP.",
+          "verifiedDate": "2026-10-08"
+        },
+        {
+          "id": "gates_opener",
+          "name": "فاتح البوابات",
+          "title": "Magic portal icon",
+          "author": "Lorc",
+          "sourceUrl": "https://game-icons.net/1x1/lorc/magic-portal.html",
+          "license": "CC-BY-3.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+          "changes": "Original Mangaro frames, filigree, gems, engraved-metal shading and world-specific colors; converted to transparent WebP.",
+          "verifiedDate": "2026-10-08"
+        },
+        {
+          "id": "gates_leader",
+          "name": "قائد الغارات",
+          "title": "Winged shield icon",
+          "author": "Lorc",
+          "sourceUrl": "https://game-icons.net/1x1/lorc/winged-shield.html",
+          "license": "CC-BY-3.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+          "changes": "Original Mangaro frames, filigree, gems, engraved-metal shading and world-specific colors; converted to transparent WebP.",
+          "verifiedDate": "2026-10-08"
+        },
+        {
+          "id": "gates_guardian",
+          "name": "حارس البوابة الأخيرة",
+          "title": "Heaven gate icon",
+          "author": "Delapouite",
+          "sourceUrl": "https://game-icons.net/1x1/delapouite/heaven-gate.html",
+          "license": "CC-BY-3.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+          "changes": "Original Mangaro frames, filigree, gems, engraved-metal shading and world-specific colors; converted to transparent WebP.",
+          "verifiedDate": "2026-10-08"
+        }
+      ]
+    },
+    {
+      "title": "عالم الأبراج",
+      "assets": [
+        {
+          "id": "tower_visitor",
+          "name": "زائر الطابق الأول",
+          "title": "Star key icon",
+          "author": "Delapouite",
+          "sourceUrl": "https://game-icons.net/1x1/delapouite/star-key.html",
+          "license": "CC-BY-3.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+          "changes": "Original Mangaro frames, filigree, gems, engraved-metal shading and world-specific colors; converted to transparent WebP.",
+          "verifiedDate": "2026-10-08"
+        },
+        {
+          "id": "tower_climber",
+          "name": "متسلق البرج",
+          "title": "Guarded tower icon",
+          "author": "Lorc",
+          "sourceUrl": "https://game-icons.net/1x1/lorc/guarded-tower.html",
+          "license": "CC-BY-3.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+          "changes": "Original Mangaro frames, filigree, gems, engraved-metal shading and world-specific colors; converted to transparent WebP.",
+          "verifiedDate": "2026-10-08"
+        },
+        {
+          "id": "tower_survivor",
+          "name": "ناجي السيناريو",
+          "title": "Rune stone icon",
+          "author": "Lorc",
+          "sourceUrl": "https://game-icons.net/1x1/lorc/rune-stone.html",
+          "license": "CC-BY-3.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+          "changes": "Original Mangaro frames, filigree, gems, engraved-metal shading and world-specific colors; converted to transparent WebP.",
+          "verifiedDate": "2026-10-08"
+        },
+        {
+          "id": "tower_fates",
+          "name": "قارئ المصائر",
+          "title": "Crystal eye icon",
+          "author": "Lorc",
+          "sourceUrl": "https://game-icons.net/1x1/lorc/crystal-eye.html",
+          "license": "CC-BY-3.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+          "changes": "Original Mangaro frames, filigree, gems, engraved-metal shading and world-specific colors; converted to transparent WebP.",
+          "verifiedDate": "2026-10-08"
+        },
+        {
+          "id": "tower_narrator",
+          "name": "الراوي العليم",
+          "title": "Star satellites icon",
+          "author": "Lorc",
+          "sourceUrl": "https://game-icons.net/1x1/lorc/star-satellites.html",
+          "license": "CC-BY-3.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+          "changes": "Original Mangaro frames, filigree, gems, engraved-metal shading and world-specific colors; converted to transparent WebP.",
+          "verifiedDate": "2026-10-08"
+        }
+      ]
+    },
+    {
+      "title": "عالم الموريم",
+      "assets": [
+        {
+          "id": "murim_scroll",
+          "name": "حامل المخطوطة",
+          "title": "Scroll unfurled icon",
+          "author": "Lorc",
+          "sourceUrl": "https://game-icons.net/1x1/lorc/scroll-unfurled.html",
+          "license": "CC-BY-3.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+          "changes": "Original Mangaro frames, filigree, gems, engraved-metal shading and world-specific colors; converted to transparent WebP.",
+          "verifiedDate": "2026-10-08"
+        },
+        {
+          "id": "murim_keeper",
+          "name": "حافظ الفنون السرية",
+          "title": "Secret book icon",
+          "author": "Delapouite",
+          "sourceUrl": "https://game-icons.net/1x1/delapouite/secret-book.html",
+          "license": "CC-BY-3.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+          "changes": "Original Mangaro frames, filigree, gems, engraved-metal shading and world-specific colors; converted to transparent WebP.",
+          "verifiedDate": "2026-10-08"
+        },
+        {
+          "id": "murim_student",
+          "name": "تلميذ الموريم",
+          "title": "Triple yin icon",
+          "author": "Lorc",
+          "sourceUrl": "https://game-icons.net/1x1/lorc/triple-yin.html",
+          "license": "CC-BY-3.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+          "changes": "Original Mangaro frames, filigree, gems, engraved-metal shading and world-specific colors; converted to transparent WebP.",
+          "verifiedDate": "2026-10-08"
+        },
+        {
+          "id": "murim_heir",
+          "name": "وريث السيف",
+          "title": "Rune sword icon",
+          "author": "Lorc",
+          "sourceUrl": "https://game-icons.net/1x1/lorc/rune-sword.html",
+          "license": "CC-BY-3.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+          "changes": "Original Mangaro frames, filigree, gems, engraved-metal shading and world-specific colors; converted to transparent WebP.",
+          "verifiedDate": "2026-10-08"
+        },
+        {
+          "id": "murim_master",
+          "name": "سيد الطائفة",
+          "title": "Swords emblem icon",
+          "author": "Lorc",
+          "sourceUrl": "https://game-icons.net/1x1/lorc/swords-emblem.html",
+          "license": "CC-BY-3.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+          "changes": "Original Mangaro frames, filigree, gems, engraved-metal shading and world-specific colors; converted to transparent WebP.",
+          "verifiedDate": "2026-10-08"
+        }
+      ]
+    },
+    {
+      "title": "عالم القصور",
+      "assets": [
+        {
+          "id": "court_visitor",
+          "name": "زائر القصر",
+          "title": "Temple gate icon",
+          "author": "Delapouite",
+          "sourceUrl": "https://game-icons.net/1x1/delapouite/temple-gate.html",
+          "license": "CC-BY-3.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+          "changes": "Original Mangaro frames, filigree, gems, engraved-metal shading and world-specific colors; converted to transparent WebP.",
+          "verifiedDate": "2026-10-08"
+        },
+        {
+          "id": "court_rose",
+          "name": "وردة العرش",
+          "title": "Rose icon",
+          "author": "Lorc",
+          "sourceUrl": "https://game-icons.net/1x1/lorc/rose.html",
+          "license": "CC-BY-3.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+          "changes": "Original Mangaro frames, filigree, gems, engraved-metal shading and world-specific colors; converted to transparent WebP.",
+          "verifiedDate": "2026-10-08"
+        },
+        {
+          "id": "court_regent",
+          "name": "وصي العرش",
+          "title": "Imperial crown icon",
+          "author": "Delapouite",
+          "sourceUrl": "https://game-icons.net/1x1/delapouite/imperial-crown.html",
+          "license": "CC-BY-3.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+          "changes": "Original Mangaro frames, filigree, gems, engraved-metal shading and world-specific colors; converted to transparent WebP.",
+          "verifiedDate": "2026-10-08"
+        },
+        {
+          "id": "court_returner",
+          "name": "العائد من المصير",
+          "title": "Hourglass icon",
+          "author": "Lorc",
+          "sourceUrl": "https://game-icons.net/1x1/lorc/hourglass.html",
+          "license": "CC-BY-3.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+          "changes": "Original Mangaro frames, filigree, gems, engraved-metal shading and world-specific colors; converted to transparent WebP.",
+          "verifiedDate": "2026-10-08"
+        },
+        {
+          "id": "court_historian",
+          "name": "مؤرخ الإمبراطوريات",
+          "title": "Wax seal icon",
+          "author": "Lorc",
+          "sourceUrl": "https://game-icons.net/1x1/lorc/wax-seal.html",
+          "license": "CC-BY-3.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+          "changes": "Original Mangaro frames, filigree, gems, engraved-metal shading and world-specific colors; converted to transparent WebP.",
+          "verifiedDate": "2026-10-08"
+        }
+      ]
+    },
+    {
+      "title": "عالم المخطوطات",
+      "assets": [
+        {
+          "id": "archive_gem",
+          "name": "صياد الجواهر",
+          "title": "Floating crystal icon",
+          "author": "Lorc",
+          "sourceUrl": "https://game-icons.net/1x1/lorc/floating-crystal.html",
+          "license": "CC-BY-3.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+          "changes": "Original Mangaro frames, filigree, gems, engraved-metal shading and world-specific colors; converted to transparent WebP.",
+          "verifiedDate": "2026-10-08"
+        },
+        {
+          "id": "archive_relics",
+          "name": "جامع الآثار",
+          "title": "Ankh icon",
+          "author": "Lorc",
+          "sourceUrl": "https://game-icons.net/1x1/lorc/ankh.html",
+          "license": "CC-BY-3.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+          "changes": "Original Mangaro frames, filigree, gems, engraved-metal shading and world-specific colors; converted to transparent WebP.",
+          "verifiedDate": "2026-10-08"
+        },
+        {
+          "id": "archive_keeper",
+          "name": "أمين الأرشيف",
+          "title": "Book pile icon",
+          "author": "Delapouite",
+          "sourceUrl": "https://game-icons.net/1x1/delapouite/book-pile.html",
+          "license": "CC-BY-3.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+          "changes": "Original Mangaro frames, filigree, gems, engraved-metal shading and world-specific colors; converted to transparent WebP.",
+          "verifiedDate": "2026-10-08"
+        },
+        {
+          "id": "archive_dimensions",
+          "name": "مفتاح الأبعاد",
+          "title": "Key icon",
+          "author": "Lorc",
+          "sourceUrl": "https://game-icons.net/1x1/lorc/key.html",
+          "license": "CC-BY-3.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+          "changes": "Original Mangaro frames, filigree, gems, engraved-metal shading and world-specific colors; converted to transparent WebP.",
+          "verifiedDate": "2026-10-08"
+        },
+        {
+          "id": "archive_volumes",
+          "name": "خازن المجلدات",
+          "title": "Book aura icon",
+          "author": "Lorc",
+          "sourceUrl": "https://game-icons.net/1x1/lorc/book-aura.html",
+          "license": "CC-BY-3.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+          "changes": "Original Mangaro frames, filigree, gems, engraved-metal shading and world-specific colors; converted to transparent WebP.",
+          "verifiedDate": "2026-10-08"
+        }
+      ]
+    },
+    {
+      "title": "عالم المجتمع",
+      "assets": [
+        {
+          "id": "social_voice",
+          "name": "الصوت الأول",
+          "title": "Quill icon",
+          "author": "Lorc",
+          "sourceUrl": "https://game-icons.net/1x1/lorc/quill.html",
+          "license": "CC-BY-3.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+          "changes": "Original Mangaro frames, filigree, gems, engraved-metal shading and world-specific colors; converted to transparent WebP.",
+          "verifiedDate": "2026-10-08"
+        },
+        {
+          "id": "social_pen",
+          "name": "صاحب القلم الأبدي",
+          "title": "Quill and ink icon",
+          "author": "Lorc",
+          "sourceUrl": "https://game-icons.net/1x1/lorc/quill-ink.html",
+          "license": "CC-BY-3.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+          "changes": "Original Mangaro frames, filigree, gems, engraved-metal shading and world-specific colors; converted to transparent WebP.",
+          "verifiedDate": "2026-10-08"
+        },
+        {
+          "id": "social_council",
+          "name": "سيد المجلس",
+          "title": "Round table icon",
+          "author": "Delapouite",
+          "sourceUrl": "https://game-icons.net/1x1/delapouite/round-table.html",
+          "license": "CC-BY-3.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+          "changes": "Original Mangaro frames, filigree, gems, engraved-metal shading and world-specific colors; converted to transparent WebP.",
+          "verifiedDate": "2026-10-08"
+        },
+        {
+          "id": "social_witness",
+          "name": "شاهد الكوكبات",
+          "title": "Star formation icon",
+          "author": "Delapouite",
+          "sourceUrl": "https://game-icons.net/1x1/delapouite/star-formation.html",
+          "license": "CC-BY-3.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+          "changes": "Original Mangaro frames, filigree, gems, engraved-metal shading and world-specific colors; converted to transparent WebP.",
+          "verifiedDate": "2026-10-08"
+        },
+        {
+          "id": "social_revered",
+          "name": "الموقّر",
+          "title": "Jewel crown icon",
+          "author": "Delapouite",
+          "sourceUrl": "https://game-icons.net/1x1/delapouite/jewel-crown.html",
+          "license": "CC-BY-3.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+          "changes": "Original Mangaro frames, filigree, gems, engraved-metal shading and world-specific colors; converted to transparent WebP.",
+          "verifiedDate": "2026-10-08"
+        }
+      ]
+    },
+    {
+      "title": "فنون رتب الخبرة",
+      "assets": [
+        {
+          "id": "rank_0",
+          "name": "تميمة البداية",
+          "title": "Gem pendant icon",
+          "author": "Lorc",
+          "sourceUrl": "https://game-icons.net/1x1/lorc/gem-pendant.html",
+          "license": "CC-BY-3.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+          "changes": "Mangaro original distinct relic frames, hand-drawn inlays, filigree, faceted stones and engraved metallic shading; transparent WebP conversion.",
+          "verifiedDate": "2026-10-08",
+          "levels": [
+            1,
+            4
+          ]
+        },
+        {
+          "id": "rank_1",
+          "name": "بوصلة الرحلة",
+          "title": "Compass icon",
+          "author": "Lorc",
+          "sourceUrl": "https://game-icons.net/1x1/lorc/compass.html",
+          "license": "CC-BY-3.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+          "changes": "Mangaro original distinct relic frames, hand-drawn inlays, filigree, faceted stones and engraved metallic shading; transparent WebP conversion.",
+          "verifiedDate": "2026-10-08",
+          "levels": [
+            5,
+            9
+          ]
+        },
+        {
+          "id": "rank_2",
+          "name": "بلورة البصيرة",
+          "title": "Crystal ball icon",
+          "author": "Lorc",
+          "sourceUrl": "https://game-icons.net/1x1/lorc/crystal-ball.html",
+          "license": "CC-BY-3.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+          "changes": "Mangaro original distinct relic frames, hand-drawn inlays, filigree, faceted stones and engraved metallic shading; transparent WebP conversion.",
+          "verifiedDate": "2026-10-08",
+          "levels": [
+            10,
+            14
+          ]
+        },
+        {
+          "id": "rank_3",
+          "name": "نصل العزم",
+          "title": "Broadsword icon",
+          "author": "Lorc",
+          "sourceUrl": "https://game-icons.net/1x1/lorc/broadsword.html",
+          "license": "CC-BY-3.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+          "changes": "Mangaro original distinct relic frames, hand-drawn inlays, filigree, faceted stones and engraved metallic shading; transparent WebP conversion.",
+          "verifiedDate": "2026-10-08",
+          "levels": [
+            15,
+            19
+          ]
+        },
+        {
+          "id": "rank_4",
+          "name": "شعار التنين",
+          "title": "Dragon head icon",
+          "author": "Lorc",
+          "sourceUrl": "https://game-icons.net/1x1/lorc/dragon-head.html",
+          "license": "CC-BY-3.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+          "changes": "Mangaro original distinct relic frames, hand-drawn inlays, filigree, faceted stones and engraved metallic shading; transparent WebP conversion.",
+          "verifiedDate": "2026-10-08",
+          "levels": [
+            20,
+            24
+          ]
+        },
+        {
+          "id": "rank_5",
+          "name": "سيف السيادة",
+          "title": "Winged sword icon",
+          "author": "Lorc",
+          "sourceUrl": "https://game-icons.net/1x1/lorc/winged-sword.html",
+          "license": "CC-BY-3.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+          "changes": "Mangaro original distinct relic frames, hand-drawn inlays, filigree, faceted stones and engraved metallic shading; transparent WebP conversion.",
+          "verifiedDate": "2026-10-08",
+          "levels": [
+            25,
+            29
+          ]
+        },
+        {
+          "id": "rank_6",
+          "name": "التاج السماوي",
+          "title": "Crown icon",
+          "author": "Lorc",
+          "sourceUrl": "https://game-icons.net/1x1/lorc/crown.html",
+          "license": "CC-BY-3.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+          "changes": "Mangaro original distinct relic frames, hand-drawn inlays, filigree, faceted stones and engraved metallic shading; transparent WebP conversion.",
+          "verifiedDate": "2026-10-08",
+          "levels": [
+            30,
+            30
+          ]
+        }
+      ]
+    }
+  ]
+}
