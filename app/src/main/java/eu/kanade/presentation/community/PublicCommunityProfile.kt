@@ -1,10 +1,8 @@
 package eu.kanade.presentation.community
 
-import eu.kanade.presentation.account.DeveloperBadge
-import eu.kanade.presentation.account.RankIdentity
+import eu.kanade.presentation.account.ProfileHeader
+import eu.kanade.presentation.account.ProfileStatsStrip
 import eu.kanade.presentation.account.rankAccent
-import eu.kanade.presentation.account.RankCoverAccent
-import eu.kanade.presentation.account.TierAvatarFrame
 import eu.kanade.presentation.account.LibraryShowcase
 import eu.kanade.presentation.account.ShowcaseDisplayItem
 import eu.kanade.presentation.manga.components.MangaCover
@@ -38,8 +36,6 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.presentation.account.ProfileAvatar
 import eu.kanade.presentation.account.ProfileCoverImage
-import eu.kanade.presentation.account.UsernameHandle
-import eu.kanade.presentation.account.ProfileDisplayName
 import eu.kanade.presentation.theme.MangaroDesignSystem
 import eu.kanade.presentation.util.Screen
 import kotlinx.coroutines.CancellationException
@@ -75,39 +71,25 @@ internal fun PublicCommunityProfilePanel(userId: String, onBack: () -> Unit) {
         finally { loading = false }
     }
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-        Column(Modifier.fillMaxSize().background(MangaroDesignSystem.BackgroundDark).safeDrawingPadding().verticalScroll(rememberScrollState())) {
+        Column(Modifier.fillMaxSize().background(MangaroDesignSystem.BackgroundDark).safeDrawingPadding()
+            .verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "رجوع") }
-                Text("الملف الشخصي", style = MaterialTheme.typography.titleMedium, color = Color.White)
+                Text("الملف الشخصي", style = MaterialTheme.typography.titleLarge, color = Color.White, fontWeight = FontWeight.Bold)
             }
             val profile = (result as? CommunityProfileResult.Loaded)?.profile
             if (profile != null) {
-                Box(Modifier.fillMaxWidth().height(228.dp)) {
-                    ProfileCoverImage(profile.coverUrl, Modifier.fillMaxWidth().height(196.dp))
-                    RankCoverAccent(profile.author.level, Modifier.fillMaxWidth().height(196.dp))
-                    TierAvatarFrame(profile.author.level, Modifier.align(Alignment.BottomStart).padding(start = 20.dp).size(96.dp)) {
-                        ProfileAvatar(profile.author.avatarUrl, profile.googleAvatarUrl, Modifier.fillMaxSize().clip(RoundedCornerShape(20.dp)))
-                    }
-                }
-                Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ProfileDisplayName(profile.author.displayName, profile.author.username, color = Color.White,
-                        style = MaterialTheme.typography.headlineMedium.copy(textDirection = TextDirection.Content), fontWeight = FontWeight.Bold)
-                    profile.author.username?.let { UsernameHandle(it, color = Color(0xFFB7A9C4), style = MaterialTheme.typography.bodySmall) }
-                    profile.bio?.takeIf { it.isNotBlank() }?.let { Text(it, color = Color(0xFFB7A9C4), style = MaterialTheme.typography.bodyMedium) }
-                    DeveloperBadge(profile.author.role)
-                    RankIdentity(profile.author.level, prominent = true)
-                    eu.kanade.presentation.sigils.PublicProfileSigils(userId)
-                    Row(Modifier.fillMaxWidth().padding(top = 12.dp).clip(RoundedCornerShape(16.dp))
-                        .background(MangaroDesignSystem.SurfaceDark).padding(vertical = 16.dp)) {
-                        (listOf("التعليقات" to profile.commentCount, "التقييمات" to profile.ratingCount) +
-                            (if (profile.showcaseEnabled) listOf("الأعمال المعروضة" to profile.favorites.size.toLong()) else emptyList()) +
-                            (profile.chaptersRead?.let { listOf("فصل مقروء" to it) } ?: emptyList())).forEach { (label, count) ->
-                            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text(count.toString(), color = Color.White, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                                Text(label, color = Color(0xFF9F90AC), style = MaterialTheme.typography.labelSmall)
-                            }
-                        }
-                    }
+                ProfileHeader(
+                    displayName = profile.author.displayName, username = profile.author.username, bio = profile.bio,
+                    level = profile.author.level, role = profile.author.role,
+                    cover = { ProfileCoverImage(profile.coverUrl, Modifier.fillMaxSize()) },
+                    avatar = { ProfileAvatar(profile.author.avatarUrl, profile.googleAvatarUrl,
+                        Modifier.fillMaxSize().clip(RoundedCornerShape(20.dp))) },
+                ) { eu.kanade.presentation.sigils.PublicProfileSigils(userId) }
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    ProfileStatsStrip(listOf("التعليقات" to profile.commentCount, "التقييمات" to profile.ratingCount) +
+                        (if (profile.showcaseEnabled) listOf("أعمال معروضة" to profile.favorites.size.toLong()) else emptyList()) +
+                        (profile.chaptersRead?.let { listOf("فصل مقروء" to it) } ?: emptyList()))
                     if (profile.showcaseEnabled) {
                         LibraryShowcase(profile.favorites.map { ShowcaseDisplayItem(it.mangaKey,it.title,it.coverUrl,it.featured) }, onOpen = { key ->
                             val item = profile.favorites.firstOrNull { it.mangaKey == key }

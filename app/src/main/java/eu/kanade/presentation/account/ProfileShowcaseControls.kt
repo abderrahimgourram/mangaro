@@ -18,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -74,8 +75,8 @@ internal fun ProfileShowcaseControls(profile: MangaroProfile, account: AccountFo
     Surface(color = MangaroDesignSystem.SurfaceDark, shape = RoundedCornerShape(20.dp)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
-                Column(verticalArrangement=Arrangement.spacedBy(3.dp)) {
-                    Text("مكتبتي العامة", style = MaterialTheme.typography.titleSmall)
+                Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(3.dp)) {
+                    Text("مكتبتي العامة", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                     Text(if(snapshot?.enabled==true) "${snapshot?.favorites?.size ?: 0} أعمال معروضة" else "خاصة حتى تختار إظهارها",
                         style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -84,10 +85,9 @@ internal fun ProfileShowcaseControls(profile: MangaroProfile, account: AccountFo
                     enabled=snapshot?.enabled ?: false
                     draft=ShowcaseDraft(items.map {it.manga_key},items.filter {it.featured}.map {it.manga_key}.toSet())
                     tab=0;preview=false;search="";error=null;open=true
-                }) { Text("تعديل مكتبتي العامة") }
+                }, modifier=Modifier.heightIn(min=48.dp)) { Text("تعديل") }
             }
             Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                RankEmblem(profile.level,Modifier.size(20.dp))
                 Text("${WesternDigits.isolate("${snapshot?.favorites?.size ?: 0} / $slots")} أعمال",color=accent,style=MaterialTheme.typography.labelMedium)
                 Text("حتى 3 أعمال مميزة",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
             }

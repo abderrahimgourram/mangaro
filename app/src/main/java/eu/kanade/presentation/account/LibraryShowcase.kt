@@ -1,5 +1,6 @@
 package eu.kanade.presentation.account
 
+import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -37,7 +38,8 @@ internal fun LibraryShowcase(items: List<ShowcaseDisplayItem>, onOpen: ((String)
         if(items.isEmpty()) Text("لم يضف أعمالًا إلى مكتبته العامة بعد",style=MaterialTheme.typography.bodySmall,color=Color(0xFFB7A9C4),modifier=Modifier.padding(vertical=12.dp))
         if(featured.isNotEmpty()) LazyRow(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
             items(featured,key={it.key}) { item ->
-                Row(Modifier.width(240.dp).clip(RoundedCornerShape(14.dp)).background(MangaroDesignSystem.SurfaceDark)
+                Row(Modifier.width(240.dp).clip(RoundedCornerShape(18.dp)).background(MangaroDesignSystem.SurfaceDark)
+                    .border(1.dp,MangaroDesignSystem.GoldPrimary.copy(alpha=.16f),RoundedCornerShape(18.dp))
                     .clickable(enabled=onOpen!=null) { onOpen?.invoke(item.key) }.padding(10.dp),horizontalArrangement=Arrangement.spacedBy(12.dp),verticalAlignment=Alignment.CenterVertically) {
                     MangaCover.Book(item.cover,Modifier.width(78.dp),shape=RoundedCornerShape(8.dp))
                     Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(8.dp)) {

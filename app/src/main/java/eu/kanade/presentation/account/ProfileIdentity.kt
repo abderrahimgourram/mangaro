@@ -54,7 +54,6 @@ internal fun RankCoverAccent(level: Int, modifier: Modifier = Modifier) {
             .background(Brush.verticalGradient(listOf(Color.Transparent,Color(style.surface).copy(alpha=.94f)))))
         Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(if(style.isMax) 3.dp else 2.dp)
             .background(Brush.horizontalGradient(listOf(Color(style.primary).copy(alpha=.5f),Color(style.secondary).copy(alpha=.8f)))))
-        RankEmblem(level,Modifier.align(Alignment.BottomEnd).padding(end=18.dp,bottom=12.dp).size(68.dp),animated=true)
     }
 }
 
@@ -73,9 +72,21 @@ internal fun DeveloperBadge(role: AccountRole, compact: Boolean = false) {
 @Composable
 internal fun RankIdentity(level: Int, prominent: Boolean = false) {
     val style = RankVisuals.resolve(level)
+    if (prominent) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            RankEmblem(level, Modifier.size(44.dp), animated = true)
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(MangaroRanks.titleFor(level), color = Color(style.primary), style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold)
+                Text(if (style.isMax) "Lv.$level · MAX" else "Lv.$level", color = Color(0xFFB7A9C4),
+                    style = MaterialTheme.typography.labelSmall.copy(textDirection = TextDirection.Ltr))
+            }
+        }
+        return
+    }
     FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp),verticalArrangement=Arrangement.spacedBy(4.dp),itemVerticalAlignment=Alignment.CenterVertically) {
-        RankEmblem(level,Modifier.size(if(prominent) 52.dp else 22.dp),animated=prominent)
-        Text(MangaroRanks.titleFor(level),color=Color(style.primary),style=if(prominent) MaterialTheme.typography.labelLarge else MaterialTheme.typography.labelSmall)
+        RankEmblem(level,Modifier.size(22.dp))
+        Text(MangaroRanks.titleFor(level),color=Color(style.primary),style=MaterialTheme.typography.labelSmall)
         Row(Modifier.background(Color(style.surface),RoundedCornerShape(7.dp))
             .border(.5.dp,Color(style.primary).copy(alpha=.5f),RoundedCornerShape(7.dp))
             .padding(horizontal=7.dp,vertical=3.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(4.dp)) {

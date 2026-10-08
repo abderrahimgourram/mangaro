@@ -16,6 +16,8 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -159,10 +161,17 @@ class SigilCollectionScreen(private val initialBadgeId: String? = null) : Screen
     Row(Modifier.fillMaxWidth().padding(vertical=8.dp),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
         repeat(3) {slot ->
             val definition=RealmSigils.byId[slots.getOrNull(slot)]
-            Box(Modifier.weight(1f).height(78.dp).background(Brush.verticalGradient(listOf(Color(definition?.accent ?: 0xFF9F90AC).copy(alpha=.09f),Color(0xFF16111D))),RoundedCornerShape(16.dp))
-                .border(1.dp,Color(definition?.accent ?: 0xFF9F90AC).copy(alpha=.18f),RoundedCornerShape(16.dp))
+            val accent = Color(definition?.accent ?: 0xFF9F90AC)
+            val legendary = definition?.rarity == mihon.domain.sigils.SigilRarity.LEGENDARY
+            val frame = RoundedCornerShape(18.dp)
+            Box(Modifier.weight(1f).height(84.dp).shadow(if(definition!=null) 3.dp else 0.dp,frame)
+                .background(Brush.verticalGradient(listOf(accent.copy(alpha=if(definition!=null) .14f else .04f),Color(0xFF16111D))),frame)
+                .border(if(legendary) 1.2.dp else 1.dp,
+                    Brush.linearGradient(listOf(accent.copy(alpha=if(definition!=null) .45f else .15f),
+                        (if(legendary) Color(0xFFE4C576) else accent).copy(alpha=.16f))),frame)
+                .clip(frame)
                 .clickable(enabled=definition!=null || onEmpty!=null) {if(definition!=null) {if(onTap!=null)onTap(definition.id) else previewId=definition.id} else onEmpty?.invoke()},contentAlignment=Alignment.Center) {
-                if(definition!=null) SigilArtwork(definition,true,Modifier.size(74.dp),animated=animated && previewId==null,compact=true)
+                if(definition!=null) SigilArtwork(definition,true,Modifier.size(78.dp),animated=animated && previewId==null,compact=true)
                 else Text("ختم ${slot+1}",color=Color(0xFF756782),style=MaterialTheme.typography.labelSmall)
             }
         }
