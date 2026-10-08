@@ -44,7 +44,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import eu.kanade.domain.manga.model.readingMode
 import eu.kanade.presentation.theme.MangaroDesignSystem
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderSettingsViewModel
 import eu.kanade.tachiyomi.ui.reader.setting.ReadingMode
@@ -58,8 +57,7 @@ fun MangaroReaderSettingsSheet(
     viewModel: ReaderSettingsViewModel,
 ) {
     val preferences = viewModel.preferences
-    val manga by viewModel.mangaFlow.collectAsState()
-    val currentMode = ReadingMode.fromPreference(manga?.readingMode?.toInt())
+    val currentMode by viewModel.readingModeFlow.collectAsState()
     val primaryMode = currentMode.toPrimaryMode()
 
     val customBrightness by preferences.customBrightness.collectAsState()

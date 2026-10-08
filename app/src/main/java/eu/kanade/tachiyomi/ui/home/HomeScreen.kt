@@ -149,7 +149,11 @@ object HomeScreen : Screen() {
 
             val goToLibraryTab = { tabNavigator.current = LibraryTab }
 
-            BackHandler(enabled = tabNavigator.current != LibraryTab, onBack = goToLibraryTab)
+            // Only handle tab-level Back at the root; pushed screens own their back stack.
+            BackHandler(
+                enabled = !navigator.canPop && navigator.lastItem is HomeScreen && tabNavigator.current !is HomeTab,
+                onBack = { tabNavigator.current = HomeTab },
+            )
 
             LaunchedEffect(Unit) {
                 launch {

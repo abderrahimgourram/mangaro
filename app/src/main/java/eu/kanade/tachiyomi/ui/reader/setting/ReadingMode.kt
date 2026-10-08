@@ -61,6 +61,13 @@ enum class ReadingMode(
 
         fun fromPreference(preference: Int?): ReadingMode = entries.find { it.flagValue == preference } ?: DEFAULT
 
+        /** Resolves the manga override and global default to an actual viewer mode. */
+        fun resolve(preference: Int?, defaultPreference: Int): ReadingMode {
+            return fromPreference(preference).takeUnless { it == DEFAULT }
+                ?: fromPreference(defaultPreference).takeUnless { it == DEFAULT }
+                ?: WEBTOON
+        }
+
         fun isPagerType(preference: Int): Boolean {
             val mode = fromPreference(preference)
             return mode.type is ViewerType.Pager

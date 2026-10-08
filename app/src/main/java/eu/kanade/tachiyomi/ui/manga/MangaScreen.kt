@@ -48,6 +48,7 @@ import eu.kanade.tachiyomi.ui.browse.source.browse.BrowseSourceScreen
 import eu.kanade.tachiyomi.ui.browse.source.globalsearch.GlobalSearchScreen
 import eu.kanade.tachiyomi.ui.category.CategoryScreen
 import eu.kanade.tachiyomi.ui.home.HomeScreen
+import eu.kanade.tachiyomi.ui.genre.GenreBrowseScreen
 import eu.kanade.tachiyomi.ui.manga.notes.MangaNotesScreen
 import eu.kanade.tachiyomi.ui.manga.track.TrackInfoDialogHomeScreen
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
@@ -66,7 +67,7 @@ import tachiyomi.domain.manga.model.Manga
 import tachiyomi.presentation.core.screens.LoadingScreen
 
 class MangaScreen(
-    private val mangaId: Long,
+    internal val mangaId: Long,
     val fromSource: Boolean = false,
 ) : Screen(), AssistContentScreen {
 
@@ -132,7 +133,11 @@ class MangaScreen(
                 else showLibraryShelves = true
                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
             },
-            onTagSearch = { scope.launch { performGenreSearch(navigator, it, viewModel.source!!) } },
+            onTagSearch = { genre ->
+                if (navigator.lastItem.key == key) {
+                    navigator.push(GenreBrowseScreen(successState.manga.source, genre))
+                }
+            },
             onFilterButtonClicked = viewModel::showSettingsDialog,
             onRefresh = viewModel::fetchAllFromSource,
             onContinueReading = { openChapter(context, it) },
@@ -338,25 +343,6 @@ private fun openChapter(context: Context, chapter: Chapter) {
                 navigator.pop()
                 previousController.search(query)
             }
-        }
-    }
-
-    /**
-     * Performs a genre search using the provided genre name.
-     *
-     * @param genreName the search genre to the parent controller
-     */
-    private suspend fun performGenreSearch(navigator: Navigator, genreName: String, source: Source) {
-        if (navigator.size < 2) {
-            return
-        }
-
-        val previousController = navigator.items[navigator.size - 2]
-        if (previousController is BrowseSourceScreen && source is HttpSource) {
-            navigator.pop()
-            previousController.searchGenre(genreName)
-        } else {
-            performSearch(navigator, genreName, global = false)
         }
     }
 

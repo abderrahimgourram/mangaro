@@ -545,8 +545,13 @@ class MainActivity : BaseActivity() {
             Constants.SHORTCUT_LIBRARY -> HomeScreen.Tab.Library()
             Constants.SHORTCUT_MANGA -> {
                 val idToOpen = intent.extras?.getLong(Constants.MANGA_EXTRA) ?: return false
-                navigator.popUntilRoot()
-                HomeScreen.Tab.Library(idToOpen)
+                val existingScreen = navigator.items.lastOrNull { it is MangaScreen && it.mangaId == idToOpen }
+                if (existingScreen != null) {
+                    navigator.popUntil { it.key == existingScreen.key }
+                } else {
+                    navigator.push(MangaScreen(idToOpen))
+                }
+                null
             }
             Constants.SHORTCUT_UPDATES -> HomeScreen.Tab.Updates
             Constants.SHORTCUT_HISTORY -> HomeScreen.Tab.History

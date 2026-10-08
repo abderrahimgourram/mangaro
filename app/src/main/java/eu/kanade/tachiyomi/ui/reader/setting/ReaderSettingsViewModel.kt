@@ -2,9 +2,11 @@ package eu.kanade.tachiyomi.ui.reader.setting
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import eu.kanade.domain.manga.model.readingMode
 import eu.kanade.tachiyomi.ui.reader.ReaderViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -27,4 +29,15 @@ class ReaderSettingsViewModel(
         .map { it.manga }
         .distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.Lazily, null)
+
+    val readingModeFlow = combine(
+        readerState.map { it.manga?.readingMode?.toInt() }.distinctUntilChanged(),
+        preferences.defaultReadingMode.changes(),
+    ) { readingMode, default -> ReadingMode.resolve(readingMode, default) }
+        .distinctUntilChanged()
+        .stateIn(
+            viewModelScope,
+            SharingStarted.Lazily,
+            ReadingMode.resolve(readerState.value.manga?.readingMode?.toInt(), preferences.defaultReadingMode.get()),
+        )
 }

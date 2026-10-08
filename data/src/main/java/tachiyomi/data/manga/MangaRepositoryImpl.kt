@@ -71,6 +71,12 @@ class MangaRepositoryImpl(
             .awaitAsList()
     }
 
+    override suspend fun getKnownMangaWithGenres(sourceId: Long): List<Manga> {
+        return database.mangasQueries
+            .getKnownMangaWithGenres(sourceId, MangaMapper::mapManga)
+            .awaitAsList()
+    }
+
     override fun getLibraryMangaAsFlow(): Flow<List<LibraryManga>> {
         return database.libraryViewQueries
             .library(MangaMapper::mapLibraryManga)

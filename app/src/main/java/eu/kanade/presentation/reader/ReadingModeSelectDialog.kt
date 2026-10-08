@@ -35,11 +35,12 @@ fun ReadingModeSelectDialog(
     onChange: (StringResource) -> Unit,
 ) {
     val manga by viewModel.mangaFlow.collectAsState()
-    val readingMode = remember(manga) { ReadingMode.fromPreference(manga?.readingMode?.toInt()) }
+    val readingMode by viewModel.readingModeFlow.collectAsState()
 
     AdaptiveSheet(onDismissRequest = onDismissRequest) {
         DialogContent(
             readingMode = readingMode,
+            hasOverride = ReadingMode.fromPreference(manga?.readingMode?.toInt()) != ReadingMode.DEFAULT,
             onChangeReadingMode = {
                 viewModel.onChangeReadingMode(it)
                 onChange(it.stringRes)
@@ -52,12 +53,13 @@ fun ReadingModeSelectDialog(
 @Composable
 private fun DialogContent(
     readingMode: ReadingMode,
+    hasOverride: Boolean,
     onChangeReadingMode: (ReadingMode) -> Unit,
 ) {
-    var selected by remember { mutableStateOf(readingMode) }
+    var selected by remember(readingMode) { mutableStateOf(readingMode) }
 
     ModeSelectionDialog(
-        onUseDefault = { onChangeReadingMode(ReadingMode.DEFAULT) }.takeIf { readingMode != ReadingMode.DEFAULT },
+        onUseDefault = { onChangeReadingMode(ReadingMode.DEFAULT) }.takeIf { hasOverride },
         onApply = { onChangeReadingMode(selected) },
     ) {
         SettingsIconGrid(MR.strings.pref_category_reading_mode) {
@@ -83,12 +85,14 @@ private fun DialogContentPreview() {
         Surface {
             Column {
                 DialogContent(
-                    readingMode = ReadingMode.DEFAULT,
+                    readingMode = ReadingMode.WEBTOON,
+                    hasOverride = false,
                     onChangeReadingMode = {},
                 )
 
                 DialogContent(
                     readingMode = ReadingMode.LEFT_TO_RIGHT,
+                    hasOverride = true,
                     onChangeReadingMode = {},
                 )
             }

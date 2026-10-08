@@ -9,7 +9,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import eu.kanade.domain.manga.model.readerOrientation
-import eu.kanade.domain.manga.model.readingMode
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderOrientation
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderPreferences
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderSettingsViewModel
@@ -29,7 +28,7 @@ internal fun ColumnScope.ReadingModePage(viewModel: ReaderSettingsViewModel) {
     HeadingItem(MR.strings.pref_category_for_this_series)
     val manga by viewModel.mangaFlow.collectAsState()
 
-    val readingMode = remember(manga) { ReadingMode.fromPreference(manga?.readingMode?.toInt()) }
+    val readingMode by viewModel.readingModeFlow.collectAsState()
     SettingsChipRow(MR.strings.pref_category_reading_mode) {
         ReadingMode.entries.map {
             FilterChip(

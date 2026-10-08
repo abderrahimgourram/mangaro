@@ -95,6 +95,12 @@ getAllManga:
 SELECT *
 FROM mangas;
 
+getKnownMangaWithGenres:
+SELECT *
+FROM mangas
+WHERE source = :sourceId AND genre IS NOT NULL AND genre != ''
+ORDER BY title COLLATE NOCASE, _id;
+
 getAllMangaSourceAndUrl:
 SELECT source, url
 FROM mangas;

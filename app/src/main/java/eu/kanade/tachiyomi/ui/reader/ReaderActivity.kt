@@ -564,7 +564,7 @@ class ReaderActivity : BaseActivity() {
             },
 
             readingMode = ReadingMode.fromPreference(
-                viewModel.getMangaReadingMode(resolveDefault = false),
+                viewModel.getMangaReadingMode(),
             ),
             onClickReadingMode = viewModel::openReadingModeSelectDialog,
             orientation = ReaderOrientation.fromPreference(
