@@ -17,7 +17,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -48,6 +47,7 @@ class SigilCollectionScreen(private val initialBadgeId: String? = null) : Screen
         val counts=remember(snapshot) {SigilProgress.calculate(snapshot.facts,snapshot.community)}
         var filter by rememberSaveable {mutableIntStateOf(0)}
         var selected by rememberSaveable {mutableStateOf(initialBadgeId)}
+        var showArtCredits by rememberSaveable {mutableStateOf(false)}
         LaunchedEffect(Unit) {repo.requestRefresh()}
         val earned=snapshot.unlocks.filterNot(SigilUnlock::revoked).map(SigilUnlock::id).toSet()
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
@@ -62,9 +62,10 @@ class SigilCollectionScreen(private val initialBadgeId: String? = null) : Screen
                             LinearProgressIndicator(progress={earned.size/30f},modifier=Modifier.fillMaxWidth(),color=Color(0xFFE4C576),trackColor=Color(0xFF382A47))
                             Text("الأختام للزينة فقط، ومستقلة تمامًا عن نقاط الخبرة.",color=Color(0xFF9F90AC),style=MaterialTheme.typography.bodySmall)
                             Text("الأنواع تُحتسب من بيانات العمل الموثقة فقط. التنزيلات القديمة التي لا يوجد لها سجل إكمال لا تُقدّر بأرقام افتراضية.",color=Color(0xFF9F90AC),style=MaterialTheme.typography.bodySmall)
+                            TextButton(onClick={showArtCredits=true}) {Text("فن الأختام وتراخيصه",color=Color(0xFFE4C576))}
                         }
                     }
-                    item(key="equipment",span={GridItemSpan(maxLineSpan)}) {EquippedSigils(snapshot.slots,onEmpty={selected=earned.firstOrNull()},onTap={selected=it})}
+                    item(key="equipment",span={GridItemSpan(maxLineSpan)}) {EquippedSigils(snapshot.slots,onEmpty={selected=earned.firstOrNull()},onTap={selected=it},animated=selected==null && !showArtCredits)}
                     item(key="filters",span={GridItemSpan(maxLineSpan)}) {
                         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                             listOf("الكل","المفتوحة","المغلقة").forEachIndexed {i,label-> FilterChip(selected=filter==i,onClick={filter=i},label={Text(label)})}
@@ -81,11 +82,13 @@ class SigilCollectionScreen(private val initialBadgeId: String? = null) : Screen
                             items(definitions,key={it.id}) {definition ->
                                 val unlocked=definition.id in earned; val progress=(counts[definition.id] ?: 0).coerceAtMost(definition.required)
                                 val equipped=definition.id in snapshot.slots
-                                Column(Modifier.fillMaxWidth().background(Color(0xFF191320),RoundedCornerShape(18.dp)).border(1.dp,Color(world.accent).copy(alpha=if(unlocked).35f else .1f),RoundedCornerShape(18.dp))
+                                Column(Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(Color(world.accent).copy(alpha=if(unlocked).13f else .035f),Color(0xFF191320))),RoundedCornerShape(20.dp)).border(1.dp,Color(if(definition.rarity==SigilRarity.LEGENDARY)0xFFE4C576 else world.accent).copy(alpha=if(unlocked).4f else .1f),RoundedCornerShape(20.dp))
                                     .clickable {selected=definition.id}.padding(12.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(7.dp)) {
-                                    SigilArtwork(definition,unlocked,Modifier.size(108.dp))
+                                    SigilArtwork(definition,unlocked,Modifier.size(120.dp),animated=selected==null && !showArtCredits)
                                     Text(definition.name,color=if(unlocked) Color(0xFFF0E5F5) else Color(0xFF9F90AC),style=MaterialTheme.typography.titleSmall,textAlign=TextAlign.Center)
-                                    Text(if(equipped) "مجهّز" else if(unlocked) definition.rarity.title else "ختم مغلق",color=Color(world.accent).copy(alpha=.8f),style=MaterialTheme.typography.labelSmall)
+                                    SigilRarityLabel(definition,unlocked)
+                                    if(equipped) Text("مجهّز",color=Color(world.accent),style=MaterialTheme.typography.labelSmall)
+                                    else if(!unlocked) Text("ختم مغلق",color=Color(0xFF9F90AC),style=MaterialTheme.typography.labelSmall)
                                     if(!unlocked) {
                                         LinearProgressIndicator(progress={progress.toFloat()/definition.required},modifier=Modifier.fillMaxWidth(),color=Color(world.accent),trackColor=Color(0xFF2F263A))
                                         LtrNumber("$progress / ${definition.required}")
@@ -99,6 +102,7 @@ class SigilCollectionScreen(private val initialBadgeId: String? = null) : Screen
             selected?.let {id -> RealmSigils.byId[id]?.let {definition ->
                 SigilDetail(definition,snapshot,counts[id] ?: 0,repo,onDismiss={selected=null})
             }}
+            if(showArtCredits) SigilArtCredits(onDismiss={showArtCredits=false})
         }
     }
 }
@@ -115,9 +119,10 @@ class SigilCollectionScreen(private val initialBadgeId: String? = null) : Screen
     val unlock=snapshot.unlocks.firstOrNull {it.id==definition.id && !it.revoked}
     ModalBottomSheet(onDismissRequest=onDismiss,containerColor=Color(0xFF15111E)) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp).navigationBarsPadding(),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(12.dp)) {
-            SigilArtwork(definition,unlock!=null,Modifier.size(172.dp))
+            SigilArtwork(definition,unlock!=null,Modifier.size(232.dp))
             Text(definition.name,color=Color.White,style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.Bold)
-            Text("${definition.world.title} · ${definition.rarity.title}",color=Color(definition.accent))
+            Text(definition.world.title,color=Color(definition.accent))
+            SigilRarityLabel(definition,unlock!=null)
             Text(definition.description,color=Color(0xFFB7A9C4),textAlign=TextAlign.Center)
             Text(definition.objective,color=Color(0xFFD4C5E0),textAlign=TextAlign.Center)
             LtrNumber("${progress.coerceAtMost(definition.required)} / ${definition.required}")
@@ -143,20 +148,29 @@ class SigilCollectionScreen(private val initialBadgeId: String? = null) : Screen
 }
 
 /** Exactly three ordered public cosmetics; empty slots reveal no collection or reading data. */
-@Composable fun EquippedSigils(slots: List<String?>,onEmpty: (() -> Unit)? = null,onTap: ((String)->Unit)? = null) {
-    var name by remember {mutableStateOf<String?>(null)}
+@Composable fun EquippedSigils(slots: List<String?>,onEmpty: (() -> Unit)? = null,onTap: ((String)->Unit)? = null,animated: Boolean = true) {
+    var previewId by remember(slots) {mutableStateOf<String?>(null)}
     Row(Modifier.fillMaxWidth().padding(vertical=8.dp),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
         repeat(3) {slot ->
             val definition=RealmSigils.byId[slots.getOrNull(slot)]
             Box(Modifier.weight(1f).height(78.dp).background(Brush.verticalGradient(listOf(Color(definition?.accent ?: 0xFF9F90AC).copy(alpha=.09f),Color(0xFF16111D))),RoundedCornerShape(16.dp))
                 .border(1.dp,Color(definition?.accent ?: 0xFF9F90AC).copy(alpha=.18f),RoundedCornerShape(16.dp))
-                .clickable(enabled=definition!=null || onEmpty!=null) {if(definition!=null) {if(onTap!=null)onTap(definition.id) else name=definition.name} else onEmpty?.invoke()},contentAlignment=Alignment.Center) {
-                if(definition!=null) SigilArtwork(definition,true,Modifier.size(74.dp))
+                .clickable(enabled=definition!=null || onEmpty!=null) {if(definition!=null) {if(onTap!=null)onTap(definition.id) else previewId=definition.id} else onEmpty?.invoke()},contentAlignment=Alignment.Center) {
+                if(definition!=null) SigilArtwork(definition,true,Modifier.size(74.dp),animated=animated && previewId==null,compact=true)
                 else Text("ختم ${slot+1}",color=Color(0xFF756782),style=MaterialTheme.typography.labelSmall)
             }
         }
     }
-    name?.let {AlertDialog(onDismissRequest={name=null},title={Text(it)},confirmButton={TextButton(onClick={name=null}){Text("إغلاق")}})}
+    previewId?.takeIf {it in slots}?.let {id -> RealmSigils.byId[id]?.let {definition ->
+        // Only the public equipped cosmetic is shown; never private progress.
+        AlertDialog(onDismissRequest={previewId=null},containerColor=Color(0xFF15111E),
+            title={Text(definition.name,textAlign=TextAlign.Center,modifier=Modifier.fillMaxWidth())},
+            text={Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(12.dp)) {
+                SigilArtwork(definition,true,Modifier.size(220.dp))
+                Text(definition.world.title,color=Color(definition.accent),textAlign=TextAlign.Center)
+                SigilRarityLabel(definition,true)
+            }},confirmButton={TextButton(onClick={previewId=null}){Text("إغلاق")}})
+    }}
 }
 
 @Composable fun OwnProfileSigils() {
@@ -175,8 +189,7 @@ class SigilCollectionScreen(private val initialBadgeId: String? = null) : Screen
     val snapshot=activeSnapshot(repo)
     val definition=RealmSigils.byId[unlock?.id]?.takeIf {snapshot.unlocks.any {u->u.id==it.id && !u.revoked}} ?: return
     var appeared by remember(definition.id) {mutableStateOf(false)}
-    val context=LocalContext.current
-    val motion=remember(context) {android.provider.Settings.Global.getFloat(context.contentResolver,android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,1f)>0f}
+    val motion=rememberSigilMotionAllowed()
     val reveal by animateFloatAsState(if(appeared)1f else 0f,tween(if(motion)1200 else 0,easing=FastOutSlowInEasing),label="sigil-materialize")
     val scale=.4f+.6f*reveal
     androidx.activity.compose.BackHandler {repo.dismissAnnouncement()}
@@ -185,9 +198,9 @@ class SigilCollectionScreen(private val initialBadgeId: String? = null) : Screen
         Column(Modifier.fillMaxWidth(.85f).verticalScroll(rememberScrollState()).background(Brush.radialGradient(listOf(Color(definition.accent).copy(alpha=.15f),Color(0xFF191120))),RoundedCornerShape(28.dp)).padding(24.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(12.dp)) {
             Text("إنجاز جديد!",color=Color(0xFFE4C576),style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.Bold)
             Text("لقد فتحت ختمًا جديدًا",color=Color(0xFFD4C5E0))
-            Box(Modifier.size(190.dp),contentAlignment=Alignment.Center) {
+            Box(Modifier.size(220.dp),contentAlignment=Alignment.Center) {
                 if(motion && reveal<1f) SigilOpeningParticles(definition,reveal,Modifier.fillMaxSize())
-                SigilArtwork(definition,true,Modifier.fillMaxSize().graphicsLayer {scaleX=scale;scaleY=scale;alpha=scale})
+                SigilArtwork(definition,true,Modifier.fillMaxSize().graphicsLayer {scaleX=scale;scaleY=scale;alpha=scale;rotationZ=if(motion)-6f*(1f-reveal) else 0f})
             }
             Text(definition.name,Modifier.graphicsLayer {alpha=if(motion)reveal else 1f},color=Color.White,style=MaterialTheme.typography.headlineSmall,textAlign=TextAlign.Center)
             Text(definition.objective,color=Color(0xFFB7A9C4),textAlign=TextAlign.Center)
