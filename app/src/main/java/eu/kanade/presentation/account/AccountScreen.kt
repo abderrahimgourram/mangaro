@@ -590,7 +590,8 @@ private fun AccountAvatar(profile: MangaroProfile?, modifier: Modifier) {
 }
 
 @Composable
-internal fun ProfileAvatar(avatarUrl: String?, googleAvatarUrl: String? = null, modifier: Modifier) {
+internal fun ProfileAvatar(avatarUrl: String?, googleAvatarUrl: String? = null, modifier: Modifier,
+    contentScale: ContentScale = ContentScale.Fit) {
     val urls = remember(avatarUrl, googleAvatarUrl) {
         listOfNotNull(avatarUrl, googleAvatarUrl).distinct()
     }
@@ -599,7 +600,7 @@ internal fun ProfileAvatar(avatarUrl: String?, googleAvatarUrl: String? = null, 
         Image(painterResource(R.drawable.ic_splash_logo), null, Modifier.matchParentSize())
         if (index < urls.size) {
             val loadingIndex = index
-            AsyncImage(urls[loadingIndex], null, modifier = Modifier.matchParentSize(),
+            AsyncImage(urls[loadingIndex], null, modifier = Modifier.matchParentSize(), contentScale = contentScale,
                 onError = { if (index == loadingIndex) index = loadingIndex + 1 })
         }
     }

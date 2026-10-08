@@ -1,8 +1,7 @@
 package eu.kanade.presentation.community
 
 import eu.kanade.presentation.account.DeveloperBadge
-import eu.kanade.presentation.account.RankIdentity
-import eu.kanade.presentation.account.TierAvatarFrame
+import eu.kanade.presentation.account.RankEmblem
 import eu.kanade.presentation.account.rankAccent
 import android.text.format.DateUtils
 import androidx.compose.animation.animateContentSize
@@ -34,6 +33,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Star
@@ -49,6 +49,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.navigator.LocalNavigator
@@ -530,7 +532,7 @@ private fun CommunityComposer(target: CommunityTarget, actor: String?, enabled: 
             TextButton(enabled = enabled, onClick = { body = ""; requestId = java.util.UUID.randomUUID().toString(); onCancel() }) { Text("إلغاء", style = MaterialTheme.typography.labelSmall) }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Top) {
-            ProfileAvatar(avatar?.avatarUrl, modifier = Modifier.padding(top = 10.dp).size(36.dp).clip(RoundedCornerShape(12.dp)).background(MangaroDesignSystem.SurfaceHigh))
+            CommentAuthorAvatar(avatar?.avatarUrl, avatar?.level ?: 1, Modifier.padding(top = 10.dp).size(36.dp))
             Row(Modifier.weight(1f).clip(RoundedCornerShape(18.dp)).background(Color(0xFF211829))
                 .border(.5.dp, outline, RoundedCornerShape(18.dp)).heightIn(min = 56.dp)
                 .padding(start = 12.dp, end = 2.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -564,6 +566,55 @@ private fun CommunityComposer(target: CommunityTarget, actor: String?, enabled: 
     }
 }
 
+/** Lightweight circular treatment shared by comment, reply, and composer portraits. */
+@Composable
+private fun CommentAuthorAvatar(avatarUrl: String?, level: Int, modifier: Modifier = Modifier) {
+    val accent = rankAccent(level)
+    Box(modifier.clip(CircleShape).background(MangaroDesignSystem.SurfaceHigh)
+        .border(.75.dp, accent.copy(alpha = .4f), CircleShape).padding(2.dp)) {
+        ProfileAvatar(avatarUrl, modifier = Modifier.fillMaxSize().clip(CircleShape), contentScale = ContentScale.Crop)
+    }
+}
+
+/** Separate the author's identity from the rank strip so narrow replies can wrap naturally. */
+@Composable
+private fun CommentAuthorHeader(comment: CommunityComment, time: String, onAuthor: () -> Unit) {
+    val interaction = remember(comment.id) { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (pressed) .96f else 1f, tween(120), label = "authorPress")
+    val metadata = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, lineHeight = 16.sp)
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+        .clickable(interactionSource = interaction, indication = ripple(), role = Role.Button,
+            onClickLabel = "عرض الملف الشخصي", onClick = onAuthor),
+        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
+            CommentAuthorAvatar(comment.avatarUrl, comment.level, Modifier.size(48.dp)
+                .graphicsLayer { scaleX = scale; scaleY = scale })
+            Column(Modifier.weight(1f).heightIn(min = 48.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                ProfileDisplayName(comment.author.displayName, comment.username, color = Color(0xFFF5EFF9),
+                    style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis)
+                FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(3.dp), itemVerticalAlignment = Alignment.CenterVertically) {
+                    comment.username?.let { UsernameHandle(it, style = metadata, color = Color(0xFFBAA7CA)) }
+                    Text(time, style = metadata, color = Color(0xFF9F8FAE))
+                    if (comment.isEdited) Text("معدّل", style = metadata, color = Color(0xFF9F8FAE))
+                }
+            }
+        }
+        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp), itemVerticalAlignment = Alignment.CenterVertically) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                RankEmblem(comment.level, Modifier.size(20.dp))
+                Text(comment.author.rankTitle, color = rankAccent(comment.level), style = metadata)
+            }
+            Text("المستوى ${WesternDigits.isolate(comment.level.toString())}", style = metadata, color = Color(0xFFB7A6C6))
+            DeveloperBadge(comment.author.role, compact = true)
+        }
+    }
+}
+
 @Composable
 fun MangaroComment(comment: CommunityComment, enabled: Boolean = true, onLike: () -> Unit, onReply: () -> Unit,
     onReport: (() -> Unit)? = null, onEdit: (() -> Unit)? = null, onDelete: (() -> Unit)? = null, onViewReplies: (() -> Unit)? = null,
@@ -573,41 +624,12 @@ fun MangaroComment(comment: CommunityComment, enabled: Boolean = true, onLike: (
         WesternDigits.normalize(DateUtils.getRelativeTimeSpanString(comment.createdAt, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS).toString())
     }
     var menu by remember(comment.id) { mutableStateOf(false) }
-    val avatarInteraction = remember(comment.id) { MutableInteractionSource() }
-    val avatarPressed by avatarInteraction.collectIsPressedAsState()
-    val avatarScale by animateFloatAsState(if (avatarPressed) 0.96f else 1f, tween(120), label = "authorPress")
-    val metadata = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, lineHeight = 16.sp)
     Column(Modifier.fillMaxWidth().padding(horizontal = horizontalInset, vertical = 7.dp)
         .clip(RoundedCornerShape(22.dp))
         .background(Brush.verticalGradient(listOf(Color(0xFF21192B), Color(0xFF19131F))))
         .border(.5.dp, Color(0xFFAE91CA).copy(alpha = .12f), RoundedCornerShape(22.dp)).padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Top) {
-            Box(Modifier.size(48.dp).clip(RoundedCornerShape(16.dp))
-                .clickable(interactionSource = avatarInteraction, indication = ripple(), onClick = onAuthor), contentAlignment = Alignment.Center) {
-                TierAvatarFrame(comment.level, Modifier.fillMaxSize()) {
-                    ProfileAvatar(comment.avatarUrl, modifier = Modifier.fillMaxSize().graphicsLayer { scaleX = avatarScale; scaleY = avatarScale }
-                        .clip(RoundedCornerShape(11.dp)).background(MangaroDesignSystem.SurfaceHigh))
-                }
-            }
-            Column(Modifier.weight(1f).heightIn(min = 48.dp).clip(RoundedCornerShape(8.dp)).clickable(onClick = onAuthor),
-                verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                ProfileDisplayName(comment.author.displayName, comment.username, color = Color(0xFFF5EFF9),
-                    style = MaterialTheme.typography.titleSmall.copy(textDirection = TextDirection.Content), fontWeight = FontWeight.SemiBold,
-                    maxLines = 2, overflow = TextOverflow.Ellipsis)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(5.dp),
-                    itemVerticalAlignment = Alignment.CenterVertically) {
-                    RankIdentity(comment.level, compact = true)
-                    DeveloperBadge(comment.author.role, compact = true)
-                }
-            }
-        }
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(3.dp),
-            itemVerticalAlignment = Alignment.CenterVertically) {
-            comment.username?.let { UsernameHandle(it, style = metadata, color = Color(0xFFBAA7CA)) }
-            Text(time, style = metadata, color = Color(0xFF9F8FAE))
-            if (comment.isEdited) Text("معدّل", style = metadata, color = Color(0xFF9F8FAE))
-        }
+        CommentAuthorHeader(comment, time, onAuthor)
         Column(Modifier.fillMaxWidth().animateContentSize(tween(160)), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             replyTo?.let { ReplyAttribution(it.username, it.displayName) }
             var revealed by remember(comment.id, comment.spoiler, comment.body, comment.updatedAt) { mutableStateOf(false) }
