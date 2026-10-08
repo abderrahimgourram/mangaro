@@ -2,6 +2,10 @@ package eu.kanade.presentation.more.settings.screen.about
 
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
@@ -10,6 +14,7 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.domain.ui.UiPreferences
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.more.LogoHeader
+import eu.kanade.presentation.sigils.SigilArtCredits
 import eu.kanade.presentation.more.settings.widget.TextPreferenceWidget
 import eu.kanade.presentation.util.LocalBackPress
 import eu.kanade.presentation.util.Screen
@@ -36,6 +41,7 @@ object AboutScreen : Screen() {
         val uriHandler = LocalUriHandler.current
         val handleBack = LocalBackPress.current
         val navigator = LocalNavigator.currentOrThrow
+        var artworkCredits by rememberSaveable { mutableStateOf(false) }
 
         Scaffold(
             topBar = { scrollBehavior ->
@@ -94,8 +100,12 @@ object AboutScreen : Screen() {
                         onPreferenceClick = { navigator.push(OpenSourceLicensesScreen()) },
                     )
                 }
+                item {
+                    TextPreferenceWidget(title = "فنون الأختام والتراخيص", onPreferenceClick = { artworkCredits = true })
+                }
             }
         }
+        if (artworkCredits) SigilArtCredits(onDismiss = { artworkCredits = false })
     }
 
     fun getVersionName(withBuildDate: Boolean): String {

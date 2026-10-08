@@ -21,8 +21,8 @@ third-party illustrations. The original decorative artwork and resulting remix
 illustrations are also supplied under CC BY 3.0; this does not change the
 application’s code license. Do not imply endorsement by the original artists.
 
-Attribution is available in-app from the collection’s **«فن الأختام وتراخيصه»**
-action, with author links, license and all 30 source links. This document is also
+Attribution is available in-app from the collection toolbar and Settings → About
+under **«فنون الأختام والتراخيص»**, with author links, license and all 30 source links. This document is also
 packaged offline in the APK; artwork is never hotlinked/downloaded at runtime.
 
 ## Asset-by-asset sources

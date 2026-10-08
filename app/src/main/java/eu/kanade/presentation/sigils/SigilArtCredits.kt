@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import eu.kanade.presentation.account.RankArtAssets
 import mihon.domain.sigils.RealmSigils
 import mihon.domain.sigils.SigilDefinition
 import mihon.domain.sigils.SigilRarity
@@ -51,17 +52,26 @@ internal fun SigilArtCredits(onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = Color(0xFF15111E),
-        title = { Text("فن الأختام وتراخيصه") },
+        title = { Text("فنون الأختام والتراخيص") },
         text = {
             LazyColumn(Modifier.fillMaxWidth().heightIn(max = 440.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 item {
-                    Text("نقوش Lorc وDelapouite من Game-icons.net بترخيص CC BY 3.0. أعاد Mangaro تصميمها بإطارات أصلية، وترصيع ونقوش معدنية وألوان العوالم. تبقى الرسوم المشتقة متاحة بهذا الترخيص.", color = Color(0xFFD4C5E0), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Start)
+                    Text("نقوش الأختام والرتب من أعمال Lorc وDelapouite على Game-icons.net، بترخيص CC BY 3.0. أضاف Mangaro إطارات وترصيعًا ونقوشًا معدنية وألوانًا أصلية. الرسوم المشتقة متاحة بالترخيص نفسه، دون ادعاء تأييد الفنانين للتطبيق.", color = Color(0xFFD4C5E0), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Start)
                 }
                 item {
                     TextButton(onClick = { uriHandler.openUri("https://creativecommons.org/licenses/by/3.0/") }) { Text("ترخيص CC BY 3.0") }
                     TextButton(onClick = { uriHandler.openUri("http://lorcblog.blogspot.com") }) { Text("Lorc") }
                     TextButton(onClick = { uriHandler.openUri("https://delapouite.com") }) { Text("Delapouite") }
+                    TextButton(onClick = { uriHandler.openUri("https://mangaro-web.vercel.app/open-source") }) { Text("المصادر المفتوحة في موقع Mangaro") }
                 }
+                item {Text("فنون الرتب",color=Color(0xFFE4C576),style=MaterialTheme.typography.titleSmall)}
+                items(RankArtAssets.all, key = { it.drawable }) { art ->
+                    Column {
+                        Text(art.name,color=Color(0xFFD4C5E0),style=MaterialTheme.typography.titleSmall)
+                        TextButton(onClick={uriHandler.openUri(art.sourceUrl)}) {Text("Lorc · الأصل والترخيص",style=MaterialTheme.typography.bodySmall)}
+                    }
+                }
+                item {Text("أختام العوالم",color=Color(0xFFE4C576),style=MaterialTheme.typography.titleSmall)}
                 items(RealmSigils.all, key = { it.id }) { definition ->
                     val art = SigilArtAssets.forId(definition.id)
                     Column {

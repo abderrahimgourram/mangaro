@@ -96,7 +96,7 @@ class SigilRepository(context: Context, private val account: AccountFoundation,
             if(force || now-lastAttempt>=30_000 || (candidate && syncError.value==null)) sync(user)
             publish(user)
         } catch(cancelled: CancellationException) {throw cancelled}
-        catch(_:Exception) {if(currentOwner()==user) syncError.value="التقدم المحلي محفوظ؛ تعذّرت المزامنة مؤقتًا"}
+        catch(_:Exception) {if(currentOwner()==user) syncError.value="تعذّر تحديث الأختام؛ حاول لاحقًا"}
     }
     private suspend fun prepare(user: String) {
         if(store.meta(user,"initialized")!=null && store.meta(user,"reconstructed")!=null) return
@@ -247,7 +247,7 @@ class SigilRepository(context: Context, private val account: AccountFoundation,
                 store.put(user,"slots",json.encodeToString(pending));saveSlots(user,pending)
             }
         } catch(cancelled: CancellationException) {throw cancelled}
-        catch(_: Exception) {if(currentOwner()==user) syncError.value="التقدم المحلي محفوظ؛ تعذّرت المزامنة مؤقتًا"}
+        catch(_: Exception) {if(currentOwner()==user) syncError.value="تعذّر تحديث الأختام؛ حاول لاحقًا"}
     }
     suspend fun equip(slot: Int,id: String?): Boolean = withContext(Dispatchers.IO) {lock.withLock {
         val user=currentOwner() ?: return@withLock false

@@ -9,6 +9,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -51,18 +53,15 @@ class SigilCollectionScreen(private val initialBadgeId: String? = null) : Screen
         LaunchedEffect(Unit) {repo.requestRefresh()}
         val earned=snapshot.unlocks.filterNot(SigilUnlock::revoked).map(SigilUnlock::id).toSet()
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-            Scaffold(topBar={scroll -> AppBar(title="أختام العوالم",navigateUp=navigator::pop,scrollBehavior=scroll)}) {padding ->
+            Scaffold(topBar={scroll -> AppBar(title="أختام العوالم",navigateUp=navigator::pop,scrollBehavior=scroll,
+                actions={IconButton(onClick={showArtCredits=true}) {Icon(Icons.Outlined.Info,"الفنون والتراخيص")}})}) {padding ->
                 LazyVerticalGrid(columns=GridCells.Adaptive(145.dp),modifier=Modifier.fillMaxSize().background(MangaroDesignSystem.BackgroundDark).padding(padding),
                     contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp),horizontalArrangement=Arrangement.spacedBy(12.dp)) {
                     item(key="header",span={GridItemSpan(maxLineSpan)}) {
-                        Column(Modifier.fillMaxWidth().background(Brush.linearGradient(listOf(Color(0xFF2A1B3C),Color(0xFF15111E))),RoundedCornerShape(22.dp)).padding(20.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
-                            Text("رحلتك تترك أثرًا",color=Color(0xFFE4C576),style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.Bold)
-                            Text("ثلاثون ختمًا، وستة عوالم. كل ختم حكاية صنعتها بنفسك.",color=Color(0xFFB7A9C4))
-                            if(snapshot.owner==null) Text("جارٍ جمع الأختام…",color=Color(0xFFB7A9C4)) else LtrNumber("${earned.size} / 30",Modifier.fillMaxWidth())
-                            LinearProgressIndicator(progress={earned.size/30f},modifier=Modifier.fillMaxWidth(),color=Color(0xFFE4C576),trackColor=Color(0xFF382A47))
-                            Text("الأختام للزينة فقط، ومستقلة تمامًا عن نقاط الخبرة.",color=Color(0xFF9F90AC),style=MaterialTheme.typography.bodySmall)
-                            Text("الأنواع تُحتسب من بيانات العمل الموثقة فقط. التنزيلات القديمة التي لا يوجد لها سجل إكمال لا تُقدّر بأرقام افتراضية.",color=Color(0xFF9F90AC),style=MaterialTheme.typography.bodySmall)
-                            TextButton(onClick={showArtCredits=true}) {Text("فن الأختام وتراخيصه",color=Color(0xFFE4C576))}
+                        Column(Modifier.fillMaxWidth().padding(horizontal=4.dp,vertical=4.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
+                            LtrNumber(if(snapshot.owner==null) "— / 30" else "${earned.size} / 30",Modifier.fillMaxWidth())
+                            if(snapshot.owner==null) LinearProgressIndicator(modifier=Modifier.fillMaxWidth().height(3.dp),color=Color(0xFFE4C576),trackColor=Color(0xFF382A47))
+                            else LinearProgressIndicator(progress={earned.size/30f},modifier=Modifier.fillMaxWidth().height(3.dp),color=Color(0xFFE4C576),trackColor=Color(0xFF382A47))
                         }
                     }
                     item(key="equipment",span={GridItemSpan(maxLineSpan)}) {EquippedSigils(snapshot.slots,onEmpty={selected=earned.firstOrNull()},onTap={selected=it},animated=selected==null && !showArtCredits)}
@@ -88,8 +87,8 @@ class SigilCollectionScreen(private val initialBadgeId: String? = null) : Screen
                                     Text(definition.name,color=if(unlocked) Color(0xFFF0E5F5) else Color(0xFF9F90AC),style=MaterialTheme.typography.titleSmall,textAlign=TextAlign.Center)
                                     SigilRarityLabel(definition,unlocked)
                                     if(equipped) Text("مجهّز",color=Color(world.accent),style=MaterialTheme.typography.labelSmall)
-                                    else if(!unlocked) Text("ختم مغلق",color=Color(0xFF9F90AC),style=MaterialTheme.typography.labelSmall)
-                                    if(!unlocked) {
+                                    else if(!unlocked) Text(if(snapshot.owner==null) "جارٍ التحميل…" else "لم يُفتح بعد",color=Color(0xFF9F90AC),style=MaterialTheme.typography.labelSmall)
+                                    if(!unlocked && snapshot.owner!=null) {
                                         LinearProgressIndicator(progress={progress.toFloat()/definition.required},modifier=Modifier.fillMaxWidth(),color=Color(world.accent),trackColor=Color(0xFF2F263A))
                                         LtrNumber("$progress / ${definition.required}")
                                     }
@@ -125,19 +124,26 @@ class SigilCollectionScreen(private val initialBadgeId: String? = null) : Screen
             SigilRarityLabel(definition,unlock!=null)
             Text(definition.description,color=Color(0xFFB7A9C4),textAlign=TextAlign.Center)
             Text(definition.objective,color=Color(0xFFD4C5E0),textAlign=TextAlign.Center)
-            LtrNumber("${progress.coerceAtMost(definition.required)} / ${definition.required}")
-            if(definition.id=="murim_master") {
+            Text(if(snapshot.owner==null) "جارٍ التحميل…" else if(unlock==null) "لم يُفتح بعد" else "تم فتح الختم",color=Color(if(unlock==null)0xFF9F90AC else definition.accent),style=MaterialTheme.typography.labelMedium)
+            LtrNumber(if(snapshot.owner==null) "— / ${definition.required}" else "${progress.coerceAtMost(definition.required)} / ${definition.required}")
+            if(definition.id=="murim_master" && snapshot.owner!=null) {
                 val facts=snapshot.facts
-                Text("التصنيفات الشخصية: ${facts.count {it.kind=="category"}.coerceAtMost(3)} من 3 · الأعمال المنظمة: ${facts.count {it.kind=="work" && it.organized}.coerceAtMost(10)} من 10",color=Color(0xFFB7A9C4),style=MaterialTheme.typography.bodySmall)
+                Text("التصنيفات ${WesternDigits.isolate("${facts.count {it.kind=="category"}.coerceAtMost(3)} / 3")} · الأعمال ${WesternDigits.isolate("${facts.count {it.kind=="work" && it.organized}.coerceAtMost(10)} / 10")}",color=Color(0xFFB7A9C4),style=MaterialTheme.typography.bodySmall)
             }
             unlock?.let {
-                Text(it.unlockedAt?.let {date->"فُتح في ${WesternDigits.date(Date(date))}"} ?: "مكتسب من سجلات موثوقة؛ تاريخ الفتح الأصلي غير معروف",color=Color(0xFF9F90AC),style=MaterialTheme.typography.bodySmall,textAlign=TextAlign.Center)
+                it.unlockedAt?.let {date->Text("فُتح في ${WesternDigits.date(Date(date))}",color=Color(0xFF9F90AC),style=MaterialTheme.typography.bodySmall,textAlign=TextAlign.Center)}
+                Text("الأختام المجهزة",color=Color(0xFFD4C5E0),style=MaterialTheme.typography.labelMedium)
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                     repeat(3) {slot ->
                         val occupied=snapshot.slots[slot];val equipped=occupied==definition.id
                         OutlinedButton(enabled=!busy && (equipped || definition.id !in snapshot.slots),onClick={
                             busy=true;scope.launch {try {if(!repo.equip(slot,if(equipped)null else definition.id)) message="تعذّر تجهيز الختم"} finally {busy=false}}
-                        },modifier=Modifier.weight(1f),contentPadding=PaddingValues(6.dp)) {Text(if(equipped) "إزالة" else "الخانة ${slot+1}",style=MaterialTheme.typography.labelSmall)}
+                        },modifier=Modifier.weight(1f),contentPadding=PaddingValues(6.dp)) {
+                            Column(horizontalAlignment=Alignment.CenterHorizontally) {
+                                Text(if(equipped) "إزالة التجهيز" else "تجهيز",style=MaterialTheme.typography.labelSmall)
+                                Text(WesternDigits.isolate("${slot+1}"),style=MaterialTheme.typography.labelSmall)
+                            }
+                        }
                     }
                 }
             }
@@ -175,12 +181,18 @@ class SigilCollectionScreen(private val initialBadgeId: String? = null) : Screen
 
 @Composable fun OwnProfileSigils() {
     val repo=remember {Injekt.get<SigilRepository>()};val snapshot=activeSnapshot(repo);val navigator=LocalNavigator.currentOrThrow
-    EquippedSigils(snapshot.slots,onEmpty={navigator.push(SigilCollectionScreen())},onTap={navigator.push(SigilCollectionScreen(it))})
+    Column {
+        Text("الأختام المجهزة",color=Color(0xFF9F90AC),style=MaterialTheme.typography.labelSmall)
+        EquippedSigils(snapshot.slots,onEmpty={navigator.push(SigilCollectionScreen())},onTap={navigator.push(SigilCollectionScreen(it))})
+    }
 }
 @Composable fun PublicProfileSigils(userId: String) {
     val repo=remember {Injekt.get<SigilRepository>()};var slots by remember(userId) {mutableStateOf<List<String?>>(listOf(null,null,null))}
     LaunchedEffect(userId) {slots=repo.publicSlots(userId)}
-    EquippedSigils(slots)
+    Column {
+        Text("الأختام المجهزة",color=Color(0xFF9F90AC),style=MaterialTheme.typography.labelSmall)
+        EquippedSigils(slots)
+    }
 }
 
 /** Presented only on Home, never over Reader or Downloads. Dismissible and acknowledged before replay. */
@@ -196,8 +208,8 @@ class SigilCollectionScreen(private val initialBadgeId: String? = null) : Screen
     LaunchedEffect(definition.id) {repo.markAnnouncementPresented();appeared=true}
     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha=.76f)).clickable {repo.dismissAnnouncement()},contentAlignment=Alignment.Center) {
         Column(Modifier.fillMaxWidth(.85f).verticalScroll(rememberScrollState()).background(Brush.radialGradient(listOf(Color(definition.accent).copy(alpha=.15f),Color(0xFF191120))),RoundedCornerShape(28.dp)).padding(24.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(12.dp)) {
-            Text("إنجاز جديد!",color=Color(0xFFE4C576),style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.Bold)
-            Text("لقد فتحت ختمًا جديدًا",color=Color(0xFFD4C5E0))
+            Text("ختم جديد!",color=Color(0xFFE4C576),style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.Bold)
+            Text("تم فتح الختم",color=Color(0xFFD4C5E0))
             Box(Modifier.size(220.dp),contentAlignment=Alignment.Center) {
                 if(motion && reveal<1f) SigilOpeningParticles(definition,reveal,Modifier.fillMaxSize())
                 SigilArtwork(definition,true,Modifier.fillMaxSize().graphicsLayer {scaleX=scale;scaleY=scale;alpha=scale;rotationZ=if(motion)-6f*(1f-reveal) else 0f})
