@@ -455,6 +455,24 @@ class ReaderViewModel @JvmOverloads constructor(
      * read, update tracking services, enqueue downloaded chapter deletion, and updating the active chapter if this
      * [page]'s chapter is different from the currently active.
      */
+    private val sigilSelections = mutableMapOf<String, Int>()
+    private val sigilStartedWorks = mutableSetOf<String>()
+    private var sigilStartObservation: kotlinx.coroutines.Job? = null
+
+    private fun sigilReadingReceipt(chapter: ReaderChapter, owner: String, completed: Boolean) {
+        if (incognitoMode || owner == "_no_owner") return
+        val work = manga ?: return
+        val c = chapter.chapter.toDomainChapter() ?: return
+        val fact = try {
+            if (completed) mihon.domain.sigils.SigilEvidence.chapter(work.source,work.url,c.url,c.memo,work.genre,read=true,at=System.currentTimeMillis())
+            else mihon.domain.sigils.SigilEvidence.work(work.source,work.url,work.genre,started=true,at=System.currentTimeMillis())
+        } catch(_: Exception) {return}
+        val identity = "$owner:${if(completed) fact.work else fact.key}"
+        if (!completed && !sigilStartedWorks.add(identity)) return
+        mihon.domain.sigils.SigilEvents.emit(if(completed) mihon.domain.sigils.SigilEvents.Kind.READ else mihon.domain.sigils.SigilEvents.Kind.STARTED,
+            c.id,owner=owner,evidence=fact)
+    }
+
     fun onPageSelected(page: ReaderPage) {
         // InsertPage doesn't change page progress
         if (page is InsertPage) {
@@ -463,6 +481,19 @@ class ReaderViewModel @JvmOverloads constructor(
 
         val selectedChapter = page.chapter
         val pages = selectedChapter.pages ?: return
+        val sigilOwner = mihon.domain.sigils.SigilEvents.captureOwner?.invoke() ?: "_no_owner"
+        val sigilSelection = "$sigilOwner:${selectedChapter.chapter.id}"
+        sigilSelections[sigilSelection] = page.index
+        if (sigilSelections.size > 16) sigilSelections.remove(sigilSelections.keys.first())
+        sigilStartObservation?.cancel()
+        fun startSigilReading() {
+            if (sigilSelections[sigilSelection] == page.index) sigilReadingReceipt(selectedChapter,sigilOwner,false)
+        }
+        if (page.status is Page.State.Ready) startSigilReading()
+        else if (!incognitoMode) sigilStartObservation = viewModelScope.launch {
+            page.statusFlow.first { it is Page.State.Ready }
+            startSigilReading()
+        }
 
         // Only selected chapter ends count; opening an ordinary page does not.
         selectedChapter.chapter.id?.let { chapterId ->
@@ -471,6 +502,9 @@ class ReaderViewModel @JvmOverloads constructor(
                 adPageReadyJobs.remove(chapterId)?.cancel()
             } else {
                 fun recordReady() {
+                    if (mihon.domain.sigils.SigilReadObservation.completed(page.status is Page.State.Ready,page.index,pages.lastIndex,sigilSelections[sigilSelection])) {
+                        sigilReadingReceipt(selectedChapter,sigilOwner,true)
+                    }
                     if (adCompletion.ready(chapterId, page.index, pages.lastIndex)) {
                         readerAdPolicy.chapterCompleted(adReadingSession, chapterId)
                     }

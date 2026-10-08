@@ -1,0 +1,25 @@
+-- Read-only evidence projections. No duplicate Manga/Chapter storage or source requests.
+chapterEvidence:
+SELECT C._id, C.manga_id, C.url, C.memo, C.read, C.bookmark,
+       M.source, M.url AS manga_url, M.genre
+FROM chapters C JOIN mangas M ON M._id = C.manga_id
+WHERE C._id = :chapterId;
+
+historicalChapters:
+SELECT C._id, C.manga_id, C.url, C.memo, C.read, C.bookmark,
+       M.source, M.url AS manga_url, M.genre
+FROM chapters C JOIN mangas M ON M._id = C.manga_id
+WHERE C.read = 1 OR C.bookmark = 1;
+
+historicalWorks:
+SELECT M._id, M.source, M.url, M.genre, M.favorite,
+       EXISTS(SELECT 1 FROM chapters C JOIN history H ON H.chapter_id = C._id
+              WHERE C.manga_id = M._id AND H.last_read > 0 AND H.time_read > 0) AS started
+FROM mangas M
+WHERE M.favorite = 1 OR EXISTS(SELECT 1 FROM chapters C JOIN history H ON H.chapter_id = C._id
+                              WHERE C.manga_id = M._id AND H.last_read > 0 AND H.time_read > 0);
+
+organizedWorks:
+SELECT DISTINCT M._id, M.source, M.url, M.genre, MC.category_id
+FROM mangas M JOIN mangas_categories MC ON MC.manga_id = M._id
+WHERE M.favorite = 1 AND MC.category_id > 0;

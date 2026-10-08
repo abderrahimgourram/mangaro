@@ -26,6 +26,7 @@ class ChapterRepositoryImpl(
         updates: List<ChapterUpdate>,
         removals: List<Long>,
     ): List<Chapter> {
+        val sigilOwner = mihon.domain.sigils.SigilEvents.captureOwner?.invoke() ?: "_no_owner"
         val inserted = database.transactionWithResult {
             val rows = additions.map { chapter ->
                 val id = database.chaptersQueries.insertReturningId(
@@ -42,7 +43,7 @@ class ChapterRepositoryImpl(
         }
         // Notify only after commit; remote restore suppression remains owned by LocalCloudChanges.
         inserted.map { it.mangaId }.distinct().forEach { LocalCloudChanges.changed(LocalCloudChanges.Kind.RESOLVE, -it) }
-        updates.forEach(::notifyChange)
+        updates.forEach {notifyChange(it,sigilOwner)}
         return inserted
     }
 
@@ -79,18 +80,31 @@ class ChapterRepositoryImpl(
     }
 
     override suspend fun update(chapterUpdate: ChapterUpdate) {
+        val sigilOwner = mihon.domain.sigils.SigilEvents.captureOwner?.invoke() ?: "_no_owner"
         partialUpdate(chapterUpdate)
-        notifyChange(chapterUpdate)
+        notifyChange(chapterUpdate,sigilOwner)
     }
 
     override suspend fun updateAll(chapterUpdates: List<ChapterUpdate>) {
+        val sigilOwner = mihon.domain.sigils.SigilEvents.captureOwner?.invoke() ?: "_no_owner"
         partialUpdate(*chapterUpdates.toTypedArray())
-        chapterUpdates.forEach(::notifyChange)
+        chapterUpdates.forEach {notifyChange(it,sigilOwner)}
     }
 
-    private fun notifyChange(update: ChapterUpdate) {
+    private suspend fun notifyChange(update: ChapterUpdate, sigilOwner: String) {
         val kind = if (update.read != null || update.lastPageRead != null || update.totalPages != null) LocalCloudChanges.Kind.CHAPTER else LocalCloudChanges.Kind.RESOLVE
         LocalCloudChanges.changed(kind, update.id)
+        val explicitRead = update.read == true && update.lastPageRead == null && update.totalPages == null
+        if ((explicitRead || update.bookmark == true) && !LocalCloudChanges.isRemoteApplication()) {
+            try {
+            val row = database.sigilEvidenceQueries.chapterEvidence(update.id).awaitAsOneOrNull() ?: return
+            val fact = mihon.domain.sigils.SigilEvidence.chapter(row.source,row.manga_url,row.url,row.memo,row.genre,
+                read=explicitRead,bookmarked=update.bookmark==true,at=System.currentTimeMillis())
+            mihon.domain.sigils.SigilEvents.emit(if(explicitRead) mihon.domain.sigils.SigilEvents.Kind.READ else mihon.domain.sigils.SigilEvents.Kind.BOOKMARK,
+                update.id,owner=sigilOwner,evidence=fact)
+            } catch(cancelled: kotlinx.coroutines.CancellationException) {throw cancelled}
+            catch(_: Exception) { /* Cosmetic evidence cannot turn a successful chapter write into a failure. */ }
+        }
     }
 
     private suspend fun partialUpdate(vararg chapterUpdates: ChapterUpdate) {

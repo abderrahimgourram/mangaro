@@ -614,7 +614,7 @@ fun MangaroComment(comment: CommunityComment, enabled: Boolean = true, onLike: (
             }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(0.dp)) {
                 CommunityAction(comment.likeCount.toString(), if (comment.isLikedByCurrentUser) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder,
-                    enabled, active = comment.isLikedByCurrentUser, onClick = onLike, description = "إعجاب")
+                    enabled && (!comment.isOwnedByCurrentUser || comment.isLikedByCurrentUser), active = comment.isLikedByCurrentUser, onClick = onLike, description = "إعجاب")
                 CommunityAction("رد", enabled = enabled, onClick = onReply)
                 onViewReplies?.let { CommunityAction("${comment.replyCount} ردود", enabled = enabled, onClick = it,
                     tint = MangaroDesignSystem.LavenderPrimary) }

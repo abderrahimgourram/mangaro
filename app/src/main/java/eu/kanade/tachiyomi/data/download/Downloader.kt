@@ -362,6 +362,7 @@ class Downloader(
     }
 
     private suspend fun downloadChapterWithIdentityLocked(download: Download) {
+        val sigilOwner = mihon.domain.sigils.SigilEvents.captureOwner?.invoke() ?: "_no_owner"
         val mangaDir = provider.getMangaDir(download.manga.title, download.source).getOrElse { e ->
             download.status = Download.State.ERROR
             notifier.onError(e.message, download.chapter.name, download.manga.title, download.manga.id)
@@ -459,6 +460,20 @@ class Downloader(
             DiskUtil.createNoMediaFile(tmpDir, context)
 
             download.status = Download.State.DOWNLOADED
+            try {
+                // The final file/directory must exist; a failed storage rename is not achievement evidence.
+                val completedFile = mangaDir.findFile(chapterDirname) ?: mangaDir.findFile("$chapterDirname.cbz")
+                if (completedFile?.exists() == true) {
+                    val evidence = mihon.domain.sigils.SigilEvidence.chapter(
+                        download.manga.source, download.manga.url, download.chapter.url, download.chapter.memo,
+                        download.manga.genre, downloaded = true, at = System.currentTimeMillis(),
+                    )
+                    mihon.domain.sigils.SigilEvents.emit(
+                        mihon.domain.sigils.SigilEvents.Kind.DOWNLOADED, download.chapter.id, download.manga.id,
+                        owner = sigilOwner, evidence = evidence,
+                    )
+                }
+            } catch(_: Exception) { /* Achievement bookkeeping never invalidates a completed download. */ }
         } catch (error: Throwable) {
             if (error is CancellationException) throw error
             // If the page list threw, it will resume here

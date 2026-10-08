@@ -153,6 +153,7 @@ object HomeTab : Tab {
             onHistory = { if (navigator.lastItem !is eu.kanade.tachiyomi.ui.history.ReadingHistoryScreen) navigator.push(eu.kanade.tachiyomi.ui.history.ReadingHistoryScreen()) },
             onDownloads = { tabNavigator.current = DownloadsTab },
             onAccount = { navigator.push(AccountScreen()) },
+            onAchievements = { navigator.push(eu.kanade.presentation.sigils.SigilCollectionScreen()) },
             accountState = accountSession,
             onProfile = { navigator.push(AccountScreen()) },
         ) { openDrawer ->

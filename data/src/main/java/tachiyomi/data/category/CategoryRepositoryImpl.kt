@@ -3,6 +3,7 @@ package tachiyomi.data.category
 import mihon.domain.account.LocalCloudChanges
 
 import app.cash.sqldelight.async.coroutines.awaitAsList
+import app.cash.sqldelight.async.coroutines.awaitAsOne
 import app.cash.sqldelight.async.coroutines.awaitAsOneOrNull
 import kotlinx.coroutines.flow.Flow
 import tachiyomi.data.Database
@@ -45,12 +46,14 @@ class CategoryRepositoryImpl(
     }
 
     override suspend fun insert(category: Category) {
-        database.categoriesQueries.insert(
+        val sigilOwner = mihon.domain.sigils.SigilEvents.captureOwner?.invoke() ?: "_no_owner"
+        val categoryId = database.categoriesQueries.insertReturningId(
             name = category.name,
             order = category.order,
             flags = category.flags,
-        )
+        ).awaitAsOne()
         LocalCloudChanges.changed(LocalCloudChanges.Kind.COLLECTIONS)
+        mihon.domain.sigils.SigilEvents.emit(mihon.domain.sigils.SigilEvents.Kind.CATEGORIES, categoryId, owner=sigilOwner)
     }
 
     override suspend fun updateName(categoryId: Long, name: String) {

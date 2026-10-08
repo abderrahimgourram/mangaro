@@ -311,6 +311,7 @@ private fun AccountProfileEditor(
             }
             DeveloperBadge(profile.role)
             RankIdentity(profile.level, prominent = true)
+            eu.kanade.presentation.sigils.OwnProfileSigils()
             levelNotice?.let { message ->
                 Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color(mihon.domain.account.RankVisuals.resolve(profile.level).surface))
                     .padding(12.dp),horizontalArrangement=Arrangement.spacedBy(10.dp),verticalAlignment=Alignment.CenterVertically) {

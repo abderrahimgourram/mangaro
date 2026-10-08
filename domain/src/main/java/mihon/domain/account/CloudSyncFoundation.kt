@@ -12,6 +12,7 @@ object LocalCloudChanges {
     fun changed(kind: Kind, id: Long = 0) {
         if (!remote.get()) try { capture?.invoke(Change(kind, id)) } catch (_: Exception) { /* Local data remains authoritative. */ }
     }
+    fun isRemoteApplication(): Boolean = remote.get() == true
     suspend fun <T> applyRemote(block: suspend () -> T): T = withContext(remote.asContextElement(true)) { block() }
 }
 

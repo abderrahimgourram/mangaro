@@ -79,6 +79,7 @@ fun MangaroHomeDrawer(
     onHistory: () -> Unit = {},
     onDownloads: () -> Unit,
     onAccount: () -> Unit,
+    onAchievements: () -> Unit,
     accountState: AccountSession = AccountSession.Guest,
     onProfile: ((MangaroProfile) -> Unit)? = null,
     content: @Composable (openDrawer: () -> Unit) -> Unit,
@@ -147,6 +148,7 @@ fun MangaroHomeDrawer(
                                 .background(Brush.horizontalGradient(listOf(Color(0xFF21182C), MangaroDesignSystem.SurfaceDark)))
                                 .border(1.dp, Color(0x1A89709F), RoundedCornerShape(20.dp))
                                 .padding(4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                DrawerAction("أختام العوالم", Icons.Outlined.BookmarkBorder) { select(onAchievements) }
                                 DrawerAction("المكتبة", Icons.Outlined.BookmarkBorder) { select(onLibrary) }
                                 DrawerAction("السجل", Icons.Outlined.History) { select(onHistory) }
                                 DrawerAction("من نحن", Icons.Outlined.PersonOutline) { select { uriHandler.openUri("https://mangaro-web.vercel.app/about") } }
@@ -165,6 +167,7 @@ fun MangaroHomeDrawer(
             CompositionLocalProvider(LocalViewConfiguration provides homeViewConfiguration) {
                 Box(Modifier.fillMaxSize()) {
                     content { scope.launch { drawer.open() } }
+                    eu.kanade.presentation.sigils.SigilUnlockHost()
                     if (drawer.isClosed && !drawer.isAnimationRunning) {
                         // This transparent hit target gives edge starts priority over carousels.
                         // It consumes no movement: Material's parent recognizer drives the sheet.

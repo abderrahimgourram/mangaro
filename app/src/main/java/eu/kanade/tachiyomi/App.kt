@@ -116,7 +116,10 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
         eu.kanade.tachiyomi.data.updater.MandatoryUpdateController.install(this)
 
         val scope = ProcessLifecycleOwner.get().lifecycleScope
-        scope.launch(kotlinx.coroutines.Dispatchers.IO) { Injekt.get<mihon.domain.account.AccountCloudSync>().start() }
+        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            Injekt.get<mihon.domain.account.AccountCloudSync>().start()
+            Injekt.get<eu.kanade.tachiyomi.data.sigils.SigilRepository>().start()
+        }
         scope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val engine = Injekt.get<eu.kanade.tachiyomi.source.repair.RuleRepairEngine>()
             Injekt.get<mihon.domain.source.registry.InternalSourceRegistry>().getSources().forEach { engine.initialize(it.id) }
@@ -250,6 +253,7 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
 
     override fun onStart(owner: LifecycleOwner) {
         SecureActivityDelegate.onApplicationStart()
+        Injekt.get<eu.kanade.tachiyomi.data.sigils.SigilRepository>().requestRefresh()
         ProcessLifecycleOwner.get().lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             runCatching {eu.kanade.tachiyomi.data.library.LibraryUpdateJob.startForegroundCheck(this@App)}
         }

@@ -46,6 +46,11 @@ insert:
 INSERT INTO categories(name, sort, flags)
 VALUES (:name, :order, :flags);
 
+insertReturningId:
+INSERT INTO categories(name, sort, flags)
+VALUES (:name, :order, :flags)
+RETURNING _id;
+
 delete:
 DELETE FROM categories
 WHERE _id = :categoryId;

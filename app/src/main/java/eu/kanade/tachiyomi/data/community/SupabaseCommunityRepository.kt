@@ -217,6 +217,7 @@ class SupabaseCommunityRepository(private val client: SupabaseClient, private va
                     }
                     if (actor() == user) {
                         onConfirmed(item)
+                        mihon.domain.sigils.SigilEvents.emit(mihon.domain.sigils.SigilEvents.Kind.COMMUNITY, 0, owner=user)
                         if (refreshProgression) try { account.auth.refreshProgression() }
                         catch (cancelled: CancellationException) { throw cancelled }
                         catch (_: Exception) { /* Confirmed social action stays successful; next targeted refresh can retry. */ }

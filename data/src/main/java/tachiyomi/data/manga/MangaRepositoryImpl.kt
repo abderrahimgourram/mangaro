@@ -127,6 +127,7 @@ class MangaRepositoryImpl(
     }
 
     override suspend fun setMangaCategories(mangaId: Long, categoryIds: List<Long>) {
+        val sigilOwner = mihon.domain.sigils.SigilEvents.captureOwner?.invoke() ?: "_no_owner"
         database.transaction {
             database.mangas_categoriesQueries.deleteMangaCategoryByMangaId(mangaId)
             categoryIds.forEach { categoryId ->
@@ -134,12 +135,15 @@ class MangaRepositoryImpl(
             }
         }
         LocalCloudChanges.changed(LocalCloudChanges.Kind.MANGA, mangaId)
+        mihon.domain.sigils.SigilEvents.emit(mihon.domain.sigils.SigilEvents.Kind.ORGANIZED, mangaId, owner=sigilOwner)
     }
 
     override suspend fun update(update: MangaUpdate): Boolean {
+        val sigilOwner = mihon.domain.sigils.SigilEvents.captureOwner?.invoke() ?: "_no_owner"
         return try {
             partialUpdate(update)
             if (update.favorite != null || update.dateAdded != null) LocalCloudChanges.changed(LocalCloudChanges.Kind.MANGA, update.id)
+            if (update.favorite == true) mihon.domain.sigils.SigilEvents.emit(mihon.domain.sigils.SigilEvents.Kind.LIBRARY, update.id, owner=sigilOwner)
             true
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, e)
@@ -148,9 +152,11 @@ class MangaRepositoryImpl(
     }
 
     override suspend fun updateAll(mangaUpdates: List<MangaUpdate>): Boolean {
+        val sigilOwner = mihon.domain.sigils.SigilEvents.captureOwner?.invoke() ?: "_no_owner"
         return try {
             partialUpdate(*mangaUpdates.toTypedArray())
             mangaUpdates.filter { it.favorite != null || it.dateAdded != null }.forEach { LocalCloudChanges.changed(LocalCloudChanges.Kind.MANGA, it.id) }
+            mangaUpdates.filter { it.favorite == true }.forEach { mihon.domain.sigils.SigilEvents.emit(mihon.domain.sigils.SigilEvents.Kind.LIBRARY, it.id, owner=sigilOwner) }
             true
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, e)

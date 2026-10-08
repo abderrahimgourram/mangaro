@@ -96,6 +96,7 @@ internal fun PublicCommunityProfilePanel(userId: String, onBack: () -> Unit) {
                     profile.bio?.takeIf { it.isNotBlank() }?.let { Text(it, color = Color(0xFFB7A9C4), style = MaterialTheme.typography.bodyMedium) }
                     DeveloperBadge(profile.author.role)
                     RankIdentity(profile.author.level, prominent = true)
+                    eu.kanade.presentation.sigils.PublicProfileSigils(userId)
                     Row(Modifier.fillMaxWidth().padding(top = 12.dp).clip(RoundedCornerShape(16.dp))
                         .background(MangaroDesignSystem.SurfaceDark).padding(vertical = 16.dp)) {
                         (listOf("التعليقات" to profile.commentCount, "التقييمات" to profile.ratingCount) +
