@@ -279,7 +279,7 @@ private fun AccountProfileEditor(
     }
     var available by remember(profile.userId, username) { mutableStateOf<Boolean?>(null) }
     LaunchedEffect(profile.userId, username) {
-        if (AccountProfileInput.username(username) != profile.username && AccountProfileInput.username(username).matches(Regex("[a-z0-9_]{3,24}"))) {
+        if (AccountProfileInput.username(username) != profile.username && AccountProfileInput.isValidUsername(username)) {
             kotlinx.coroutines.delay(350)
             available = account.auth.usernameAvailable(username)
         }
@@ -365,7 +365,7 @@ private fun AccountProfileEditor(
                     enabled = !submitting, singleLine = true, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp))
                 OutlinedTextField(username, { username = it }, label = { Text("اسم المستخدم") }, colors = fieldColors,
                     textStyle = MaterialTheme.typography.bodyLarge.copy(textDirection = androidx.compose.ui.text.style.TextDirection.Ltr, textAlign = androidx.compose.ui.text.style.TextAlign.Left),
-                    supportingText = { Text("3–24 حرفًا إنجليزيًا أو رقمًا أو شرطة سفلية") },
+                    supportingText = { Text("3–24 حرفًا إنجليزيًا أو رقمًا، ويمكن استخدام . و _ و -") },
                     enabled = !submitting, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
                     modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp))
                 available?.let { Text(if (it) "اسم المستخدم متاح" else "اسم المستخدم غير متاح", style = MaterialTheme.typography.labelSmall,

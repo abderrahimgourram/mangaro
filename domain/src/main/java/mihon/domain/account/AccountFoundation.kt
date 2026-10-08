@@ -109,15 +109,16 @@ object MangaroLevelProgress {
 // Editable profile properties exclude server-owned progression and account identity.
 data class ProfileUpdate(val displayName: String?, val username: String?, val bio: String? = null)
 data class ProfileStatistics(val comments: Long, val ratings: Long)
-/** Same conservative rules as the server CHECK constraints; display names are not handles. */
+/** Shared canonical handle validation; display names are not handles. */
 object AccountProfileInput {
     fun username(value: String): String = value.trim().lowercase(java.util.Locale.ROOT)
-    private val handle = Regex("[a-z0-9_]{3,24}")
+    private val handle = Regex("[a-z0-9_.-]{3,24}")
+    fun isValidUsername(value: String): Boolean = username(value).matches(handle)
     fun error(update: ProfileUpdate): String? {
         val name = update.displayName?.trim().orEmpty()
         return when {
-            update.username == null || !username(update.username).matches(handle) ->
-                "اسم المستخدم: 3–24 حرفًا إنجليزيًا صغيرًا أو رقمًا أو شرطة سفلية"
+            update.username == null || !isValidUsername(update.username) ->
+                "اسم المستخدم: 3–24 حرفًا إنجليزيًا أو رقمًا، ويمكن استخدام . و _ و -"
             name.isEmpty() || name.codePointCount(0, name.length) > 40 -> "أدخل اسم عرض من 1 إلى 40 حرفًا"
             update.bio.orEmpty().trim().let { it.codePointCount(0, it.length) > 160 } -> "النبذة: 160 حرفًا كحد أقصى"
             else -> null

@@ -751,6 +751,10 @@ class ReaderViewModel @JvmOverloads constructor(
      */
     fun setMangaReadingMode(readingMode: ReadingMode) {
         val manga = manga ?: return
+        // Explicit choices also become the default for manga without their own saved override.
+        if (readingMode != ReadingMode.DEFAULT) {
+            readerPreferences.defaultReadingMode.set(readingMode.flagValue)
+        }
         runBlocking(Dispatchers.IO) {
             setMangaViewerFlags.awaitSetReadingMode(manga.id, readingMode.flagValue.toLong())
             val currChapters = state.value.viewerChapters

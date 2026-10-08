@@ -4,6 +4,17 @@ import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Test
 
 class ProfileIdentityTest {
+    @Test fun `punctuated handles retain canonical identity and exclude bidi controls`() {
+        listOf("53.v", "53_v", "53-v", "jalem.fofo", "jalem_53-v").forEach { name ->
+            AccountProfileInput.username(name) shouldBe name
+            AccountProfileInput.isValidUsername(name) shouldBe true
+            AccountProfileInput.error(ProfileUpdate("قارئ", name)) shouldBe null
+        }
+        AccountProfileInput.username(" Jalem_53-V ") shouldBe "jalem_53-v"
+        listOf("a", "has space", "name@host", "\u206653.v\u2069").forEach {
+            AccountProfileInput.isValidUsername(it) shouldBe false
+        }
+    }
     @Test fun `canonical handles trim and fold without changing valid spelling`() {
         listOf("jalem", " Jalem ", "JALEM", "\tjalem\n").map(AccountProfileInput::username).distinct() shouldBe listOf("jalem")
         AccountProfileInput.username("reader_123") shouldBe "reader_123"
