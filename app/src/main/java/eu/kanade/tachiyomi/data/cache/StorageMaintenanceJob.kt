@@ -11,7 +11,11 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import logcat.LogPriority
+import tachiyomi.core.common.util.system.logcat
 import java.io.File
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.Executor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 import uy.kohesive.injekt.Injekt
@@ -56,20 +60,48 @@ class StorageMaintenanceJob(context: Context, params: WorkerParameters) : Corout
             File(context.cacheDir, "covers"), context.getExternalFilesDir("covers"), File(context.filesDir, "covers"),
         ).distinctBy { it.absolutePath }
 
-        fun schedule(context: Context) {
-            context.workManager.enqueueUniquePeriodicWork(PERIODIC, ExistingPeriodicWorkPolicy.KEEP,
-                PeriodicWorkRequestBuilder<StorageMaintenanceJob>(24, TimeUnit.HOURS)
-                    .setInitialDelay(4, TimeUnit.HOURS).setConstraints(constraints())
-                    .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.MINUTES).build())
+        // WorkManager forbids explicitly setting backoff on idle-constrained work.
+        // Retain idle/battery constraints and its compatible default retry behavior.
+        internal fun periodicRequest() = PeriodicWorkRequestBuilder<StorageMaintenanceJob>(24, TimeUnit.HOURS)
+            .setInitialDelay(4, TimeUnit.HOURS).setConstraints(constraints()).build()
+
+        internal fun pressureRequest() = OneTimeWorkRequestBuilder<StorageMaintenanceJob>()
+            .setInitialDelay(15, TimeUnit.MINUTES).setConstraints(constraints()).build()
+
+        fun schedule(context: Context) = enqueueSafely("periodic") {
+            context.workManager.enqueueUniquePeriodicWork(PERIODIC, ExistingPeriodicWorkPolicy.KEEP, periodicRequest())
         }
 
         internal fun onCoverCommitted(context: Context, bytes: Long) {
             if (committedBytes.addAndGet(bytes) < 8L * 1024 * 1024) return
             committedBytes.set(0)
             // Coalesced pressure hint, not a scan or a foreground trim on every image.
-            context.workManager.enqueueUniqueWork(PRESSURE, ExistingWorkPolicy.KEEP,
-                OneTimeWorkRequestBuilder<StorageMaintenanceJob>().setInitialDelay(15, TimeUnit.MINUTES)
-                    .setConstraints(constraints()).setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.MINUTES).build())
+            enqueueSafely("pressure") {
+                context.workManager.enqueueUniqueWork(PRESSURE, ExistingWorkPolicy.KEEP, pressureRequest())
+            }
+        }
+
+        internal fun enqueueSafely(kind: String, enqueue: () -> Operation) {
+            try {
+                val result = enqueue().result
+                // Observe the async database/enqueue result too; never block startup waiting for it.
+                result.addListener({
+                    try {
+                        result.get()
+                        logcat(LogPriority.INFO) { "Storage maintenance enqueued: $kind" }
+                    } catch (error: Exception) {
+                        reportSchedulingFailure(kind, error)
+                    }
+                }, Executor { it.run() })
+            } catch (error: Exception) {
+                reportSchedulingFailure(kind, error)
+            }
+        }
+
+        private fun reportSchedulingFailure(kind: String, error: Exception) {
+            if (error is InterruptedException) Thread.currentThread().interrupt()
+            val cause = (error as? ExecutionException)?.cause ?: error
+            logcat(LogPriority.ERROR, cause) { "Storage maintenance scheduling failed: $kind" }
         }
     }
 }
