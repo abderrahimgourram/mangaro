@@ -18,6 +18,8 @@ import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import coil3.ImageLoader
 import coil3.SingletonImageLoader
+import coil3.disk.DiskCache
+import coil3.disk.directory
 import coil3.memory.MemoryCache
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.allowRgb565
@@ -29,6 +31,9 @@ import eu.kanade.domain.base.BasePreferences
 import eu.kanade.tachiyomi.core.security.PrivacyPreferences
 import eu.kanade.tachiyomi.crash.CrashActivity
 import eu.kanade.tachiyomi.crash.GlobalExceptionHandler
+import eu.kanade.tachiyomi.data.cache.CacheBudgets
+import eu.kanade.tachiyomi.data.cache.FirstUsableFrameGate
+import eu.kanade.tachiyomi.data.cache.StorageMaintenanceJob
 import eu.kanade.tachiyomi.data.coil.BufferedSourceFetcher
 import eu.kanade.tachiyomi.data.coil.MangaCoverFetcher
 import eu.kanade.tachiyomi.data.coil.MangaCoverKeyer
@@ -46,11 +51,11 @@ import eu.kanade.tachiyomi.util.system.WebViewUtil
 import eu.kanade.tachiyomi.util.system.animatorDurationScale
 import eu.kanade.tachiyomi.util.system.cancelNotification
 import eu.kanade.tachiyomi.util.system.notify
-import java.security.Security
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import logcat.AndroidLogcatLogger
 import logcat.LogPriority
 import logcat.LogcatLogger
@@ -68,6 +73,8 @@ import tachiyomi.presentation.widget.WidgetManager
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import uy.kohesive.injekt.injectLazy
+import java.io.File
+import java.security.Security
 
 class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factory {
 
@@ -76,6 +83,7 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
     private val networkPreferences: NetworkPreferences by injectLazy()
 
     private val disableIncognitoReceiver = DisableIncognitoReceiver()
+    private val usableFrame = FirstUsableFrameGate()
 
     override fun attachBaseContext(base: android.content.Context) {
         super.attachBaseContext(eu.kanade.tachiyomi.util.system.MangaroLocale.wrap(base))
@@ -103,9 +111,6 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
         Injekt.importModule(PreferenceModule(this))
         Injekt.importModule(AppModule(this))
         Injekt.importModule(DomainModule())
-        Injekt.get<mihon.domain.source.registry.InternalSourceRegistry>().getSources().forEach {
-            mihon.domain.source.health.SourceHealthMonitor.shared.expectCatalogue(it.id)
-        }
 
         // Arabic UI and RTL, with Western digits; never change the device locale.
         AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(eu.kanade.tachiyomi.util.system.MangaroLocale.arabic.toLanguageTag()))
@@ -119,22 +124,14 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
         scope.launch(kotlinx.coroutines.Dispatchers.IO) {
             Injekt.get<mihon.domain.account.AccountCloudSync>().start()
             Injekt.get<eu.kanade.tachiyomi.data.sigils.SigilRepository>().start()
+            // Also required by headless library workers; keep observation, but construct it on IO.
+            WidgetManager(Injekt.get(), Injekt.get()).apply { init(scope) }
         }
         scope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val engine = Injekt.get<eu.kanade.tachiyomi.source.repair.RuleRepairEngine>()
             Injekt.get<mihon.domain.source.registry.InternalSourceRegistry>().getSources().forEach { engine.initialize(it.id) }
         }
         eu.kanade.tachiyomi.data.library.SourceHealthPersistence.initialize(this, scope)
-        eu.kanade.tachiyomi.data.library.SourceHealthJob.schedule(this)
-        eu.kanade.tachiyomi.source.repair.RuleMaintenanceJob.schedule(this)
-        // Enable this newly requested automatic reliability feature once; later user choices remain intact.
-        val reliabilityPrefs = getSharedPreferences("source-reliability", MODE_PRIVATE)
-        if (!reliabilityPrefs.getBoolean("library-initialized", false)) {
-            val libraryPrefs = Injekt.get<tachiyomi.domain.library.service.LibraryPreferences>()
-            if (libraryPrefs.autoUpdateInterval.get() == 0) libraryPrefs.autoUpdateInterval.set(24)
-            eu.kanade.tachiyomi.data.library.LibraryUpdateJob.setupTask(this)
-            reliabilityPrefs.edit().putBoolean("library-initialized", true).apply()
-        }
 
         // Show notification to disable Incognito Mode when it's enabled
         basePreferences.incognitoMode.changes()
@@ -175,8 +172,13 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
             .onEach(TelemetryConfig::setCrashlyticsEnabled)
             .launchIn(scope)
 
-        basePreferences.hardwareBitmapThreshold.let { preference ->
-            if (!preference.isSet()) preference.set(GLUtil.DEVICE_TEXTURE_LIMIT)
+        scope.launch(Dispatchers.IO) {
+            basePreferences.hardwareBitmapThreshold.let { preference ->
+                if (!preference.isSet()) {
+                    val limit = GLUtil.DEVICE_TEXTURE_LIMIT
+                    if (!preference.isSet()) preference.set(limit)
+                }
+            }
         }
 
         basePreferences.hardwareBitmapThreshold.changes()
@@ -184,9 +186,6 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
             .launchIn(scope)
 
         AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
-
-        // Updates widget update
-        WidgetManager(Injekt.get(), Injekt.get()).apply { init(scope) }
 
         if (!LogcatLogger.isInstalled) {
             val minLogPriority = when {
@@ -200,6 +199,33 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
 
         initializeMigrator()
 
+    }
+
+    /** Necessary local services are constructed on IO, never by a posted main-thread warmup. */
+    internal suspend fun initializeLocalServices() = withContext(Dispatchers.IO) {
+        android.os.Trace.beginSection("Mangaro.localServices")
+        try {
+            Injekt.get<tachiyomi.data.Database>()
+            Injekt.get<tachiyomi.domain.source.service.SourceManager>()
+            Injekt.get<eu.kanade.tachiyomi.data.download.DownloadManager>()
+        } finally { android.os.Trace.endSection() }
+    }
+
+    internal fun onFirstUsableFrame() = usableFrame.open {
+        val scope = ProcessLifecycleOwner.get().lifecycleScope
+        scope.launch(Dispatchers.IO) {
+            StorageMaintenanceJob.schedule(this@App)
+            eu.kanade.tachiyomi.data.library.SourceHealthJob.schedule(this@App)
+            eu.kanade.tachiyomi.source.repair.RuleMaintenanceJob.schedule(this@App)
+            val reliabilityPrefs = getSharedPreferences("source-reliability", MODE_PRIVATE)
+            if (!reliabilityPrefs.getBoolean("library-initialized", false)) {
+                val libraryPrefs = Injekt.get<tachiyomi.domain.library.service.LibraryPreferences>()
+                if (libraryPrefs.autoUpdateInterval.get() == 0) libraryPrefs.autoUpdateInterval.set(24)
+                eu.kanade.tachiyomi.data.library.LibraryUpdateJob.setupTask(this@App)
+                reliabilityPrefs.edit().putBoolean("library-initialized", true).apply()
+            }
+            eu.kanade.tachiyomi.source.repair.RuleMaintenanceJob.enqueue(this@App)
+        }
     }
 
     private fun initializeMigrator() {
@@ -240,6 +266,12 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
                     .build(),
             )
 
+            diskCache {
+                // Same Coil directory, one loader, existing snapshot/LRU eviction semantics.
+                DiskCache.Builder().directory(File(context.cacheDir, "coil3_disk_cache"))
+                    .maxSizeBytes(CacheBudgets.IMAGE_DISK).build()
+            }
+
             crossfade((300 * this@App.animatorDurationScale).toInt())
             allowRgb565(DeviceUtil.isLowRamDevice(this@App))
             if (networkPreferences.verboseLogging.get()) logger(DebugLogger())
@@ -253,16 +285,16 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
 
     override fun onStart(owner: LifecycleOwner) {
         SecureActivityDelegate.onApplicationStart()
-        Injekt.get<eu.kanade.tachiyomi.data.sigils.SigilRepository>().requestRefresh()
         ProcessLifecycleOwner.get().lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            Injekt.get<eu.kanade.tachiyomi.data.sigils.SigilRepository>().requestRefresh()
             runCatching {eu.kanade.tachiyomi.data.library.LibraryUpdateJob.startForegroundCheck(this@App)}
         }
-        eu.kanade.tachiyomi.source.repair.RuleMaintenanceJob.enqueue(this)
+        if (usableFrame.isReady) eu.kanade.tachiyomi.source.repair.RuleMaintenanceJob.enqueue(this)
     }
 
     override fun onStop(owner: LifecycleOwner) {
         SecureActivityDelegate.onApplicationStopped()
-        eu.kanade.tachiyomi.source.repair.RuleMaintenanceJob.enqueue(this)
+        if (usableFrame.isReady) eu.kanade.tachiyomi.source.repair.RuleMaintenanceJob.enqueue(this)
     }
 
     override fun getPackageName(): String {

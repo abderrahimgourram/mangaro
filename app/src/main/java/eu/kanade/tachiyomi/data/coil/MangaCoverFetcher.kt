@@ -13,6 +13,7 @@ import coil3.getOrDefault
 import coil3.request.Options
 import com.hippo.unifile.UniFile
 import eu.kanade.tachiyomi.data.cache.CoverCache
+import eu.kanade.tachiyomi.data.cache.CacheFileAccess
 import eu.kanade.tachiyomi.data.coil.MangaCoverFetcher.Companion.USE_CUSTOM_COVER_KEY
 import eu.kanade.tachiyomi.network.await
 import eu.kanade.tachiyomi.source.online.HttpSource
@@ -25,7 +26,6 @@ import okio.FileSystem
 import okio.Path.Companion.toOkioPath
 import okio.Source
 import okio.buffer
-import okio.sink
 import okio.source
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.manga.model.Manga
@@ -88,6 +88,7 @@ class MangaCoverFetcher(
                 file = file.toOkioPath(),
                 fileSystem = FileSystem.SYSTEM,
                 diskCacheKey = diskCacheKey,
+                closeable = CacheFileAccess.shared.acquire(file),
             ),
             mimeType = "image/*",
             dataSource = DataSource.DISK,
@@ -147,12 +148,14 @@ class MangaCoverFetcher(
                 // Read from cover cache after library manga cover updated
                 val responseCoverCache = writeResponseToCoverCache(response, libraryCoverCacheFile)
                 if (responseCoverCache != null) {
+                    responseBody.close()
                     return fileLoader(responseCoverCache)
                 }
 
                 // Read from disk cache
                 snapshot = writeToDiskCache(response)
                 if (snapshot != null) {
+                    responseBody.close()
                     return SourceFetchResult(
                         source = snapshot.toImageSource(),
                         mimeType = "image/*",
@@ -196,7 +199,8 @@ class MangaCoverFetcher(
             writeResponseToCoverCache(response, cacheFile)?.let { file ->
                 response.close()
                 return SourceFetchResult(source = ImageSource(file = file.toOkioPath(), fileSystem = FileSystem.SYSTEM,
-                    diskCacheKey = key), mimeType = "image/*", dataSource = DataSource.NETWORK)
+                    diskCacheKey = key, closeable = CacheFileAccess.shared.acquire(file)),
+                    mimeType = "image/*", dataSource = DataSource.NETWORK)
             }
             writeToDiskCache(response, key)?.let { snapshot ->
                 response.close()
@@ -256,9 +260,13 @@ class MangaCoverFetcher(
                 fileSystem.source(snapshot.data).use { input ->
                     writeSourceToCoverCache(input, cacheFile)
                 }
-                remove(diskCacheKey)
+                // Release Coil's snapshot before removing its promoted entry; an open snapshot
+                // otherwise prevents deletion and leaves a second persistent copy.
+                snapshot.close()
+                runCatching { remove(diskCacheKey) }
             }
-            cacheFile.takeIf { it.exists() }
+            // Successful atomic commit guarantees a file; never fall back to a closed snapshot.
+            cacheFile
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, e) { "Failed to write snapshot data to cover cache ${cacheFile.name}" }
             null
@@ -268,8 +276,12 @@ class MangaCoverFetcher(
     private fun writeResponseToCoverCache(response: Response, cacheFile: File?): File? {
         if (cacheFile == null || !options.diskCachePolicy.writeEnabled) return null
         return try {
-            response.peekBody(Long.MAX_VALUE).source().use { input ->
-                writeSourceToCoverCache(input, cacheFile)
+            val limit = 16L * 1024 * 1024
+            if (response.body.contentLength() > limit) return null
+            response.peekBody(limit + 1).use { preview ->
+                // Oversized covers still use the normal streamed Coil path; never cache a truncation.
+                if (preview.contentLength() > limit) return null
+                preview.source().use { input -> writeSourceToCoverCache(input, cacheFile) }
             }
             cacheFile.takeIf { it.exists() }
         } catch (e: Exception) {
@@ -279,16 +291,7 @@ class MangaCoverFetcher(
     }
 
     private fun writeSourceToCoverCache(input: Source, cacheFile: File) {
-        cacheFile.parentFile?.mkdirs()
-        cacheFile.delete()
-        try {
-            cacheFile.sink().buffer().use { output ->
-                output.writeAll(input)
-            }
-        } catch (e: Exception) {
-            cacheFile.delete()
-            throw e
-        }
+        uy.kohesive.injekt.Injekt.get<CoverCache>().writeCover(input, cacheFile)
     }
 
     private fun readFromDiskCache(): DiskCache.Snapshot? {

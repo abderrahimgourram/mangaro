@@ -97,7 +97,6 @@ class ChapterCache(
                 it.flush()
             }
 
-            diskCache.flush()
             editor.commit()
             editor.abortUnlessCommitted()
         } catch (e: Exception) {
@@ -173,7 +172,6 @@ class ChapterCache(
             // Get OutputStream and write image with Okio.
             source.saveTo(editor.newOutputStream(0))
 
-            diskCache.flush()
             editor.commit()
         } finally {
             source.close()
@@ -226,4 +224,4 @@ private const val PARAMETER_APP_VERSION = 1
 private const val PARAMETER_VALUE_COUNT = 1
 
 /** The maximum number of bytes this cache should use to store.  */
-private const val PARAMETER_CACHE_SIZE = 100L * 1024 * 1024
+private const val PARAMETER_CACHE_SIZE = CacheBudgets.CHAPTERS

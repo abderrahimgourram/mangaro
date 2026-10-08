@@ -2,7 +2,6 @@ package eu.kanade.tachiyomi.di
 
 import android.app.Application
 import android.content.Context
-import androidx.core.content.ContextCompat
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import app.cash.sqldelight.db.SqlDriver
 import com.eygraber.sqldelight.androidx.driver.AndroidxSqliteConfiguration
@@ -151,6 +150,7 @@ class AppModule(val app: Application) : InjektModule {
                     MangaDar(),
                     MangaSwat(),
                 ).map { source ->
+                    mihon.domain.source.health.SourceHealthMonitor.shared.expectCatalogue(source.id)
                     val engine = get<eu.kanade.tachiyomi.source.repair.RuleRepairEngine>()
                     eu.kanade.tachiyomi.source.repair.RepairableSource(source, engine)
                 },
@@ -194,15 +194,5 @@ class AppModule(val app: Application) : InjektModule {
         addSingletonFactory { LocalCoverManager(app, get()) }
         addSingletonFactory { StorageManager(app, get()) }
 
-        // Asynchronously init expensive components for a faster cold start
-        ContextCompat.getMainExecutor(app).execute {
-            get<NetworkHelper>()
-
-            get<SourceManager>()
-
-            get<Database>()
-
-            get<DownloadManager>()
-        }
     }
 }

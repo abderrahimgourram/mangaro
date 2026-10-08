@@ -44,7 +44,6 @@ import eu.kanade.tachiyomi.util.chapter.removeDuplicates
 import eu.kanade.tachiyomi.util.editCover
 import eu.kanade.tachiyomi.util.lang.byteSize
 import eu.kanade.tachiyomi.util.storage.DiskUtil
-import eu.kanade.tachiyomi.util.storage.cacheImageDir
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
@@ -973,14 +972,10 @@ class ReaderViewModel @JvmOverloads constructor(
         if (page?.status != Page.State.Ready) return
         val manga = manga ?: return
 
-        val context = Injekt.get<Application>()
-        val destDir = context.cacheImageDir
-
         val filename = generateFilename(manga, page)
 
         try {
             viewModelScope.launchNonCancellable {
-                destDir.deleteRecursively()
                 val uri = imageSaver.save(
                     image = Image.Page(
                         inputStream = page.stream!!,

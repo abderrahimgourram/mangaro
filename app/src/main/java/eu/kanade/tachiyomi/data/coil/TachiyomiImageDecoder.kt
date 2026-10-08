@@ -40,8 +40,11 @@ class TachiyomiImageDecoder(private val resources: ImageSource, private val opti
             scale = options.scale,
         )
 
-        var bitmap = decoder.decode(sampleSize = sampleSize)
-        decoder.recycle()
+        var bitmap = try {
+            decoder.decode(sampleSize = sampleSize)
+        } finally {
+            decoder.recycle()
+        }
 
         check(bitmap != null) { "Failed to decode image" }
 

@@ -6,6 +6,10 @@ import tachiyomi.domain.manga.model.Manga
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
+import java.util.UUID
+import okio.Source
+import okio.buffer
+import okio.sink
 
 /**
  * Class used to create cover cache.
@@ -25,7 +29,10 @@ class CoverCache(private val context: Context) {
     /**
      * Cache directory used for cache management.
      */
-    private val cacheDir = getCacheDir(COVERS_DIR)
+    private val cacheDir = File(context.cacheDir, COVERS_DIR)
+    private val legacyDirs by lazy {
+        listOfNotNull(context.getExternalFilesDir(COVERS_DIR), File(context.filesDir, COVERS_DIR))
+    }
 
     private val customCoverCacheDir = getCacheDir(CUSTOM_COVERS_DIR)
 
@@ -37,7 +44,9 @@ class CoverCache(private val context: Context) {
      */
     fun getCoverFile(mangaThumbnailUrl: String?): File? {
         return mangaThumbnailUrl?.let {
-            File(cacheDir, DiskUtil.hashKeyForDisk(it))
+            val key = DiskUtil.hashKeyForDisk(it)
+            val current = File(cacheDir, key)
+            if (current.exists()) current else legacyDirs.map { dir -> File(dir, key) }.firstOrNull { file -> file.exists() } ?: current
         }
     }
 
@@ -75,8 +84,12 @@ class CoverCache(private val context: Context) {
     fun deleteFromCache(manga: Manga, deleteCustomCover: Boolean = false): Int {
         var deleted = 0
 
-        getCoverFile(manga.thumbnailUrl)?.let {
-            if (it.exists() && it.delete()) ++deleted
+        manga.thumbnailUrl?.let { url ->
+            val key = DiskUtil.hashKeyForDisk(url)
+            (listOf(cacheDir) + legacyDirs).distinctBy { it.absolutePath }.forEach { dir ->
+                val file = File(dir, key)
+                if (file.exists() && file.delete()) ++deleted
+            }
         }
 
         if (deleteCustomCover) {
@@ -96,6 +109,24 @@ class CoverCache(private val context: Context) {
         return getCustomCoverFile(mangaId).let {
             it.exists() && it.delete()
         }
+    }
+
+    /** Same-directory atomic replacement: interrupted writes never overwrite a valid cached image. */
+    internal fun writeCover(input: Source, target: File) {
+        target.parentFile?.mkdirs()
+        val staging = File(target.parentFile, "cover-write-${UUID.randomUUID()}.tmp")
+        CacheFileAccess.shared.acquire(target).use {
+            CacheFileAccess.shared.acquire(staging).use {
+                try {
+                    staging.sink().buffer().use { it.writeAll(input) }
+                    if (!staging.renameTo(target)) throw IOException("Unable to commit cached cover")
+                } finally {
+                    staging.delete()
+                }
+            }
+        }
+        // Failure to schedule optional maintenance must not turn a successful fetch into an error.
+        runCatching { StorageMaintenanceJob.onCoverCommitted(context, target.length()) }
     }
 
     private fun getCacheDir(dir: String): File {

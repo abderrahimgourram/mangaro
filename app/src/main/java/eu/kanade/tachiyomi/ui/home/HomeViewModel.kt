@@ -35,22 +35,17 @@ import mihon.domain.source.discovery.model.SourceDiscoveryItem
 import tachiyomi.domain.history.interactor.GetHistory
 import tachiyomi.domain.history.model.HistoryWithRelations
 import tachiyomi.domain.library.model.LibraryManga
-import tachiyomi.domain.manga.interactor.GetLibraryManga
 import tachiyomi.domain.manga.interactor.NetworkToLocalManga
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.manga.model.MangaCover
 import tachiyomi.domain.manga.model.asMangaCover
 import tachiyomi.domain.source.service.SourceManager
-import tachiyomi.domain.updates.interactor.GetUpdates
 import tachiyomi.domain.updates.model.UpdatesWithRelations
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
-import java.util.Calendar
 
 class HomeViewModel(
     private val getHistory: GetHistory = Injekt.get(),
-    private val getUpdates: GetUpdates = Injekt.get(),
-    private val getLibraryManga: GetLibraryManga = Injekt.get(),
     private val downloadManager: DownloadManager = Injekt.get(),
     private val getEnabledSources: GetEnabledSources = Injekt.get(),
     private val sourceManager: SourceManager = Injekt.get(),
@@ -121,22 +116,6 @@ class HomeViewModel(
         viewModelScope.launch {
             getHistory.subscribe("").collectLatest { history ->
                 _state.update { it.copy(recentHistory = history.distinctBy { h -> h.mangaId }.take(6), continueReadingResolved = true) }
-            }
-        }
-
-        // Collect updates
-        viewModelScope.launch {
-            val calendar = Calendar.getInstance()
-            calendar.add(Calendar.MONTH, -3)
-            getUpdates.subscribe(read = false, after = calendar.timeInMillis).collectLatest { updates ->
-                _state.update { it.copy(recentUpdates = updates.distinctBy { u -> u.mangaId }.take(8)) }
-            }
-        }
-
-        // Collect library manga
-        viewModelScope.launch {
-            getLibraryManga.subscribe().collectLatest { library ->
-                _state.update { it.copy(libraryManga = library.distinctBy { l -> l.id }.take(10)) }
             }
         }
 

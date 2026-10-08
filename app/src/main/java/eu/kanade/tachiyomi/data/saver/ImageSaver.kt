@@ -48,9 +48,11 @@ class ImageSaver(
 
         val destFile = File(directory, filename)
 
-        inputStream.use { input ->
-            destFile.outputStream().use { output ->
-                input.copyTo(output)
+        eu.kanade.tachiyomi.data.cache.CacheFileAccess.shared.acquire(destFile).use {
+            inputStream.use { input ->
+                destFile.outputStream().use { output ->
+                    input.copyTo(output)
+                }
             }
         }
 

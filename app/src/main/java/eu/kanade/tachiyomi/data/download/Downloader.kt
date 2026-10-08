@@ -442,6 +442,12 @@ class Downloader(
                 return
             }
 
+            // All page jobs have joined and complete images are verified. Only now may stale
+            // partial-page files be removed; failed/paused chapter directories stay resumable.
+            tmpDir.listFiles().orEmpty().filter { file ->
+                file.name?.let(eu.kanade.tachiyomi.data.cache.CacheMaintenance::isDownloadFragment) == true
+            }.forEach { file -> file.delete() }
+
             createComicInfoFile(
                 tmpDir,
                 download.manga,
