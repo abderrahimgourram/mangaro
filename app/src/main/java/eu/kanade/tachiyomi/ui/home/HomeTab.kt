@@ -137,6 +137,7 @@ object HomeTab : Tab {
             onDownloads = { tabNavigator.current = DownloadsTab },
             onAccount = { navigator.push(AccountScreen()) },
             onAchievements = { navigator.push(eu.kanade.presentation.sigils.SigilCollectionScreen()) },
+            onNovels = { navigator.push(eu.kanade.presentation.novels.NovelHomeScreen()) },
             accountState = accountSession,
             onProfile = { navigator.push(AccountScreen()) },
         ) { openDrawer ->
