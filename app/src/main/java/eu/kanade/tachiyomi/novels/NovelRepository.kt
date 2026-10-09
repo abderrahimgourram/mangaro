@@ -107,9 +107,9 @@ class NovelRepository private constructor(context: Context) {
                 runCatching { rules.load() }.onFailure { android.util.Log.w("MangaroNovels", "Using compiled selectors", it) }
                 runCatching { NovelRuleUpdateJob.schedule(app) }.onFailure { android.util.Log.w("MangaroNovels", "Rule refresh scheduling failed", it) }
                 // Restore each store independently; one corrupt optional file cannot erase another store.
-                runCatching { if (file.exists()) mutableLibrary.value = json.decodeFromString<List<NovelLibraryItem>>(file.openRead().use { it.readBytes().decodeToString() }).map { if (it.favorite) it.copy(saved = true) else it } }
+                runCatching { if (file.baseFile.exists() || File(file.baseFile.path + ".bak").exists()) mutableLibrary.value = json.decodeFromString<List<NovelLibraryItem>>(file.openRead().use { it.readBytes().decodeToString() }).map { if (it.favorite) it.copy(saved = true) else it } }
                     .onFailure { libraryReadable = false; mutableStorageError.value = "تعذّر استعادة مكتبة الروايات."; android.util.Log.w("MangaroNovels", "Library restore failed", it) }
-                runCatching { if (settingsFile.exists()) mutableSettings.value = json.decodeFromString(settingsFile.openRead().use { it.readBytes().decodeToString() }) }
+                runCatching { if (settingsFile.baseFile.exists() || File(settingsFile.baseFile.path + ".bak").exists()) mutableSettings.value = json.decodeFromString(settingsFile.openRead().use { it.readBytes().decodeToString() }) }
                     .onFailure { android.util.Log.w("MangaroNovels", "Reader settings restore failed", it) }
                 val old = runCatching { metadata.read("catalog.json")?.let { json.decodeFromString<NovelCatalogState>(it) } }.getOrNull() ?: NovelCatalogState()
                 val migrated = NovelWorkReconciler.ingest(old, mutableLibrary.value.map { it.novel }).copy(migrationVersion = 1)
