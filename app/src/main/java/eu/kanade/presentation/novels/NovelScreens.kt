@@ -47,6 +47,12 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import tachiyomi.core.common.util.lang.WesternDigits
 
 internal fun novelError(error: Exception): String {
@@ -287,6 +293,8 @@ class NovelHomeScreen(private val initialGenre: String? = null) : Screen() {
     }
 }
 
+private data class NovelChapterPresentation(val index: NovelChapterIndex, val groups: List<NovelChapterGroup>)
+
 class NovelDetailsScreen(private val initial: Novel) : Screen() {
     @OptIn(ExperimentalMaterial3Api::class)
     @Composable override fun Content() {
@@ -295,7 +303,6 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
         val navigator = LocalNavigator.currentOrThrow
         val catalog by repository.catalog.collectAsState()
         val library by repository.library.collectAsState()
-        val queue by repository.downloads.tasks.collectAsState()
         val storageError by repository.storageError.collectAsState()
         val work = catalog.work(initial.id) ?: UnifiedNovelWork(NovelIdentity.initialWorkId(initial.id), listOf(initial), initial.id)
         val scope = rememberCoroutineScope()
@@ -313,10 +320,11 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
         var expandedDescription by rememberSaveable { mutableStateOf(false) }
         var collapsed by rememberSaveable { mutableStateOf(arrayListOf<String>()) }
         // Selection may contain thousands of URLs; keep it out of Activity's size-limited Bundle.
-        var selected by remember { mutableStateOf(arrayListOf<String>()) }
+        var selected by remember { mutableStateOf(emptySet<String>()) }
         var selecting by rememberSaveable { mutableStateOf(false) }
         var rangeOpen by rememberSaveable { mutableStateOf(false) }
         val detailScroll = androidx.compose.foundation.lazy.rememberLazyListState()
+        var libraryOpen by rememberSaveable { mutableStateOf(false) }
         var editionsOpen by rememberSaveable { mutableStateOf(false) }
         var switching by remember { mutableStateOf<Novel?>(null) }
         var switchChapter by remember { mutableStateOf<NovelChapter?>(null) }
@@ -350,25 +358,36 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
                 }
                 finally { if (request == indexEpoch) busy = busy - edition.id }
             } }
-            // Optional metadata/access evidence never keeps chapter selection in a loading state.
+            // Optional work metadata never keeps chapter selection in a loading state.
             editions.forEach { edition -> launch {
                 try {
                     repository.detail(edition)
-                    if (editions.size > 1) indexes[edition.id]?.takeIf { it.complete }?.let { repository.verifyEditionAccess(edition, it) }
                 } catch (c: CancellationException) { throw c }
                 catch (e: Exception) { novelError(e) }
             } }
         }
-        val index = remember(indexes, novel.id, queue, library) {
-            val cached = indexes[novel.id] ?: NovelChapterIndex(novel.id)
-            if (cached.complete) cached else {
-                val known = queue.filter { it.novel.id == novel.id }.map { it.chapter } +
-                    library.filter { it.novel.id == novel.id }.mapNotNull { it.position?.chapter }
-                cached.copy(chapters = (cached.chapters + known).distinctBy { it.id }.sortedBy { it.order })
+        val knownChapters by remember(repository, novel.id) {
+            combine(repository.downloads.tasks, repository.library) { tasks, entries ->
+                (tasks.filter { it.novel.id == novel.id }.map { it.chapter } +
+                    entries.filter { it.novel.id == novel.id }.mapNotNull { it.position?.chapter }).distinctBy { it.id }
+            }.distinctUntilChanged().flowOn(Dispatchers.Default)
+        }.collectAsState(initial = emptyList())
+        val cachedIndex = indexes[novel.id]
+        val prepared by produceState(NovelChapterPresentation(NovelChapterIndex(novel.id), emptyList()), novel.id, cachedIndex, knownChapters, descending) {
+            value = withContext(Dispatchers.Default) {
+                val cached = cachedIndex ?: NovelChapterIndex(novel.id)
+                val display = if (cached.complete) cached else cached.copy(
+                    chapters = (cached.chapters + knownChapters).distinctBy { it.id }.sortedBy { it.order })
+                NovelChapterPresentation(display, novelChapterGroups(display, descending))
             }
         }
-        val states = remember(queue, novel.id) { queue.filter { it.novel.id == novel.id }.associate { it.chapter.id to it.state } }
-        val groups = remember(index, descending) { chapterGroups(index, descending) }
+        val presentation = prepared.takeIf { it.index.editionId == novel.id }
+        val index = presentation?.index ?: NovelChapterIndex(novel.id)
+        val groups = presentation?.groups.orEmpty()
+        val states by remember(repository, novel.id) {
+            repository.downloads.tasks.map { tasks -> tasks.filter { it.novel.id == novel.id }.associate { it.chapter.id to it.state } }
+                .distinctUntilChanged().flowOn(Dispatchers.Default)
+        }.collectAsState(initial = emptyMap())
         fun toggleGroup(id: String) {
             // Freeze the visible edition during interaction; verification may change the catalog primary.
             selectedId = novel.id
@@ -381,19 +400,18 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
             selectedId = novel.id
             enqueueing = true; error = null; notice = null
             scope.launch {
-                try { repository.downloads.enqueue(novel, chapters); notice = "أُضيفت الفصول إلى التنزيلات"; selected = arrayListOf(); selecting = false }
+                try { repository.downloads.enqueue(novel, chapters); notice = "أُضيفت الفصول إلى التنزيلات"; selected = emptySet(); selecting = false }
                 catch (c: CancellationException) { throw c } catch (e: Exception) { error = novelError(e) }
                 finally { enqueueing = false }
             }
         }
         fun chooseEdition(target: Novel) {
             if (resume != null && resume.novel.id != target.id) { switchChapter = null; switching = target }
-            else { selectedId = target.id; selected = arrayListOf(); editionsOpen = false }
+            else { selectedId = target.id; selected = emptySet(); editionsOpen = false }
         }
         NovelShell("الرواية", actions = {
-            IconButton(onClick = { scope.launch { repository.setSaved(novel, !saved) } }) { Icon(if (saved) Icons.Outlined.Bookmark else Icons.Outlined.BookmarkBorder, "مكتبة الروايات", tint = Design.GoldPrimary) }
+            IconButton(onClick = { selectedId = novel.id; libraryOpen = true }) { Icon(if (saved) Icons.Outlined.Bookmark else Icons.Outlined.BookmarkBorder, "تنظيم المكتبة", tint = Design.GoldPrimary) }
             IconButton(onClick = { navigator.push(NovelDownloadsScreen()) }) { Icon(Icons.Outlined.Download, "تنزيلات الروايات", tint = Design.GoldPrimary) }
-            IconButton(onClick = { editionsOpen = true }) { Icon(Icons.Outlined.Info, "معلومات الرواية والطبعات", tint = Design.LavenderPrimary) }
         }) {
             LazyColumn(Modifier.weight(1f), state = detailScroll, contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 item {
@@ -404,7 +422,7 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
                             novel.author?.let { Text(it, color = Color(0xFFC3B1D0), style = MaterialTheme.typography.bodySmall.copy(textDirection = TextDirection.Content)) }
                             novel.status?.let { Text(when (it.lowercase()) { "ongoing" -> "مستمرة"; "completed" -> "مكتملة"; else -> it }, color = Design.LavenderPrimary, style = MaterialTheme.typography.labelSmall) }
                             if (index.complete) Text(numeric(index.chapters.size) + " فصلًا", color = Design.GoldPrimary, style = MaterialTheme.typography.labelLarge)
-                            else Text((if (novel.id in busy) "جارٍ استكمال الفصول · " else "الفصول المتاحة · ") + numeric(index.chapters.size), color = Color(0xFFAE99BE), style = MaterialTheme.typography.labelSmall)
+                            else Text(chapterCountLabel(index.chapters.size, novel.chapterCount, novel.id in busy), color = Color(0xFFAE99BE), style = MaterialTheme.typography.labelSmall)
                         }
                     }
                 }
@@ -442,12 +460,15 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
                 }
                 item { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text("الفصول", Modifier.weight(1f), color = Color.White, fontWeight = FontWeight.Bold)
-                    TextButton(onClick = { selectedId = novel.id; selecting = !selecting; selected = arrayListOf() }) { Text(if (selecting) "تم" else "اختيار الفصول", color = Design.GoldPrimary) }
+                    TextButton(onClick = { selectedId = novel.id; selecting = !selecting; selected = emptySet() }) { Text(if (selecting) "تم" else "اختيار الفصول", color = Design.GoldPrimary) }
                     IconButton(onClick = { descending = !descending }) { Icon(Icons.Outlined.SwapVert, "تغيير ترتيب الفصول", tint = Design.LavenderPrimary) }
                 } }
+                if (work.editions.size > 1) item {
+                    TextButton(onClick = { selectedId = novel.id; editionsOpen = true }, contentPadding = PaddingValues(0.dp)) { Text("اختيار الطبعة", color = Design.LavenderPrimary) }
+                }
                 item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TextButton(onClick = { openDownloads() }, enabled = index.chapters.isNotEmpty() && !enqueueing) { Text("تحميل الفصول", color = Design.GoldPrimary) }
-                    if (selecting) TextButton(onClick = { selected = ArrayList(index.chapters.filter { it.available }.map { it.id }) }) { Text("تحديد الكل", color = Design.LavenderPrimary) }
+                    if (selecting) TextButton(onClick = { scope.launch { selected = withContext(Dispatchers.Default) { index.chapters.filter { it.available }.map { it.id }.toSet() } } }) { Text("تحديد الكل", color = Design.LavenderPrimary) }
                 } }
                 if (novel.id in busy) item {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -467,7 +488,7 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
                             Row(Modifier.clickable { toggleGroup(group.id) }.padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
                                     Text(group.title, color = Color.White, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                    Text(numeric(group.chapters.size) + " فصلًا" + if (!index.complete) " · جارٍ الاستكمال" else "", color = Color(0xFFAE99BE), style = MaterialTheme.typography.labelSmall)
+                                    Text(if (index.complete) numeric(group.chapters.size) + " فصلًا" else chapterCountLabel(group.chapters.size, group.declaredCount, novel.id in busy), color = Color(0xFFAE99BE), style = MaterialTheme.typography.labelSmall)
                                 }
                                 IconButton(onClick = { download(group.chapters) }, enabled = index.complete && !enqueueing) { Icon(Icons.Outlined.Download, if (group.realVolume) "تحميل المجلد" else "تحميل هذه الفصول", tint = Design.GoldPrimary) }
                                 IconButton(onClick = { toggleGroup(group.id) }) {
@@ -479,7 +500,7 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
                     }
                     if (novel.id + "|" + group.id !in collapsed) items(group.chapters, key = { it.id }) { chapter ->
                         NovelChapterRow(chapter, states[chapter.id], selecting, chapter.id in selected,
-                            onSelect = { selected = if (chapter.id in selected) ArrayList(selected - chapter.id) else ArrayList(selected + chapter.id) },
+                            onSelect = { selected = if (chapter.id in selected) selected - chapter.id else selected + chapter.id },
                             onRead = { if (resume != null && resume.novel.id != novel.id) { switchChapter = chapter; switching = novel } else navigator.push(NovelReaderScreen(novel, chapter)) },
                             onDownload = { download(listOf(chapter)) },
                             onCommunity = { selectedId = novel.id; navigator.push(eu.kanade.presentation.community.CommunityCommentsScreen(novelCommunityContext(novel, chapter))) })
@@ -489,27 +510,32 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
             }
             if (selecting && selected.isNotEmpty()) Button(onClick = { download(index.chapters.filter { it.id in selected }) }, enabled = !enqueueing, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), colors = ButtonDefaults.buttonColors(containerColor = Design.GoldPrimary, contentColor = Design.BackgroundDark)) { Text("تحميل المحدد · " + numeric(selected.size)) }
         }
+        if (libraryOpen) NovelLibraryShelfSheet(novel, repository, onDismiss = { libraryOpen = false })
         if (rangeOpen) NovelDownloadSelectionSheet(indexes[novel.id] ?: NovelChapterIndex(novel.id),
             currentChapterId = resume?.takeIf { it.novel.id == novel.id }?.position?.chapter?.id,
-            knownCurrent = resume?.takeIf { it.novel.id == novel.id }?.position?.chapter, onDismiss = { rangeOpen = false }, onSelect = { rangeOpen = false; selectedId = novel.id; selecting = true }, onDownload = { chapters -> rangeOpen = false; download(chapters) })
+            knownCurrent = resume?.takeIf { it.novel.id == novel.id }?.position?.chapter,
+            onLoadThrough = { count ->
+                val edition = novel
+                val loaded = if (count == null) repository.completeIndex(edition) else repository.indexThrough(edition, count)
+                indexes = indexes + (edition.id to loaded)
+                loaded
+            }, onDismiss = { rangeOpen = false }, onSelect = { rangeOpen = false; selectedId = novel.id; selecting = true }, onDownload = { chapters -> rangeOpen = false; download(chapters) })
         if (editionsOpen) ModalBottomSheet(onDismissRequest = { editionsOpen = false }, containerColor = Design.SurfaceDark) {
             Column(Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("معلومات الرواية", color = Color.White, style = MaterialTheme.typography.titleMedium)
+                Text("طبعات الرواية", color = Color.White, style = MaterialTheme.typography.titleMedium)
                 Text("الروايات والترجمات لأصحاب حقوقها.", color = Color(0xFFAE99BE), style = MaterialTheme.typography.bodySmall)
-                work.editions.forEach { edition ->
+                work.editions.forEachIndexed { number, edition ->
                     val evidence = catalog.evidence[edition.id]
-                    Text(repository.source(edition.sourceId).name, color = Design.GoldPrimary)
+                    Text("الطبعة " + numeric(number + 1), color = Design.GoldPrimary)
                     Text(edition.title, color = Color.White, style = MaterialTheme.typography.bodyMedium.copy(textDirection = TextDirection.ContentOrRtl))
                     if (evidence?.accessWorks == false) Text("تعذّر فتح هذه الطبعة حاليًا.", color = Color(0xFFE5B5AB), style = MaterialTheme.typography.labelSmall)
                     if (evidence?.complete == true) Text(numeric(evidence.availableCount) + " فصلًا في القائمة", color = Color(0xFFAE99BE), style = MaterialTheme.typography.labelSmall)
                     if (work.editions.size > 1) TextButton(onClick = { chooseEdition(edition) }) { Text(if (novel.id == edition.id) "الطبعة الحالية" else "اختيار هذه الطبعة", color = Design.LavenderPrimary) }
-                    val browser = LocalUriHandler.current
-                    TextButton(onClick = { runCatching { browser.openUri(edition.url) } }) { Text("زيارة الموقع الأصلي", color = Design.LavenderPrimary) }
                 }
             }
         }
         switching?.let { target -> AlertDialog(onDismissRequest = { switching = null }, title = { Text("طبعة أخرى") }, text = { Text("قد يختلف ترتيب الفصول والترجمة. سيبقى موضع قراءتك السابق وتنزيلاتك محفوظين.") },
-            confirmButton = { TextButton(onClick = { selectedId = target.id; selected = arrayListOf(); editionsOpen = false; switching = null
+            confirmButton = { TextButton(onClick = { selectedId = target.id; selected = emptySet(); editionsOpen = false; switching = null
                 switchChapter?.let { navigator.push(NovelReaderScreen(target, it)) }; switchChapter = null }) { Text("اختيار الطبعة") } }, dismissButton = { TextButton(onClick = { switching = null }) { Text("رجوع") } }) }
     }
 }
@@ -527,7 +553,7 @@ class NovelCreditsScreen : Screen() {
         NovelShell("حول الروايات") {
             LazyColumn(contentPadding = PaddingValues(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 item { Text("حكايات من مكتبات الروايات العربية", color = Design.GoldPrimary, style = MaterialTheme.typography.titleMedium) }
-                item { Text("الروايات والأغلفة والترجمات لأصحاب حقوقها. تتوفر معلومات كل طبعة ورابطها الأصلي من صفحة الرواية.", color = Color(0xFFCEC0D8)) }
+                item { Text("الروايات والأغلفة والترجمات لأصحاب حقوقها. تجد هنا معلومات المصادر وروابطها الأصلية.", color = Color(0xFFCEC0D8)) }
                 items(repository.sources, key = { it.id }) { source -> TextButton(onClick = { runCatching { browser.openUri(source.baseUrl) } }) { Text(source.name, color = Design.LavenderPrimary) } }
                 item { Text("الخط العربي: Noto Naskh Arabic — SIL Open Font License 1.1", color = Color(0xFFAE99BE), style = MaterialTheme.typography.bodySmall) }
             }

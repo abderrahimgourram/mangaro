@@ -1,6 +1,6 @@
 package eu.kanade.tachiyomi.novels
 
-data class NovelChapterGroup(val id: String, val title: String?, val chapters: List<NovelChapter>, val realVolume: Boolean)
+data class NovelChapterGroup(val id: String, val title: String?, val chapters: List<NovelChapter>, val realVolume: Boolean, val declaredCount: Int? = null)
 
 /** Genuine volume names only. Numeric ranges are navigation, never presented as author volumes. */
 fun novelChapterGroups(index: NovelChapterIndex, descending: Boolean = false): List<NovelChapterGroup> {
@@ -8,7 +8,7 @@ fun novelChapterGroups(index: NovelChapterIndex, descending: Boolean = false): L
     val unique = index.chapters.distinctBy { it.id }
     val sections = if (unique.any { it.volumeId != null || it.volume != null }) unique.groupBy { it.volumeId ?: it.volume?.let { name -> "name:" + name } ?: "ungrouped" }.map { (id, chapters) ->
         val name = volumes[id]?.title ?: chapters.firstOrNull()?.volume
-        NovelChapterGroup(id, name, chapters, name != null)
+        NovelChapterGroup(id, name, chapters, name != null, volumes[id]?.declaredCount)
     } else listOf(NovelChapterGroup("chapters", null, unique, false))
     return if (descending) sections.reversed().map { it.copy(chapters = it.chapters.reversed()) } else sections
 }

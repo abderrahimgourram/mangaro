@@ -33,7 +33,11 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
 
-internal fun chapterGroups(index: NovelChapterIndex, descending: Boolean) = novelChapterGroups(index, descending)
+internal fun chapterCountLabel(loaded: Int, reportedTotal: Int?, loading: Boolean): String {
+    val total = reportedTotal?.takeIf { it >= loaded && it > 0 }
+    val count = if (total != null) numeric(loaded) + " من " + numeric(total) + " فصلًا" else numeric(loaded) + " فصلًا متاحًا"
+    return count + if (loading) " · جارٍ الاستكمال" else " · القائمة غير مكتملة"
+}
 internal fun downloadLabel(state: NovelDownloadState?) = when (state) {
     NovelDownloadState.DONE -> "متاح دون إنترنت"
     NovelDownloadState.RUNNING -> "جارٍ التحميل"
@@ -71,36 +75,70 @@ internal fun NovelChapterRow(chapter: NovelChapter, state: NovelDownloadState?, 
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun NovelDownloadSelectionSheet(index: NovelChapterIndex, currentChapterId: String? = null, knownCurrent: NovelChapter? = null, onDismiss: () -> Unit, onSelect: () -> Unit, onDownload: (List<NovelChapter>) -> Unit) {
+internal fun NovelDownloadSelectionSheet(index: NovelChapterIndex, currentChapterId: String? = null, knownCurrent: NovelChapter? = null,
+    onLoadThrough: suspend (Int?) -> NovelChapterIndex, onDismiss: () -> Unit, onSelect: () -> Unit, onDownload: (List<NovelChapter>) -> Unit) {
     val current = index.chapters.indexOfFirst { it.id == currentChapterId }.takeIf { it >= 0 }
     val next = current?.plus(1) ?: 0
     val remaining = index.chapters.size - next
     val followingKnown = currentChapterId == null || current != null
+    val scope = rememberCoroutineScope()
+    var loading by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
     var confirmAll by remember { mutableStateOf(false) }
     val placement = remember { "download-selection:" + java.util.UUID.randomUUID().toString() }
     var from by rememberSaveable { mutableStateOf("1") }
-    var to by rememberSaveable { mutableStateOf(index.chapters.size.toString()) }
+    var to by rememberSaveable { mutableStateOf(index.chapters.size.coerceAtLeast(1).toString()) }
     var volumes by rememberSaveable { mutableStateOf(arrayListOf<String>()) }
-    val groups = remember(index) { novelChapterGroups(index).filter { it.realVolume } }
+    val preparedGroups by produceState<Pair<NovelChapterIndex?, List<NovelChapterGroup>>>(null to emptyList(), index) {
+        value = index to kotlinx.coroutines.withContext(Dispatchers.Default) { novelChapterGroups(index).filter { it.realVolume } }
+    }
+    val groups = preparedGroups.second
+    val groupsComplete = preparedGroups.first?.complete == true
     val start = from.toIntOrNull(); val end = to.toIntOrNull()
-    val validRange = start != null && end != null && start >= 1 && end >= start && end <= index.chapters.size
+    val validRange = start != null && end != null && start >= 1 && end >= start && end <= 100_000 && (!index.complete || end <= index.chapters.size)
+    fun request(count: Int?, choose: (NovelChapterIndex) -> List<NovelChapter>) {
+        if (loading) return
+        loading = true; error = null
+        scope.launch {
+            try {
+                val loaded = onLoadThrough(count)
+                val chapters = kotlinx.coroutines.withContext(Dispatchers.Default) { choose(loaded) }
+                if (chapters.isEmpty()) throw NovelSourceFailure("لا توجد فصول متاحة للاختيار الحالي.", "Empty chapter selection")
+                onDownload(chapters)
+            } catch (c: CancellationException) { throw c }
+            catch (e: Exception) { error = novelError(e) }
+            finally { loading = false }
+        }
+    }
+    fun nextChapters(count: Int) {
+        val needed = (current?.plus(1) ?: knownCurrent?.order?.plus(1) ?: 0) + count
+        request(needed) { loaded ->
+            val position = currentChapterId?.let { id -> loaded.chapters.indexOfFirst { it.id == id }.takeIf { it >= 0 } }
+            if (currentChapterId != null && position == null) throw NovelSourceFailure("تعذّر العثور على الفصل الحالي. اختر نطاقًا من الفصول.", "Current chapter absent from index")
+            val first = position?.plus(1) ?: 0
+            if (loaded.chapters.size - first < count) throw NovelSourceFailure("الفصول المتبقية أقل من العدد المختار. اختر نطاقًا آخر.", "Insufficient following chapters")
+            loaded.chapters.subList(first, first + count)
+        }
+    }
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Design.SurfaceDark) {
         LazyColumn(Modifier.fillMaxWidth().heightIn(max = 540.dp), contentPadding = PaddingValues(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item { NovelAdPlacement(placement) }
             item { Text("تحميل الفصول", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium) }
+            if (loading) item { CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp) }
+            error?.let { message -> item { Text(message, color = Color(0xFFE5B5AB), style = MaterialTheme.typography.bodySmall) } }
             item {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     (current?.let { index.chapters[it] } ?: knownCurrent)?.let { chapter ->
-                        AssistChip(onClick = { onDownload(listOf(chapter)) }, enabled = chapter.available, label = { Text("تحميل الفصل") })
+                        AssistChip(onClick = { onDownload(listOf(chapter)) }, enabled = !loading && chapter.available, label = { Text("تحميل الفصل") })
                     }
                     listOf(10, 25, 50, 100).forEach { count ->
-                        AssistChip(onClick = { onDownload(index.chapters.subList(next, next + count)) }, enabled = followingKnown && remaining >= count,
+                        AssistChip(onClick = { nextChapters(count) }, enabled = !loading && (!index.complete || (followingKnown && remaining >= count)),
                             label = { Text("تحميل " + numeric(count) + " فصلًا") })
                     }
-                    if (followingKnown && index.complete && remaining in 1..9) AssistChip(onClick = { onDownload(index.chapters.drop(next)) }, label = { Text("تحميل المتبقي") })
+                    if (followingKnown && index.complete && remaining in 1..9) AssistChip(onClick = { onDownload(index.chapters.drop(next)) }, enabled = !loading, label = { Text("تحميل المتبقي") })
                 }
             }
-            if (!index.complete) item { Text("يمكنك اختيار الفصول المتاحة الآن.", color = Design.LavenderPrimary, style = MaterialTheme.typography.labelSmall) }
+            if (!index.complete) item { Text("يمكنك طلب نطاق أكبر لاستكمال الفصول المتاحة.", color = Design.LavenderPrimary, style = MaterialTheme.typography.labelSmall) }
             item { Text("اختر نطاقًا بحسب ترتيب الفصول في القائمة.", color = Color(0xFFBEABCC), style = MaterialTheme.typography.bodySmall) }
             item { Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(from, { from = it.filter(Char::isDigit) }, Modifier.weight(1f), label = { Text("من") }, singleLine = true,
@@ -108,23 +146,26 @@ internal fun NovelDownloadSelectionSheet(index: NovelChapterIndex, currentChapte
                 OutlinedTextField(to, { to = it.filter(Char::isDigit) }, Modifier.weight(1f), label = { Text("إلى") }, singleLine = true,
                     textStyle = MaterialTheme.typography.bodyMedium.copy(textDirection = TextDirection.Ltr), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
             } }
-            item { Button(onClick = { onDownload(index.chapters.subList(start!! - 1, end!!)) }, enabled = validRange, modifier = Modifier.fillMaxWidth(),
+            item { Button(onClick = { val first = start!!; val last = end!!; request(last) { loaded ->
+                    if (loaded.chapters.size < last) throw NovelSourceFailure("هذا النطاق يتجاوز الفصول المتاحة.", "Chapter range unavailable")
+                    loaded.chapters.subList(first - 1, last)
+                } }, enabled = validRange && !loading, modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(containerColor = Design.GoldPrimary, contentColor = Design.BackgroundDark)) { Text("تحميل النطاق") } }
-            item { OutlinedButton(onClick = onSelect, modifier = Modifier.fillMaxWidth()) { Text("تحديد الفصول") } }
-            item { OutlinedButton(onClick = { confirmAll = true }, enabled = index.complete && index.chapters.isNotEmpty(), modifier = Modifier.fillMaxWidth()) { Text("تحميل الكل") } }
+            item { OutlinedButton(onClick = onSelect, enabled = !loading, modifier = Modifier.fillMaxWidth()) { Text("تحديد الفصول") } }
+            item { OutlinedButton(onClick = { confirmAll = true }, enabled = !loading, modifier = Modifier.fillMaxWidth()) { Text("تحميل الكل") } }
             if (groups.isNotEmpty()) {
                 item { Text("المجلدات", color = Color.White, fontWeight = FontWeight.SemiBold) }
-                items(groups, key = { it.id }) { group -> Row(Modifier.fillMaxWidth().clickable { volumes = if (group.id in volumes) ArrayList(volumes - group.id) else ArrayList(volumes + group.id) }, verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(group.id in volumes, onCheckedChange = { volumes = if (group.id in volumes) ArrayList(volumes - group.id) else ArrayList(volumes + group.id) })
-                    Column { Text(group.title.orEmpty(), color = Color.White); Text(numeric(group.chapters.size) + " فصلًا", color = Design.LavenderPrimary, style = MaterialTheme.typography.labelSmall) }
+                items(groups, key = { it.id }) { group -> Row(Modifier.fillMaxWidth().clickable(enabled = !loading) { volumes = if (group.id in volumes) ArrayList(volumes - group.id) else ArrayList(volumes + group.id) }, verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(group.id in volumes, enabled = !loading, onCheckedChange = { volumes = if (group.id in volumes) ArrayList(volumes - group.id) else ArrayList(volumes + group.id) })
+                    Column { Text(group.title.orEmpty(), color = Color.White); Text(if (groupsComplete) numeric(group.chapters.size) + " فصلًا" else chapterCountLabel(group.chapters.size, group.declaredCount, false), color = Design.LavenderPrimary, style = MaterialTheme.typography.labelSmall) }
                 } }
-                item { Button(onClick = { onDownload(groups.filter { it.id in volumes }.flatMap { it.chapters }) }, enabled = volumes.isNotEmpty() && index.complete, modifier = Modifier.fillMaxWidth()) { Text("تحميل المجلدات المختارة") } }
+                item { Button(onClick = { val chosen = volumes.toSet(); request(null) { loaded -> novelChapterGroups(loaded).filter { it.id in chosen }.flatMap { it.chapters } } }, enabled = volumes.isNotEmpty() && !loading, modifier = Modifier.fillMaxWidth()) { Text("تحميل المجلدات المختارة") } }
             }
-    }
+        }
     }
     if (confirmAll) AlertDialog(onDismissRequest = { confirmAll = false }, title = { Text("تحميل جميع الفصول؟") },
-        text = { Text("سيُضاف " + numeric(index.chapters.count { it.available }) + " فصلًا إلى التنزيلات، مع الاحتفاظ بالفصول المحمّلة.") },
-        confirmButton = { TextButton(onClick = { confirmAll = false; onDownload(index.chapters.filter { it.available }) }) { Text("تحميل الكل") } },
+        text = { Text("سيُضاف كل فصل متاح إلى التنزيلات، مع الاحتفاظ بالفصول المحمّلة.") },
+        confirmButton = { TextButton(onClick = { confirmAll = false; request(null) { it.chapters.filter { chapter -> chapter.available } } }) { Text("تحميل الكل") } },
         dismissButton = { TextButton(onClick = { confirmAll = false }) { Text("رجوع") } })
 }
 
@@ -182,8 +223,10 @@ fun NovelDownloadsContent() {
                             cover = { NovelCover(summary.novel, Modifier.width(60.dp).height(84.dp).clickable { navigator.push(NovelDetailsScreen(summary.novel)) }) },
                             details = {
                                 Text(summary.novel.title, color = Color.White, style = MaterialTheme.typography.titleSmall.copy(textDirection = TextDirection.ContentOrRtl), maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                Text(numeric(summary.done) + " / " + numeric(summary.total) + " · " + status, color = Design.LavenderPrimary, style = MaterialTheme.typography.bodySmall)
-                                if (active || summary.paused > 0) LinearProgressIndicator(progress = { summary.done.toFloat() / summary.total.coerceAtLeast(1) }, modifier = Modifier.fillMaxWidth().height(3.dp), color = Design.GoldPrimary, trackColor = Design.SurfaceHigh)
+                                Text(numeric(summary.done) + " من " + numeric(summary.total) + " فصلًا · " + status, color = Design.LavenderPrimary, style = MaterialTheme.typography.bodySmall.copy(textDirection = TextDirection.Rtl))
+                                if (active || summary.paused > 0) CompositionLocalProvider(androidx.compose.ui.platform.LocalLayoutDirection provides androidx.compose.ui.unit.LayoutDirection.Rtl) {
+                                    LinearProgressIndicator(progress = { summary.done.toFloat() / summary.total.coerceAtLeast(1) }, modifier = Modifier.fillMaxWidth().height(3.dp), color = Design.GoldPrimary, trackColor = Design.SurfaceHigh)
+                                }
                             },
                             actions = {
                                 if (active || summary.paused > 0 || retryable) IconButton(onClick = {

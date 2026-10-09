@@ -70,7 +70,6 @@ fun MangaroLibraryShelfSheet(manga: Manga, onDismissRequest: () -> Unit) {
     var error by remember(manga.id) { mutableStateOf<String?>(null) }
 
     var loadAttempt by remember(manga.id) { mutableStateOf(0) }
-    var confirmRemoval by remember(manga.id) { mutableStateOf(false) }
 
     LaunchedEffect(manga.id, loadAttempt) {
         try {
@@ -122,6 +121,26 @@ fun MangaroLibraryShelfSheet(manga: Manga, onDismissRequest: () -> Unit) {
         }
     }
 
+    MangaroLibraryShelfSheet(
+        title = manga.title, inLibrary = manga.favorite,
+        options = shelves.map { MangaroShelfChoice(it.shelf, it.categoryId in selected) },
+        loaded = loaded, saving = saving, error = error,
+        onToggle = { shelf -> shelves.firstOrNull { it.shelf == shelf }?.let { binding ->
+            selected = if (binding.categoryId in selected) selected - binding.categoryId else selected + binding.categoryId
+        } },
+        onSave = { save(false) }, onRemove = { save(true) },
+        onRetry = { error = null; loadAttempt++ }, onDismissRequest = onDismissRequest,
+    )
+}
+
+data class MangaroShelfChoice(val shelf: MangaroLibraryShelves.Shelf, val checked: Boolean, val title: String = shelf.title)
+
+/** Shared presentation; content repositories retain their existing identities and persistence. */
+@Composable
+fun MangaroLibraryShelfSheet(title: String, inLibrary: Boolean, options: List<MangaroShelfChoice>,
+    loaded: Boolean, saving: Boolean, error: String?, onToggle: (MangaroLibraryShelves.Shelf) -> Unit,
+    onSave: () -> Unit, onRemove: () -> Unit, onRetry: () -> Unit, onDismissRequest: () -> Unit) {
+    var confirmRemoval by remember { mutableStateOf(false) }
     ModalBottomSheet(
         onDismissRequest = { if (!saving) onDismissRequest() },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
@@ -133,22 +152,22 @@ fun MangaroLibraryShelfSheet(manga: Manga, onDismissRequest: () -> Unit) {
             Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text(if (manga.favorite) "تنظيم المكتبة" else "إضافة إلى المكتبة", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text(manga.title, color = Color(0xFFCBBED5), style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(if (inLibrary) "تنظيم المكتبة" else "إضافة إلى المكتبة", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text(title, color = Color(0xFFCBBED5), style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
             if (!loaded && error == null) {
                 CircularProgressIndicator(Modifier.padding(12.dp).size(22.dp), color = MangaroDesignSystem.GoldPrimary, strokeWidth = 2.dp)
             }
-            shelves.forEach { binding ->
-                val checked = binding.categoryId in selected
+            options.forEach { option ->
+                val checked = option.checked
                 Row(
-                    Modifier.fillMaxWidth().height(48.dp).clickable(enabled = !saving) {
-                        selected = if (checked) selected - binding.categoryId else selected + binding.categoryId
+                    Modifier.fillMaxWidth().height(48.dp).clickable(enabled = loaded && !saving) {
+                        onToggle(option.shelf)
                     },
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Icon(
-                        when (binding.shelf) {
+                        when (option.shelf) {
                             MangaroLibraryShelves.Shelf.FAVORITE -> Icons.Outlined.FavoriteBorder
                             MangaroLibraryShelves.Shelf.READING -> Icons.Outlined.MenuBook
                             MangaroLibraryShelves.Shelf.LATER -> Icons.Outlined.WatchLater
@@ -159,30 +178,30 @@ fun MangaroLibraryShelfSheet(manga: Manga, onDismissRequest: () -> Unit) {
                         tint = if (checked) MangaroDesignSystem.GoldPrimary else Color(0xFFAB9CBD),
                         modifier = Modifier.size(21.dp),
                     )
-                    Text(binding.shelf.title, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+                    Text(option.title, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
                     Checkbox(
                         checked = checked,
                         onCheckedChange = null,
-                        enabled = !saving,
+                        enabled = loaded && !saving,
                         colors = CheckboxDefaults.colors(checkedColor = MangaroDesignSystem.GoldPrimary, checkmarkColor = MangaroDesignSystem.BackgroundDark, uncheckedColor = Color(0xFF80738F)),
                     )
                 }
             }
             error?.let { Text(it, color = Color(0xFFD5B4C2), style = MaterialTheme.typography.bodySmall) }
             if (!loaded && error != null) {
-                TextButton(onClick = { error = null; loadAttempt++ }) { Text("إعادة المحاولة") }
+                TextButton(onClick = { onRetry() }) { Text("إعادة المحاولة") }
             }
             Button(
-                onClick = { save(false) },
+                onClick = { onSave() },
                 enabled = loaded && !saving,
                 modifier = Modifier.fillMaxWidth().height(46.dp),
                 shape = RoundedCornerShape(14.dp),
                 contentPadding = PaddingValues(horizontal = 18.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = MangaroDesignSystem.GoldPrimary, contentColor = MangaroDesignSystem.BackgroundDark),
             ) {
-                Text(if (saving) "جارٍ الحفظ..." else if (manga.favorite) "حفظ التغييرات" else "إضافة إلى المكتبة", fontWeight = FontWeight.SemiBold)
+                Text(if (saving) "جارٍ الحفظ..." else if (inLibrary) "حفظ التغييرات" else "إضافة إلى المكتبة", fontWeight = FontWeight.SemiBold)
             }
-            if (manga.favorite) {
+            if (inLibrary) {
                 TextButton(onClick = { confirmRemoval = true }, enabled = loaded && !saving, modifier = Modifier.fillMaxWidth()) {
                     Text("إزالة من المكتبة", color = Color(0xFFCBBED5))
                 }
@@ -195,7 +214,7 @@ fun MangaroLibraryShelfSheet(manga: Manga, onDismissRequest: () -> Unit) {
             title = { Text("إزالة من المكتبة؟") },
             text = { Text("ستبقى التنزيلات وسجل القراءة والتقدم محفوظة على هذا الجهاز.") },
             confirmButton = {
-                TextButton(onClick = { confirmRemoval = false; save(true) }, enabled = !saving) { Text("إزالة") }
+                TextButton(onClick = { confirmRemoval = false; onRemove() }, enabled = !saving) { Text("إزالة") }
             },
             dismissButton = { TextButton(onClick = { confirmRemoval = false }) { Text("إلغاء") } },
             containerColor = MangaroDesignSystem.SurfaceDark,

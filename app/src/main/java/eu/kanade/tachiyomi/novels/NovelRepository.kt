@@ -273,7 +273,7 @@ class NovelRepository private constructor(context: Context) {
                 ?: library.value.firstOrNull { it.novel.id == novel.id }?.position?.takeIf { it.chapter.id == chapter.id }
         }
     }
-    suspend fun updateLibrary(novel: Novel, favorite: Boolean? = null, status: String? = null, bookmark: String? = null) {
+    suspend fun updateLibrary(novel: Novel, favorite: Boolean? = null, status: String? = null, bookmark: String? = null, saved: Boolean? = null) {
         require(status == null || status in setOf("reading", "completed", "planned"))
         withContext(Dispatchers.IO) {
             ingest(listOf(novel))
@@ -282,9 +282,9 @@ class NovelRepository private constructor(context: Context) {
                 val entries = if (any { it.novel.id == novel.id }) this else this + NovelLibraryItem(novel)
                 entries.map { old ->
                     if (old.novel.id !in ids) old else old.copy(
-                        saved = old.saved || favorite == true || status != null,
-                        addedAt = if (old.addedAt == 0L && (favorite == true || status != null)) System.currentTimeMillis() else old.addedAt,
-                        favorite = favorite ?: old.favorite, readingStatus = status ?: old.readingStatus,
+                        saved = saved ?: (old.saved || favorite == true || status != null),
+                        addedAt = if (old.addedAt == 0L && (saved == true || (saved != false && (favorite == true || status != null)))) System.currentTimeMillis() else old.addedAt,
+                        favorite = if (saved == false) false else favorite ?: old.favorite, readingStatus = status ?: old.readingStatus,
                         bookmarks = if (bookmark == null || old.novel.id != novel.id) old.bookmarks else
                             if (bookmark in old.bookmarks) old.bookmarks - bookmark else old.bookmarks + bookmark,
                     )
@@ -333,12 +333,15 @@ class NovelRepository private constructor(context: Context) {
     }
     suspend fun completeIndex(novel: Novel, refresh: Boolean = false, onPage: suspend (NovelChapterIndex) -> Unit = {}): NovelChapterIndex = withContext(Dispatchers.IO) {
         ready.await()
+        val before = indexSnapshot(novel)
         indexLocks.getOrPut(novel.id) { Mutex() }.withLock {
             val old = indexSnapshot(novel)
-            if (!refresh && old?.complete == true && System.currentTimeMillis() - old.updatedAt < 21_600_000) {
+            // A refresh already completed while this caller waited: share it rather than refetch.
+            if (old?.complete == true && ((!refresh && System.currentTimeMillis() - old.updatedAt < 21_600_000) || old.updatedAt != before?.updatedAt)) {
                 onPage(old); return@withLock old
             }
             val initial = if (!refresh && old?.complete == false) old else NovelChapterIndex(novel.id)
+            var lastEmission = 0L
             try {
                 val result = NovelChapterIndexer.collect(source(novel.sourceId), novel, initial ?: NovelChapterIndex(novel.id)) { index ->
                     // Keep a complete last-known-good index during refresh, including offline failures.
@@ -346,14 +349,18 @@ class NovelRepository private constructor(context: Context) {
                         cacheIndex(index)
                         if (index.complete || index.fetchedPages.size % 4 == 0) persistIndex(novel, index)
                     }
-                    onPage(if (old?.complete == true && !index.complete) old else index)
+                    val now = System.nanoTime()
+                    if (lastEmission == 0L || index.complete || now - lastEmission >= 500_000_000L) {
+                        onPage(if (old?.complete == true && !index.complete) old else index)
+                        lastEmission = now
+                    }
                 }
                 updateEvidence(novel, NovelEditionEvidence(true, result.availableCount, catalog.value.evidence[novel.id]?.accessWorks, result.updatedAt))
                 result
             } catch (c: CancellationException) {
                 indexSnapshot(novel)?.let { withContext(NonCancellable) { persistIndex(novel, it) } }; throw c
             } catch (e: Exception) {
-                indexSnapshot(novel)?.let { persistIndex(novel, it) }
+                indexSnapshot(novel)?.let { persistIndex(novel, it); onPage(it) }
                 if (old?.complete == true) {
                     android.util.Log.w("MangaroNovels", "Index refresh failed; retaining verified cached chapters", e)
                     onPage(old)
@@ -361,6 +368,36 @@ class NovelRepository private constructor(context: Context) {
                 throw e
             }
         }
+    }
+    /** Extend only metadata as far as a requested range, sharing any active index collector. */
+    suspend fun indexThrough(novel: Novel, count: Int): NovelChapterIndex = withContext(Dispatchers.IO) {
+        require(count in 1..100_000)
+        ready.await()
+        val indexMutex = indexLocks.getOrPut(novel.id) { Mutex() }
+        while (true) {
+            currentCoroutineContext().ensureActive()
+            val revision = indexRevision.value
+            val snapshot = indexSnapshot(novel) ?: NovelChapterIndex(novel.id)
+            if (snapshot.complete || snapshot.chapters.size >= count) return@withContext snapshot
+            if (indexMutex.tryLock()) {
+                try {
+                    val latest = indexSnapshot(novel) ?: snapshot
+                    if (latest.complete || latest.chapters.size >= count) return@withContext latest
+                    val result = NovelChapterIndexer.collect(source(novel.sourceId), novel, latest,
+                        stopWhen = { it.chapters.size >= count },
+                        onPage = { cacheIndex(it); if (it.complete || it.fetchedPages.size % 4 == 0) persistIndex(novel, it) })
+                    persistIndex(novel, result)
+                    if (result.complete) updateEvidence(novel, NovelEditionEvidence(true, result.availableCount, catalog.value.evidence[novel.id]?.accessWorks, result.updatedAt))
+                    return@withContext result
+                } catch (c: CancellationException) {
+                    withContext(NonCancellable) { indexSnapshot(novel)?.let { persistIndex(novel, it) } }; throw c
+                } catch (e: Exception) {
+                    indexSnapshot(novel)?.let { persistIndex(novel, it) }; throw e
+                } finally { indexMutex.unlock() }
+            }
+            withTimeoutOrNull(1000) { indexRevision.first { it != revision } }
+        }
+        @Suppress("UNREACHABLE_CODE") error("No chapter index")
     }
     private fun diskHasEdition(novel: Novel) = File(app.filesDir, "novels-local/text-downloads/chapters/" + novelDigest(novel.id)).isDirectory
     private fun persistIndex(novel: Novel, index: NovelChapterIndex) {
