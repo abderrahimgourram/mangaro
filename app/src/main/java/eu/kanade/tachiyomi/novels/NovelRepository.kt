@@ -10,6 +10,7 @@ import okhttp3.OkHttpClient
 import okio.Path.Companion.toOkioPath
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.encodeToString
@@ -30,12 +31,25 @@ class NovelRepository private constructor(context: Context) {
     // Memory hits cannot queue behind account snapshots or AtomicFile fsync.
     private val memoryCacheLock = Mutex()
     private val catalogLock = Mutex()
-    private data class RequestLock(val mutex: Mutex = Mutex(), var users: Int = 0)
-    private val requestLocks = mutableMapOf<String, RequestLock>()
+    private val catalogWrites = Channel<NovelCatalogState>(Channel.CONFLATED)
+    private data class MetadataFlight(val result: Deferred<Any?>, var readers: Int = 1)
+    private val metadataFlights = mutableMapOf<String, MetadataFlight>()
+    @Suppress("UNCHECKED_CAST")
     private suspend fun <T> coalesce(key: String, action: suspend () -> T): T {
-        val entry = synchronized(requestLocks) { requestLocks.getOrPut(key) { RequestLock() }.also { it.users++ } }
-        try { return entry.mutex.withLock { action() } }
-        finally { synchronized(requestLocks) { if (--entry.users == 0) requestLocks.remove(key) } }
+        val flight = synchronized(metadataFlights) {
+            metadataFlights[key]?.also { it.readers++ }
+                ?: MetadataFlight(io.async(start = CoroutineStart.LAZY) { action() })
+                    .also { metadataFlights[key] = it }
+        }
+        try { return flight.result.await() as T }
+        finally {
+            synchronized(metadataFlights) {
+                if (--flight.readers == 0) {
+                    metadataFlights.remove(key, flight)
+                    if (!flight.result.isCompleted) flight.result.cancel()
+                }
+            }
+        }
     }
     private val detailCache = LinkedHashMap<String, Pair<Novel, Long>>(32, .75f, true)
     private val indexLocks = ConcurrentHashMap<String, Mutex>()
@@ -119,6 +133,12 @@ class NovelRepository private constructor(context: Context) {
 
     init {
         io.launch {
+            for (snapshot in catalogWrites) {
+                runCatching { metadata.write("catalog.json", json.encodeToString(snapshot)) }
+                    .onFailure { android.util.Log.w("MangaroNovels", "Catalogue cache write failed", it) }
+            }
+        }
+        io.launch {
             try {
                 runCatching { rules.load() }.onFailure { android.util.Log.w("MangaroNovels", "Using compiled selectors", it) }
                 runCatching { NovelRuleUpdateJob.schedule(app) }.onFailure { android.util.Log.w("MangaroNovels", "Rule refresh scheduling failed", it) }
@@ -153,8 +173,8 @@ class NovelRepository private constructor(context: Context) {
             // Metadata registry is limited to discovered works, never a provider-wide startup scan.
             if (state != mutableCatalog.value) {
                 mutableCatalog.value = state
-                runCatching { metadata.write("catalog.json", json.encodeToString(state)) }
-                    .onFailure { android.util.Log.w("MangaroNovels", "Catalogue cache write failed", it) }
+                // Disposable metadata persistence must not serialize independent source results.
+                catalogWrites.trySend(state)
             }
         }
     }
@@ -175,8 +195,8 @@ class NovelRepository private constructor(context: Context) {
         val groups = all.groupBy { NovelIdentity.titleKey(it.title) }.values.filter { group ->
             group.map { it.sourceId }.distinct().size > 1 && group.any { it.id in visible }
         }
-        groups.flatten().filter { it.description.isBlank() }.distinctBy { it.id }.take(8).forEach { candidate ->
-            try { detail(candidate) } catch (c: CancellationException) { throw c }
+        groups.flatten().filter { it.description.isBlank() }.distinctBy { it.id }.take(2).forEach { candidate ->
+            try { withTimeoutOrNull(8_000L) { detail(candidate) } } catch (c: CancellationException) { throw c }
             catch (e: Exception) { android.util.Log.w("MangaroNovels", "Edition corroboration unavailable", e) }
         }
     }
@@ -184,15 +204,22 @@ class NovelRepository private constructor(context: Context) {
         listOf(source.id, term, page.toString(), genre.orEmpty()).joinToString("|")
     suspend fun discoverySnapshot(source: NovelSource, term: String, page: Int, genre: String?): NovelPage? = withContext(Dispatchers.IO) {
         val key = discoveryKey(source, term, page, genre)
-        synchronized(discoveryCache) { discoveryCache[key]?.let { return@withContext it.result } }
-        runCatching { indexCache.read("discovery/" + novelDigest(key) + ".json")?.let { json.decodeFromString<DiscoveryCache>(it) } }
-            .getOrNull()?.takeIf { System.currentTimeMillis() - it.at in 0..86_400_000L }?.result
+        synchronized(discoveryCache) { discoveryCache[key]?.takeIf { System.currentTimeMillis() - it.at in 0..86_400_000L }?.let { return@withContext it.result } }
+        val restored = runCatching { indexCache.read("discovery/" + novelDigest(key) + ".json")?.let { json.decodeFromString<DiscoveryCache>(it) } }
+            .getOrNull()?.takeIf { System.currentTimeMillis() - it.at in 0..86_400_000L } ?: return@withContext null
+        synchronized(discoveryCache) {
+            discoveryCache[key] = restored
+            while (discoveryCache.size > 16) discoveryCache.remove(discoveryCache.keys.first())
+        }
+        restored.result
     }
     suspend fun discover(source: NovelSource, term: String, page: Int, genre: String?): NovelPage = withContext(Dispatchers.IO) {
         val key = discoveryKey(source, term, page, genre)
         return@withContext coalesce("discovery:" + key) {
         synchronized(discoveryCache) { discoveryCache[key]?.takeIf { System.currentTimeMillis() - it.at < 300_000 }?.let { return@coalesce it.result } }
-        val result = if (term.isNotBlank()) source.search(term, page) else source.catalog(page, latest = true, genre = genre)
+        val result = withTimeoutOrNull(30_000L) {
+            if (term.isNotBlank()) source.search(term, page) else source.catalog(page, latest = true, genre = genre)
+        } ?: throw NovelSourceFailure("استغرق التحميل وقتًا طويلًا. حاول مجددًا.", "Discovery deadline exceeded")
         ingest(result.novels)
         val snapshot = DiscoveryCache(result, System.currentTimeMillis())
         synchronized(discoveryCache) {
@@ -633,7 +660,7 @@ class NovelRepository private constructor(context: Context) {
         ingest(listOf(novel))
         catalogLock.withLock {
             val next = NovelWorkReconciler.withEvidence(mutableCatalog.value, novel.id, evidence)
-            metadata.write("catalog.json", json.encodeToString(next)); mutableCatalog.value = next
+            mutableCatalog.value = next; catalogWrites.trySend(next)
         }
     }
     suspend fun verifyEditionAccess(novel: Novel, index: NovelChapterIndex) {

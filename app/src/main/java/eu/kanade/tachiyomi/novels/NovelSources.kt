@@ -159,13 +159,18 @@ class CeneleSource(http: NovelHttp) : HtmlNovelSource(http) {
     override suspend fun chapters(novel: Novel, page: Int) = withContext(Dispatchers.IO) {
         val context=chapterContext(novel)
         // Independent cursor components; declared counts never decide where a volume ends.
-        val volumeIndex=(page-1)/1_000_000
-        val localPage=(page-1)%1_000_000+1
+        // Public endpoint verified to cap per_page=200 at 100 records. New cursors use 100;
+        // persisted legacy cursors keep 50 so partially cached indexes never skip chapters.
+        val cursorBase = 1_000_000_000
+        val largerPage = page == 1 || page > cursorBase
+        val cursor = if (page > cursorBase) page - cursorBase else page
+        val volumeIndex=(cursor-1)/1_000_000
+        val localPage=(cursor-1)%1_000_000+1
         val volume=context.volumes.getOrNull(volumeIndex) ?: error("Invalid Cenele volume cursor")
         val config=context.config
         val result=Json.parseToJsonElement(http.post(url("wp-admin/admin-ajax.php"),mapOf(
             "action" to "nhv_manga_single_chapters_page", "nonce" to config.string("chaptersNonce"),
-            "manga_id" to config.string("postId"), "per_page" to "50", "order" to "asc",
+            "manga_id" to config.string("postId"), "per_page" to if (largerPage) "100" else "50", "order" to "asc",
             "volume" to volume.string("num"), "page" to localPage.toString()))).jsonObject
         if(result["success"]?.jsonPrimitive?.booleanOrNull!=true)
             throw NovelSourceFailure("تعذّر تحميل الفصول. حاول مجددًا.", "Cenele chapter request rejected")
@@ -177,7 +182,8 @@ class CeneleSource(http: NovelHttp) : HtmlNovelSource(http) {
         }
         val more=result["has_more"]?.jsonPrimitive?.booleanOrNull
             ?: throw NovelSourceFailure("تعذّر إكمال قائمة الفصول.", "Cenele pagination state missing")
-        val next=if(more) page+1 else if(volumeIndex+1<context.volumes.size) (volumeIndex+1)*1_000_000+1 else null
+        val next=if(more) (if (largerPage) cursorBase else 0) + cursor + 1
+            else if(volumeIndex+1<context.volumes.size) (if (largerPage) cursorBase else 0) + (volumeIndex+1)*1_000_000+1 else null
         val volumes=context.volumes.mapNotNull {v ->
             val name=v.string("label").takeUnless {it.isBlank() || it in setOf("بدون مجلدات","بدون مجلد","الفصول")} ?: return@mapNotNull null
             NovelVolume(v.string("num"),name,v["count"]?.jsonPrimitive?.intOrNull)

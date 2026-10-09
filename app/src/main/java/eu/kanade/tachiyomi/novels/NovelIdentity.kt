@@ -7,11 +7,16 @@ import java.util.UUID
 
 /** Matching keys only; source titles, names, URLs and saved positions are never rewritten. */
 object NovelIdentity {
+    private val marks = Regex("\\p{M}+")
+    private val alefs = Regex("[أإآٱ]")
+    private val punctuation = Regex("[^\\p{L}\\p{N}]+")
+    private val spaces = Regex("\\s+")
+    private val editionQualifier = Regex("(?:\\b[0-9]+\\b|\\b(?:wn|ln|sequel|adaptation|side story|fan fiction|fanfic)\\b|(?:الجزء|المجلد)\\s+\\S+|\\b(?:part|volume|vol)\\s+\\S+|نسخه الفان|قصه جانبيه|قصص جانبيه|تكمله|اقتباس|الارك الاخير)")
     fun normalize(value: String): String = Normalizer.normalize(value, Normalizer.Form.NFKD)
-        .replace(Regex("\\p{M}+"), "").replace("ـ", "")
-        .replace(Regex("[أإآٱ]"), "ا").replace('ى', 'ي').replace('ة', 'ه')
-        .lowercase(Locale.ROOT).replace(Regex("[^\\p{L}\\p{N}]+"), " ").trim()
-        .replace(Regex("\\s+"), " ")
+        .replace(marks, "").replace("ـ", "")
+        .replace(alefs, "ا").replace('ى', 'ي').replace('ة', 'ه')
+        .lowercase(Locale.ROOT).replace(punctuation, " ").trim()
+        .replace(spaces, " ")
 
     fun titleKey(value: String) = normalize(value).removePrefix("روايه ")
     // Explicit transliteration corroborated by the two provider records documented in docs/novels.
@@ -24,9 +29,11 @@ object NovelIdentity {
     private fun names(novel: Novel) = (listOf(novel.title) + novel.alternativeTitles + listOfNotNull(novel.originalTitle) + novel.originalTitle.orEmpty().split('|'))
         .map(::titleKey).filter { it.length >= 6 }.toSet()
     private fun qualifiers(novel: Novel): Set<String> = names(novel).flatMap { name ->
-        Regex("(?:\\b[0-9]+\\b|\\b(?:wn|ln|sequel|adaptation|side story|fan fiction|fanfic)\\b|(?:الجزء|المجلد)\\s+\\S+|\\b(?:part|volume|vol)\\s+\\S+|نسخه الفان|قصه جانبيه|قصص جانبيه|تكمله|اقتباس|الارك الاخير)")
-            .findAll(name).map { it.value }.toList()
+        editionQualifier.findAll(name).map { it.value }.toList()
     }.toSet()
+
+    // Necessary matching keys only; the existing corroboration/conflict rules still decide.
+    internal fun matchingKeys(novel: Novel) = names(novel).map { "title:$it" }.toSet() + novel.workIdentifiers.map { "work:$it" }
 
     fun conflicts(a: Novel, b: Novel): Boolean {
         if (a.id == b.id) return false
@@ -84,6 +91,8 @@ object NovelWorkReconciler {
     fun ingest(state: NovelCatalogState, novels: List<Novel>): NovelCatalogState {
         var works = state.works
         val aliases = state.aliases.toMutableMap()
+        val keys = HashMap<String, Set<String>>()
+        fun keysFor(novel: Novel) = keys.getOrPut(novel.id) { NovelIdentity.matchingKeys(novel) }
         for (incoming in novels) {
             val previous = works.firstOrNull { w -> w.editions.any { it.id == incoming.id } }
             val old = previous?.editions?.firstOrNull { it.id == incoming.id }
@@ -97,7 +106,11 @@ object NovelWorkReconciler {
                 workIdentifiers = (old.workIdentifiers + incoming.workIdentifiers).distinct(),
                 genres = incoming.genres.ifEmpty { old.genres },
                 reliableUpdatedAt = incoming.reliableUpdatedAt ?: old.reliableUpdatedAt,
+                chapterCount = incoming.chapterCount ?: old.chapterCount,
             )
+            if (novel == old) continue
+            val incomingKeys = NovelIdentity.matchingKeys(novel)
+            keys[novel.id] = incomingKeys
             val remaining = previous?.editions.orEmpty().filterNot { it.id == novel.id }
             works = works.filterNot { it.id == previous?.id }
             if (remaining.isNotEmpty()) works = works + previous!!.copy(editions = remaining,
@@ -105,7 +118,7 @@ object NovelWorkReconciler {
             // A positive corroborating link is required and every member must be compatible.
             // A bridge edition cannot merge conflicting authors
             // or two distinct records from one provider. New evidence can safely separate an old group.
-            val candidates = works.filter { w -> w.editions.any { NovelIdentity.matches(it, novel) } && w.editions.none { NovelIdentity.conflicts(it, novel) } }
+            val candidates = works.filter { w -> w.editions.any { keysFor(it).any { key -> key in incomingKeys } && NovelIdentity.matches(it, novel) } && w.editions.none { NovelIdentity.conflicts(it, novel) } }
             val compatible = candidates.flatMap { it.editions }
             val mutuallyCompatible = compatible.all { a -> compatible.all { b -> !NovelIdentity.conflicts(a, b) } }
             val matching = if (mutuallyCompatible) candidates else emptyList()

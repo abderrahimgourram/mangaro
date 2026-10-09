@@ -50,6 +50,7 @@ import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
@@ -167,7 +168,10 @@ class NovelHomeScreen(private val initialGenre: String? = null) : Screen() {
                     }
                     val route = routes[source.id].orEmpty().firstOrNull { NovelGenres.key(it.name) == genre }?.value
                     val result = if (genre != null && route == null) {
-                        val available = catalog.works.flatMap { it.editions }.filter { it.sourceId == source.id && it.genres.any { g -> NovelGenres.key(g) == genre } && (term.isBlank() || NovelIdentity.normalize(it.title).contains(NovelIdentity.normalize(term))) }
+                        val available = withContext(Dispatchers.Default) {
+                            val query = NovelIdentity.normalize(term)
+                            repository.catalog.value.works.flatMap { it.editions }.filter { it.sourceId == source.id && it.genres.any { g -> NovelGenres.key(g) == genre } && (term.isBlank() || NovelIdentity.normalize(it.title).contains(query)) }
+                        }
                         NovelPage(available)
                     } else repository.discover(source, term, 1, route)
                     if (request == epoch) {
@@ -180,24 +184,42 @@ class NovelHomeScreen(private val initialGenre: String? = null) : Screen() {
             } } }
             if (request == epoch) memory.loadedKey = term to genre
         }
-        val editions = remember(slots) {
-            // Deterministic interleaving; response speed never decides edition preference or catalogue order.
-            val lists = repository.sources.map { slots[it.id].orEmpty() }
-            buildList { for (i in 0 until (lists.maxOfOrNull { it.size } ?: 0)) lists.forEach { it.getOrNull(i)?.let(::add) } }
+        // Catalogue matching and genre normalization never run during main-thread composition.
+        val catalogSnapshot = catalog
+        val slotsSnapshot = slots
+        val routesSnapshot = routes
+        val querySnapshot = term
+        val genreSnapshot = genre
+        val presentation by produceState(Triple(emptyList<UnifiedNovelWork>(), emptyList<String>(), emptyList<UnifiedNovelWork>()), catalogSnapshot, slotsSnapshot, routesSnapshot, querySnapshot to genreSnapshot) {
+            value = withContext(Dispatchers.Default) {
+                val lists = repository.sources.map { slotsSnapshot[it.id].orEmpty() }
+                val editions = buildList { for (i in 0 until (lists.maxOfOrNull { it.size } ?: 0)) lists.forEach { it.getOrNull(i)?.let(::add) } }
+                val byEdition = catalogSnapshot.works.flatMap { w -> w.editions.map { it.id to w } }.toMap()
+                val works = if (editions.isEmpty() && querySnapshot.isBlank() && genreSnapshot == null) catalogSnapshot.works.take(64)
+                    else editions.mapNotNull { byEdition[it.id] }.distinctBy { it.id }
+                val genres = (routesSnapshot.values.flatten().map { it.name } + catalogSnapshot.works.flatMap { it.editions }.flatMap { it.genres })
+                    .distinctBy(NovelGenres::key).sortedBy(NovelGenres::key)
+                val recent = (slotsSnapshot["novel.kolnovel"].orEmpty().take(3) + slotsSnapshot["novel.cenele"].orEmpty().take(3))
+                    .mapNotNull { byEdition[it.id] }.distinctBy { it.id }
+                Triple(works, genres, recent)
+            }
         }
-        LaunchedEffect(editions.map { it.id }) { repository.verifyCandidates(editions.map { it.id }.toSet()) }
-        val byEdition = remember(catalog) { catalog.works.flatMap { w -> w.editions.map { it.id to w } }.toMap() }
-        val works = remember(editions, byEdition, term, genre) {
-            if (editions.isEmpty() && term.isBlank() && genre == null) catalog.works.take(64)
-            else editions.mapNotNull { byEdition[it.id] }.distinctBy { it.id }
-        }
-        val genres = remember(routes, catalog) {
-            (routes.values.flatten().map { it.name } + catalog.works.flatMap { it.editions }.flatMap { it.genres })
-                .distinctBy(NovelGenres::key).sortedBy(NovelGenres::key)
-        }
-        val recent = remember(slots, byEdition) {
-            (slots["novel.kolnovel"].orEmpty().take(3) + slots["novel.cenele"].orEmpty().take(3))
-                .mapNotNull { byEdition[it.id] }.distinctBy { it.id }
+        val works = presentation.first
+        val genres = presentation.second
+        val recent = presentation.third
+        LaunchedEffect(gridState) {
+            snapshotFlow {
+                if (gridState.isScrollInProgress) emptySet<String>()
+                else gridState.layoutInfo.visibleItemsInfo.mapNotNull { it.key as? String }.toSet()
+            }.distinctUntilChanged().collectLatest { visible ->
+                if (visible.isNotEmpty()) {
+                    kotlinx.coroutines.delay(750)
+                    val editions = withContext(Dispatchers.Default) {
+                        repository.catalog.value.works.filter { it.id in visible }.flatMap { it.editions }.map { it.id }.toSet()
+                    }
+                    repository.verifyCandidates(editions)
+                }
+            }
         }
         fun more() {
             if (moreJob?.isActive == true) return
@@ -309,7 +331,7 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
                 .distinctUntilChanged().flowOn(Dispatchers.Default)
         }.collectAsState(initial = emptyList())
         val storageError by repository.storageError.collectAsState()
-        val work = catalog.work(initial.id) ?: UnifiedNovelWork(NovelIdentity.initialWorkId(initial.id), listOf(initial), initial.id)
+        val work = remember(catalog, initial.id) { catalog.work(initial.id) ?: UnifiedNovelWork(NovelIdentity.initialWorkId(initial.id), listOf(initial), initial.id) }
         val scope = rememberCoroutineScope()
         var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
         val novel = work.editions.firstOrNull { it.id == selectedId } ?: work.primary
