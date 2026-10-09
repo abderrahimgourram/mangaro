@@ -448,13 +448,8 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
                         Icon(Icons.Outlined.Download, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("تحميل الفصول")
                     }
                 }
-                item {
-                    TextButton(onClick = {
-                        selectedId = novel.id
-                        navigator.push(eu.kanade.presentation.community.CommunityCommentsScreen(novelWorkCommunityContext(novel)))
-                    }, contentPadding = PaddingValues(0.dp)) {
-                        Icon(Icons.Outlined.ChatBubbleOutline, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("تعليقات الرواية")
-                    }
+                item(key = "work-community") {
+                    eu.kanade.presentation.community.WorkCommunitySection(novelWorkCommunityContext(novel))
                 }
                 if (novel.description.isNotBlank()) item {
                     Text(novel.description, color = Color(0xFFD2C7DB), maxLines = if (expandedDescription) Int.MAX_VALUE else 4, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium.copy(textDirection = TextDirection.ContentOrRtl))

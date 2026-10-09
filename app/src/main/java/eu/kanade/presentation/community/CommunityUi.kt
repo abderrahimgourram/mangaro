@@ -110,6 +110,13 @@ class CommunityCommentsScreen(private val context: CommunityContext, private val
 fun MangaCommunitySection(manga: Manga) {
     val navigator = LocalNavigator.currentOrThrow
     val context = remember(manga.source, manga.url, manga.title) { communityContextFor(manga) }
+    WorkCommunitySection(context)
+}
+
+/** The same ratings, account gates, summaries and comment preview for any opaque work identity. */
+@Composable
+fun WorkCommunitySection(context: CommunityContext) {
+    val navigator = LocalNavigator.currentOrThrow
     Surface(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
         shape = RoundedCornerShape(16.dp), color = MangaroDesignSystem.SurfaceDark) {
         CommunityContent(context, expanded = false,
