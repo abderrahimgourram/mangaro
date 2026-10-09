@@ -95,8 +95,17 @@ class NovelRepository private constructor(context: Context) {
             .memoryCache { MemoryCache.Builder().maxSizeBytes(8L * 1024 * 1024).build() }
             .diskCache { DiskCache.Builder().directory(File(app.cacheDir, "novels-covers").toOkioPath()).maxSizeBytes(16L * 1024 * 1024).build() }.build()
     }
+    private val chapterNetwork by lazy { NovelHttp() }
+    internal suspend fun illustrationBytes(url: String): ByteArray = withContext(Dispatchers.IO) {
+        require(NovelHttp.allowed(url))
+        covers.diskCache?.openSnapshot(url)?.use { snapshot ->
+            val file = snapshot.data.toFile()
+            if (file.length() in 1..12L * 1024 * 1024) return@withContext file.readBytes()
+        }
+        chapterNetwork.imageBytes(url)
+    }
     val sources by lazy {
-        val http = NovelHttp()
+        val http = chapterNetwork
         listOf(KolNovelSource(http), CeneleSource(http), SunovelsSource(http), SeaNovelSource(http))
     }
     private val rules by lazy { NovelRuleStore(app) }
@@ -685,7 +694,7 @@ class NovelRepository private constructor(context: Context) {
                 check(result.paragraphs.size >= 3 && result.paragraphs.sumOf { it.length } >= 200) { "Incomplete novel chapter" }
                 memoryCacheLock.withLock {
                     texts[key] = result
-                    while (texts.size > 2 || texts.values.sumOf { v -> v.paragraphs.sumOf { it.length } + v.markup.sumOf { it.length } } > 1_000_000) texts.remove(texts.keys.first())
+                    while (texts.size > 2 || texts.values.sumOf { v -> v.paragraphs.sumOf { it.length } + v.markup.sumOf { it.length } + v.blocks.sumOf { (it.imageUrl?.length ?: 0) + it.alt.length } } > 1_000_000) texts.remove(texts.keys.first())
                 }
                 result
             }).also { chapterFlights[identity] = it }

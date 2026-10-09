@@ -84,7 +84,7 @@ class NovelDownloadQueue(private val app: Context, private val repository: Novel
                     val key = novelDownloadKey(novel.id, chapter.id)
                     val old = stateOf(key)
                     if (old?.first in setOf(NovelDownloadState.PENDING, NovelDownloadState.RUNNING, NovelDownloadState.PAUSED, NovelDownloadState.DELETING)) continue
-                    val state = if (disk.read(novel.id, chapter.id) != null) "DONE" else "PENDING"
+                    val state = if (disk.complete(novel.id, chapter.id)) "DONE" else "PENDING"
                     db.execSQL("INSERT OR REPLACE INTO tasks(id,edition_id,chapter,state,generation,ordinal,created,error) VALUES(?,?,?,?,?,?,?,NULL)",
                         arrayOf<Any?>(key, novel.id, json.encodeToString(chapter), state, (old?.second ?: 0) + 1, chapter.order, System.currentTimeMillis()))
                 }
@@ -209,7 +209,7 @@ class NovelDownloadQueue(private val app: Context, private val repository: Novel
         val next = tasks.value.filter { it.state == NovelDownloadState.PENDING && it.novel.sourceId !in activeSources && now >= (sourceNextAt[it.novel.sourceId] ?: 0) }
             .minWithOrNull(compareBy<NovelDownloadTask> { sourceLastServed[it.novel.sourceId] ?: 0 }.thenBy { it.chapter.order }) ?: return@withLock null
         // Crash after a file commit but before SQLite completion: recover from the real validated file.
-        if (disk.read(next.novel.id, next.chapter.id) != null) {
+        if (disk.complete(next.novel.id, next.chapter.id)) {
             db.execSQL("UPDATE tasks SET state='DONE' WHERE id=?", arrayOf(next.key)); changed(next.key, NovelDownloadState.DONE); return@withLock null
         }
         db.execSQL("UPDATE tasks SET state='RUNNING' WHERE id=? AND state='PENDING'", arrayOf(next.key))
@@ -222,13 +222,15 @@ class NovelDownloadQueue(private val app: Context, private val repository: Novel
     private suspend fun complete(task: NovelDownloadTask, text: NovelText) {
         currentCoroutineContext().ensureActive()
         val context = currentCoroutineContext()
-        disk.prepare(task.novel.id, task.chapter.id, text).use { prepared ->
+        disk.prepareWithIllustrations(task.novel.id, task.chapter.id, text, repository::illustrationBytes).use { prepared ->
             mutex.withLock {
                 if (stateOf(task.key) != (NovelDownloadState.RUNNING to task.generation)) return@withLock
                 context.ensureActive()
                 prepared.commit { context.isActive }
-                db.execSQL("UPDATE tasks SET state='DONE',error=NULL WHERE id=?", arrayOf(task.key))
-                changed(task.key, NovelDownloadState.DONE)
+                val state = if (prepared.imagesComplete) NovelDownloadState.DONE else NovelDownloadState.FAILED
+                val error = if (prepared.imagesComplete) null else "النص محفوظ، وتعذّر تحميل بعض الصور. أعد المحاولة."
+                db.execSQL("UPDATE tasks SET state=?,error=? WHERE id=?", arrayOf(state.name, error, task.key))
+                changed(task.key, state, error)
             }
         }
     }

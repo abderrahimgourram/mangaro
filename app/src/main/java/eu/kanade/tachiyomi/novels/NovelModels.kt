@@ -25,7 +25,18 @@ data class NovelVolume(val id: String, val title: String, val declaredCount: Int
 data class ChapterPage(val chapters: List<NovelChapter>, val nextPage: Int? = null, val notice: String? = null,
     val volumes: List<NovelVolume> = emptyList(), val allowEmpty: Boolean = false)
 @Serializable
-data class NovelText(val paragraphs: List<String>, val markup: List<String> = emptyList())
+data class NovelText(val paragraphs: List<String>, val markup: List<String> = emptyList(),
+    val blocks: List<NovelContentBlock> = emptyList())
+@Serializable
+enum class NovelBlockKind { TEXT, HEADING, IMAGE, CAPTION }
+@Serializable
+data class NovelContentBlock(val kind: NovelBlockKind, val paragraph: Int? = null,
+    val imageUrl: String? = null, val alt: String = "", val width: Int? = null, val height: Int? = null)
+
+/** Legacy files have no blocks; their text order and progress offsets remain unchanged. */
+internal fun NovelText.orderedBlocks(): List<NovelContentBlock> = blocks.ifEmpty {
+    paragraphs.indices.map { NovelContentBlock(NovelBlockKind.TEXT, paragraph = it) }
+}
 @Serializable
 data class NovelChapterIndex(val editionId: String, val chapters: List<NovelChapter> = emptyList(),
     val volumes: List<NovelVolume> = emptyList(), val nextPage: Int? = 1, val complete: Boolean = false,

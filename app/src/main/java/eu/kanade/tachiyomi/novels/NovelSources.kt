@@ -40,7 +40,7 @@ abstract class HtmlNovelSource(protected val http: NovelHttp) : NovelSource {
     protected fun text(doc: Document, selector: String): NovelText {
         val content = doc.selectFirst(selector)?.clone()
             ?: throw NovelSourceFailure("هذا الفصل غير متاح حاليًا. يمكنك فتحه في الموقع.", "Missing novel text container")
-        content.select("script,style,iframe,form,button,nav,.ads,.adsbygoogle,.d-none,.sr-only,[hidden],[aria-hidden=true]").remove()
+        content.select("script,style,iframe,form,button,nav,.ads,.adsbygoogle,.advertisement,.ad-container,.ad-wrapper,.sharedaddy,.social-links,.d-none,.sr-only,[hidden],[aria-hidden=true]").remove()
         // Honour the page's ordinary visibility rules, including randomized hidden filler.
         // Only simple class selectors are accepted; no CSS/JS is executed.
         doc.select("style").forEach { style ->
@@ -55,13 +55,8 @@ abstract class HtmlNovelSource(protected val http: NovelHttp) : NovelSource {
         }
         content.select("[style]").filter { Regex("(?:display\\s*:\\s*none|visibility\\s*:\\s*hidden|opacity\\s*:\\s*0(?:\\.0+)?\\s*(?:!important\\s*)?(?:;|$))")
             .containsMatchIn(it.attr("style")) }.forEach(Element::remove)
-        val nodes = content.select("p,h2,h3,blockquote").filter { node ->
-            node.parents().none { it !== content && it.tagName() in setOf("p","blockquote") }
-        }
-        val paragraphs = nodes.map { it.wholeText().replace('\u00a0',' ').trim() }.filter { it.isNotBlank() }
-        if (paragraphs.sumOf { it.length } < 200 || paragraphs.size < 3)
-            throw NovelSourceFailure("هذا الفصل غير متاح حاليًا. يمكنك فتحه في الموقع.", "Empty or incomplete novel text")
-        return NovelText(paragraphs, nodes.filter { it.wholeText().isNotBlank() }.map { it.html() })
+        return extractNovelContent(content)
+
     }
 }
 

@@ -119,6 +119,47 @@ class NovelHttp {
             }
             throw IOException("Too many novel redirects")
         }
+    /** Uses the same bounded connection pool, approved domains and cancellation as chapter HTML. */
+    internal suspend fun imageBytes(initial: String): ByteArray = withContext(Dispatchers.IO) {
+        require(allowed(initial))
+        hosts.getValue(initial.toHttpUrl().host.removePrefix("www.")).withPermit {
+            requests.withPermit {
+                var url = initial
+                repeat(5) {
+                    ensureActive()
+                    require(allowed(url))
+                    val request = Request.Builder().url(url).header("User-Agent", "MangaroNovelPrototype/0.1")
+                        .header("Accept", "image/*").build()
+                    execute(request).use { response ->
+                        if (response.code in 300..399) {
+                            val next = response.header("Location")?.let { response.request.url.resolve(it) }
+                                ?: throw IOException("Illustration redirect without location")
+                            require(next.host == response.request.url.host && allowed(next.toString()))
+                            url = next.toString()
+                        } else {
+                            if (!response.isSuccessful) throw NovelSourceFailure("تعذّر تحميل صورة الفصل.",
+                                "Illustration HTTP ${response.code}", response.code)
+                            require(response.body.contentType()?.type == "image")
+                            require(response.body.contentLength() <= 12 * 1024 * 1024)
+                            val output = java.io.ByteArrayOutputStream()
+                            response.body.byteStream().use { stream ->
+                                val buffer = ByteArray(8192)
+                                while (true) {
+                                    ensureActive()
+                                    val count = stream.read(buffer)
+                                    if (count < 0) break
+                                    require(output.size() + count <= 12 * 1024 * 1024)
+                                    output.write(buffer, 0, count)
+                                }
+                            }
+                            return@withContext output.toByteArray()
+                        }
+                    }
+                }
+                throw IOException("Illustration redirect budget exceeded")
+            }
+        }
+    }
     private suspend fun execute(request: Request): Response = suspendCancellableCoroutine { continuation ->
         val call = client.newCall(request)
         continuation.invokeOnCancellation { call.cancel() }

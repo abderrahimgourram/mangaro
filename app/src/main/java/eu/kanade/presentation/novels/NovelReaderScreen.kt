@@ -146,6 +146,8 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
         var restoring by remember { mutableStateOf(false) }
         var plain by remember {mutableStateOf(emptyList<String>())}
         var anchors by remember { mutableStateOf(emptyList<String>()) }
+        var blocks by remember { mutableStateOf(emptyList<NovelContentBlock>()) }
+        var blockPositions by remember { mutableStateOf(emptyList<Int>()) }
         var error by remember {mutableStateOf<String?>(null)}
         var loading by remember {mutableStateOf(true)}
         var navigationJob by remember { mutableStateOf<Job?>(null) }
@@ -154,7 +156,7 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
         val scroll=rememberLazyListState()
         val scope=rememberCoroutineScope()
         LaunchedEffect(chapter.id,generation) {
-            loading=true;restoring=true;loadedChapter=null;error=null;paragraphs=emptyList();plain=emptyList();anchors=emptyList()
+            loading=true;restoring=true;loadedChapter=null;error=null;paragraphs=emptyList();plain=emptyList();anchors=emptyList();blocks=emptyList();blockPositions=emptyList()
             try {
                 repository.awaitLocal()
                 val text=repository.chapterText(novel,chapter)
@@ -162,20 +164,23 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                 val document = preparedDocument(novel.id + "|" + chapter.id, text)
                 paragraphs = document.paragraphs
                 anchors = document.anchors
+                blocks = document.blocks
+                blockPositions = document.positions
                 val position=repository.readingPosition(novel,chapter)
                 val index = withContext(Dispatchers.Default) {
                     val anchor = position?.anchor?.takeIf { it.isNotEmpty() }?.let { hash ->
                         anchors.indices.filter { anchors[it] == hash }.minByOrNull { kotlin.math.abs(it - ((position?.paragraph ?: 1) - 1)) } ?: -1
                     } ?: -1
-                    if (anchor >= 0) anchor + 1 else (position?.paragraph ?: 0).coerceIn(0, paragraphs.size)
+                    if (anchor >= 0) anchor + 1 else if ((position?.paragraph ?: 0) == 0) 0 else
+                        (blocks.indexOfFirst { it.paragraph == (position!!.paragraph - 1) } + 1).coerceIn(0, blocks.size)
                 }
                 // Wait for this chapter's lazy-list layout, not merely the old heading-only list.
                 withFrameNanos { }
-                snapshotFlow { scroll.layoutInfo.totalItemsCount }.first { it >= paragraphs.size + 1 }
+                snapshotFlow { scroll.layoutInfo.totalItemsCount }.first { it >= blocks.size + 1 }
                 scroll.scrollToItem(index, position?.offset ?: 0)
                 loadedChapter = chapter
                 restoring = false
-                repository.savePosition(novel, chapter, index, position?.offset ?: 0,
+                repository.savePosition(novel, chapter, blockPositions.getOrElse(index - 1) { 0 }, position?.offset ?: 0,
                     anchors.getOrNull(index - 1).orEmpty(), refreshHistory = true)
             } catch(c: CancellationException) {throw c}
             catch(e: Exception) {error=novelError(e)}
@@ -188,7 +193,7 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                 if (prefetched) return@repeatOnLifecycle
                 // Match image-reader preloading: one neighbor once reading approaches the end.
                 snapshotFlow { scroll.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0 }
-                    .first { it >= (plain.size * 2 / 3).coerceAtLeast(1) }
+                    .first { it >= (blocks.size * 2 / 3).coerceAtLeast(1) }
                 val network = context.getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
                 if (network == null || network.activeNetwork == null || network.isActiveNetworkMetered) return@repeatOnLifecycle
                 try {
@@ -208,11 +213,12 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
         val currentRestoring by rememberUpdatedState(restoring)
         val currentPlain by rememberUpdatedState(plain)
         val currentAnchors by rememberUpdatedState(anchors)
+        val currentBlockPositions by rememberUpdatedState(blockPositions)
         fun saveCurrent() {
             val shown = currentChapter ?: return
             if(!currentRestoring && currentPlain.isNotEmpty()) {
-                val index=scroll.firstVisibleItemIndex.coerceAtMost(currentPlain.size)
-                repository.savePosition(novel,shown,index,scroll.firstVisibleItemScrollOffset,
+                val index=scroll.firstVisibleItemIndex.coerceAtMost(currentAnchors.size)
+                repository.savePosition(novel,shown,currentBlockPositions.getOrElse(index - 1) { 0 },scroll.firstVisibleItemScrollOffset,
                     currentAnchors.getOrNull(index-1).orEmpty())
             }
         }
@@ -274,7 +280,7 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                                             it.key == "chapter-heading" && inlineAdHeight > 0 && down.position.y >= it.offset && down.position.y < it.offset + inlineAdHeight
                                         }
                                         // Observe without consuming: long-press selection and scrolling keep their gestures.
-                                        if (!moved && !onHeaderOrAd && pointer.uptimeMillis - down.uptimeMillis < tapLimit && !scroll.isScrollInProgress) {
+                                        if (!pointer.isConsumed && !moved && !onHeaderOrAd && pointer.uptimeMillis - down.uptimeMillis < tapLimit && !scroll.isScrollInProgress) {
                                             controlsVisible = !controlsVisible
                                             if (!controlsVisible) { settingsOpen = false; chaptersOpen = false }
                                         }
@@ -295,8 +301,18 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                                         modifier=Modifier.alpha(if(controlsVisible) 1f else 0f).then(if(controlsVisible) Modifier else Modifier.clearAndSetSemantics { }))
                                 }
                             }
-                            items(paragraphs.size,key={it},contentType={"paragraph"}) {index ->
-                                Text(paragraphs[index],color=ink,style=paragraphStyle)
+                            items(blocks.size, key = { "block-$it" }, contentType = { blocks[it].kind }) { index ->
+                                val block = blocks[index]
+                                if (block.kind == NovelBlockKind.IMAGE) {
+                                    NovelIllustration(repository, block, offline, gold)
+                                } else {
+                                    val value = paragraphs[block.paragraph!!]
+                                    Text(value, color = ink, style = when (block.kind) {
+                                        NovelBlockKind.HEADING -> paragraphStyle.copy(fontWeight = FontWeight.Bold)
+                                        NovelBlockKind.CAPTION -> paragraphStyle.copy(fontSize = (appearance.fontSize * .8f).sp)
+                                        else -> paragraphStyle
+                                    })
+                                }
                             }
                         }
                     }
@@ -317,7 +333,7 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                         Column(Modifier.padding(horizontal=12.dp,vertical=4.dp)) {
                             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween, verticalAlignment=Alignment.CenterVertically) {
                                 TextButton(onClick={adjacent(false)},enabled=!loading && !navigating) {Text("السابق",color=gold)}
-                                ReaderProgress(scroll, plain.size, gold)
+                                ReaderProgress(scroll, blocks.size, gold)
                                 TextButton(onClick={adjacent(true)},enabled=!loading && !navigating) {Text("التالي",color=gold)}
                             }
                             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.Center,verticalAlignment=Alignment.CenterVertically) {
@@ -392,7 +408,8 @@ private fun paragraphAnchor(value: String): String {
     return buildString(64) { bytes.forEach { b -> val v = b.toInt() and 255; append(hex[v ushr 4]); append(hex[v and 15]) } }
 }
 
-private data class PreparedNovelDocument(val source: NovelText, val paragraphs: List<AnnotatedString>, val anchors: List<String>)
+private data class PreparedNovelDocument(val source: NovelText, val paragraphs: List<AnnotatedString>, val anchors: List<String>,
+    val blocks: List<NovelContentBlock>, val positions: List<Int>)
 private val preparedDocuments = LinkedHashMap<String, PreparedNovelDocument>(4, .75f, true)
 
 /** Mirrors the existing two-chapter text budget; never retains an entire novel. */
@@ -402,11 +419,18 @@ private suspend fun preparedDocument(key: String, text: NovelText): PreparedNove
         ensureActive()
         styledParagraph(text.markup.getOrNull(index), paragraph)
     }
-    val result = PreparedNovelDocument(text, paragraphs, text.paragraphs.map { ensureActive(); paragraphAnchor(it) })
+    val paragraphAnchors = text.paragraphs.map { ensureActive(); paragraphAnchor(it) }
+    val blocks = text.orderedBlocks()
+    var lastParagraph = 0
+    val positions = blocks.map { block -> block.paragraph?.let { lastParagraph = it + 1 }; lastParagraph }
+    val anchors = blocks.map { block ->
+        if (block.kind == NovelBlockKind.IMAGE) "image:" + paragraphAnchor(block.imageUrl.orEmpty()) else paragraphAnchors[block.paragraph!!]
+    }
+    val result = PreparedNovelDocument(text, paragraphs, anchors, blocks, positions)
     synchronized(preparedDocuments) {
         preparedDocuments[key] = result
         while (preparedDocuments.size > 2 || preparedDocuments.values.sumOf { doc ->
-            doc.source.paragraphs.sumOf { it.length } + doc.source.markup.sumOf { it.length }
+            doc.source.paragraphs.sumOf { it.length } + doc.source.markup.sumOf { it.length } + doc.blocks.sumOf { (it.imageUrl?.length ?: 0) + it.alt.length }
         } > 1_000_000) preparedDocuments.remove(preparedDocuments.keys.first())
     }
     result
