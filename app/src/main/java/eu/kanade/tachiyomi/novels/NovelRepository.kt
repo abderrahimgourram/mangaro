@@ -28,8 +28,13 @@ class NovelRepository private constructor(context: Context) {
     })
     private val lock = Mutex()
     private val catalogLock = Mutex()
-    private val requestLocks = Array(32) { Mutex() }
-    private fun requestLock(key: String) = requestLocks[(key.hashCode() and Int.MAX_VALUE) % requestLocks.size]
+    private data class RequestLock(val mutex: Mutex = Mutex(), var users: Int = 0)
+    private val requestLocks = mutableMapOf<String, RequestLock>()
+    private suspend fun <T> coalesce(key: String, action: suspend () -> T): T {
+        val entry = synchronized(requestLocks) { requestLocks.getOrPut(key) { RequestLock() }.also { it.users++ } }
+        try { return entry.mutex.withLock { action() } }
+        finally { synchronized(requestLocks) { if (--entry.users == 0) requestLocks.remove(key) } }
+    }
     private val detailCache = LinkedHashMap<String, Pair<Novel, Long>>(32, .75f, true)
     private val indexLocks = ConcurrentHashMap<String, Mutex>()
     private val settingsSequence = java.util.concurrent.atomic.AtomicLong()
@@ -46,6 +51,9 @@ class NovelRepository private constructor(context: Context) {
     private val downloadQueue = lazy { NovelDownloadQueue(app, this, disk) }
     val downloads by downloadQueue
     private val ready = CompletableDeferred<Unit>()
+    private val mutableRestored = MutableStateFlow(false)
+    val restored = mutableRestored.asStateFlow()
+    @Volatile private var libraryReadable = true
     private val mutableLibrary = MutableStateFlow<List<NovelLibraryItem>>(emptyList())
     private val mutableSettings = MutableStateFlow(NovelReaderSettings())
     private val mutableCatalog = MutableStateFlow(NovelCatalogState())
@@ -54,7 +62,7 @@ class NovelRepository private constructor(context: Context) {
     val catalog = mutableCatalog.asStateFlow()
     val unifiedLibrary = combine(library, catalog) { entries, state ->
         entries.groupBy { state.work(it.novel.id)?.id ?: NovelIdentity.initialWorkId(it.novel.id) }.mapNotNull { (id, items) ->
-            if (items.none { it.saved }) return@mapNotNull null
+            if (items.none { it.saved || it.favorite }) return@mapNotNull null
             val work = state.work(id) ?: UnifiedNovelWork(id, items.map { it.novel }, items.first().novel.id)
             UnifiedNovelLibraryItem(work, items)
         }.sortedByDescending { it.latest?.position?.updatedAt ?: 0 }
@@ -90,25 +98,25 @@ class NovelRepository private constructor(context: Context) {
     private val texts = object : LinkedHashMap<String, NovelText>(4, .75f, true) {}
     private data class ChapterFlight(val result: Deferred<NovelText>, var readers: Int = 1)
     private val chapterFlights = mutableMapOf<Pair<String, String>, ChapterFlight>()
-    private data class DiscoveryCache(val result: NovelPage, val at: Long)
+    @kotlinx.serialization.Serializable private data class DiscoveryCache(val result: NovelPage, val at: Long)
     private val discoveryCache = LinkedHashMap<String, DiscoveryCache>(16, .75f, true)
 
     init {
         io.launch {
             try {
                 runCatching { rules.load() }.onFailure { android.util.Log.w("MangaroNovels", "Using compiled selectors", it) }
-                NovelRuleUpdateJob.schedule(app)
+                runCatching { NovelRuleUpdateJob.schedule(app) }.onFailure { android.util.Log.w("MangaroNovels", "Rule refresh scheduling failed", it) }
                 // Restore each store independently; one corrupt optional file cannot erase another store.
-                runCatching { if (file.baseFile.exists()) mutableLibrary.value = json.decodeFromString(file.openRead().use { it.readBytes().decodeToString() }) }
-                    .onFailure { mutableStorageError.value = "تعذّر استعادة مكتبة الروايات."; android.util.Log.w("MangaroNovels", "Library restore failed", it) }
-                runCatching { if (settingsFile.baseFile.exists()) mutableSettings.value = json.decodeFromString(settingsFile.openRead().use { it.readBytes().decodeToString() }) }
+                runCatching { if (file.exists()) mutableLibrary.value = json.decodeFromString<List<NovelLibraryItem>>(file.openRead().use { it.readBytes().decodeToString() }).map { if (it.favorite) it.copy(saved = true) else it } }
+                    .onFailure { libraryReadable = false; mutableStorageError.value = "تعذّر استعادة مكتبة الروايات."; android.util.Log.w("MangaroNovels", "Library restore failed", it) }
+                runCatching { if (settingsFile.exists()) mutableSettings.value = json.decodeFromString(settingsFile.openRead().use { it.readBytes().decodeToString() }) }
                     .onFailure { android.util.Log.w("MangaroNovels", "Reader settings restore failed", it) }
-                val old = metadata.read("catalog.json")?.let { json.decodeFromString<NovelCatalogState>(it) } ?: NovelCatalogState()
+                val old = runCatching { metadata.read("catalog.json")?.let { json.decodeFromString<NovelCatalogState>(it) } }.getOrNull() ?: NovelCatalogState()
                 val migrated = NovelWorkReconciler.ingest(old, mutableLibrary.value.map { it.novel }).copy(migrationVersion = 1)
-                metadata.write("catalog.json", json.encodeToString(migrated))
                 mutableCatalog.value = migrated
+                metadata.write("catalog.json", json.encodeToString(migrated))
             } catch (e: Exception) { android.util.Log.w("MangaroNovels", "Local catalogue restore failed", e) }
-            finally { ready.complete(Unit) }
+            finally { mutableRestored.value = true; ready.complete(Unit) }
         }
     }
     fun source(id: String): NovelSource = sources.single { it.id == id }
@@ -128,13 +136,14 @@ class NovelRepository private constructor(context: Context) {
                 evidence = reconciled.evidence.filterKeys { it in editionIds })
             // Metadata registry is limited to discovered works, never a provider-wide startup scan.
             if (state != mutableCatalog.value) {
-                metadata.write("catalog.json", json.encodeToString(state))
                 mutableCatalog.value = state
+                runCatching { metadata.write("catalog.json", json.encodeToString(state)) }
+                    .onFailure { android.util.Log.w("MangaroNovels", "Catalogue cache write failed", it) }
             }
         }
     }
     suspend fun detail(novel: Novel): Novel = withContext(Dispatchers.IO) {
-        requestLock("detail:" + novel.id).withLock {
+        coalesce("detail:" + novel.id) {
             synchronized(detailCache) { detailCache[novel.id]?.takeIf { System.nanoTime() - it.second < 600_000_000_000L } }?.first
                 ?: source(novel.sourceId).details(novel).also {
                     ingest(listOf(it))
@@ -155,15 +164,32 @@ class NovelRepository private constructor(context: Context) {
             catch (e: Exception) { android.util.Log.w("MangaroNovels", "Edition corroboration unavailable", e) }
         }
     }
+    private fun discoveryKey(source: NovelSource, term: String, page: Int, genre: String?) =
+        listOf(source.id, term, page.toString(), genre.orEmpty()).joinToString("|")
+    suspend fun discoverySnapshot(source: NovelSource, term: String, page: Int, genre: String?): NovelPage? = withContext(Dispatchers.IO) {
+        val key = discoveryKey(source, term, page, genre)
+        synchronized(discoveryCache) { discoveryCache[key]?.let { return@withContext it.result } }
+        runCatching { indexCache.read("discovery/" + novelDigest(key) + ".json")?.let { json.decodeFromString<DiscoveryCache>(it) } }
+            .getOrNull()?.takeIf { System.currentTimeMillis() - it.at in 0..86_400_000L }?.result
+    }
     suspend fun discover(source: NovelSource, term: String, page: Int, genre: String?): NovelPage = withContext(Dispatchers.IO) {
-        val key = listOf(source.id, term, page.toString(), genre.orEmpty()).joinToString("|")
-        return@withContext requestLock("discovery:" + key).withLock {
-        synchronized(discoveryCache) { discoveryCache[key]?.takeIf { System.currentTimeMillis() - it.at < 300_000 }?.let { return@withLock it.result } }
+        val key = discoveryKey(source, term, page, genre)
+        return@withContext coalesce("discovery:" + key) {
+        synchronized(discoveryCache) { discoveryCache[key]?.takeIf { System.currentTimeMillis() - it.at < 300_000 }?.let { return@coalesce it.result } }
         val result = if (term.isNotBlank()) source.search(term, page) else source.catalog(page, latest = true, genre = genre)
         ingest(result.novels)
         synchronized(discoveryCache) {
             discoveryCache[key] = DiscoveryCache(result, System.currentTimeMillis())
             while (discoveryCache.size > 16) discoveryCache.remove(discoveryCache.keys.first())
+        }
+        io.launch {
+            runCatching {
+                indexCache.write("discovery/" + novelDigest(key) + ".json", json.encodeToString(DiscoveryCache(result, System.currentTimeMillis())))
+                val directory = File(app.cacheDir, "novels-indexes/discovery")
+                val files = directory.listFiles().orEmpty().sortedByDescending { it.lastModified() }
+                var bytes = 0L
+                files.forEachIndexed { i, file -> bytes += file.length(); if (i >= 32 || bytes > 16L * 1024 * 1024) file.delete() }
+            }.onFailure { android.util.Log.w("MangaroNovels", "Discovery cache write failed", it) }
         }
         result
         }
@@ -175,11 +201,11 @@ class NovelRepository private constructor(context: Context) {
                 val work = catalog.value.work(novel.id)
                 val ids = work?.editions?.map { it.id }?.toSet() ?: setOf(novel.id)
                 val existing = firstOrNull { it.novel.id == novel.id }
-                val updated = map { if (it.novel.id in ids) it.copy(saved = saved, addedAt = if (saved && it.addedAt == 0L) System.currentTimeMillis() else it.addedAt) else it }
+                val updated = map { if (it.novel.id in ids) it.copy(saved = saved, favorite = if (saved) it.favorite else false, addedAt = if (saved && it.addedAt == 0L) System.currentTimeMillis() else it.addedAt) else it }
                 if (updated.any { it.novel.id == novel.id }) updated
                 else updated + NovelLibraryItem(novel, saved, existing?.position, addedAt = if (saved) System.currentTimeMillis() else 0)
             }
-            if (saved) withContext(Dispatchers.IO) { indexSnapshot(novel)?.let { metadata.write(indexPath(novel), json.encodeToString(it)) } }
+            if (saved) withContext(Dispatchers.IO) { runCatching { indexSnapshot(novel)?.let { metadata.write(indexPath(novel), json.encodeToString(it)) } }.onFailure { android.util.Log.w("MangaroNovels", "Saved index cache failed", it) } }
         } catch (c: CancellationException) { throw c }
         catch (e: Exception) { android.util.Log.w("MangaroNovels", "Library change failed", e); mutableStorageError.value = "تعذّر حفظ التغيير. حاول مجددًا." }
     }
@@ -234,6 +260,8 @@ class NovelRepository private constructor(context: Context) {
                 val entries = if (any { it.novel.id == novel.id }) this else this + NovelLibraryItem(novel)
                 entries.map { old ->
                     if (old.novel.id !in ids) old else old.copy(
+                        saved = old.saved || favorite == true || status != null,
+                        addedAt = if (old.addedAt == 0L && (favorite == true || status != null)) System.currentTimeMillis() else old.addedAt,
                         favorite = favorite ?: old.favorite, readingStatus = status ?: old.readingStatus,
                         bookmarks = if (bookmark == null || old.novel.id != novel.id) old.bookmarks else
                             if (bookmark in old.bookmarks) old.bookmarks - bookmark else old.bookmarks + bookmark,
@@ -258,6 +286,7 @@ class NovelRepository private constructor(context: Context) {
     private suspend fun change(update: List<NovelLibraryItem>.() -> List<NovelLibraryItem>) {
         ready.await()
         withContext(Dispatchers.IO) { lock.withLock {
+            check(libraryReadable) { "Library restore failed; preserving the original file" }
             val next = mutableLibrary.value.update().filter { it.saved || it.position != null || it.favorite || it.bookmarks.isNotEmpty() }.sortedByDescending { it.position?.updatedAt ?: 0 }
             write(file, json.encodeToString(next)); mutableLibrary.value = next; mutableStorageError.value = null
         } }
@@ -285,7 +314,7 @@ class NovelRepository private constructor(context: Context) {
         indexLocks.getOrPut(novel.id) { Mutex() }.withLock {
             val old = indexSnapshot(novel)
             if (!refresh && old?.complete == true && System.currentTimeMillis() - old.updatedAt < 21_600_000) {
-                onPage(old); return@withLock old
+                onPage(old)
             }
             val initial = if (!refresh && old?.complete == false) old else NovelChapterIndex(novel.id)
             try {
@@ -295,7 +324,7 @@ class NovelRepository private constructor(context: Context) {
                         cacheIndex(index)
                         if (index.complete || index.fetchedPages.size % 4 == 0) persistIndex(novel, index)
                     }
-                    onPage(index)
+                    onPage(if (old?.complete == true && !index.complete) old else index)
                 }
                 updateEvidence(novel, NovelEditionEvidence(true, result.availableCount, catalog.value.evidence[novel.id]?.accessWorks, result.updatedAt))
                 result
@@ -305,7 +334,7 @@ class NovelRepository private constructor(context: Context) {
                 indexSnapshot(novel)?.let { persistIndex(novel, it) }
                 if (old?.complete == true) {
                     android.util.Log.w("MangaroNovels", "Index refresh failed; retaining verified cached chapters", e)
-                    onPage(old); return@withLock old
+                    onPage(old)
                 }
                 throw e
             }
@@ -413,6 +442,9 @@ class NovelRepository private constructor(context: Context) {
                 }
             }
         }
+    }
+    internal suspend fun evictChapter(editionId: String, chapterId: String) {
+        lock.withLock { texts.remove(editionId + "|" + chapterId) }
     }
     internal fun activeDownloads(): NovelDownloadQueue? = if (downloadQueue.isInitialized()) downloads else null
     companion object {

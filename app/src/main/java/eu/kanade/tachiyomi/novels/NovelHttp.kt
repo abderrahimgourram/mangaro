@@ -26,7 +26,10 @@ class NovelHttp {
             .followSslRedirects(false).connectTimeout(8, TimeUnit.SECONDS).readTimeout(15, TimeUnit.SECONDS)
             .callTimeout(20, TimeUnit.SECONDS).build()
     }
-    private val requests = Semaphore(2)
+    // At most one request per approved provider; a slow host cannot occupy every slot.
+    // The download worker still has only two lanes and retains its per-source start cap.
+    private val requests = Semaphore(4)
+    private val hosts = domains.associateWith { Semaphore(1) }
     private data class Cached(val value: String, val at: Long)
     private val metadata = LinkedHashMap<String,Cached>(16,.75f,true)
     companion object {
@@ -48,10 +51,11 @@ class NovelHttp {
     }
     suspend fun post(url: String, fields: Map<String, String>): String = request(url, fields)
     private suspend fun request(initial: String, fields: Map<String, String>?): String {
+        if (!allowed(initial)) throw NovelSourceFailure("هذا الرابط غير متاح.", "Unapproved novel domain")
         var attempt = 0
         while (true) {
             // Backoff must not occupy a network slot needed by another provider or the reader.
-            try { return requests.withPermit { performRequest(initial, fields) } }
+            try { return hosts.getValue(initial.toHttpUrl().host.removePrefix("www.")).withPermit { requests.withPermit { performRequest(initial, fields) } } }
             catch (c: kotlinx.coroutines.CancellationException) { throw c }
             catch (e: Exception) {
                 // Retry only public GETs and transient failures, once. Never retry access barriers.

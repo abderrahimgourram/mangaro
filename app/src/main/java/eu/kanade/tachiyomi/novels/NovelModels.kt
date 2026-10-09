@@ -16,7 +16,9 @@ data class NovelChapter(val url: String, val title: String, val order: Int, val 
     val volumeId: String? = null, val sourcePage: Int = 1, val available: Boolean = true) : java.io.Serializable {
     val id: String get() = url
 }
+@Serializable
 data class NovelGenre(val name: String,val value: String)
+@Serializable
 data class NovelPage(val novels: List<Novel>, val nextPage: Int? = null, val notice: String? = null, val genres: List<NovelGenre> = emptyList())
 @Serializable
 data class NovelVolume(val id: String, val title: String, val declaredCount: Int? = null)

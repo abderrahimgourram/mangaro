@@ -122,6 +122,8 @@ fun NovelLibraryContent(history: Boolean = false) {
     NovelForegroundRefresh(repository)
     val library by (if (history) repository.unifiedHistory else repository.unifiedLibrary).collectAsState()
     val tasks by repository.downloads.tasks.collectAsState()
+    val restored by repository.restored.collectAsState()
+    val storageError by repository.storageError.collectAsState()
     val navigator = LocalNavigator.currentOrThrow
     val scope = rememberCoroutineScope()
     val sortPreference = remember { Injekt.get<PreferenceStore>().getString("novels_library_sort", "recent") }
@@ -158,9 +160,18 @@ fun NovelLibraryContent(history: Boolean = false) {
                 TextButton(onClick = { sort = value; sortPreference.set(value) }) { Text(title, color = if (sort == value) Design.GoldPrimary else Design.LavenderPrimary) }
             }
         }
-        error?.let { Text(it, Modifier.padding(horizontal = 16.dp), color = Color(0xFFE5B5AB)) }
+        (error ?: storageError)?.let { Text(it, Modifier.padding(horizontal = 16.dp), color = Color(0xFFE5B5AB)) }
         LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            if (visible.isEmpty()) item { Text(if (library.isEmpty()) if (history) "رواياتك المقروءة ستظهر هنا." else "أضف الروايات التي تحبها لتعود إليها بسهولة." else "لا توجد روايات تطابق اختيارك.", color = Design.LavenderPrimary) }
+            if (!restored) item { CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp) }
+            else if (visible.isEmpty() && storageError == null) item {
+                Text(when {
+                    query.isNotBlank() -> "لا توجد روايات تطابق بحثك."
+                    filter == "favorite" -> "لم تضف روايات إلى المفضلة بعد."
+                    filter != "all" -> "لا توجد روايات في هذا القسم بعد."
+                    history -> "رواياتك المقروءة ستظهر هنا."
+                    else -> "أضف الروايات التي تحبها لتعود إليها بسهولة."
+                }, color = Design.LavenderPrimary)
+            }
             items(visible, key = { it.work.id }) { entry ->
                 val novel = entry.work.primary
                 Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Design.SurfaceDark)
