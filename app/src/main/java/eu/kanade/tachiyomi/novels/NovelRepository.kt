@@ -334,6 +334,13 @@ class NovelRepository private constructor(context: Context) {
     suspend fun bindCloudAccount(owner: String?, importGuest: Boolean = false) = withContext(Dispatchers.IO) {
         ready.await()
         lock.withLock {
+            if (cloudAccount != owner) {
+                // Hide the previous owner's view before any fallible read. Never erase its files.
+                cloudAccount = owner
+                mutableLibrary.value = emptyList()
+                libraryReadable = false
+                mutableStorageError.value = "جارٍ استعادة مكتبة الروايات"
+            }
             val target = libraryFile(owner)
             val claim = AtomicFile(File(app.filesDir, "novels-local/guest-cloud-owner.json"))
             val claimed = if (claim.baseFile.exists()) json.decodeFromString<String>(claim.openRead().use { it.readBytes().decodeToString() }) else null
