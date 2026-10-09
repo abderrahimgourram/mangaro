@@ -372,13 +372,16 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
                     entries.filter { it.novel.id == novel.id }.mapNotNull { it.position?.chapter }).distinctBy { it.id }
             }.distinctUntilChanged().flowOn(Dispatchers.Default)
         }.collectAsState(initial = emptyList())
+        val groupBuilder = remember(novel.id) { NovelChapterGroupBuilder() }
         val cachedIndex = indexes[novel.id]
         val prepared by produceState(NovelChapterPresentation(NovelChapterIndex(novel.id), emptyList()), novel.id, cachedIndex, knownChapters, descending) {
             value = withContext(Dispatchers.Default) {
                 val cached = cachedIndex ?: NovelChapterIndex(novel.id)
-                val display = if (cached.complete) cached else cached.copy(
-                    chapters = (cached.chapters + knownChapters).distinctBy { it.id }.sortedBy { it.order })
-                NovelChapterPresentation(display, novelChapterGroups(display, descending))
+                val ids = cached.chapters.mapTo(HashSet()) { it.id }
+                val missing = if (cached.complete) emptyList() else knownChapters.filter { it.id !in ids }
+                val display = if (missing.isEmpty()) cached else cached.copy(
+                    chapters = (cached.chapters + missing).sortedBy { it.order })
+                NovelChapterPresentation(display, groupBuilder.build(display, descending))
             }
         }
         val presentation = prepared.takeIf { it.index.editionId == novel.id }
@@ -498,7 +501,7 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
                             }
                         }
                     }
-                    if (novel.id + "|" + group.id !in collapsed) items(group.chapters, key = { it.id }) { chapter ->
+                    if (novel.id + "|" + group.id !in collapsed) items(group.chapters, key = { it.id }, contentType = { "chapter" }) { chapter ->
                         NovelChapterRow(chapter, states[chapter.id], selecting, chapter.id in selected,
                             onSelect = { selected = if (chapter.id in selected) selected - chapter.id else selected + chapter.id },
                             onRead = { if (resume != null && resume.novel.id != novel.id) { switchChapter = chapter; switching = novel } else navigator.push(NovelReaderScreen(novel, chapter)) },

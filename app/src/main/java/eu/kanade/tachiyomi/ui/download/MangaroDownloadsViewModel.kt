@@ -27,6 +27,8 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -70,7 +72,8 @@ class MangaroDownloadsViewModel(
                         } else flowOf(Queued(download, status, if (status == Download.State.DOWNLOADED) 100 else 0))
                     }
                 }) { it.toList() }
-            }.collectLatest { rows -> mutableState.update { it.copy(queue = rows) } }
+            }.distinctUntilChanged().flowOn(Dispatchers.Default)
+                .collectLatest { rows -> mutableState.update { it.copy(queue = rows) } }
         }
         viewModelScope.launch {
             manager.isDownloaderRunning.collectLatest { running -> mutableState.update { it.copy(running = running) } }

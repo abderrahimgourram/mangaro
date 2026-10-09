@@ -23,6 +23,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import eu.kanade.presentation.manga.components.MangaCover
 import eu.kanade.presentation.theme.MangaroDesignSystem
 import eu.kanade.tachiyomi.data.download.model.Download
@@ -66,13 +68,13 @@ fun MangaroDownloadsScreen(
     val active = remember(state.queue) { state.queue.filter { it.status == Download.State.DOWNLOADING } }
     val pending = remember(state.queue) { state.queue.filter { it.status == Download.State.QUEUE || it.status == Download.State.NOT_DOWNLOADED } }
     val failed = remember(state.queue) { state.queue.filter { it.status == Download.State.ERROR } }
-    val groups = remember(state.groups, sort) {
-        when (sort) {
+    val groups by produceState(state.groups, state.groups, sort) {
+        value = withContext(Dispatchers.Default) { when (sort) {
             DownloadSort.RECENT -> state.groups.sortedWith(compareByDescending<CompletedGroup> { it.latest }.thenBy { it.manga.id })
             DownloadSort.TITLE -> state.groups.sortedWith(compareBy<CompletedGroup> { it.manga.title.lowercase() }.thenBy { it.manga.id })
             DownloadSort.SIZE -> state.groups.sortedWith(compareByDescending<CompletedGroup> { it.bytes }.thenBy { it.manga.id })
             DownloadSort.COUNT -> state.groups.sortedWith(compareByDescending<CompletedGroup> { it.chapters.size }.thenBy { it.manga.id })
-        }
+        } }
     }
     val showQueue = filter == DownloadFilter.ALL || filter == DownloadFilter.ACTIVE
     val showCompleted = filter == DownloadFilter.ALL || filter == DownloadFilter.COMPLETE
@@ -136,7 +138,7 @@ fun MangaroDownloadsScreen(
                     TextButton(onClick = onRetryFailed) { Text("إعادة المحاولة", color = Failure, style = MaterialTheme.typography.labelMedium) }
                 }
             }
-            items(failed, key = { "failed:${it.download.chapter.id}" }) { QueueRow(it, onRetry, onCancel, onOpenManga) }
+            items(failed, key = { "failed:${it.download.chapter.id}" }, contentType = { "queue" }) { QueueRow(it, onRetry, onCancel, onOpenManga) }
         }
         if (showCompleted && groups.isNotEmpty()) {
             item(key = "completedHeader") {
@@ -165,7 +167,7 @@ fun MangaroDownloadsScreen(
                         onOpen = { onOpenManga(group.manga) }, onDelete = { deleteRequest = listOf(group) to null })
                 }
                 if (group.manga.id in expanded) {
-                    items(group.chapters, key = { "chapter:${it.chapter.id}" }) { chapter ->
+                    items(group.chapters, key = { "chapter:${it.chapter.id}" }, contentType = { "chapter" }) { chapter ->
                         Row(
                             Modifier.fillMaxWidth().clickable { onOpenChapter(group.manga, chapter) }.padding(start = 12.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -222,7 +224,7 @@ fun MangaroDownloadsScreen(
 private fun LazyListScope.queueSection(key: String, title: String, rows: List<Queued>, onRetry: (Queued) -> Unit, onCancel: (Queued) -> Unit, onOpen: (Manga) -> Unit) {
     if (rows.isEmpty()) return
     item(key = "${key}Header") { SectionTitle(title, rows.size) }
-    items(rows, key = { "$key:${it.download.chapter.id}" }) { QueueRow(it, onRetry, onCancel, onOpen) }
+    items(rows, key = { "$key:${it.download.chapter.id}" }, contentType = { "queue" }) { QueueRow(it, onRetry, onCancel, onOpen) }
 }
 
 @Composable

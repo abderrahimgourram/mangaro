@@ -37,6 +37,8 @@ class NovelRepository private constructor(context: Context) {
     }
     private val detailCache = LinkedHashMap<String, Pair<Novel, Long>>(32, .75f, true)
     private val indexLocks = ConcurrentHashMap<String, Mutex>()
+    private data class IndexFlight(val result: Deferred<NovelChapterIndex>, var readers: Int = 1, var release: Job? = null)
+    private val indexFlights = mutableMapOf<String, IndexFlight>()
     private val settingsSequence = java.util.concurrent.atomic.AtomicLong()
     private val positionSequence = java.util.concurrent.atomic.AtomicLong()
     private val appliedPositionSequence = mutableMapOf<String, Long>()
@@ -333,26 +335,68 @@ class NovelRepository private constructor(context: Context) {
     }
     suspend fun completeIndex(novel: Novel, refresh: Boolean = false, onPage: suspend (NovelChapterIndex) -> Unit = {}): NovelChapterIndex = withContext(Dispatchers.IO) {
         ready.await()
+        // One metadata collector per edition, including quick back/forward navigation.
+        val flight = synchronized(indexFlights) {
+            indexFlights[novel.id]?.also { it.readers++; it.release?.cancel(); it.release = null }
+                ?: IndexFlight(io.async(start = CoroutineStart.LAZY) { collectCompleteIndex(novel, refresh) })
+                    .also { indexFlights[novel.id] = it }
+        }
+        try {
+            coroutineScope {
+                var lastEmission = 0L
+                var lastIndex: NovelChapterIndex? = null
+                val observer = launch {
+                    indexRevision.onStart { emit(indexRevision.value) }.conflate().collect {
+                        val index = indexSnapshot(novel) ?: return@collect
+                        val now = System.nanoTime()
+                        if (index != lastIndex && (lastEmission == 0L || index.complete || now - lastEmission >= 120_000_000L)) {
+                            onPage(index); lastIndex = index; lastEmission = now
+                        }
+                    }
+                }
+                try {
+                    flight.result.start()
+                    val result = flight.result.await()
+                    observer.cancelAndJoin()
+                    onPage(result)
+                    result
+                } catch (c: CancellationException) { throw c }
+                catch (e: Exception) { observer.cancelAndJoin(); indexSnapshot(novel)?.let { onPage(it) }; throw e }
+                finally { observer.cancel() }
+            }
+        } finally {
+            synchronized(indexFlights) {
+                if (--flight.readers == 0) {
+                    if (flight.result.isCompleted) indexFlights.remove(novel.id, flight)
+                    else flight.release = io.launch {
+                        // Short ownership grace keeps an in-flight page across navigation; no UI delay.
+                        delay(3000)
+                        synchronized(indexFlights) {
+                            if (flight.readers == 0 && indexFlights[novel.id] === flight) {
+                                indexFlights.remove(novel.id); flight.result.cancel()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    private suspend fun collectCompleteIndex(novel: Novel, refresh: Boolean): NovelChapterIndex = withContext(Dispatchers.IO) {
+        ready.await()
         val before = indexSnapshot(novel)
         indexLocks.getOrPut(novel.id) { Mutex() }.withLock {
             val old = indexSnapshot(novel)
             // A refresh already completed while this caller waited: share it rather than refetch.
             if (old?.complete == true && ((!refresh && System.currentTimeMillis() - old.updatedAt < 21_600_000) || old.updatedAt != before?.updatedAt)) {
-                onPage(old); return@withLock old
+                return@withLock old
             }
             val initial = if (!refresh && old?.complete == false) old else NovelChapterIndex(novel.id)
-            var lastEmission = 0L
             try {
-                val result = NovelChapterIndexer.collect(source(novel.sourceId), novel, initial ?: NovelChapterIndex(novel.id)) { index ->
+                val result = NovelChapterIndexer.collect(source(novel.sourceId), novel, initial) { index ->
                     // Keep a complete last-known-good index during refresh, including offline failures.
                     if (old?.complete != true || index.complete) {
                         cacheIndex(index)
                         if (index.complete || index.fetchedPages.size % 4 == 0) persistIndex(novel, index)
-                    }
-                    val now = System.nanoTime()
-                    if (lastEmission == 0L || index.complete || now - lastEmission >= 500_000_000L) {
-                        onPage(if (old?.complete == true && !index.complete) old else index)
-                        lastEmission = now
                     }
                 }
                 updateEvidence(novel, NovelEditionEvidence(true, result.availableCount, catalog.value.evidence[novel.id]?.accessWorks, result.updatedAt))
@@ -360,10 +404,9 @@ class NovelRepository private constructor(context: Context) {
             } catch (c: CancellationException) {
                 indexSnapshot(novel)?.let { withContext(NonCancellable) { persistIndex(novel, it) } }; throw c
             } catch (e: Exception) {
-                indexSnapshot(novel)?.let { persistIndex(novel, it); onPage(it) }
+                indexSnapshot(novel)?.let { persistIndex(novel, it) }
                 if (old?.complete == true) {
                     android.util.Log.w("MangaroNovels", "Index refresh failed; retaining verified cached chapters", e)
-                    onPage(old)
                 }
                 throw e
             }

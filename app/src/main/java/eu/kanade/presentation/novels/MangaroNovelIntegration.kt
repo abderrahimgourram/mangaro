@@ -32,6 +32,11 @@ import eu.kanade.tachiyomi.ui.home.HomeScreen
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import tachiyomi.core.common.preference.PreferenceStore
@@ -121,7 +126,6 @@ fun NovelLibraryContent(history: Boolean = false) {
     val repository = remember(context) { NovelRepository.get(context) }
     NovelForegroundRefresh(repository)
     val library by (if (history) repository.unifiedHistory else repository.unifiedLibrary).collectAsState()
-    val tasks by repository.downloads.tasks.collectAsState()
     val restored by repository.restored.collectAsState()
     val storageError by repository.storageError.collectAsState()
     val navigator = LocalNavigator.currentOrThrow
@@ -131,8 +135,12 @@ fun NovelLibraryContent(history: Boolean = false) {
     var filter by rememberSaveable { mutableStateOf("all") }
     var query by rememberSaveable { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
-    val offline = remember(tasks) { tasks.filter { it.state == eu.kanade.tachiyomi.novels.NovelDownloadState.DONE }.map { it.novel.id }.toSet() }
-    val visible = remember(library, filter, query, sort, offline) {
+    val offline by remember(repository) {
+        repository.downloads.tasks.map { tasks -> tasks.filter { it.state == eu.kanade.tachiyomi.novels.NovelDownloadState.DONE }.map { it.novel.id }.toSet() }
+            .distinctUntilChanged().flowOn(Dispatchers.Default)
+    }.collectAsState(initial = emptySet())
+    val visible by produceState(library, library, filter, query, sort, offline) {
+        value = withContext(Dispatchers.Default) {
         val selected = library.filter { entry ->
             entry.work.primary.title.contains(query.trim(), ignoreCase = true) && when (filter) {
                 "favorite" -> entry.entries.any { it.favorite }
@@ -145,6 +153,7 @@ fun NovelLibraryContent(history: Boolean = false) {
             "title" -> selected.sortedBy { it.work.primary.title }
             "added" -> selected.sortedByDescending { it.entries.maxOf { item -> item.addedAt } }
             else -> selected.sortedByDescending { it.latest?.position?.updatedAt ?: 0 }
+        }
         }
     }
     Column(Modifier.fillMaxSize().background(Design.BackgroundDark)) {

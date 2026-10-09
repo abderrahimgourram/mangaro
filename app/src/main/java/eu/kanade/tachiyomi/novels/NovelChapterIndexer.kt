@@ -2,7 +2,6 @@ package eu.kanade.tachiyomi.novels
 
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.delay
 
 /** Every cursor is source supplied. Fifty is a transport page size, never a library limit. */
 internal object NovelChapterIndexer {
@@ -35,7 +34,6 @@ internal object NovelChapterIndexer {
                 result.nextPage == null, pages.toSet(), System.currentTimeMillis())
             onPage(index)
             if (stopWhen(index)) return index
-            if (index.nextPage != null) delay(250)
         }
         return index
     }

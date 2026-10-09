@@ -65,6 +65,9 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.flowOn
+import androidx.lifecycle.repeatOnLifecycle
 import tachiyomi.core.common.util.lang.WesternDigits
 
 /** Dedicated, paragraph-lazy text reader. Never enters manga ReaderActivity or XP hooks. */
@@ -123,8 +126,11 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
         var chaptersOpen by rememberSaveable {mutableStateOf(false)}
         var chapterChoices by remember {mutableStateOf(emptyList<NovelChapter>())}
         var chaptersComplete by remember {mutableStateOf(false)}
-        val tasks by repository.downloads.tasks.collectAsState()
-        val offline = tasks.any {it.novel.id==novel.id && it.chapter.id==chapter.id && it.state==NovelDownloadState.DONE}
+        val offline by remember(repository, chapter.id) {
+            repository.downloads.tasks.map { tasks -> tasks.any {
+                it.novel.id == novel.id && it.chapter.id == chapter.id && it.state == NovelDownloadState.DONE
+            } }.distinctUntilChanged().flowOn(Dispatchers.Default)
+        }.collectAsState(initial = false)
         var choicesLoading by remember {mutableStateOf(false)}
         var paragraphs by remember {mutableStateOf(emptyList<AnnotatedString>())}
         var loadedChapter by remember { mutableStateOf<NovelChapter?>(null) }
@@ -162,6 +168,28 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
             } catch(c: CancellationException) {throw c}
             catch(e: Exception) {error=novelError(e)}
             finally {loading=false}
+        }
+        LaunchedEffect(loadedChapter?.id) {
+            val shown = loadedChapter ?: return@LaunchedEffect
+            var prefetched = false
+            chromeOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                if (prefetched) return@repeatOnLifecycle
+                // Match image-reader preloading: one neighbor once reading approaches the end.
+                snapshotFlow { scroll.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0 }
+                    .first { it >= (plain.size * 2 / 3).coerceAtLeast(1) }
+                val network = context.getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
+                if (network == null || network.activeNetwork == null || network.isActiveNetworkMetered) return@repeatOnLifecycle
+                try {
+                    // Only cached adjacent metadata; speculative reading never crawls a remote index.
+                    val index = repository.indexSnapshot(novel) ?: return@repeatOnLifecycle
+                    val current = index.chapters.indexOfFirst { it.id == shown.id }
+                    if (current < 0) return@repeatOnLifecycle
+                    val next = index.chapters.getOrNull(current + 1)?.takeIf { it.available } ?: return@repeatOnLifecycle
+                    repository.chapterText(novel, next)
+                    prefetched = true
+                } catch (c: CancellationException) { throw c }
+                catch (e: Exception) { android.util.Log.d("MangaroNovels", "Optional adjacent chapter unavailable", e) }
+            }
         }
         val currentChapter by rememberUpdatedState(loadedChapter)
         val currentRestoring by rememberUpdatedState(restoring)
@@ -216,7 +244,6 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
             Box(Modifier.fillMaxSize().background(background).padding(top = stableTop, bottom = stableBottom)) {
                 Column(Modifier.fillMaxSize()) {
                     storageError?.let { Text(it,Modifier.padding(horizontal=20.dp),color=gold,style=MaterialTheme.typography.labelSmall) }
-                    if(loading) CircularProgressIndicator(Modifier.padding(horizontal=20.dp, vertical=8.dp).size(20.dp),color=gold,strokeWidth=2.dp)
                     if(error!=null) NovelFailure(error!!,chapter.url) {generation++}
                     val adVisible by remember { derivedStateOf { scroll.layoutInfo.visibleItemsInfo.any { it.key == "chapter-heading" } } }
                     SelectionContainer {
@@ -254,7 +281,7 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                                         modifier=Modifier.alpha(if(controlsVisible) 1f else 0f).then(if(controlsVisible) Modifier else Modifier.clearAndSetSemantics { }))
                                 }
                             }
-                            items(paragraphs.size,key={it}) {index ->
+                            items(paragraphs.size,key={it},contentType={"paragraph"}) {index ->
                                 Text(paragraphs[index],color=ink,style=MaterialTheme.typography.bodyLarge.copy(
                                     fontFamily=if(appearance.font=="system") FontFamily.Default else FontFamily(Font(R.font.novel_noto_naskh_arabic)),
                                     fontSize=appearance.fontSize.sp,lineHeight=(appearance.fontSize*appearance.lineSpacing).sp,
@@ -263,6 +290,7 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                         }
                     }
                 }
+                if (loading) CircularProgressIndicator(Modifier.align(Alignment.TopCenter).padding(top=56.dp).size(20.dp),color=gold,strokeWidth=2.dp)
                 if (customBrightness && brightness < 0) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = (-brightness / 100f).coerceIn(0f, .75f))))
                 if (controlsVisible) {
                     Surface(Modifier.align(Alignment.TopCenter).fillMaxWidth(), color = background.copy(alpha = .97f)) {
