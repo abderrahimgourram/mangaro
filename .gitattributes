@@ -25,3 +25,5 @@
 
 # Bundled startup video
 *.webm binary
+
+*.mp4 binary

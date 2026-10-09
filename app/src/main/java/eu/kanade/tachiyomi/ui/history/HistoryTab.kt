@@ -5,9 +5,12 @@ import androidx.compose.animation.graphics.res.animatedVectorResource
 import androidx.compose.animation.graphics.res.rememberAnimatedVectorPainter
 import androidx.compose.animation.graphics.vector.AnimatedImageVector
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -59,7 +62,20 @@ data object HistoryTab : Tab {
     }
 
     @Composable
-    override fun Content() { HistoryContent() }
+    override fun Content() { UnifiedHistoryContent() }
+
+    @Composable
+    internal fun UnifiedHistoryContent(onBack: (() -> Unit)? = null) {
+        var novels by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+        androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.fillMaxSize().statusBarsPadding()) {
+            eu.kanade.presentation.novels.MangaroContentTabs(novels, onSelect = { novels = it })
+            androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.weight(1f)) {
+                if (novels) eu.kanade.presentation.novels.NovelShell("سجل القراءة") {
+                    eu.kanade.presentation.novels.NovelLibraryContent(history = true)
+                } else HistoryContent(onBack)
+            }
+        }
+    }
 
     @Composable
     internal fun HistoryContent(onBack: (() -> Unit)? = null) {
@@ -173,7 +189,7 @@ class ReadingHistoryScreen : eu.kanade.presentation.util.Screen() {
     @Composable override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
         androidx.compose.runtime.CompositionLocalProvider(androidx.compose.ui.platform.LocalLayoutDirection provides androidx.compose.ui.unit.LayoutDirection.Rtl) {
-            HistoryTab.HistoryContent(onBack = { navigator.pop() })
+            HistoryTab.UnifiedHistoryContent(onBack = { navigator.pop() })
         }
     }
 }

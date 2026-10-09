@@ -102,6 +102,7 @@ class NovelDownloadsScreen : Screen() {
 fun NovelDownloadsContent() {
         val context = LocalContext.current
         val repository = remember(context) { NovelRepository.get(context) }
+        NovelForegroundRefresh(repository)
         val queue = repository.downloads
         val tasks by queue.tasks.collectAsState()
         val queueError by queue.error.collectAsState()

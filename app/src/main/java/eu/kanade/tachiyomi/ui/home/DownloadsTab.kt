@@ -50,7 +50,7 @@ object DownloadsTab : Tab {
     override fun Content() {
         var novels by rememberSaveable { mutableStateOf(false) }
         LaunchedEffect(Unit) { sectionEvents.receiveAsFlow().collect { novels = it } }
-        Column(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize().statusBarsPadding()) {
             MangaroContentTabs(novels, onSelect = { novels = it })
             Box(Modifier.weight(1f)) {
                 if (novels) NovelDownloadsContent() else ManhwaContent()

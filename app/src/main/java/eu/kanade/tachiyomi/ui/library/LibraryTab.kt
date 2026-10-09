@@ -72,7 +72,7 @@ data object LibraryTab : Tab {
     override fun Content() {
         var novels by rememberSaveable { mutableStateOf(false) }
         LaunchedEffect(Unit) { sectionEvents.receiveAsFlow().collect { novels = it } }
-        Column(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize().statusBarsPadding()) {
             MangaroContentTabs(novels, onSelect = { novels = it })
             Box(Modifier.weight(1f)) {
                 if (novels) NovelLibraryContent() else ManhwaContent()
@@ -83,6 +83,7 @@ data object LibraryTab : Tab {
 
     private val sectionEvents = Channel<Boolean>(Channel.CONFLATED)
     fun selectNovels() { sectionEvents.trySend(true) }
+    fun selectManhwa() { sectionEvents.trySend(false) }
 
     @Composable
     private fun ManhwaContent() {
@@ -201,7 +202,7 @@ data object LibraryTab : Tab {
 
     // For invoking search from other screen
     private val queryEvent = Channel<String>()
-    suspend fun search(query: String) = queryEvent.send(query)
+    suspend fun search(query: String) { selectManhwa(); queryEvent.send(query) }
 
     // For opening settings sheet in LibraryController
     private val requestSettingsSheetEvent = Channel<Unit>()

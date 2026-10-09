@@ -41,7 +41,7 @@ import uy.kohesive.injekt.api.get
 /** Shared content selector; payload stores and stable edition identities remain unchanged. */
 @Composable
 fun MangaroContentTabs(novels: Boolean, onSelect: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().background(Design.BackgroundDark).statusBarsPadding().padding(horizontal = 16.dp),
+    Row(Modifier.fillMaxWidth().background(Design.BackgroundDark).padding(horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         listOf(false to "مانهوا", true to "روايات").forEach { (value, title) ->
             FilterChip(selected = novels == value, onClick = { onSelect(value) }, label = { Text(title) }, border = null,
@@ -116,10 +116,11 @@ fun HomeNovelShelf() {
 }
 
 @Composable
-fun NovelLibraryContent() {
+fun NovelLibraryContent(history: Boolean = false) {
     val context = LocalContext.current
     val repository = remember(context) { NovelRepository.get(context) }
-    val library by repository.unifiedLibrary.collectAsState()
+    NovelForegroundRefresh(repository)
+    val library by (if (history) repository.unifiedHistory else repository.unifiedLibrary).collectAsState()
     val tasks by repository.downloads.tasks.collectAsState()
     val navigator = LocalNavigator.currentOrThrow
     val scope = rememberCoroutineScope()
@@ -159,7 +160,7 @@ fun NovelLibraryContent() {
         }
         error?.let { Text(it, Modifier.padding(horizontal = 16.dp), color = Color(0xFFE5B5AB)) }
         LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            if (visible.isEmpty()) item { Text(if (library.isEmpty()) "أضف الروايات التي تحبها لتعود إليها بسهولة." else "لا توجد روايات تطابق اختيارك.", color = Design.LavenderPrimary) }
+            if (visible.isEmpty()) item { Text(if (library.isEmpty()) if (history) "رواياتك المقروءة ستظهر هنا." else "أضف الروايات التي تحبها لتعود إليها بسهولة." else "لا توجد روايات تطابق اختيارك.", color = Design.LavenderPrimary) }
             items(visible, key = { it.work.id }) { entry ->
                 val novel = entry.work.primary
                 Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Design.SurfaceDark)
@@ -190,7 +191,7 @@ fun NovelLibraryContent() {
                         IconButton(onClick = { scope.launch {
                             try { repository.updateLibrary(novel, favorite = !entry.entries.any { it.favorite }) } catch (c: CancellationException) { throw c } catch (e: Exception) { error = novelError(e) }
                         } }) { Icon(if (entry.entries.any { it.favorite }) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder, "المفضلة", tint = Design.GoldPrimary) }
-                        IconButton(onClick = { scope.launch { repository.setSaved(novel, false) } }) { Icon(Icons.Outlined.BookmarkRemove, "إزالة من المكتبة", tint = Design.LavenderPrimary) }
+                        if (!history) IconButton(onClick = { scope.launch { repository.setSaved(novel, false) } }) { Icon(Icons.Outlined.BookmarkRemove, "إزالة من المكتبة", tint = Design.LavenderPrimary) }
                     }
                 }
             }

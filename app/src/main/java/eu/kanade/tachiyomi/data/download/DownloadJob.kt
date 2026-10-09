@@ -29,6 +29,7 @@ import androidx.work.Constraints
 import androidx.work.NetworkType
 import androidx.work.BackoffPolicy
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combineTransform
@@ -75,20 +76,20 @@ class DownloadJob(context: Context, workerParams: WorkerParameters) : CoroutineW
     override suspend fun doWork(): Result = try { coroutineScope {
         val novels = NovelRepository.recoverDownloads(applicationContext)
         novels?.awaitReady()
-        var networkCheck = checkNetworkState(applicationContext.activeNetworkState(), downloadPreferences.downloadOnlyOverWifi.get())
-        if (!networkCheck) return@coroutineScope if (novels?.hasPending() == true) Result.retry() else Result.failure()
+        val networkCheck = AtomicBoolean(checkNetworkState(applicationContext.activeNetworkState(), downloadPreferences.downloadOnlyOverWifi.get()))
+        if (!networkCheck.get()) return@coroutineScope if (novels?.hasPending() == true) Result.retry() else Result.failure()
         val mangaStarted = downloadManager.downloaderStart()
         if (!mangaStarted && novels?.hasPending() != true) return@coroutineScope Result.success()
         setForegroundSafely()
-        var moreNovels = false
+        val moreNovels = AtomicBoolean(false)
         var textDownloads = launch(Dispatchers.IO) {
-            if (novels?.hasPending() == true) moreNovels = novels.runBatch()
+            if (novels?.hasPending() == true) moreNovels.set(novels.runBatch())
         }
         val network = launch {
             combine(applicationContext.networkStateFlow(), downloadPreferences.downloadOnlyOverWifi.changes()) { state, wifi ->
                 checkNetworkState(state, wifi)
             }.collect { allowed ->
-                networkCheck = allowed
+                networkCheck.set(allowed)
                 if (!allowed) textDownloads.cancel()
             }
         }
@@ -97,13 +98,13 @@ class DownloadJob(context: Context, workerParams: WorkerParameters) : CoroutineW
         }
         try {
             // The monitor is cancelled explicitly; no infinite collector scope or busy-spin loop.
-            while (isActive && !isStopped && networkCheck && (downloadManager.isRunning || textDownloads.isActive)) {
+            while (isActive && !isStopped && networkCheck.get() && (downloadManager.isRunning || textDownloads.isActive)) {
                 delay(250)
                 if (!textDownloads.isActive && novels?.hasPending() == true) {
-                    textDownloads = launch(Dispatchers.IO) { moreNovels = novels.runBatch() }
+                    textDownloads = launch(Dispatchers.IO) { moreNovels.set(novels.runBatch()) }
                 }
             }
-            if (moreNovels || (!networkCheck && novels?.hasPending() == true)) Result.retry() else Result.success()
+            if (moreNovels.get() || (!networkCheck.get() && novels?.hasPending() == true)) Result.retry() else Result.success()
         } finally {
             val interrupted = isStopped || !currentCoroutineContext().isActive
             withContext(NonCancellable) {

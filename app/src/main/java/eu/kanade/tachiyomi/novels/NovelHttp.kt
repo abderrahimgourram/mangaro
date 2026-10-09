@@ -83,7 +83,7 @@ class NovelHttp {
                     } else {
                         if (!it.isSuccessful) throw NovelSourceFailure(
                             if (it.code in listOf(401,403)) "هذا المحتوى غير متاح حاليًا. يمكنك فتحه في الموقع."
-                            else "تعذّر تحميل الروايات حاليًا. حاول مجددًا.", "Novel HTTP " + it.code, it.code, it.header("Retry-After")?.toLongOrNull()?.takeIf { seconds -> seconds >= 0 }?.let { seconds -> if (seconds > 5) 6_000L else seconds * 1000 })
+                            else "تعذّر تحميل الروايات حاليًا. حاول مجددًا.", "Novel HTTP " + it.code, it.code, it.header("Retry-After")?.let { header -> header.toLongOrNull()?.takeIf { seconds -> seconds in 0..5 }?.times(1000) ?: 6_000L })
                         val body = it.body
                         if (body.contentLength() > 8 * 1024 * 1024) throw IOException("Novel response too large")
                         val bytes = body.byteStream().use { stream ->

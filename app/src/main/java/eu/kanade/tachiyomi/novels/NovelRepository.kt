@@ -35,6 +35,8 @@ class NovelRepository private constructor(context: Context) {
     private val settingsSequence = java.util.concurrent.atomic.AtomicLong()
     private val positionSequence = java.util.concurrent.atomic.AtomicLong()
     private val appliedPositionSequence = mutableMapOf<String, Long>()
+    private val appliedChapterSequence = mutableMapOf<Pair<String, String>, Long>()
+    private val pendingPositions = LinkedHashMap<Pair<String, String>, Pair<Long, NovelReadingPosition>>()
     private val json = Json { ignoreUnknownKeys = true }
     private val file = AtomicFile(File(app.filesDir, "novels-local/library.json"))
     private val settingsFile = AtomicFile(File(app.filesDir, "novels-local/reader-settings.json"))
@@ -58,6 +60,13 @@ class NovelRepository private constructor(context: Context) {
         }.sortedByDescending { it.latest?.position?.updatedAt ?: 0 }
     }.flowOn(Dispatchers.Default).stateIn(io, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val unifiedHistory = combine(library, catalog) { entries, state ->
+        entries.filter { it.position != null }.groupBy { state.work(it.novel.id)?.id ?: NovelIdentity.initialWorkId(it.novel.id) }
+            .map { (id, items) -> UnifiedNovelLibraryItem(state.work(id) ?: UnifiedNovelWork(id, items.map { it.novel }, items.first().novel.id), items) }
+            .sortedByDescending { it.latest?.position?.updatedAt ?: 0 }
+    }.flowOn(Dispatchers.Default).stateIn(io, SharingStarted.WhileSubscribed(5000), emptyList())
+    fun refreshRulesForeground() { io.launch { NovelRuleUpdateJob.schedule(app) } }
+
     val covers by lazy {
         val dispatcher = okhttp3.Dispatcher().apply { maxRequests = 4; maxRequestsPerHost = 2 }
         val client = OkHttpClient.Builder().cookieJar(okhttp3.CookieJar.NO_COOKIES).dispatcher(dispatcher)
@@ -76,6 +85,7 @@ class NovelRepository private constructor(context: Context) {
         listOf(KolNovelSource(http), CeneleSource(http), SunovelsSource(http), SeaNovelSource(http))
     }
     private val rules by lazy { NovelRuleStore(app) }
+    private val indexRevision = MutableStateFlow(0L)
     private val indexes = LinkedHashMap<String, NovelChapterIndex>()
     private val texts = object : LinkedHashMap<String, NovelText>(4, .75f, true) {}
     private data class DiscoveryCache(val result: NovelPage, val at: Long)
@@ -173,17 +183,44 @@ class NovelRepository private constructor(context: Context) {
     }
     fun savePosition(novel: Novel, chapter: NovelChapter, paragraph: Int, offset: Int, anchor: String = "") {
         val sequence = positionSequence.incrementAndGet()
+        val key = novel.id to chapter.id
+        val position = NovelReadingPosition(chapter, paragraph.coerceAtLeast(0), offset.coerceAtLeast(0), System.currentTimeMillis(), anchor)
+        synchronized(pendingPositions) {
+            pendingPositions[key] = sequence to position
+            while (pendingPositions.size > 64) pendingPositions.remove(pendingPositions.keys.first())
+        }
         io.launch {
             ready.await()
             if (catalog.value.work(novel.id) == null) ingest(listOf(novel))
             change {
+                if (sequence < (appliedChapterSequence[key] ?: 0L)) return@change this
+                // Keep each edition's chapter position; the library still contains only its latest chapter.
+                metadata.write(positionPath(novel, chapter), json.encodeToString(position))
+                appliedChapterSequence[key] = sequence
+                synchronized(pendingPositions) {
+                    if (pendingPositions[key]?.first == sequence) pendingPositions.remove(key)
+                }
                 if (sequence < (appliedPositionSequence[novel.id] ?: 0L)) return@change this
                 val old = firstOrNull { it.novel.id == novel.id }
-                val next = filterNot { it.novel.id == novel.id } + (old ?: NovelLibraryItem(novel)).copy(novel = novel, position =
-                    NovelReadingPosition(chapter, paragraph.coerceAtLeast(0), offset.coerceAtLeast(0), System.currentTimeMillis(), anchor))
+                val next = filterNot { it.novel.id == novel.id } + (old ?: NovelLibraryItem(novel)).copy(novel = novel, position = position)
                 appliedPositionSequence[novel.id] = sequence
                 next
             }
+        }
+    }
+    private fun positionPath(novel: Novel, chapter: NovelChapter) =
+        "positions/" + novelDigest(novel.id) + "/" + novelDigest(chapter.id) + ".json"
+
+    suspend fun readingPosition(novel: Novel, chapter: NovelChapter): NovelReadingPosition? = withContext(Dispatchers.IO) {
+        ready.await()
+        lock.withLock {
+            // A quick cached chapter switch must see a save queued moments earlier.
+            synchronized(pendingPositions) { pendingPositions[novel.id to chapter.id]?.second }
+                ?: runCatching {
+                    metadata.read(positionPath(novel, chapter))?.let { json.decodeFromString<NovelReadingPosition>(it) }
+                        ?.takeIf { it.chapter.id == chapter.id }
+                }.getOrNull()
+                ?: library.value.firstOrNull { it.novel.id == novel.id }?.position?.takeIf { it.chapter.id == chapter.id }
         }
     }
     suspend fun updateLibrary(novel: Novel, favorite: Boolean? = null, status: String? = null, bookmark: String? = null) {
@@ -239,6 +276,7 @@ class NovelRepository private constructor(context: Context) {
     private suspend fun cacheIndex(index: NovelChapterIndex) = lock.withLock {
         indexes[index.editionId] = index
         while (indexes.size > 5) indexes.remove(indexes.keys.first())
+        indexRevision.update { it + 1 }
     }
     suspend fun completeIndex(novel: Novel, refresh: Boolean = false, onPage: suspend (NovelChapterIndex) -> Unit = {}): NovelChapterIndex = withContext(Dispatchers.IO) {
         ready.await()
@@ -319,18 +357,26 @@ class NovelRepository private constructor(context: Context) {
             val location = index?.chapters?.indexOfFirst { it.id == chapter.id } ?: -1
             return if (location < 0) null else index?.chapters?.getOrNull(location + if (forward) 1 else -1)
         }
-        val cached = indexSnapshot(novel)
-        neighbor(cached)?.let { return@withContext it }
-        if (cached?.complete == true) return@withContext null
-        indexLocks.getOrPut(novel.id) { Mutex() }.withLock {
+        val indexMutex = indexLocks.getOrPut(novel.id) { Mutex() }
+        while (true) {
+            currentCoroutineContext().ensureActive()
+            val revision = indexRevision.value
             val current = indexSnapshot(novel) ?: NovelChapterIndex(novel.id)
-            neighbor(current)?.let { return@withLock it }
-            if (current.complete) return@withLock null
-            val index = NovelChapterIndexer.collect(source(novel.sourceId), novel, current,
-                onPage = { cacheIndex(it); persistIndex(novel, it) },
-                stopWhen = { neighbor(it) != null || (!forward && it.chapters.firstOrNull()?.id == chapter.id) })
-            neighbor(index)
+            neighbor(current)?.let { return@withContext it }
+            if (current.complete) return@withContext null
+            if (indexMutex.tryLock()) {
+                try {
+                    val index = NovelChapterIndexer.collect(source(novel.sourceId), novel, current,
+                        onPage = { cacheIndex(it); persistIndex(novel, it) },
+                        stopWhen = { neighbor(it) != null || (!forward && it.chapters.firstOrNull()?.id == chapter.id) })
+                    return@withContext neighbor(index)
+                } finally { indexMutex.unlock() }
+            }
+            // A concurrent index load may already have fetched the neighbor. Observe pages as they arrive,
+            // instead of waiting behind every remaining page. Bounded wait also handles loader cancellation.
+            withTimeoutOrNull(1000) { indexRevision.first { it != revision } }
         }
+        @Suppress("UNREACHABLE_CODE") null
     }
     suspend fun chapterText(novel: Novel, chapter: NovelChapter): NovelText = withContext(Dispatchers.IO) {
         val key = novel.id + "|" + chapter.id

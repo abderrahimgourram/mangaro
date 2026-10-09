@@ -56,6 +56,7 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
         val context=LocalContext.current
         val repository=remember(context) {NovelRepository.get(context)}
         val navigator=LocalNavigator.currentOrThrow
+        NovelForegroundRefresh(repository)
         val storageError by repository.storageError.collectAsState()
         val savedSettings by repository.settings.collectAsState()
         var appearance by remember {mutableStateOf(savedSettings)}
@@ -74,6 +75,7 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
         var plain by remember {mutableStateOf(emptyList<String>())}
         var error by remember {mutableStateOf<String?>(null)}
         var loading by remember {mutableStateOf(true)}
+        var navigationJob by remember { mutableStateOf<Job?>(null) }
         var navigating by remember {mutableStateOf(false)}
         var generation by remember {mutableIntStateOf(0)}
         val scroll=rememberLazyListState()
@@ -85,7 +87,7 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                 val text=repository.chapterText(novel,chapter)
                 plain=text.paragraphs
                 paragraphs=withContext(Dispatchers.Default) {text.paragraphs.mapIndexed {i,p -> styledParagraph(text.markup.getOrNull(i),p)}}
-                val position=repository.library.value.firstOrNull {it.novel.id==novel.id}?.position?.takeIf {it.chapter.id==chapter.id}
+                val position=repository.readingPosition(novel,chapter)
                 val index = withContext(Dispatchers.Default) {
                     val anchor = position?.anchor?.takeIf { it.isNotEmpty() }?.let { hash ->
                         plain.indices.filter { paragraphAnchor(plain[it]) == hash }.minByOrNull { kotlin.math.abs(it - ((position?.paragraph ?: 1) - 1)) } ?: -1
@@ -93,6 +95,7 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                     if (anchor >= 0) anchor + 1 else (position?.paragraph ?: 0).coerceIn(0, paragraphs.size)
                 }
                 // Wait for this chapter's lazy-list layout, not merely the old heading-only list.
+                withFrameNanos { }
                 snapshotFlow { scroll.layoutInfo.totalItemsCount }.first { it >= paragraphs.size + 1 }
                 scroll.scrollToItem(index, position?.offset ?: 0)
                 loadedChapter = chapter
@@ -128,11 +131,12 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
         fun adjacent(forward: Boolean) {
             if(navigating || loading) return
             saveCurrent();navigating=true
-            scope.launch {
+            val requested = chapter
+            navigationJob = scope.launch {
                 try {
-                    val target=repository.adjacent(novel,chapter,forward)
-                    if(target!=null) chapter=target
-                } catch(c: CancellationException) {throw c} catch(e: Exception) {error=novelError(e)}
+                    val target=repository.adjacent(novel,requested,forward)
+                    if(target!=null && chapter.id == requested.id) chapter=target
+                } catch(c: CancellationException) {throw c} catch(e: Exception) {if(chapter.id == requested.id) error=novelError(e)}
                 finally {navigating=false}
             }
         }
@@ -216,7 +220,7 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                 LazyColumn(Modifier.fillMaxWidth().heightIn(max=480.dp)) {
                     items(chapterChoices.size,key={chapterChoices[it].id}) {index ->
                         val choice=chapterChoices[index]
-                        TextButton(onClick={saveCurrent();chapter=choice;chaptersOpen=false},modifier=Modifier.fillMaxWidth()) {
+                        TextButton(onClick={saveCurrent();navigationJob?.cancel();navigating=false;chapter=choice;chaptersOpen=false},modifier=Modifier.fillMaxWidth()) {
                             Text(choice.title,color=if(choice.id==chapter.id) gold else Color(0xFFDDCDE8))
                         }
                     }

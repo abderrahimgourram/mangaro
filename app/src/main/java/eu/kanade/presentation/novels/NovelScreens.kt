@@ -54,6 +54,7 @@ internal fun novelError(error: Exception): String {
 @Composable
 internal fun NovelShell(title: String, actions: @Composable RowScope.() -> Unit = {}, content: @Composable ColumnScope.() -> Unit) {
     val navigator=LocalNavigator.currentOrThrow
+    NovelForegroundRefresh(NovelRepository.get(LocalContext.current))
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
         Column(Modifier.fillMaxSize().background(Design.BackgroundDark).safeDrawingPadding()) {
             Row(Modifier.fillMaxWidth().heightIn(min=56.dp).padding(end=12.dp),verticalAlignment=Alignment.CenterVertically) {
