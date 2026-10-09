@@ -16,3 +16,9 @@ internal fun novelCommunityContext(novel: Novel, chapter: NovelChapter): Communi
         work, CommunityChapterKey.fromSource(work, chapter.url),
     ), chapter.title)
 }
+
+/** General edition comments are distinct from chapter threads. No manga discovery ratings. */
+internal fun novelWorkCommunityContext(novel: Novel): CommunityContext = CommunityContext(
+    CommunityTarget(CommunityTargetType.MANGA, CommunityMangaKey.fromNovelEdition(novel.sourceId, novel.id)),
+    novel.title, commentsTitle = "تعليقات الرواية", ratingsEnabled = false,
+)

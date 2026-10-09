@@ -9,8 +9,6 @@ fun novelChapterGroups(index: NovelChapterIndex, descending: Boolean = false): L
     val sections = if (unique.any { it.volumeId != null || it.volume != null }) unique.groupBy { it.volumeId ?: it.volume?.let { name -> "name:" + name } ?: "ungrouped" }.map { (id, chapters) ->
         val name = volumes[id]?.title ?: chapters.firstOrNull()?.volume
         NovelChapterGroup(id, name, chapters, name != null)
-    } else if (unique.size > 100) unique.chunked(100).mapIndexed { position, chapters ->
-        NovelChapterGroup("range-$position", "الفصول ${position * 100 + 1}–${position * 100 + chapters.size}", chapters, false)
     } else listOf(NovelChapterGroup("chapters", null, unique, false))
     return if (descending) sections.reversed().map { it.copy(chapters = it.chapters.reversed()) } else sections
 }

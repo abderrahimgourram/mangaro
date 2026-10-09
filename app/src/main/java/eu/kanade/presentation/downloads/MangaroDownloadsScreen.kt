@@ -276,19 +276,34 @@ private fun QueueRow(item: Queued, onRetry: (Queued) -> Unit, onCancel: (Queued)
     }
 }
 
+/** Shared presentation only; callers retain their own real payloads and queue actions. */
 @Composable
-private fun CompletedMangaRow(group: CompletedGroup, expanded: Boolean, onExpand: () -> Unit, onOpen: () -> Unit, onDelete: () -> Unit) {
+internal fun MangaroDownloadGroupRow(
+    expanded: Boolean, onExpand: () -> Unit,
+    cover: @Composable () -> Unit,
+    details: @Composable ColumnScope.() -> Unit,
+    actions: @Composable RowScope.() -> Unit,
+) {
     Surface(color = MangaroDesignSystem.SurfaceDark, shape = RoundedCornerShape(12.dp)) {
         Row(Modifier.fillMaxWidth().clickable(onClick = onExpand).padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            MangaCover.Book(group.manga.asMangaCover(), Modifier.width(60.dp), contentDescription = group.manga.title, shape = RoundedCornerShape(9.dp), onClick = onOpen)
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                Text(group.manga.title, color = Color.White, style = MaterialTheme.typography.titleSmall.copy(textDirection = TextDirection.Content), maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text("${group.chapters.size} فصل · ${sizeLabel(group.bytes)}", color = Secondary, style = MaterialTheme.typography.bodySmall)
-            }
-            IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) { Icon(Icons.Outlined.DeleteOutline, "حذف تنزيلات العمل", tint = Secondary, modifier = Modifier.size(18.dp)) }
+            cover()
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp), content = details)
+            actions()
             Icon(if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, if (expanded) "طي الفصول" else "عرض الفصول", tint = Secondary, modifier = Modifier.size(18.dp))
         }
     }
+}
+
+@Composable
+private fun CompletedMangaRow(group: CompletedGroup, expanded: Boolean, onExpand: () -> Unit, onOpen: () -> Unit, onDelete: () -> Unit) {
+    MangaroDownloadGroupRow(expanded, onExpand,
+        cover = { MangaCover.Book(group.manga.asMangaCover(), Modifier.width(60.dp), contentDescription = group.manga.title, shape = RoundedCornerShape(9.dp), onClick = onOpen) },
+        details = {
+            Text(group.manga.title, color = Color.White, style = MaterialTheme.typography.titleSmall.copy(textDirection = TextDirection.Content), maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text("${group.chapters.size} فصل · ${sizeLabel(group.bytes)}", color = Secondary, style = MaterialTheme.typography.bodySmall)
+        },
+        actions = { IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) { Icon(Icons.Outlined.DeleteOutline, "حذف تنزيلات العمل", tint = Secondary, modifier = Modifier.size(18.dp)) } },
+    )
 }
 
 @Composable

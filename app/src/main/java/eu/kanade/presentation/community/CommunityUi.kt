@@ -75,7 +75,7 @@ import uy.kohesive.injekt.api.get
 import java.io.Serializable
 
 /** The same identity mapping is used by Details and Reader. No source name is rendered. */
-data class CommunityContext(val target: CommunityTarget, val title: String) : Serializable
+data class CommunityContext(val target: CommunityTarget, val title: String, val commentsTitle: String? = null, val ratingsEnabled: Boolean = true) : Serializable
 fun communityContextFor(manga: Manga, chapter: Chapter? = null): CommunityContext {
     val mangaKey = CommunityMangaKey.fromSource(manga.source, manga.url)
     val chapterKey = chapter?.let {
@@ -97,7 +97,7 @@ class CommunityCommentsScreen(private val context: CommunityContext, private val
         Column(Modifier.fillMaxSize().background(MangaroDesignSystem.BackgroundDark).safeDrawingPadding()) {
             Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(end = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { navigator.pop() }) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "رجوع") }
-                Text(if (context.target.targetType == CommunityTargetType.CHAPTER) "تعليقات الفصل" else "تعليقات العمل",
+                Text(context.commentsTitle ?: if (context.target.targetType == CommunityTargetType.CHAPTER) "تعليقات الفصل" else "تعليقات العمل",
                     style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
             }
             CommunityContent(context, expanded = true, initialThreadId = initialThreadId, onAccount = { navigator.push(AccountScreen()) },
@@ -240,7 +240,7 @@ private fun CommunityContent(
             Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (expanded) Text(context.title, style = MaterialTheme.typography.bodySmall.copy(textDirection = TextDirection.Content),
                     color = Color(0xFFB7A9C4), maxLines = 2, overflow = TextOverflow.Ellipsis)
-                CommunityRatingOverview(snapshot, enabled = !actionInFlight,
+                if (context.ratingsEnabled) CommunityRatingOverview(snapshot, enabled = !actionInFlight,
                     actionLabel = if (chapter) "قيّم الفصل" else "قيّم العمل",
                     onRate = { gated(ratingFeature) { ratingVisible = true } })
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {

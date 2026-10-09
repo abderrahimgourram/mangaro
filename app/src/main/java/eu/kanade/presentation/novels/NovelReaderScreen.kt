@@ -16,7 +16,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import eu.kanade.presentation.community.CommunityCommentsScreen
+import eu.kanade.presentation.community.ReaderCommunitySheet
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderPreferences
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
@@ -80,6 +80,7 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
         LaunchedEffect(savedSettings) {appearance=savedSettings}
         var chapter by rememberSaveable {mutableStateOf(initialChapter)}
         var settingsOpen by rememberSaveable {mutableStateOf(false)}
+        var commentsOpen by rememberSaveable { mutableStateOf(false) }
         var controlsVisible by rememberSaveable { mutableStateOf(true) }
         val activity = remember(context) { generateSequence(context) { (it as? android.content.ContextWrapper)?.baseContext }
             .filterIsInstance<android.app.Activity>().firstOrNull() }
@@ -284,9 +285,8 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                                 IconButton(onClick={scope.launch {
                                     try {repository.updateLibrary(novel, bookmark=chapter.id)} catch(c: CancellationException) {throw c} catch(e: Exception) {error=novelError(e)}
                                 }}) {Icon(if(bookmarked) Icons.Outlined.Bookmark else Icons.Outlined.BookmarkBorder,"إشارة مرجعية",tint=gold)}
-                                TextButton(onClick={saveCurrent();navigator.push(CommunityCommentsScreen(novelCommunityContext(novel,chapter)))}, enabled=!loading && !navigating) {
-                                    Icon(Icons.Outlined.ChatBubbleOutline,null,Modifier.size(18.dp),tint=gold)
-                                    Spacer(Modifier.width(6.dp)); Text("تعليقات الفصل",color=gold)
+                                IconButton(onClick={saveCurrent(); commentsOpen=true}, enabled=!loading && !navigating) {
+                                    Icon(Icons.Outlined.ChatBubbleOutline,"تعليقات الفصل",tint=gold)
                                 }
                                 if (offline) Text("دون إنترنت",color=gold,style=MaterialTheme.typography.labelSmall)
                             }
@@ -294,7 +294,8 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                     }
                 }
             }
-            if(settingsOpen) ModalBottomSheet(onDismissRequest={settingsOpen=false},containerColor=Color(0xFF1B1423)) {
+            if (commentsOpen) ReaderCommunitySheet(novelCommunityContext(novel, chapter), onDismiss = { commentsOpen = false })
+        if(settingsOpen) ModalBottomSheet(onDismissRequest={settingsOpen=false},containerColor=Color(0xFF1B1423)) {
                 Column(Modifier.fillMaxWidth().padding(horizontal=24.dp,vertical=12.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
                     Text("إعدادات القراءة",color=Color.White,fontWeight=FontWeight.Bold,style=MaterialTheme.typography.titleMedium)
                     ReaderSlider("السطوع", if(customBrightness) brightness.toFloat() else 0f, -75f..100f,

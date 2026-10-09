@@ -374,11 +374,10 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
                     }
                 }
                 item {
-                    val commentChapter = resume?.position?.chapter ?: index.chapters.firstOrNull()
-                    TextButton(enabled = commentChapter != null, onClick = {
-                        commentChapter?.let { navigator.push(eu.kanade.presentation.community.CommunityCommentsScreen(novelCommunityContext(resume?.novel ?: novel, it))) }
+                    TextButton(onClick = {
+                        navigator.push(eu.kanade.presentation.community.CommunityCommentsScreen(novelWorkCommunityContext(novel)))
                     }, contentPadding = PaddingValues(0.dp)) {
-                        Icon(Icons.Outlined.ChatBubbleOutline, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("تعليقات الفصل")
+                        Icon(Icons.Outlined.ChatBubbleOutline, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("تعليقات الرواية")
                     }
                 }
                 if (novel.description.isNotBlank()) item {
@@ -424,7 +423,8 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
                         NovelChapterRow(chapter, states[chapter.id], selecting, chapter.id in selected,
                             onSelect = { selected = if (chapter.id in selected) ArrayList(selected - chapter.id) else ArrayList(selected + chapter.id) },
                             onRead = { if (resume != null && resume.novel.id != novel.id) { switchChapter = chapter; switching = novel } else navigator.push(NovelReaderScreen(novel, chapter)) },
-                            onDownload = { download(listOf(chapter)) })
+                            onDownload = { download(listOf(chapter)) },
+                            onCommunity = { navigator.push(eu.kanade.presentation.community.CommunityCommentsScreen(novelCommunityContext(novel, chapter))) })
                     }
                 }
                 if (index.chapters.isEmpty() && novel.id !in busy && error == null) item { Text("لا توجد فصول متاحة حاليًا.", color = Color(0xFFAE99BE)) }
