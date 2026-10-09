@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.work.*
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.postgrest.postgrest
+import eu.kanade.tachiyomi.novels.NovelCloudState
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Mutex
@@ -28,6 +29,52 @@ class SupabaseCloudSync(private val context:Context,private val client:SupabaseC
     private val states=ConcurrentHashMap<String,MutableStateFlow<CloudSyncStatus>>()
     private var started=false
     private var scheduledAt=0L
+    private fun tables(user:String) = cloudTables + if(store.get(user,"novel/available")=="true") NovelCloudState.tables else emptyList()
+    private fun runnableDirty(user:String) = store.rows(user,"dirty/").keys.count {
+        !it.startsWith("dirty/NOVEL/") || store.get(user,"novel/available")=="true"
+    }
+    private suspend fun bindNovels(user:String?,importGuest:Boolean=false):Boolean = try {
+        local.bindNovels(user,importGuest);true
+    } catch(cancelled:CancellationException) {throw cancelled}
+    catch(_:Exception) {
+        user?.let {store.put(it,"novel/available","false");store.put(it,"novel/error","تعذّر استعادة بيانات الروايات — الملفات المحلية محفوظة")}
+        false
+    }
+    private fun runnablePending(user:String) = tables(user).sumOf { table -> store.rows(user,"pending/$table/").keys.count { store.get(user,"conflict/"+it.removePrefix("pending/"))==null && store.get(user,"retry/"+it.removePrefix("pending/"))==null } }
+    private suspend fun probeNovels(user:String) {
+        try {
+            checkOwner(user)
+            val capability=client.postgrest.rpc("cloud_novel_capabilities").decodeAs<JsonObject>()
+            checkOwner(user)
+            check(capability.number("schema")==1L && capability.flag("private") && capability["tables"]==JsonArray(NovelCloudState.tables.map(::JsonPrimitive)))
+            store.put(user,"novel/available","true")
+            if(store.count(user,"rejected/")==0) store.remove(user,"novel/error")
+        } catch(cancelled:CancellationException) {throw cancelled}
+        catch(_:Exception) {
+            store.put(user,"novel/available","false")
+            store.put(user,"novel/error","مزامنة الروايات غير متاحة حاليًا — بياناتك محفوظة على هذا الجهاز")
+        }
+    }
+    private suspend fun captureNovels(user:String):Boolean = try {
+        checkOwner(user)
+        val rows=local.novelRows(user)
+        checkOwner(user)
+        val incomplete=local.novelIncomplete(user)
+        if(incomplete.isNotEmpty()) store.put(user,"novel/error","تعذّر مزامنة بعض بيانات الروايات — الملفات المحلية محفوظة")
+        for(table in NovelCloudState.tables) store.rows(user,"local/$table/").forEach { (key,value) ->
+            val plain=key.removePrefix("local/")
+            if(plain !in rows && plain.split('/')[1] !in incomplete) {
+                val old=Json.parseToJsonElement(value).jsonObject
+                if(old.text("deleted_at")==null) queue(user,plain,JsonObject(old+("deleted_at" to JsonPrimitive(stamp(System.currentTimeMillis())))))
+            }
+        }
+        rows.forEach { (key,row) -> queue(user,key,row) }
+        true
+    } catch(cancelled:CancellationException) {throw cancelled}
+    catch(_:Exception) {
+        store.put(user,"novel/available","false");store.put(user,"novel/error","تعذّر مزامنة بيانات الروايات — الملفات المحلية محفوظة")
+        false
+    }
     private fun active()=(auth.observeSession().value as? AccountSession.Authenticated)?.profile?.userId
     private fun enabled(user:String)=store.get(user,"enabled")=="true"
     private fun checkOwner(user:String) { if(!CloudSyncPolicy.canSend(user,active(),enabled(user))) throw InactiveAccount() }
@@ -40,7 +87,7 @@ class SupabaseCloudSync(private val context:Context,private val client:SupabaseC
     private fun publish(user:String,running:Boolean?=null,error:String?=null) {
         val previous=state(user).value
         state(user).value=try {CloudSyncStatus(enabled(user),store.get(user,"decision")!=null,running ?: previous.running,
-            store.count(user,"pending/")+store.count(user,"dirty/"),store.get(user,"success")?.toLongOrNull(),error,needsMerge = AutomaticCloudBinding.requiresMerge(user,store.get("_device","bound"),store.configuredAccounts()), unresolved = store.count(user,"unresolved/"), loaded = true)}
+            store.count(user,"pending/")+store.count(user,"dirty/"),store.get(user,"success")?.toLongOrNull(),error,needsMerge = AutomaticCloudBinding.requiresMerge(user,store.get("_device","bound"),store.configuredAccounts()), unresolved = store.count(user,"unresolved/"), loaded = true, novelError = store.get(user,"novel/error"), novelConflicts = store.count(user,"conflict/"))}
         catch(_:Exception) {previous.copy(running=false,loaded=true,error="تعذر المزامنة — بياناتك المحلية محفوظة")}
     }
     override fun restoredCompletion(userId:String,chapterKey:String)=runCatching {store.get(userId,"restored/$chapterKey")=="true"}.getOrDefault(true)
@@ -50,7 +97,7 @@ class SupabaseCloudSync(private val context:Context,private val client:SupabaseC
         LocalCloudChanges.capture={ change ->
             if(change.kind==LocalCloudChanges.Kind.COLLECTION_DELETED) store.invalidateCategory(change.id)
             val user=active()
-            if(user!=null && enabled(user)) {
+            if(user!=null && enabled(user) && (change.kind!=LocalCloudChanges.Kind.NOVEL || change.owner==user)) {
                 // Small durable coalesced hint. Account identity is captured before asynchronous work.
                 store.put(user,"dirty/${change.kind}/${change.id}",UUID.randomUUID().toString())
                 if(change.kind==LocalCloudChanges.Kind.RESOLVE) resolutions.tryEmit(Unit)
@@ -70,6 +117,11 @@ class SupabaseCloudSync(private val context:Context,private val client:SupabaseC
                 catch(_:Exception) { /* Cached unresolved state remains durable and can retry later. */ }
             }
         }
+        scope.launch(Dispatchers.Main.immediate) { androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.addObserver(object : androidx.lifecycle.DefaultLifecycleObserver {
+            override fun onStart(owner:androidx.lifecycle.LifecycleOwner) {
+                scope.launch { active()?.takeIf {enabled(it)}?.let {schedule(it, immediate=true)} }
+            }
+        }) }
         scope.launch {
             var previous:String?=null
             auth.observeSession().collectLatest { session ->
@@ -78,7 +130,9 @@ class SupabaseCloudSync(private val context:Context,private val client:SupabaseC
                     try {
                         previous?.let {WorkManager.getInstance(context).cancelUniqueWork(workName(it))}
                         previous=user
+                        if(user==null) bindNovels(null)
                         if(user!=null) {
+                            bindNovels(user)
                             val ambiguous = AutomaticCloudBinding.requiresMerge(user,store.get("_device","bound"),store.configuredAccounts())
                             if(ambiguous) {
                                 store.put(user,"enabled","false")
@@ -97,6 +151,7 @@ class SupabaseCloudSync(private val context:Context,private val client:SupabaseC
         if(active()!=userId)return@withContext AccountOperation.Failed("سجّل الدخول أولًا")
         if(!configuration.tryLock())return@withContext AccountOperation.Failed("جارٍ تجهيز المزامنة")
         try {
+            if(enabled) bindNovels(userId, importGuest=true)
             if(enabled && store.get(userId,"baseline")!="true" && store.get(userId,"seeded")==null) {
                 val snapshot=local.all(userId)
                 if(active()!=userId) return@withContext AccountOperation.Failed("تغير الحساب، حاول مجددًا")
@@ -108,7 +163,7 @@ class SupabaseCloudSync(private val context:Context,private val client:SupabaseC
                 if(active()!=userId)return@withContext AccountOperation.Failed("تغير الحساب، حاول مجددًا")
                 store.rows(userId,"local/").forEach { (path,value)->
                     val key=path.removePrefix("local/")
-                    if(key !in snapshot && !key.startsWith("cloud_chapter_progress/")) {
+                    if(key !in snapshot && !key.startsWith("cloud_chapter_progress/") && key.substringBefore('/') !in NovelCloudState.tables) {
                         val row=Json.parseToJsonElement(value).jsonObject
                         if(row.text("deleted_at")==null) queue(userId,key,JsonObject(row+("deleted_at" to JsonPrimitive(stamp(System.currentTimeMillis())))))
                     }
@@ -139,11 +194,15 @@ class SupabaseCloudSync(private val context:Context,private val client:SupabaseC
             withTimeout(90_000) {
                 checkOwner(userId);publish(userId,true)
                 val initial=store.get(userId,"baseline")!="true"
+                val novelReady=bindNovels(userId, importGuest=true)
+                checkOwner(userId)
+                store.rows(userId,"retry/").keys.forEach {store.remove(userId,it)}
+                if(novelReady) {probeNovels(userId);captureNovels(userId)}
                 if(!initial) captureDirty(userId)
                 pull(userId,initial)
                 applyUnresolved(userId,initial)
                 if(initial) {
-                    if(store.rows(userId,"more/").values.any {it=="true"}) {
+                    if(tables(userId).any {store.get(userId,"more/$it")=="true"}) {
                         publish(userId,false);schedule(userId,append=true);return@withTimeout AccountOperation.Completed
                     }
                     store.rows(userId,"seed/").forEach { (key,value)->
@@ -158,11 +217,11 @@ class SupabaseCloudSync(private val context:Context,private val client:SupabaseC
                 }
                 push(userId)
                 checkOwner(userId)
-                val remaining=store.count(userId,"pending/")>0 || store.count(userId,"dirty/")>0 || store.rows(userId,"more/").values.any {it=="true"}
+                val remaining=runnablePending(userId)>0 || runnableDirty(userId)>0 || tables(userId).any {store.get(userId,"more/$it")=="true"}
                 if(!remaining)store.put(userId,"success",System.currentTimeMillis().toString())
                 publish(userId,false)
                 if(remaining)schedule(userId,append=true)
-                AccountOperation.Completed
+                if(store.count(userId,"retry/")>0) AccountOperation.Failed("تعذّر مزامنة بعض تغييرات الروايات — بياناتك محفوظة") else AccountOperation.Completed
             }
         } catch(_:InactiveAccount) {publish(userId,false);AccountOperation.Completed}
         catch(_:TimeoutCancellationException) {publish(userId,false,"تعذر المزامنة — سنحاول مرة أخرى");runCatching {schedule(userId)};AccountOperation.Failed("تعذر المزامنة — سنحاول مرة أخرى")}
@@ -186,7 +245,10 @@ class SupabaseCloudSync(private val context:Context,private val client:SupabaseC
         val remote=store.get(user,"remote/$key")?.let {Json.parseToJsonElement(it).jsonObject}
         val old=store.get(user,"local/$key")
         if(old==row.toString())return
-        val pending=buildJsonObject {put("body",row);put("expected",remote?.number("revision")?:0);put("generation",UUID.randomUUID().toString())}
+        val novel=key.substringBefore('/') in NovelCloudState.tables
+        val prior=store.get(user,"pending/$key")?.let {Json.parseToJsonElement(it).jsonObject}
+        val base=if(novel) (prior?.get("base") as? JsonObject) ?: store.get(user,"novelBase/$key")?.let {Json.parseToJsonElement(it).jsonObject} else remote
+        val pending=buildJsonObject {put("body",row);put("expected",if(novel) prior?.number("expected") ?: base?.number("revision") ?: 0 else remote?.number("revision") ?: 0);put("generation",UUID.randomUUID().toString());if(novel) put("base",base ?: JsonNull)}
         store.atomic {store.put(user,"pending/$key",pending.toString());store.put(user,"local/$key",row.toString())}
     }
     private suspend fun captureDirty(user:String) {
@@ -194,6 +256,7 @@ class SupabaseCloudSync(private val context:Context,private val client:SupabaseC
         store.rows(user,"dirty/").forEach { (hint,version)->
             checkOwner(user)
             val parts=hint.split('/');val kind=LocalCloudChanges.Kind.valueOf(parts[1]);val id=parts[2].toLong()
+            if(kind==LocalCloudChanges.Kind.NOVEL) {if(captureNovels(user)) store.acknowledge(user,hint,version);return@forEach}
             if(kind==LocalCloudChanges.Kind.RESOLVE) {store.acknowledge(user,hint,version);return@forEach}
             val change=LocalCloudChanges.Change(kind,id)
             val captureKey=local.captureKey(change)
@@ -223,7 +286,7 @@ class SupabaseCloudSync(private val context:Context,private val client:SupabaseC
         }
     }
     private suspend fun pull(user:String,initial:Boolean) {
-        for(table in cloudTables) {
+        for(table in tables(user)) {
             var after=store.get(user,"cursor/$table")?.toLongOrNull()?:0
             var pages=0
             while(pages++<10) {
@@ -232,6 +295,12 @@ class SupabaseCloudSync(private val context:Context,private val client:SupabaseC
                 checkOwner(user)
                 for(element in rows) {
                     val row=element.jsonObject;check(row.text("user_id")==user)
+                    if(table in NovelCloudState.tables) try {NovelCloudState.decode(table,row)}
+                    catch(error:Exception) {
+                        store.put(user,"rejected/$table/"+row.number("revision"),row.toString())
+                        store.put(user,"novel/error","تعذّر استعادة بعض بيانات الروايات — بياناتك المحلية محفوظة")
+                        after=maxOf(after,row.number("revision"));continue
+                    }
                     val key="$table/${rowKey(table,row)}"
                     // Durable remote inbox preserves unresolved chapters/sources before cursor advancement.
                     store.atomic {store.put(user,"remote/$key",row.toString());store.put(user,"unresolved/$key",row.toString())}
@@ -244,18 +313,25 @@ class SupabaseCloudSync(private val context:Context,private val client:SupabaseC
         }
     }
     private suspend fun applyUnresolved(user:String,initial:Boolean) {
-        for(table in cloudTables) for((path,value) in store.rows(user,"unresolved/$table/")) {
+        for(table in tables(user)) for((path,value) in store.rows(user,"unresolved/$table/")) {
             checkOwner(user);val key=path.removePrefix("unresolved/")
-            if(!initial && (store.get(user,"pending/$key")!=null || store.count(user,"dirty/")>0)) continue
+            if((!initial || table in NovelCloudState.tables) && (store.get(user,"pending/$key")!=null || store.count(user,"dirty/")>0)) continue
             val row=Json.parseToJsonElement(value).jsonObject
-            if(local.apply(user,table,row,initial)) {
+            val applied=try {local.apply(user,table,row,initial)} catch(cancelled:CancellationException) {throw cancelled}
+                catch(error:Exception) {
+                    if(table !in NovelCloudState.tables) throw error
+                    store.put(user,"novel/error","تعذّر استعادة بعض بيانات الروايات — بياناتك المحلية محفوظة")
+                    false
+                }
+            if(applied) {
                 store.remove(user,path)
                 // Store actual local representation after remote application, not its server timestamps.
                 store.put(user,"applied/$key",row.toString())
                 local.baseline(user,table,row)?.let {store.put(user,"local/$key",it.toString())}
+                if(table in NovelCloudState.tables) store.put(user,"novelBase/$key",row.toString())
             }
         }
-        for(table in cloudTables) {
+        for(table in tables(user)) {
             val earliest=store.rows(user,"unresolved/$table/").values.map {Json.parseToJsonElement(it).jsonObject.number("revision")}.minOrNull()
             val received=store.get(user,"cursor/$table")?.toLongOrNull() ?: 0L
             store.put(user,"appliedCursor/$table",minOf(received,earliest?.minus(1) ?: received).toString())
@@ -263,13 +339,40 @@ class SupabaseCloudSync(private val context:Context,private val client:SupabaseC
     }
     private suspend fun push(user:String) {
         // Parent records before memberships; bounded work yields to later unique jobs.
-        for(table in cloudTables) for((path,value) in store.rows(user,"pending/$table/").entries.take(200)) {
-            checkOwner(user);val pending=Json.parseToJsonElement(value).jsonObject;val body=pending["body"]!!.jsonObject
-            val result=client.postgrest.rpc("cloud_apply_change",buildJsonObject {put("p_table",table);put("p_row",JsonObject(body+("user_id" to JsonPrimitive(user))));put("p_expected_revision",pending.number("expected"))}).decodeAs<JsonObject>()
+        for(table in tables(user)) for((path,value) in store.rows(user,"pending/$table/").entries
+            .filter {store.get(user,"conflict/"+it.key.removePrefix("pending/"))==null}
+            .sortedBy {store.get(user,"failureCount/"+it.key.removePrefix("pending/"))?.toIntOrNull() ?: 0}.take(200)) {
+            checkOwner(user)
+            val keyForConflict=path.removePrefix("pending/")
+            if(store.get(user,"conflict/$keyForConflict")!=null) continue
+            val pending=Json.parseToJsonElement(value).jsonObject;val body=pending["body"]!!.jsonObject
+            val result=try {client.postgrest.rpc("cloud_apply_change",buildJsonObject {put("p_table",table);put("p_row",JsonObject(body+("user_id" to JsonPrimitive(user))));put("p_expected_revision",pending.number("expected"))}).decodeAs<JsonObject>()}
+                catch(cancelled:CancellationException) {throw cancelled}
+                catch(error:Exception) {
+                    if(table !in NovelCloudState.tables) throw error
+                    store.put(user,"novel/error","تعذّر مزامنة بعض تغييرات الروايات — سنحاول مجددًا")
+                    store.put(user,"retry/$keyForConflict",value)
+                    store.put(user,"failureCount/$keyForConflict",((store.get(user,"failureCount/$keyForConflict")?.toIntOrNull() ?: 0)+1).toString())
+                    continue
+                }
             checkOwner(user);val key=path.removePrefix("pending/")
             val changedDuringFlight=store.get(user,path)!=value || store.count(user,"dirty/")>0
             val returned=(result["row"] as? JsonObject)
             if(returned!=null) {check(returned.text("user_id")==user);store.put(user,"remote/$key",returned.toString())}
+            if(table in NovelCloudState.tables && !result.flag("accepted")) {
+                if(returned==null) {store.put(user,"conflict/$key",value);continue}
+                val base=pending["base"] as? JsonObject
+                val merged=NovelCloudState.merge(base,body,clientRow(returned))
+                if(merged==null || changedDuringFlight) {
+                    store.put(user,"conflict/$key",value)
+                } else {
+                    store.replaceIfCurrent(user,path,value,buildJsonObject {
+                        put("body",merged);put("expected",returned.number("revision"));put("base",returned);put("localBeforeMerge",pending["localBeforeMerge"] ?: body);put("generation",UUID.randomUUID().toString())
+                    }.toString())
+                    store.remove(user,"conflict/$key")
+                }
+                continue
+            }
             if(!result.flag("accepted") && returned!=null) {
                 // A stale offline removal/unread cannot blindly overwrite a newer cloud revision.
                 // Preserve higher completion/progress on conflict; explicit unread succeeds after observing the new baseline.
@@ -283,10 +386,48 @@ class SupabaseCloudSync(private val context:Context,private val client:SupabaseC
             }
             if(returned!=null) {
                 // A successful push supersedes any older durable inbox version.
-                if(result.flag("accepted")) store.remove(user,"unresolved/$key")
+                if(result.flag("accepted")) {
+                    store.remove(user,"failureCount/$key");store.remove(user,"retry/$key")
+                    store.remove(user,"unresolved/$key")
+                    if(table in NovelCloudState.tables) {
+                        store.put(user,"novelBase/$key",returned.toString());store.remove(user,"conflict/$key")
+                        if(!changedDuringFlight && local.apply(user,table,returned,false,
+                                expectedNovel=(pending["localBeforeMerge"] as? JsonObject) ?: body)) {
+                            local.baseline(user,table,returned)?.let {store.put(user,"local/$key",it.toString())}
+                        }
+                    }
+                }
                 if(!result.flag("accepted") && !changedDuringFlight && store.get(user,path)==value) local.baseline(user,table,returned)?.let {store.put(user,"local/$key",it.toString())}
             }
             store.acknowledge(user,path,value)
+        }
+    }
+    override suspend fun resolveNovelConflicts(userId:String,keepLocal:Boolean):AccountOperation=withContext(Dispatchers.IO) {
+        lock.withLock {
+            try {
+                checkOwner(userId)
+                for((path,_) in store.rows(userId,"conflict/")) {
+                    val key=path.removePrefix("conflict/");val table=key.substringBefore('/')
+                    val raw=store.get(userId,"pending/$key") ?: continue
+                    val pending=Json.parseToJsonElement(raw).jsonObject
+                    val remote=store.get(userId,"remote/$key")?.let {Json.parseToJsonElement(it).jsonObject}
+                        ?: return@withLock AccountOperation.Failed("أعد المزامنة قبل حل التعارض")
+                    if(keepLocal) {
+                        store.replaceIfCurrent(userId,"pending/$key",raw,buildJsonObject {
+                            put("body",pending.getValue("body"));put("base",remote);put("expected",remote.number("revision"));put("generation",UUID.randomUUID().toString())
+                        }.toString())
+                    } else {
+                        if(!local.apply(userId,table,remote,false,forceNovel=true)) return@withLock AccountOperation.Failed("تعذّر تطبيق الاختيار. حاول مجددًا")
+                        store.put(userId,"novelBase/$key",remote.toString())
+                        local.baseline(userId,table,remote)?.let {store.put(userId,"local/$key",it.toString())}
+                        store.acknowledge(userId,"pending/$key",raw)
+                    }
+                    store.remove(userId,path)
+                }
+                publish(userId);schedule(userId,immediate=true)
+                AccountOperation.Completed
+            } catch(cancelled:CancellationException) {throw cancelled}
+            catch(_:Exception) {AccountOperation.Failed("تعذّر حل التعارض. بياناتك محفوظة")}
         }
     }
     override suspend fun prepareFirstLogin(userId:String,snapshot:GuestLibrarySnapshot)=MigrationPreparation.Offered(GuestMigrationPlan(userId,snapshot))
@@ -304,9 +445,9 @@ class CloudSyncWorker(context:Context,parameters:WorkerParameters):CoroutineWork
             if(restored==null)return Result.retry()
             if((auth.observeSession().value as? AccountSession.Authenticated)?.profile?.userId!=user)return Result.success()
             val repo=Injekt.get<AccountCloudSync>()
-            when(repo.syncNow(user)) {
+            when(val result=repo.syncNow(user)) {
                 AccountOperation.Completed,AccountOperation.NotConfigured -> Result.success()
-                is AccountOperation.Failed -> Result.retry()
+                is AccountOperation.Failed -> if(result.message.startsWith("تعذّر مزامنة بعض تغييرات الروايات") && runAttemptCount>=6) Result.failure() else Result.retry()
             }
         } catch(cancelled:CancellationException) {throw cancelled}
         catch(_:Exception) {Result.retry()}

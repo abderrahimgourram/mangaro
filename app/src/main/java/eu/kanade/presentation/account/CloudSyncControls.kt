@@ -22,6 +22,7 @@ fun CloudSyncControls(userId: String, repository: AccountCloudSync) {
     val context = LocalContext.current
     var busy by remember(userId) { mutableStateOf(false) }
     var confirm by remember(userId) { mutableStateOf(false) }
+    var resolveConflict by remember(userId) { mutableStateOf(false) }
     var message by remember(userId) { mutableStateOf<String?>(null) }
     fun perform(action: suspend () -> AccountOperation) {
         if(!gate.tryStart()) return
@@ -40,6 +41,8 @@ fun CloudSyncControls(userId: String, repository: AccountCloudSync) {
                 status.running || busy -> "تتم المزامنة…"
                 !status.loaded || !status.enabled -> "جارٍ تجهيز المزامنة"
                 status.error!=null || status.pending>0 -> "بانتظار الاتصال"
+                status.novelConflicts>0 -> "تحتاج تغييرات الروايات إلى مراجعة"
+                status.novelError!=null -> "مزامنة الروايات بانتظار التفعيل"
                 status.lastSuccess!=null -> "تمت المزامنة"
                 else -> "المزامنة التلقائية"
             },style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
@@ -51,8 +54,14 @@ fun CloudSyncControls(userId: String, repository: AccountCloudSync) {
             val formatted=remember(time,context) {WesternDigits.normalize(DateUtils.formatDateTime(context,time,DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_SHOW_TIME or DateUtils.FORMAT_ABBREV_ALL))}
             Text("آخر مزامنة: $formatted",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        status.novelError?.let { Text(it,style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant) }
+        if(status.novelConflicts>0) TextButton(enabled=!busy && !status.running,onClick={resolveConflict=true}) { Text("مراجعة تغييرات الروايات") }
         message?.let {Text(it,style=MaterialTheme.typography.labelSmall)}
     }
+    if(resolveConflict) AlertDialog(onDismissRequest={resolveConflict=false},title={Text("تعارض تغييرات الروايات")},
+        text={Text("تغيّرت بعض بيانات الروايات على جهاز آخر. اختر النسخة التي تريد الاحتفاظ بها للتغييرات المتعارضة. لن تُحذف التنزيلات.")},
+        confirmButton={TextButton(enabled=!busy,onClick={resolveConflict=false;perform {repository.resolveNovelConflicts(userId,true)}}) {Text("تغييرات هذا الجهاز")}},
+        dismissButton={TextButton(enabled=!busy,onClick={resolveConflict=false;perform {repository.resolveNovelConflicts(userId,false)}}) {Text("التغييرات السحابية")}})
     if(confirm) AlertDialog(onDismissRequest={confirm=false},title={Text("دمج بيانات هذا الجهاز")},
         text={Text("تحتوي مكتبة هذا الجهاز على بيانات حساب آخر. دمجها مع هذا الحساب يحفظ البيانات المحلية والسحابية ولا يحذف التنزيلات.")},
         confirmButton={TextButton(enabled=!busy,onClick={confirm=false;perform {repository.configure(userId,true)}}) {Text("دمج مع هذا الحساب")}},

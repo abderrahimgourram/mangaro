@@ -42,10 +42,13 @@ class NovelRepository private constructor(context: Context) {
     private val settingsSequence = java.util.concurrent.atomic.AtomicLong()
     private val positionSequence = java.util.concurrent.atomic.AtomicLong()
     private val appliedPositionSequence = mutableMapOf<String, Long>()
-    private val appliedChapterSequence = mutableMapOf<Pair<String, String>, Long>()
-    private val pendingPositions = LinkedHashMap<Pair<String, String>, Pair<Long, NovelReadingPosition>>()
+    private val appliedChapterSequence = mutableMapOf<Triple<String?, String, String>, Long>()
+    private val pendingPositions = LinkedHashMap<Triple<String?, String, String>, Pair<Long, NovelReadingPosition>>()
     private val json = Json { ignoreUnknownKeys = true }
-    private val file = AtomicFile(File(app.filesDir, "novels-local/library.json"))
+    @Volatile private var cloudAccount: String? = null
+    private fun accountPrefix(owner: String?) = owner?.let { "accounts/" + novelDigest(it) + "/" } ?: ""
+    private fun libraryFile(owner: String?) = AtomicFile(File(app.filesDir, "novels-local/" + accountPrefix(owner) + "library.json"))
+    private val file get() = libraryFile(cloudAccount)
     private val settingsFile = AtomicFile(File(app.filesDir, "novels-local/reader-settings.json"))
     private val metadata = NovelMetadataStore(File(app.filesDir, "novels-local"))
     private val indexCache = NovelMetadataStore(File(app.cacheDir, "novels-indexes"))
@@ -219,9 +222,10 @@ class NovelRepository private constructor(context: Context) {
         finally { mutableRestored.value = true }
     }
     suspend fun setSaved(novel: Novel, saved: Boolean) {
+        val owner = cloudAccount
         try {
             ingest(listOf(novel))
-            change {
+            change(owner = owner) {
                 val work = catalog.value.work(novel.id)
                 val ids = work?.editions?.map { it.id }?.toSet() ?: setOf(novel.id)
                 val existing = firstOrNull { it.novel.id == novel.id }
@@ -234,8 +238,9 @@ class NovelRepository private constructor(context: Context) {
         catch (e: Exception) { android.util.Log.w("MangaroNovels", "Library change failed", e); mutableStorageError.value = "تعذّر حفظ التغيير. حاول مجددًا." }
     }
     fun savePosition(novel: Novel, chapter: NovelChapter, paragraph: Int, offset: Int, anchor: String = "") {
+        val owner = cloudAccount
         val sequence = positionSequence.incrementAndGet()
-        val key = novel.id to chapter.id
+        val key = Triple(owner, novel.id, chapter.id)
         val position = NovelReadingPosition(chapter, paragraph.coerceAtLeast(0), offset.coerceAtLeast(0), System.currentTimeMillis(), anchor)
         synchronized(pendingPositions) {
             pendingPositions[key] = sequence to position
@@ -244,30 +249,37 @@ class NovelRepository private constructor(context: Context) {
         io.launch {
             ready.await()
             if (catalog.value.work(novel.id) == null) ingest(listOf(novel))
-            change {
-                if (sequence < (appliedChapterSequence[key] ?: 0L)) return@change this
-                // Keep each edition's chapter position; the library still contains only its latest chapter.
-                metadata.write(positionPath(novel, chapter), json.encodeToString(position))
+            lock.withLock {
+                val target = libraryFile(owner)
+                val entries = if (owner == cloudAccount) {
+                    check(libraryReadable) { "Unreadable library" }; mutableLibrary.value
+                } else if (target.baseFile.exists() || File(target.baseFile.path + ".bak").exists())
+                    json.decodeFromString<List<NovelLibraryItem>>(target.openRead().use { it.readBytes().decodeToString() }) else emptyList()
+                if (sequence < (appliedChapterSequence[key] ?: 0L)) return@withLock
+                metadata.write(positionPath(novel, chapter, owner), json.encodeToString(position))
                 appliedChapterSequence[key] = sequence
-                synchronized(pendingPositions) {
-                    if (pendingPositions[key]?.first == sequence) pendingPositions.remove(key)
+                val editionKey = accountPrefix(owner) + novel.id
+                if (sequence >= (appliedPositionSequence[editionKey] ?: 0L)) {
+                    val old = entries.firstOrNull { it.novel.id == novel.id } ?: NovelLibraryItem(novel)
+                    val next = (entries.filterNot { it.novel.id == novel.id } + old.copy(novel = novel, position = position))
+                        .sortedByDescending { it.position?.updatedAt ?: 0 }
+                    write(target, json.encodeToString(next))
+                    if (owner == cloudAccount) mutableLibrary.value = next
+                    appliedPositionSequence[editionKey] = sequence
                 }
-                if (sequence < (appliedPositionSequence[novel.id] ?: 0L)) return@change this
-                val old = firstOrNull { it.novel.id == novel.id }
-                val next = filterNot { it.novel.id == novel.id } + (old ?: NovelLibraryItem(novel)).copy(novel = novel, position = position)
-                appliedPositionSequence[novel.id] = sequence
-                next
+                synchronized(pendingPositions) { if (pendingPositions[key]?.first == sequence) pendingPositions.remove(key) }
+                mihon.domain.account.LocalCloudChanges.changed(mihon.domain.account.LocalCloudChanges.Kind.NOVEL, owner = owner)
             }
         }
     }
-    private fun positionPath(novel: Novel, chapter: NovelChapter) =
-        "positions/" + novelDigest(novel.id) + "/" + novelDigest(chapter.id) + ".json"
+    private fun positionPath(novel: Novel, chapter: NovelChapter, owner: String? = cloudAccount) =
+        accountPrefix(owner) + "positions/" + novelDigest(novel.id) + "/" + novelDigest(chapter.id) + ".json"
 
     suspend fun readingPosition(novel: Novel, chapter: NovelChapter): NovelReadingPosition? = withContext(Dispatchers.IO) {
         ready.await()
         lock.withLock {
             // A quick cached chapter switch must see a save queued moments earlier.
-            synchronized(pendingPositions) { pendingPositions[novel.id to chapter.id]?.second }
+            synchronized(pendingPositions) { pendingPositions[Triple(cloudAccount, novel.id, chapter.id)]?.second }
                 ?: runCatching {
                     metadata.read(positionPath(novel, chapter))?.let { json.decodeFromString<NovelReadingPosition>(it) }
                         ?.takeIf { it.chapter.id == chapter.id }
@@ -276,10 +288,11 @@ class NovelRepository private constructor(context: Context) {
         }
     }
     suspend fun updateLibrary(novel: Novel, favorite: Boolean? = null, status: String? = null, bookmark: String? = null, saved: Boolean? = null) {
+        val owner = cloudAccount
         require(status == null || status in setOf("reading", "completed", "planned"))
         withContext(Dispatchers.IO) {
             ingest(listOf(novel))
-            change {
+            change(owner = owner) {
                 val ids = catalog.value.work(novel.id)?.editions?.map { it.id }?.toSet() ?: setOf(novel.id)
                 val entries = if (any { it.novel.id == novel.id }) this else this + NovelLibraryItem(novel)
                 entries.map { old ->
@@ -307,14 +320,139 @@ class NovelRepository private constructor(context: Context) {
             }
         }
     }
-    private suspend fun change(update: List<NovelLibraryItem>.() -> List<NovelLibraryItem>) {
+    private suspend fun change(owner: String? = cloudAccount, update: List<NovelLibraryItem>.() -> List<NovelLibraryItem>) {
         ready.await()
         withContext(Dispatchers.IO) { lock.withLock {
+            if (owner != cloudAccount) return@withLock
             check(libraryReadable) { "Library restore failed; preserving the original file" }
             val next = mutableLibrary.value.update().filter { it.saved || it.position != null || it.favorite || it.bookmarks.isNotEmpty() }.sortedByDescending { it.position?.updatedAt ?: 0 }
             write(file, json.encodeToString(next)); mutableLibrary.value = next; mutableStorageError.value = null
+            mihon.domain.account.LocalCloudChanges.changed(mihon.domain.account.LocalCloudChanges.Kind.NOVEL, owner = owner)
         } }
     }
+    /** Account switching never moves/deletes the previous library or offline chapter payloads. */
+    suspend fun bindCloudAccount(owner: String?, importGuest: Boolean = false) = withContext(Dispatchers.IO) {
+        ready.await()
+        lock.withLock {
+            val target = libraryFile(owner)
+            val claim = AtomicFile(File(app.filesDir, "novels-local/guest-cloud-owner.json"))
+            val claimed = if (claim.baseFile.exists()) json.decodeFromString<String>(claim.openRead().use { it.readBytes().decodeToString() }) else null
+            val fromGuest = owner != null && importGuest && (claimed == null || claimed == owner)
+            val existing = if (target.baseFile.exists() || File(target.baseFile.path + ".bak").exists())
+                json.decodeFromString<List<NovelLibraryItem>>(target.openRead().use { it.readBytes().decodeToString() }) else emptyList()
+            val guestFile = libraryFile(null)
+            val guest = if (fromGuest && (guestFile.baseFile.exists() || File(guestFile.baseFile.path + ".bak").exists()))
+                json.decodeFromString<List<NovelLibraryItem>>(guestFile.openRead().use { it.readBytes().decodeToString() }) else emptyList()
+            val baselineFile = AtomicFile(File(app.filesDir, "novels-local/" + accountPrefix(owner) + "guest-baseline.json"))
+            val baseline = if (baselineFile.baseFile.exists()) json.decodeFromString<List<NovelLibraryItem>>(baselineFile.openRead().use { it.readBytes().decodeToString() }) else emptyList()
+            val next = if (fromGuest) {
+                val byId = existing.associateBy { it.novel.id }.toMutableMap()
+                val oldGuest = baseline.associateBy { it.novel.id }
+                for (g in guest) {
+                    val b = oldGuest[g.novel.id]
+                    if (g == b) continue
+                    val e = byId[g.novel.id]
+                    byId[g.novel.id] = if (e == null || b == null) g else e.copy(
+                        saved = if (g.saved != b.saved) g.saved else e.saved,
+                        favorite = if (g.favorite != b.favorite) g.favorite else e.favorite,
+                        readingStatus = if (g.readingStatus != b.readingStatus) g.readingStatus else e.readingStatus,
+                        position = if (g.position != b.position) g.position else e.position,
+                        bookmarks = (e.bookmarks + (g.bookmarks - b.bookmarks)) - (b.bookmarks - g.bookmarks),
+                    )
+                }
+                for (b in baseline) if (guest.none { it.novel.id == b.novel.id }) byId[b.novel.id]?.let { byId[b.novel.id] = it.copy(saved = false, favorite = false) }
+                byId.values.toList()
+            } else existing
+            val normalized = next.map { if (it.favorite) it.copy(saved = true) else it }
+            if (fromGuest) {
+                // Import only guest positions changed since the previous import; unchanged guest data cannot revert cloud progress.
+                val positionBaselineName = accountPrefix(owner) + "guest-position-baseline.json"
+                val positionBaseline = metadata.read(positionBaselineName)?.let { json.decodeFromString<Map<String, String>>(it) }.orEmpty()
+                val newPositionBaseline = mutableMapOf<String, String>()
+                val oldPositions = File(app.filesDir, "novels-local/positions")
+                if (oldPositions.isDirectory) oldPositions.walkTopDown().filter { it.isFile && it.extension == "json" }.forEach { old ->
+                    val relative = old.relativeTo(oldPositions).path
+                    val digest = novelDigest(old.readText())
+                    newPositionBaseline[relative] = digest
+                    if (positionBaseline[relative] != digest) {
+                        val value = metadata.read("positions/" + relative) ?: error("Unreadable guest position")
+                        json.decodeFromString<NovelReadingPosition>(value)
+                        metadata.write(accountPrefix(owner) + "positions/" + relative, value)
+                    }
+                }
+                write(target, json.encodeToString(normalized))
+                write(baselineFile, json.encodeToString(guest))
+                metadata.write(positionBaselineName, json.encodeToString(newPositionBaseline))
+                write(claim, json.encodeToString(owner!!))
+            }
+            cloudAccount = owner
+            mutableLibrary.value = normalized
+            libraryReadable = true
+            mutableStorageError.value = null
+        }
+        ingest(library.value.map { it.novel })
+    }
+
+    @Volatile private var cloudIncomplete: Pair<String?, Set<String>> = null to emptySet()
+    fun cloudIncompleteEditions(owner: String): Set<String> = cloudIncomplete.takeIf { it.first == owner }?.second.orEmpty()
+    /** Metadata only. Chapter bodies, download files, reader settings and public profiles never enter sync. */
+    suspend fun cloudRows(owner: String): Map<String, kotlinx.serialization.json.JsonObject> = withContext(Dispatchers.IO) {
+        ready.await()
+        lock.withLock {
+            check(cloudAccount == owner && libraryReadable) { "Novel account is not ready" }
+            val incomplete = mutableSetOf<String>()
+            val rows = buildMap {
+                for (item in mutableLibrary.value) try {
+                    putAll(NovelCloudState.rows(item, metadataPositions(item.novel)))
+                } catch (error: Exception) {
+                    incomplete += novelDigest(item.novel.id)
+                    // Keep the existing files and server record. Other editions can still sync.
+                    android.util.Log.w("MangaroNovels", "Private metadata snapshot could not be read", error)
+                }
+            }
+            cloudIncomplete = owner to incomplete
+            rows
+        }
+    }
+    private fun metadataPositions(novel: Novel): List<NovelReadingPosition> {
+        val directory = File(app.filesDir, "novels-local/" + accountPrefix(cloudAccount) + "positions/" + novelDigest(novel.id))
+        return directory.listFiles().orEmpty().filter { it.extension == "json" }.map { path ->
+            json.decodeFromString<NovelReadingPosition>(metadata.read(accountPrefix(cloudAccount) + "positions/" + novelDigest(novel.id) + "/" + path.name) ?: error("Unreadable position"))
+        }
+    }
+    suspend fun applyCloudRow(owner: String, table: String, row: kotlinx.serialization.json.JsonObject, expected: kotlinx.serialization.json.JsonObject?, force: Boolean = false, canApply: () -> Boolean = { true }): Boolean = withContext(Dispatchers.IO) {
+        ready.await()
+        val decoded = NovelCloudState.decode(table, row)
+        lock.withLock {
+            if (cloudAccount != owner || !libraryReadable || synchronized(pendingPositions) { pendingPositions.isNotEmpty() }) return@withLock false
+            val existing = mutableLibrary.value.firstOrNull { it.novel.id == decoded.novel.id }
+            val old = existing ?: NovelLibraryItem(decoded.novel)
+            if (!force) {
+                if (!canApply()) return@withLock false
+                val key = table + "/" + novelDigest(decoded.novel.id) + (decoded.chapterUrl?.let { "/" + novelDigest(it) } ?: "")
+                val current = existing?.let { NovelCloudState.rows(it, metadataPositions(it.novel))[key] }
+                // Recheck under the SAME mutation lock; a tap/save may have raced the network response.
+                val removedBaseline = expected?.get("deleted_at")?.let { it != kotlinx.serialization.json.JsonNull } == true
+                if (current != expected && !(current == null && removedBaseline)) return@withLock false
+            }
+            val nextItem = if (table == NovelCloudState.LIBRARY) {
+                if (decoded.deleted) old.copy(saved = false, favorite = false)
+                else old.copy(novel = old.novel.copy(title = decoded.novel.title, cover = decoded.novel.cover), saved = decoded.saved || decoded.favorite, favorite = decoded.favorite,
+                    readingStatus = decoded.status, addedAt = decoded.addedAt, position = decoded.position)
+            } else {
+                decoded.position?.takeUnless { decoded.deleted }?.let {
+                    metadata.write(positionPath(old.novel, it.chapter), json.encodeToString(it))
+                }
+                old.copy(position = old.position ?: decoded.position?.takeUnless { decoded.deleted }, bookmarks = if (decoded.bookmarked && !decoded.deleted) old.bookmarks + decoded.chapterUrl!! else old.bookmarks - decoded.chapterUrl!!)
+            }
+            val next = (mutableLibrary.value.filterNot { it.novel.id == old.novel.id } + nextItem)
+                .filter { it.saved || it.favorite || it.position != null || it.bookmarks.isNotEmpty() }
+                .sortedByDescending { it.position?.updatedAt ?: 0 }
+            write(file, json.encodeToString(next)); mutableLibrary.value = next
+            true
+        }
+    }
+
     private fun write(target: AtomicFile, value: String) {
         target.baseFile.parentFile?.mkdirs()
         val stream = target.startWrite()

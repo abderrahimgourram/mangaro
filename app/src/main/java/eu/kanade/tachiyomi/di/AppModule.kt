@@ -171,7 +171,7 @@ class AppModule(val app: Application) : InjektModule {
             val backend = auth as? eu.kanade.tachiyomi.data.account.SupabaseAccountAuth
             if (backend == null) mihon.domain.account.DisabledAccountCloudSync() else {
                 val store = eu.kanade.tachiyomi.data.account.sync.CloudSyncStore(app)
-                val local = eu.kanade.tachiyomi.data.account.sync.CloudLocalGateway(get(), get(), get(), get(), get(), store, get())
+                val local = eu.kanade.tachiyomi.data.account.sync.CloudLocalGateway(get(), get(), get(), get(), get(), store, get(), app)
                 eu.kanade.tachiyomi.data.account.sync.SupabaseCloudSync(app, backend.communityClient, auth, store, local)
             }
         }

@@ -25,6 +25,8 @@ internal fun JsonObject.text(key:String) = (get(key) as? JsonPrimitive)?.content
 internal fun JsonObject.number(key:String) = text(key)?.toLongOrNull() ?: 0L
 internal fun JsonObject.flag(key:String) = text(key)=="true"
 internal fun rowKey(table:String,row:JsonObject):String = when(table) {
+    "cloud_novel_state" -> row.text("edition_key")!!
+    "cloud_novel_progress" -> row.text("edition_key")+"/"+row.text("chapter_key")
     "cloud_library_collections" -> row.text("id")!!
     "cloud_library_entry_collections" -> row.text("manga_key")+"/"+row.text("collection_id")
     "cloud_chapter_progress" -> row.text("manga_key")+"/"+row.text("chapter_key")
@@ -37,7 +39,11 @@ internal fun clientRow(row:JsonObject) = JsonObject(row - setOf("user_id","revis
 /** Restoration uses only existing local repositories; no provider requests/chapter fabrication. */
 class CloudLocalGateway(private val mangas:MangaRepository, private val chapters:ChapterRepository,
     private val categories:CategoryRepository, private val history:HistoryRepository,
-    private val sources:SourceManager, private val store:CloudSyncStore, private val preferences:tachiyomi.core.common.preference.PreferenceStore) {
+    private val sources:SourceManager, private val store:CloudSyncStore, private val preferences:tachiyomi.core.common.preference.PreferenceStore, private val context:android.content.Context) {
+    private val novels by lazy { eu.kanade.tachiyomi.novels.NovelRepository.get(context) }
+    suspend fun bindNovels(user:String?, importGuest:Boolean=false) = novels.bindCloudAccount(user, importGuest)
+    suspend fun novelRows(user:String) = novels.cloudRows(user)
+    fun novelIncomplete(user:String) = novels.cloudIncompleteEditions(user)
     private fun mangaKey(m:Manga) = CommunityMangaKey.fromSource(m.source,m.url)
     private fun chapterKey(m:Manga,c:tachiyomi.domain.chapter.model.Chapter) = CommunityChapterKey.fromSource(mangaKey(m),c.url,ChapterIdentity.remoteIds(c,m.source).singleOrNull()).value
     private fun metadata(m:Manga) = buildJsonObject { put("manga_key",mangaKey(m).value);put("source_id",m.source);put("source_manga_url",m.url);put("title_snapshot",m.title.take(512));put("thumbnail_url_snapshot",m.thumbnailUrl?.take(4096)) }
@@ -53,6 +59,7 @@ class CloudLocalGateway(private val mangas:MangaRepository, private val chapters
         else -> change.kind.name
     }
     suspend fun capture(user:String,change:LocalCloudChanges.Change):Map<String,JsonObject> {
+        if(change.kind==LocalCloudChanges.Kind.NOVEL) return novelRows(user)
         if(change.kind==LocalCloudChanges.Kind.COLLECTIONS || change.kind==LocalCloudChanges.Kind.COLLECTION_DELETED) return collectionRows(user)
         if(change.kind==LocalCloudChanges.Kind.HISTORY_ALL) return historyRows(user)
         val m = when(change.kind) {
@@ -104,6 +111,7 @@ class CloudLocalGateway(private val mangas:MangaRepository, private val chapters
     private fun progressRow(key:String,ck:String,c:tachiyomi.domain.chapter.model.Chapter):JsonObject = buildJsonObject {put("manga_key",key);put("chapter_key",ck);put("source_chapter_url",c.url);put("chapter_name_snapshot",c.name.take(512));put("chapter_number_snapshot",c.chapterNumber.takeIf { it.isFinite() });put("last_page_index",c.lastPageRead.coerceAtLeast(0));put("total_pages",c.totalPages.takeIf {it>0});put("is_read",c.read);put("completed_at",if(c.read) stamp(c.lastModifiedAt.coerceAtLeast(1)) else null);put("state_changed_at",stamp(c.lastModifiedAt.coerceAtLeast(1)));put("deleted_at",JsonNull)}
     suspend fun baseline(user:String,table:String,row:JsonObject):JsonObject? {
         val key="$table/${rowKey(table,row)}"
+        if(table in eu.kanade.tachiyomi.novels.NovelCloudState.tables) return novelRows(user)[key] ?: clientRow(row)
         if(table=="cloud_library_collections") return collectionRows(user)[key] ?: clientRow(row)
         val metadata=if(table in listOf("cloud_library_entries","cloud_manga_history"))row else
             store.get(user,"remote/cloud_library_entries/${row.text("manga_key")}")?.let {Json.parseToJsonElement(it).jsonObject}
@@ -118,7 +126,19 @@ class CloudLocalGateway(private val mangas:MangaRepository, private val chapters
         }
         return mangaRows(user,m)[key] ?: clientRow(row)
     }
-    suspend fun apply(user:String,table:String,row:JsonObject,initial:Boolean):Boolean = LocalCloudChanges.applyRemote {
+    suspend fun apply(user:String,table:String,row:JsonObject,initial:Boolean,expectedNovel:JsonObject?=null,forceNovel:Boolean=false):Boolean = LocalCloudChanges.applyRemote {
+        if(table in eu.kanade.tachiyomi.novels.NovelCloudState.tables) {
+            val key="$table/${rowKey(table,row)}"
+            var expected=expectedNovel ?: store.get(user,"local/$key")?.let {Json.parseToJsonElement(it).jsonObject}
+            if(expected==null && table==eu.kanade.tachiyomi.novels.NovelCloudState.PROGRESS) {
+                // A restored parent already exposes its last position before the historical child row arrives.
+                store.get(user,"applied/cloud_novel_state/${row.text("edition_key")}")?.let {
+                    val parent=eu.kanade.tachiyomi.novels.NovelCloudState.decode("cloud_novel_state",Json.parseToJsonElement(it).jsonObject)
+                    expected=eu.kanade.tachiyomi.novels.NovelCloudState.rows(eu.kanade.tachiyomi.novels.NovelLibraryItem(parent.novel,position=parent.position),emptyList())[key]
+                }
+            }
+            return@applyRemote novels.applyCloudRow(user,table,row,expected,forceNovel) {store.count(user,"dirty/")==0}
+        }
         val deleted=row.text("deleted_at")!=null
         if(table=="cloud_library_collections") {
             val uuid=row.text("id")!!; var id=store.get(user,"mapping/$uuid")?.toLongOrNull()

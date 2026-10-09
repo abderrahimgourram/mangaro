@@ -242,6 +242,7 @@ interface AccountCloudSync {
     fun observe(userId: String): StateFlow<CloudSyncStatus>
     suspend fun configure(userId: String, enabled: Boolean): AccountOperation
     suspend fun syncNow(userId: String): AccountOperation
+    suspend fun resolveNovelConflicts(userId: String, keepLocal: Boolean): AccountOperation = AccountOperation.NotConfigured
     fun restoredCompletion(userId: String, chapterKey: String): Boolean = false
 
     suspend fun prepareFirstLogin(userId: String, snapshot: GuestLibrarySnapshot): MigrationPreparation
