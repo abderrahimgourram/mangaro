@@ -88,7 +88,7 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
         var settingsOpen by rememberSaveable {mutableStateOf(false)}
         var commentsOpen by rememberSaveable { mutableStateOf(false) }
         var controlsVisible by rememberSaveable { mutableStateOf(true) }
-        var inlineAdHeight by remember { mutableIntStateOf(0) }
+        var inlineAdHeight by remember(chapter.id) { mutableIntStateOf(0) }
         val activity = remember(context) { generateSequence(context) { (it as? android.content.ContextWrapper)?.baseContext }
             .filterIsInstance<android.app.Activity>().firstOrNull() }
         val readerPreferences = remember { Injekt.get<ReaderPreferences>() }
@@ -295,8 +295,13 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                             item(key="chapter-heading") {
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Box(Modifier.fillMaxWidth().onSizeChanged { inlineAdHeight = it.height }) {
-                                        if (!loading && loadedChapter?.id == chapter.id && error == null)
-                                            NovelAdPlacement(chapterAd, visible = adVisible, allowStart = !scroll.isScrollInProgress)
+                                        if (!loading && loadedChapter?.id == chapter.id && error == null) {
+                                            // The URL is shared across chapters; the WebView and callbacks are not.
+                                            // Cached transitions may coalesce loading frames, so isolate ownership explicitly.
+                                            key(chapterAd.key, chapterAd.owner) {
+                                                NovelAdPlacement(chapterAd, visible = adVisible, allowStart = !scroll.isScrollInProgress)
+                                            }
+                                        }
                                     }
                                     Text(chapter.title,color=gold,fontWeight=FontWeight.Bold,
                                         style=MaterialTheme.typography.titleLarge.copy(textDirection=TextDirection.ContentOrRtl),
