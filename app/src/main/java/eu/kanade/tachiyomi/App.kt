@@ -84,6 +84,7 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
 
     private val disableIncognitoReceiver = DisableIncognitoReceiver()
     private val usableFrame = FirstUsableFrameGate()
+    internal val startupIntro = eu.kanade.tachiyomi.data.cache.StartupIntroSession()
     internal val updateHighlights by lazy {
         eu.kanade.tachiyomi.data.updater.UpdateHighlightsState(Injekt.get<PreferenceStore>())
     }
@@ -125,6 +126,7 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
 
         val scope = ProcessLifecycleOwner.get().lifecycleScope
         scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            awaitFirstUsableFrame()
             Injekt.get<mihon.domain.account.AccountCloudSync>().start()
             Injekt.get<eu.kanade.tachiyomi.data.sigils.SigilRepository>().start()
             // Also required by headless library workers; keep observation, but construct it on IO.
@@ -203,20 +205,27 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
     }
 
     /** Necessary local services are constructed on IO, never by a posted main-thread warmup. */
-    private val localServices by lazy {
-        ProcessLifecycleOwner.get().lifecycleScope.async(Dispatchers.IO) {
-            android.os.Trace.beginSection("Mangaro.localServices")
-            try {
-                Injekt.get<tachiyomi.data.Database>()
-                Injekt.get<tachiyomi.domain.source.service.SourceManager>()
-                Injekt.get<eu.kanade.tachiyomi.data.download.DownloadManager>()
-            } finally { android.os.Trace.endSection() }
+    private var localServices: kotlinx.coroutines.Deferred<Unit>? = null
+    private val localServicesLock = Any()
+    internal suspend fun initializeLocalServices() {
+        val services = synchronized(localServicesLock) {
+            localServices?.takeUnless { it.isCancelled } ?: ProcessLifecycleOwner.get().lifecycleScope.async(Dispatchers.IO) {
+                android.os.Trace.beginSection("Mangaro.localServices")
+                try {
+                    Injekt.get<tachiyomi.data.Database>()
+                    Injekt.get<tachiyomi.domain.source.service.SourceManager>()
+                    Injekt.get<eu.kanade.tachiyomi.data.download.DownloadManager>()
+                    // Construct the SDK and restore local auth on IO; never await remote auth here.
+                    Injekt.get<mihon.domain.account.AccountFoundation>()
+                    Unit
+                } finally { android.os.Trace.endSection() }
+            }.also { localServices = it }
         }
+        services.await()
     }
-    internal suspend fun initializeLocalServices() { localServices.await() }
     internal suspend fun awaitFirstUsableFrame() = usableFrame.await()
 
-    internal fun claimStartupIntro(): Boolean = usableFrame.claimIntro()
+    internal fun claimStartupIntro(): Boolean = startupIntro.claim()
 
     internal fun onFirstUsableFrame() = usableFrame.open {
         val scope = ProcessLifecycleOwner.get().lifecycleScope

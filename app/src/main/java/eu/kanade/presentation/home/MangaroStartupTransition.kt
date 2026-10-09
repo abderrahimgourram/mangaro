@@ -27,6 +27,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -41,6 +42,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import eu.kanade.tachiyomi.R
@@ -55,7 +57,10 @@ val LocalHomeStartupObserver = androidx.compose.runtime.staticCompositionLocalOf
 
 /** Local muted intro covering initial Home loading, with readiness owned by the root. */
 @Composable
-fun MangaroStartupTransition(ready: Boolean, onDismissed: () -> Unit, modifier: Modifier = Modifier) {
+fun MangaroStartupTransition(
+    ready: Boolean, canSkip: Boolean, onFirstFrame: () -> Unit, onFailure: () -> Unit,
+    onSkip: () -> Unit, onDismissed: () -> Unit, modifier: Modifier = Modifier,
+) {
     val visibility = remember { MutableTransitionState(true) }
     visibility.targetState = !ready
     AnimatedVisibility(
@@ -64,8 +69,8 @@ fun MangaroStartupTransition(ready: Boolean, onDismissed: () -> Unit, modifier: 
         modifier = modifier.fillMaxSize(),
     ) {
         Box(Modifier.fillMaxSize().background(Color(0xFF0F0B13)), contentAlignment = Alignment.Center) {
-            LocalIntroVideo(playing = !ready)
-            TextButton(onClick = onDismissed, modifier = Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(16.dp)) {
+            LocalIntroVideo(playing = !ready, onFirstFrame = onFirstFrame, onFailure = onFailure)
+            TextButton(onClick = onSkip, enabled = canSkip, modifier = Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(16.dp)) {
                 Text("تخطي", color = Color(0xFFD4AF37))
             }
         }
@@ -76,10 +81,30 @@ fun MangaroStartupTransition(ready: Boolean, onDismissed: () -> Unit, modifier: 
 }
 
 @Composable
-private fun LocalIntroVideo(playing: Boolean) {
+private fun LocalIntroVideo(playing: Boolean, onFirstFrame: () -> Unit, onFailure: () -> Unit) {
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
     val playback = remember(context) { IntroPlayback(context) }
+    val frameCallback by androidx.compose.runtime.rememberUpdatedState(onFirstFrame)
+    val failureCallback by androidx.compose.runtime.rememberUpdatedState(onFailure)
+    LaunchedEffect(playback, playback.showFallback, playback.failed) {
+        if (playback.failed) failureCallback()
+        else if (!playback.showFallback) owner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            // The poster has left composition and the TextureView has delivered a real frame.
+            withFrameNanos { }
+            playback.view.post {
+                if (owner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) && playback.view.isShown)
+                    frameCallback()
+            }
+        }
+    }
+    LaunchedEffect(playback, playing, owner) {
+        if (playing) owner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            kotlinx.coroutines.delay(5000L)
+            if (playback.showFallback && !playback.failed) playback.fail()
+        }
+    }
+
     DisposableEffect(playback, owner) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
@@ -115,7 +140,6 @@ private fun LocalIntroVideo(playing: Boolean) {
                 modifier = Modifier.fillMaxSize(),
             )
         }
-        if (playback.ended && !playback.showFallback) StartupFallback(showLogo = false)
     }
 }
 
@@ -163,8 +187,6 @@ private class IntroPlayback(private val context: Context) : TextureView.SurfaceT
         private set
     var showFallback by mutableStateOf(true)
         private set
-    var ended by mutableStateOf(false)
-        private set
     private var prepared = false
     private var frameLogged = false
     private var videoWidth = 0
@@ -188,14 +210,14 @@ private class IntroPlayback(private val context: Context) : TextureView.SurfaceT
 
     private fun prepareIfNeeded() {
         // Prepare the local decoder as soon as the surface exists, alongside local startup.
-        // Playback still requires a foreground Activity; there is no network or minimum duration.
-        if (!enabled || failed || ended || player != null || !view.isAvailable) return
+        // Playback still requires a foreground Activity; the root owns the visible duration.
+        if (!enabled || failed || player != null || !view.isAvailable) return
         try {
             val media = MediaPlayer()
             player = media
             // Mute before preparation and playback as well; the packaged MP4 also has no audio stream.
             media.setVolume(0f, 0f)
-            media.isLooping = false
+            media.isLooping = true
             surface = Surface(view.surfaceTexture)
             media.setSurface(surface)
             context.resources.openRawResourceFd(R.raw.mangaro_intro).use { descriptor ->
@@ -217,10 +239,6 @@ private class IntroPlayback(private val context: Context) : TextureView.SurfaceT
                     prepared = true
                     startIfReady()
                 } catch (_: Exception) { fail() }
-            }
-            media.setOnCompletionListener {
-                // TextureView retains the clean final frame; completion never navigates.
-                ended = true
             }
             media.setOnErrorListener { _, what, extra ->
                 Log.w("MangaroStartup", "Intro decode failure: $what/$extra")
@@ -257,7 +275,7 @@ private class IntroPlayback(private val context: Context) : TextureView.SurfaceT
         })
     }
 
-    private fun fail() {
+    fun fail() {
         failed = true
         showFallback = true
         view.alpha = 0f

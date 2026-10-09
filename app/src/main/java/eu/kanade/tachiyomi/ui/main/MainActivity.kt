@@ -65,7 +65,6 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import androidx.core.splashscreen.SplashScreen
-import androidx.lifecycle.repeatOnLifecycle
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.util.Consumer
 import androidx.lifecycle.lifecycleScope
@@ -80,7 +79,6 @@ import eu.kanade.presentation.components.AppStateBanners
 import eu.kanade.presentation.components.DownloadedOnlyBannerBackgroundColor
 import eu.kanade.presentation.components.IncognitoModeBannerBackgroundColor
 import eu.kanade.presentation.components.IndexingBannerBackgroundColor
-import eu.kanade.presentation.sigils.rememberSigilMotionAllowed
 import eu.kanade.presentation.home.MangaroStartupTransition
 import eu.kanade.presentation.more.settings.screen.data.RestoreBackupScreen
 import eu.kanade.presentation.util.AssistContentScreen
@@ -154,15 +152,12 @@ class MainActivity : BaseActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        val startupStartedAt = android.os.SystemClock.uptimeMillis()
         val isLaunch = savedInstanceState == null
 
         // Prevent splash screen showing up on configuration changes
         val splashScreen = if (isLaunch) installSplashScreen() else null
 
         super.onCreate(savedInstanceState)
-        // Session restoration is independent of Home readiness and never gates local reading.
-        Injekt.get<mihon.domain.account.AccountFoundation>()
         // Consume auth before the duplicate-activity guard. A callback arriving over Reader
         // completes the shared session, then this transient activity finishes without touching Reader.
         val accountCallback = handleAccountCallback(intent)
@@ -178,35 +173,26 @@ class MainActivity : BaseActivity() {
             var localInitialized by remember { mutableStateOf(false) }
             var navigationInitialized by remember { mutableStateOf(false) }
             var startupReady by remember { mutableStateOf(false) }
-            var showStartupOverlay by remember { mutableStateOf(false) }
-            var introSkipped by remember { mutableStateOf(false) }
-            val introMotionAllowed = rememberSigilMotionAllowed()
+            val app = application as eu.kanade.tachiyomi.App
+            val introSession = app.startupIntro
+            val introState by introSession.state.collectAsState()
+            val showStartupOverlay = playStartupIntro && !introState.dismissed
+            var minimumCompleted by remember { mutableStateOf(false) }
+            var initializationError by remember { mutableStateOf(false) }
+            var startupAttempt by remember { mutableStateOf(0) }
             val introOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
             DisposableEffect(introOwner) {
                 val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-                    if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) {
-                        introSkipped = true
-                        showStartupOverlay = false
-                    }
+                    if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP && !isChangingConfigurations)
+                        introSession.dismiss()
                 }
                 introOwner.lifecycle.addObserver(observer)
                 onDispose { introOwner.lifecycle.removeObserver(observer) }
             }
-            LaunchedEffect(playStartupIntro, introMotionAllowed) {
-                if (playStartupIntro && introMotionAllowed && !introSkipped) {
-                    // Observe elapsed startup time; this timer never holds a ready destination.
-                    kotlinx.coroutines.delay((300L - (android.os.SystemClock.uptimeMillis() - startupStartedAt)).coerceAtLeast(0L))
-                    introOwner.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
-                        if (!(localInitialized && startupReady) && !introSkipped) showStartupOverlay = true
-                    }
-                }
-            }
-            LaunchedEffect(showStartupOverlay) {
-                if (showStartupOverlay) {
-                    kotlinx.coroutines.delay(4000)
-                    introSkipped = true
-                    showStartupOverlay = false
-                }
+            LaunchedEffect(introState.firstFrameAt) {
+                val firstFrame = introState.firstFrameAt ?: return@LaunchedEffect
+                kotlinx.coroutines.delay((3000L - (android.os.SystemClock.elapsedRealtime() - firstFrame)).coerceAtLeast(0L))
+                minimumCompleted = true
             }
             val highlights = remember { (application as eu.kanade.tachiyomi.App).updateHighlights }
             val highlightsVersion by highlights.pendingVersion.changes().collectAsState(initial = highlights.pendingVersion.get())
@@ -221,24 +207,39 @@ class MainActivity : BaseActivity() {
             DisposableEffect(view) {
                 onDispose { view.removeCallbacks(markStartupReady) }
             }
-            LaunchedEffect(localInitialized, startupReady, showStartupOverlay) {
-                if (localInitialized && startupReady && !showStartupOverlay) {
-                    withFrameNanos { }
-                    (application as eu.kanade.tachiyomi.App).onFirstUsableFrame()
-                    if (!fullyDrawnReported) {
-                        fullyDrawnReported = true
-                        reportFullyDrawn()
-                    }
+            LaunchedEffect(localInitialized, startupReady) {
+                if (localInitialized && startupReady) {
+                    // Optional work may prepare behind the video; no network result gates it.
+                    app.onFirstUsableFrame()
                 }
             }
-            LaunchedEffect(Unit) {
-                // Suspend instead of blocking the UI while existing local migrations finish.
-                Migrator.await()
-                Migrator.release()
-                (application as eu.kanade.tachiyomi.App).initializeLocalServices()
-                localInitialized = true
-                if (isLaunch && libraryPreferences.autoClearChapterCache.get()) {
-                    lifecycleScope.launchIO { chapterCache.clear() }
+            LaunchedEffect(localInitialized, startupReady, showStartupOverlay) {
+                if (localInitialized && startupReady && !showStartupOverlay && !fullyDrawnReported) {
+                    withFrameNanos { }
+                    fullyDrawnReported = true
+                    reportFullyDrawn()
+                }
+            }
+            LaunchedEffect(startupAttempt) {
+                initializationError = false
+                try {
+                    // A stuck local service produces recovery UI, never an endless intro.
+                    kotlinx.coroutines.withTimeout(20_000L) {
+                        Migrator.await()
+                        Migrator.release()
+                        app.initializeLocalServices()
+                    }
+                    localInitialized = true
+                    if (isLaunch && libraryPreferences.autoClearChapterCache.get()) lifecycleScope.launchIO { chapterCache.clear() }
+                } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+                    android.util.Log.w("MangaroStartup", "Local initialization timed out", e)
+                    initializationError = true
+                    introSession.dismiss()
+                } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                catch (e: Exception) {
+                    android.util.Log.e("MangaroStartup", "Local initialization failed", e)
+                    initializationError = true
+                    introSession.dismiss()
                 }
             }
             Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
@@ -366,7 +367,14 @@ class MainActivity : BaseActivity() {
                         }
                     }
                 }
-                if (!localInitialized && !showStartupOverlay) {
+                if (initializationError) {
+                    Column(Modifier.align(androidx.compose.ui.Alignment.Center).padding(24.dp),
+                        horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
+                        Text("تعذّر فتح مانجارو. حاول مجددًا.")
+                        Button(onClick = { startupAttempt++ }) { Text("حاول مجددًا") }
+                    }
+                }
+                if (!localInitialized && !showStartupOverlay && !initializationError) {
                     androidx.compose.foundation.Image(
                         painter = androidx.compose.ui.res.painterResource(eu.kanade.tachiyomi.R.drawable.ic_splash_logo),
                         contentDescription = null,
@@ -375,11 +383,13 @@ class MainActivity : BaseActivity() {
                 }
                 if (showStartupOverlay) {
                     MangaroStartupTransition(
-                        ready = localInitialized && startupReady,
-                        onDismissed = {
-                            introSkipped = true
-                            showStartupOverlay = false
-                        },
+                        ready = localInitialized && startupReady &&
+                            (minimumCompleted || introState.skipRequested || introState.failed),
+                        canSkip = localInitialized && startupReady,
+                        onFirstFrame = introSession::firstFrame,
+                        onFailure = introSession::fail,
+                        onSkip = introSession::skip,
+                        onDismissed = introSession::dismiss,
                     )
                 }
                 if (localInitialized && startupReady && !showStartupOverlay &&
@@ -577,8 +587,11 @@ class MainActivity : BaseActivity() {
     }
 
     private fun handleAccountCallback(intent: Intent): Boolean {
+        // Ordinary launches must not construct the network/auth SDK on the main thread.
+        val data = intent.data
+        if (intent.action != Intent.ACTION_VIEW || data?.scheme != "mangaro" || data.host != "auth") return false
         val accountAuth = Injekt.get<mihon.domain.account.AccountAuth>()
-        if (intent.action == Intent.ACTION_VIEW && intent.data?.let {
+        if (data.let {
             (accountAuth as? eu.kanade.tachiyomi.data.account.SupabaseAccountAuth)?.handleCallback(it)
         } == true) {
             // Consume codes without logging or retaining them in the activity's launch intent.
