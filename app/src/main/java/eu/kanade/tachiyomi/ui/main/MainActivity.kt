@@ -65,6 +65,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import androidx.core.splashscreen.SplashScreen
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.util.Consumer
 import androidx.lifecycle.lifecycleScope
@@ -153,6 +154,7 @@ class MainActivity : BaseActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        val startupStartedAt = android.os.SystemClock.uptimeMillis()
         val isLaunch = savedInstanceState == null
 
         // Prevent splash screen showing up on configuration changes
@@ -192,10 +194,10 @@ class MainActivity : BaseActivity() {
             }
             LaunchedEffect(playStartupIntro, introMotionAllowed) {
                 if (playStartupIntro && introMotionAllowed && !introSkipped) {
-                    kotlinx.coroutines.delay(1500)
-                    if (!(localInitialized && startupReady) && !introSkipped &&
-                        introOwner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
-                        showStartupOverlay = true
+                    // Observe elapsed startup time; this timer never holds a ready destination.
+                    kotlinx.coroutines.delay((300L - (android.os.SystemClock.uptimeMillis() - startupStartedAt)).coerceAtLeast(0L))
+                    introOwner.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+                        if (!(localInitialized && startupReady) && !introSkipped) showStartupOverlay = true
                     }
                 }
             }

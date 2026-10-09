@@ -113,7 +113,11 @@ class Downloader(
 
     init {
         launchNow {
-            val chapters = async { store.restore() }
+            val chapters = async(Dispatchers.IO) {
+                // restore() performs blocking local DB lookups; never inherit Main here.
+                sourceManager.isInitialized.first { it }
+                store.restore()
+            }
             addAllToQueue(chapters.await())
         }
     }

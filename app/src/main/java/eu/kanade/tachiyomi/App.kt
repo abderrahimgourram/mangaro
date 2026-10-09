@@ -52,10 +52,10 @@ import eu.kanade.tachiyomi.util.system.animatorDurationScale
 import eu.kanade.tachiyomi.util.system.cancelNotification
 import eu.kanade.tachiyomi.util.system.notify
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import logcat.AndroidLogcatLogger
 import logcat.LogPriority
 import logcat.LogcatLogger
@@ -130,10 +130,8 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
             // Also required by headless library workers; keep observation, but construct it on IO.
             WidgetManager(Injekt.get(), Injekt.get()).apply { init(scope) }
         }
-        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            val engine = Injekt.get<eu.kanade.tachiyomi.source.repair.RuleRepairEngine>()
-            Injekt.get<mihon.domain.source.registry.InternalSourceRegistry>().getSources().forEach { engine.initialize(it.id) }
-        }
+        // Signed source rules initialize on each source's first execute/check operation.
+        // Do not warm every provider's rule files while the first Activity is starting.
         eu.kanade.tachiyomi.data.library.SourceHealthPersistence.initialize(this, scope)
 
         // Show notification to disable Incognito Mode when it's enabled
@@ -205,14 +203,18 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
     }
 
     /** Necessary local services are constructed on IO, never by a posted main-thread warmup. */
-    internal suspend fun initializeLocalServices() = withContext(Dispatchers.IO) {
-        android.os.Trace.beginSection("Mangaro.localServices")
-        try {
-            Injekt.get<tachiyomi.data.Database>()
-            Injekt.get<tachiyomi.domain.source.service.SourceManager>()
-            Injekt.get<eu.kanade.tachiyomi.data.download.DownloadManager>()
-        } finally { android.os.Trace.endSection() }
+    private val localServices by lazy {
+        ProcessLifecycleOwner.get().lifecycleScope.async(Dispatchers.IO) {
+            android.os.Trace.beginSection("Mangaro.localServices")
+            try {
+                Injekt.get<tachiyomi.data.Database>()
+                Injekt.get<tachiyomi.domain.source.service.SourceManager>()
+                Injekt.get<eu.kanade.tachiyomi.data.download.DownloadManager>()
+            } finally { android.os.Trace.endSection() }
+        }
     }
+    internal suspend fun initializeLocalServices() { localServices.await() }
+    internal suspend fun awaitFirstUsableFrame() = usableFrame.await()
 
     internal fun claimStartupIntro(): Boolean = usableFrame.claimIntro()
 

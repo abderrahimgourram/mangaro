@@ -79,6 +79,7 @@ fun HomeNovelShelf() {
         // Optional discovery starts after a rendered frame and stops when Home is no longer visible.
         withFrameNanos { }
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            (context.applicationContext as? eu.kanade.tachiyomi.App)?.awaitFirstUsableFrame()
             repository.awaitLocal()
             loading = true
             try {

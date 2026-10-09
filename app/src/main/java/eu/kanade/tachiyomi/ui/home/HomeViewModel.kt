@@ -193,6 +193,8 @@ class HomeViewModel(
 
     private suspend fun fetchSourceBatch(batchSources: List<CatalogueSource>): DiscoveryBatchResultPayload {
         return withContext(Dispatchers.IO) { kotlinx.coroutines.supervisorScope {
+            // Home's first drawable shell never waits for discovery or competes with it.
+            (Injekt.get<android.content.Context>().applicationContext as? eu.kanade.tachiyomi.App)?.awaitFirstUsableFrame()
             val semaphore = Semaphore(2)
             val capabilitiesBySource = batchSources.associate { it.id to getSourceCapabilities(it) }
             _state.update { it.copy(
