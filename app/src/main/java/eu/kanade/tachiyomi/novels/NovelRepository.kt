@@ -343,6 +343,9 @@ class NovelRepository private constructor(context: Context) {
     suspend fun bindCloudAccount(owner: String?, importGuest: Boolean = false) = withContext(Dispatchers.IO) {
         ready.await()
         lock.withLock {
+            // Already-bound account state is authoritative in memory. Do not reread every
+            // private library/history file on a foreground refresh or each sync worker.
+            if (cloudAccount == owner && libraryReadable && !importGuest) return@withLock
             if (cloudAccount != owner) {
                 // Hide the previous owner's view before any fallible read. Never erase its files.
                 cloudAccount = owner

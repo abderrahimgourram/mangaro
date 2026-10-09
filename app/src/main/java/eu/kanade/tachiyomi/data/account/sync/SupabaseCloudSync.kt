@@ -194,7 +194,9 @@ class SupabaseCloudSync(private val context:Context,private val client:SupabaseC
             withTimeout(90_000) {
                 checkOwner(userId);publish(userId,true)
                 val initial=store.get(userId,"baseline")!="true"
-                val novelReady=bindNovels(userId, importGuest=true)
+                // configure/login imports guest changes once; an ordinary sync must not
+                // rescan that archive or reset an already-observed account library.
+                val novelReady=bindNovels(userId)
                 checkOwner(userId)
                 store.rows(userId,"retry/").keys.forEach {store.remove(userId,it)}
                 if(novelReady) {probeNovels(userId);captureNovels(userId)}

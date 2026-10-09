@@ -197,7 +197,8 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                     val current = index.chapters.indexOfFirst { it.id == shown.id }
                     if (current < 0) return@repeatOnLifecycle
                     val next = index.chapters.getOrNull(current + 1)?.takeIf { it.available } ?: return@repeatOnLifecycle
-                    repository.chapterText(novel, next)
+                    val nextText = repository.chapterText(novel, next)
+                    preparedDocument(novel.id + "|" + next.id, nextText)
                     prefetched = true
                 } catch (c: CancellationException) { throw c }
                 catch (e: Exception) { android.util.Log.d("MangaroNovels", "Optional adjacent chapter unavailable", e) }
