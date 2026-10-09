@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -45,7 +46,8 @@ internal fun NovelAdPlacement(key: String, visible: Boolean = true, allowStart: 
             }
         }
         if (eligible && (allowStart || started) && reserved && !ended) {
-            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            // Keep the shared creative intact: constrain width, never crop its reported height.
+            Column(Modifier.widthIn(max = 320.dp).fillMaxWidth().align(Alignment.TopCenter), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("إعلان", color = MangaroDesignSystem.LavenderPrimary, style = MaterialTheme.typography.labelSmall)
                 AdDisplayWebView(settings.displayAdUrl,
                     onRequestStarted = {
