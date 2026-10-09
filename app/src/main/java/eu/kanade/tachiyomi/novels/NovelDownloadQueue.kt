@@ -154,6 +154,9 @@ class NovelDownloadQueue(private val app: Context, private val repository: Novel
         }
         db.execSQL("UPDATE tasks SET state='RUNNING' WHERE id=? AND state='PENDING'", arrayOf(next.key))
         activeSources.add(next.novel.sourceId); sourceLastServed[next.novel.sourceId] = now
+        // Preserve the 750 ms per-source start-rate limit without adding it AFTER every
+        // response, parsing and fsync. Still one active chapter per provider and two globally.
+        sourceNextAt[next.novel.sourceId] = now + 750
         changed(next.key, NovelDownloadState.RUNNING); next.copy(state = NovelDownloadState.RUNNING)
     }
     private suspend fun isCurrent(task: NovelDownloadTask): Boolean = mutex.withLock { stateOf(task.key) == (NovelDownloadState.RUNNING to task.generation) }
@@ -177,7 +180,6 @@ class NovelDownloadQueue(private val app: Context, private val repository: Novel
     }
     private suspend fun release(task: NovelDownloadTask) = mutex.withLock {
         active.remove(task.key); activeSources.remove(task.novel.sourceId)
-        sourceNextAt[task.novel.sourceId] = System.currentTimeMillis() + 750
         if (stateOf(task.key) == (NovelDownloadState.RUNNING to task.generation)) {
             db.execSQL("UPDATE tasks SET state='PENDING',generation=generation+1 WHERE id=?", arrayOf(task.key)); changed(task.key, NovelDownloadState.PENDING, increment = true)
         }

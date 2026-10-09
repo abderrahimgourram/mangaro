@@ -88,6 +88,8 @@ class NovelRepository private constructor(context: Context) {
     private val indexRevision = MutableStateFlow(0L)
     private val indexes = LinkedHashMap<String, NovelChapterIndex>()
     private val texts = object : LinkedHashMap<String, NovelText>(4, .75f, true) {}
+    private data class ChapterFlight(val result: Deferred<NovelText>, var readers: Int = 1)
+    private val chapterFlights = mutableMapOf<Pair<String, String>, ChapterFlight>()
     private data class DiscoveryCache(val result: NovelPage, val at: Long)
     private val discoveryCache = LinkedHashMap<String, DiscoveryCache>(16, .75f, true)
 
@@ -379,20 +381,37 @@ class NovelRepository private constructor(context: Context) {
         @Suppress("UNREACHABLE_CODE") null
     }
     suspend fun chapterText(novel: Novel, chapter: NovelChapter): NovelText = withContext(Dispatchers.IO) {
+        val identity = novel.id to chapter.id
         val key = novel.id + "|" + chapter.id
-        requestLock("text:" + key).withLock {
-            lock.withLock { texts[key] }?.let { return@withLock it }
-            val offline = disk.read(novel.id, chapter.id)
-            if (offline == null && downloadQueue.isInitialized() && downloads.tasks.value.any {
-                it.novel.id == novel.id && it.chapter.id == chapter.id && it.state == NovelDownloadState.DONE
-            }) downloads.invalidate(novel, chapter)
-            val result = offline ?: source(novel.sourceId).chapter(chapter)
-            check(result.paragraphs.size >= 3 && result.paragraphs.sumOf { it.length } >= 200) { "Incomplete novel chapter" }
-            lock.withLock {
-                texts[key] = result
-                while (texts.size > 2 || texts.values.sumOf { v -> v.paragraphs.sumOf { it.length } + v.markup.sumOf { it.length } } > 1_000_000) texts.remove(texts.keys.first())
+        lock.withLock { texts[key] }?.let { return@withContext it }
+        // A text request must not wait on an unrelated catalog/detail hash collision.
+        // Share the actual result with all callers, even if the small text LRU changes meanwhile.
+        val flight = synchronized(chapterFlights) {
+            chapterFlights[identity]?.also { it.readers++ } ?: ChapterFlight(io.async(start = CoroutineStart.LAZY) {
+                lock.withLock { texts[key] }?.let { return@async it }
+                val offline = disk.read(novel.id, chapter.id)
+                if (offline == null && downloadQueue.isInitialized() && downloads.tasks.value.any {
+                    it.novel.id == novel.id && it.chapter.id == chapter.id && it.state == NovelDownloadState.DONE
+                }) downloads.invalidate(novel, chapter)
+                val result = offline ?: source(novel.sourceId).chapter(chapter)
+                check(result.paragraphs.size >= 3 && result.paragraphs.sumOf { it.length } >= 200) { "Incomplete novel chapter" }
+                lock.withLock {
+                    texts[key] = result
+                    while (texts.size > 2 || texts.values.sumOf { v -> v.paragraphs.sumOf { it.length } + v.markup.sumOf { it.length } } > 1_000_000) texts.remove(texts.keys.first())
+                }
+                result
+            }).also { chapterFlights[identity] = it }
+        }
+        try { flight.result.start(); flight.result.await() }
+        finally {
+            synchronized(chapterFlights) {
+                flight.readers--
+                if (flight.readers == 0) {
+                    chapterFlights.remove(identity)
+                    // Last caller gone: cancel the real HTTP call through the existing transport.
+                    if (!flight.result.isCompleted) flight.result.cancel()
+                }
             }
-            result
         }
     }
     internal fun activeDownloads(): NovelDownloadQueue? = if (downloadQueue.isInitialized()) downloads else null
