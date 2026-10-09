@@ -2,6 +2,8 @@ package eu.kanade.tachiyomi.ui.download
 
 import android.view.LayoutInflater
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -21,9 +23,12 @@ import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.DisposableEffect
+import kotlinx.coroutines.Job
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -49,6 +54,8 @@ import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.AppBarActions
 import eu.kanade.presentation.components.DropdownMenu
 import eu.kanade.presentation.components.NestedMenuItem
+import eu.kanade.presentation.novels.MangaroContentTabs
+import eu.kanade.presentation.novels.NovelDownloadsContent
 import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.databinding.DownloadListBinding
 import tachiyomi.core.common.util.lang.launchUI
@@ -64,6 +71,7 @@ object DownloadQueueScreen : Screen() {
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
+        var novels by rememberSaveable { mutableStateOf(false) }
         val scope = rememberCoroutineScope()
         val viewModel = viewModel<DownloadQueueViewModel>()
         val downloadList by viewModel.state.collectAsState()
@@ -97,6 +105,7 @@ object DownloadQueueScreen : Screen() {
 
         Scaffold(
             topBar = {
+                Column {
                 AppBar(
                     titleContent = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -106,7 +115,7 @@ object DownloadQueueScreen : Screen() {
                                 modifier = Modifier.weight(1f, false),
                                 overflow = TextOverflow.Ellipsis,
                             )
-                            if (downloadCount > 0) {
+                            if (!novels && downloadCount > 0) {
                                 val pillAlpha = if (isSystemInDarkTheme()) 0.12f else 0.08f
                                 Pill(
                                     text = "$downloadCount",
@@ -120,7 +129,7 @@ object DownloadQueueScreen : Screen() {
                     },
                     navigateUp = navigator::pop,
                     actions = {
-                        if (downloadList.isNotEmpty()) {
+                        if (!novels && downloadList.isNotEmpty()) {
                             var sortExpanded by remember { mutableStateOf(false) }
                             val onDismissRequest = { sortExpanded = false }
                             DropdownMenu(
@@ -196,8 +205,11 @@ object DownloadQueueScreen : Screen() {
                     },
                     scrollBehavior = scrollBehavior,
                 )
+                MangaroContentTabs(novels, onSelect = { novels = it })
+                }
             },
             floatingActionButton = {
+                if (!novels) {
                 val isRunning by viewModel.isDownloaderRunning.collectAsState()
                 SmallExtendedFloatingActionButton(
                     text = {
@@ -229,8 +241,13 @@ object DownloadQueueScreen : Screen() {
                         alignment = Alignment.BottomEnd,
                     ),
                 )
+                }
             },
         ) { contentPadding ->
+            if (novels) {
+                Box(Modifier.fillMaxSize().padding(contentPadding)) { NovelDownloadsContent() }
+                return@Scaffold
+            }
             if (downloadList.isEmpty()) {
                 EmptyScreen(
                     stringRes = MR.strings.information_no_downloads,
@@ -239,6 +256,8 @@ object DownloadQueueScreen : Screen() {
                 return@Scaffold
             }
 
+            val observers = remember { mutableListOf<Job>() }
+            DisposableEffect(Unit) { onDispose { observers.forEach { it.cancel() }; observers.clear() } }
             val density = LocalDensity.current
             val layoutDirection = LocalLayoutDirection.current
             val left = with(density) { contentPadding.calculateLeftPadding(layoutDirection).toPx().roundToInt() }
@@ -258,11 +277,11 @@ object DownloadQueueScreen : Screen() {
 
                         ViewCompat.setNestedScrollingEnabled(viewModel.controllerBinding.root, true)
 
-                        scope.launchUI {
+                        observers += scope.launchUI {
                             viewModel.getDownloadStatusFlow()
                                 .collect(viewModel::onStatusChange)
                         }
-                        scope.launchUI {
+                        observers += scope.launchUI {
                             viewModel.getDownloadProgressFlow()
                                 .collect(viewModel::onUpdateDownloadedPages)
                         }

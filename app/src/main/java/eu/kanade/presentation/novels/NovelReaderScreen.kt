@@ -284,7 +284,10 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                                 IconButton(onClick={scope.launch {
                                     try {repository.updateLibrary(novel, bookmark=chapter.id)} catch(c: CancellationException) {throw c} catch(e: Exception) {error=novelError(e)}
                                 }}) {Icon(if(bookmarked) Icons.Outlined.Bookmark else Icons.Outlined.BookmarkBorder,"إشارة مرجعية",tint=gold)}
-                                IconButton(onClick={saveCurrent();navigator.push(CommunityCommentsScreen(novelCommunityContext(novel,chapter)))}) {Icon(Icons.Outlined.ChatBubbleOutline,"تعليقات الفصل",tint=gold)}
+                                TextButton(onClick={saveCurrent();navigator.push(CommunityCommentsScreen(novelCommunityContext(novel,chapter)))}, enabled=!loading && !navigating) {
+                                    Icon(Icons.Outlined.ChatBubbleOutline,null,Modifier.size(18.dp),tint=gold)
+                                    Spacer(Modifier.width(6.dp)); Text("تعليقات الفصل",color=gold)
+                                }
                                 if (offline) Text("دون إنترنت",color=gold,style=MaterialTheme.typography.labelSmall)
                             }
                         }
