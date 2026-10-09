@@ -48,7 +48,7 @@ internal fun downloadLabel(state: NovelDownloadState?) = when (state) {
 internal fun NovelChapterRow(chapter: NovelChapter, state: NovelDownloadState?, selecting: Boolean, selected: Boolean,
     onSelect: () -> Unit, onRead: () -> Unit, onDownload: () -> Unit) {
     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Design.SurfaceDark)
-        .clickable(onClick = if (selecting) onSelect else onRead).padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        .clickable(onClick = if (selecting) onSelect else onRead).padding(horizontal = 10.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         if (selecting) Checkbox(selected, onCheckedChange = { onSelect() }, enabled = chapter.available)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(chapter.title, color = Color(0xFFE5DAED), style = MaterialTheme.typography.bodyMedium.copy(textDirection = TextDirection.ContentOrRtl), maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -63,7 +63,12 @@ internal fun NovelChapterRow(chapter: NovelChapter, state: NovelDownloadState?, 
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun NovelDownloadSelectionSheet(index: NovelChapterIndex, onDismiss: () -> Unit, onDownload: (List<NovelChapter>) -> Unit) {
+internal fun NovelDownloadSelectionSheet(index: NovelChapterIndex, currentChapterId: String? = null, onDismiss: () -> Unit, onDownload: (List<NovelChapter>) -> Unit) {
+    val current = index.chapters.indexOfFirst { it.id == currentChapterId }.takeIf { it >= 0 }
+    val next = current?.plus(1) ?: 0
+    val remaining = index.chapters.size - next
+    var confirmAll by remember { mutableStateOf(false) }
+    val placement = remember { "download-selection:" + java.util.UUID.randomUUID().toString() }
     var from by rememberSaveable { mutableStateOf("1") }
     var to by rememberSaveable { mutableStateOf(index.chapters.size.toString()) }
     var volumes by rememberSaveable { mutableStateOf(arrayListOf<String>()) }
@@ -72,7 +77,19 @@ internal fun NovelDownloadSelectionSheet(index: NovelChapterIndex, onDismiss: ()
     val validRange = start != null && end != null && start >= 1 && end >= start && end <= index.chapters.size
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Design.SurfaceDark) {
         LazyColumn(Modifier.fillMaxWidth().heightIn(max = 540.dp), contentPadding = PaddingValues(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            item { NovelAdPlacement(placement) }
             item { Text("تحميل الفصول", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium) }
+            item {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    current?.let { at -> AssistChip(onClick = { onDownload(listOf(index.chapters[at])) }, label = { Text("تحميل الفصل") }) }
+                    listOf(10, 25, 50, 100).forEach { count ->
+                        AssistChip(onClick = { onDownload(index.chapters.subList(next, next + count)) }, enabled = remaining >= count,
+                            label = { Text("تحميل " + numeric(count) + " فصلًا") })
+                    }
+                    if (index.complete && remaining in 1..9) AssistChip(onClick = { onDownload(index.chapters.drop(next)) }, label = { Text("تحميل المتبقي") })
+                }
+            }
+            if (!index.complete) item { Text("جارٍ استكمال قائمة الفصول…", color = Design.LavenderPrimary, style = MaterialTheme.typography.labelSmall) }
             item { Text("اختر نطاقًا بحسب ترتيب الفصول في القائمة.", color = Color(0xFFBEABCC), style = MaterialTheme.typography.bodySmall) }
             item { Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(from, { from = it.filter(Char::isDigit) }, Modifier.weight(1f), label = { Text("من") }, singleLine = true,
@@ -82,16 +99,21 @@ internal fun NovelDownloadSelectionSheet(index: NovelChapterIndex, onDismiss: ()
             } }
             item { Button(onClick = { onDownload(index.chapters.subList(start!! - 1, end!!)) }, enabled = validRange, modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(containerColor = Design.GoldPrimary, contentColor = Design.BackgroundDark)) { Text("تحميل النطاق") } }
+            item { OutlinedButton(onClick = { confirmAll = true }, enabled = index.complete && index.chapters.isNotEmpty(), modifier = Modifier.fillMaxWidth()) { Text("تحميل الكل") } }
             if (groups.isNotEmpty()) {
                 item { Text("المجلدات", color = Color.White, fontWeight = FontWeight.SemiBold) }
                 items(groups, key = { it.id }) { group -> Row(Modifier.fillMaxWidth().clickable { volumes = if (group.id in volumes) ArrayList(volumes - group.id) else ArrayList(volumes + group.id) }, verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(group.id in volumes, onCheckedChange = { volumes = if (group.id in volumes) ArrayList(volumes - group.id) else ArrayList(volumes + group.id) })
                     Column { Text(group.title.orEmpty(), color = Color.White); Text(numeric(group.chapters.size) + " فصلًا", color = Design.LavenderPrimary, style = MaterialTheme.typography.labelSmall) }
                 } }
-                item { Button(onClick = { onDownload(groups.filter { it.id in volumes }.flatMap { it.chapters }) }, enabled = volumes.isNotEmpty(), modifier = Modifier.fillMaxWidth()) { Text("تحميل المجلدات المختارة") } }
+                item { Button(onClick = { onDownload(groups.filter { it.id in volumes }.flatMap { it.chapters }) }, enabled = volumes.isNotEmpty() && index.complete, modifier = Modifier.fillMaxWidth()) { Text("تحميل المجلدات المختارة") } }
             }
         }
     }
+    if (confirmAll) AlertDialog(onDismissRequest = { confirmAll = false }, title = { Text("تحميل جميع الفصول؟") },
+        text = { Text("سيُضاف " + numeric(index.chapters.count { it.available }) + " فصلًا إلى التنزيلات، مع الاحتفاظ بالفصول المحمّلة.") },
+        confirmButton = { TextButton(onClick = { confirmAll = false; onDownload(index.chapters.filter { it.available }) }) { Text("تحميل الكل") } },
+        dismissButton = { TextButton(onClick = { confirmAll = false }) { Text("رجوع") } })
 }
 
 class NovelDownloadsScreen : Screen() {
@@ -106,6 +128,7 @@ fun NovelDownloadsContent() {
         val queue = repository.downloads
         val tasks by queue.tasks.collectAsState()
         val queueError by queue.error.collectAsState()
+        val restored by queue.restored.collectAsState()
         val summaries by remember(queue) { queue.tasks.map { queue.summaries(it) }.flowOn(Dispatchers.Default) }.collectAsState(initial = emptyList())
         val navigator = LocalNavigator.currentOrThrow
         val scope = rememberCoroutineScope()
@@ -117,12 +140,11 @@ fun NovelDownloadsContent() {
         }
         Column(Modifier.fillMaxSize().background(Design.BackgroundDark)) {
             (error ?: queueError)?.let { Text(it, Modifier.padding(16.dp), color = Color(0xFFE5B5AB)) }
-            if (tasks.any { it.state in setOf(NovelDownloadState.PENDING, NovelDownloadState.RUNNING) }) {
-                val operation = remember { java.util.UUID.randomUUID().toString() }
-                NovelAdPlacement("downloads:" + operation)
-            }
-            if (summaries.isEmpty()) Text("فصولك المحمّلة ستظهر هنا.", Modifier.padding(24.dp), color = Color(0xFFBEABCC))
+            val operation = remember { "downloads:" + java.util.UUID.randomUUID().toString() }
+            if (!restored) CircularProgressIndicator(Modifier.padding(16.dp).size(24.dp), strokeWidth = 2.dp)
+            else if (tasks.isEmpty() && queueError == null) Text("لا توجد تنزيلات للروايات بعد.", Modifier.padding(24.dp), color = Design.LavenderPrimary)
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (tasks.any { it.state in setOf(NovelDownloadState.PENDING, NovelDownloadState.RUNNING) }) item(key = "advertisement") { NovelAdPlacement(operation) }
                 summaries.forEach { summary ->
                     item(key = summary.novel.id) {
                         Surface(color = Design.SurfaceDark, shape = RoundedCornerShape(18.dp)) {
@@ -131,7 +153,7 @@ fun NovelDownloadsContent() {
                                     NovelCover(summary.novel, Modifier.width(52.dp).height(74.dp))
                                     Column(Modifier.weight(1f).clickable { navigator.push(NovelDetailsScreen(summary.novel)) }, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                         Text(summary.novel.title, color = Color.White, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium.copy(textDirection = TextDirection.ContentOrRtl))
-                                        Text("تم التحميل " + numeric(summary.done) + " · متبقي " + numeric(summary.pending + summary.running + summary.paused + summary.failed), color = Design.GoldPrimary, style = MaterialTheme.typography.labelSmall)
+                                        Text(numeric(summary.done) + " / " + numeric(summary.total) + " فصلًا · متبقي " + numeric(summary.pending + summary.running + summary.paused + summary.failed), color = Design.GoldPrimary, style = MaterialTheme.typography.labelSmall)
                                         if (summary.running > 0) Text("جارٍ التحميل", color = Design.LavenderPrimary, style = MaterialTheme.typography.labelSmall)
                                         if (summary.cancelled > 0) Text("أُلغيت " + numeric(summary.cancelled) + " فصول", color = Design.LavenderPrimary, style = MaterialTheme.typography.labelSmall)
                                         if (summary.failed > 0) Text(numeric(summary.failed) + " فصول تحتاج إلى إعادة المحاولة", color = Color(0xFFE5B5AB), style = MaterialTheme.typography.labelSmall)

@@ -4,6 +4,22 @@ import android.text.Spanned
 import android.text.style.StyleSpan
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalViewConfiguration
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import eu.kanade.presentation.community.CommunityCommentsScreen
+import eu.kanade.tachiyomi.ui.reader.setting.ReaderPreferences
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.get
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -15,6 +31,7 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.FormatSize
 import androidx.compose.material.icons.outlined.List
 import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -63,6 +80,43 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
         LaunchedEffect(savedSettings) {appearance=savedSettings}
         var chapter by rememberSaveable {mutableStateOf(initialChapter)}
         var settingsOpen by rememberSaveable {mutableStateOf(false)}
+        var controlsVisible by rememberSaveable { mutableStateOf(true) }
+        val activity = remember(context) { generateSequence(context) { (it as? android.content.ContextWrapper)?.baseContext }
+            .filterIsInstance<android.app.Activity>().firstOrNull() }
+        val readerPreferences = remember { Injekt.get<ReaderPreferences>() }
+        val customBrightness by readerPreferences.customBrightness.changes().collectAsState(initial = readerPreferences.customBrightness.get())
+        val brightness by readerPreferences.customBrightnessValue.changes().collectAsState(initial = readerPreferences.customBrightnessValue.get())
+        val originalBrightness = remember(activity) { activity?.window?.attributes?.screenBrightness ?: -1f }
+        DisposableEffect(activity, customBrightness, brightness) {
+            activity?.window?.let { window -> window.attributes = window.attributes.apply {
+                screenBrightness = if (!customBrightness || brightness == 0) -1f else if (brightness < 0) .01f else brightness / 100f
+            } }
+            onDispose { activity?.window?.let { window -> window.attributes = window.attributes.apply { screenBrightness = originalBrightness } } }
+        }
+        val view = LocalView.current
+        val chromeOwner = LocalLifecycleOwner.current
+        DisposableEffect(activity, view, chromeOwner, controlsVisible) {
+            val controller = activity?.window?.let { WindowCompat.getInsetsController(it, view) }
+            val previousBehavior = controller?.systemBarsBehavior
+            fun updateChrome() {
+                controller?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                if (controlsVisible) controller?.show(WindowInsetsCompat.Type.systemBars()) else controller?.hide(WindowInsetsCompat.Type.systemBars())
+            }
+            val observer = LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_RESUME) updateChrome()
+                else if (event == Lifecycle.Event.ON_STOP) controller?.show(WindowInsetsCompat.Type.systemBars())
+            }
+            chromeOwner.lifecycle.addObserver(observer)
+            updateChrome()
+            onDispose { chromeOwner.lifecycle.removeObserver(observer); controller?.show(WindowInsetsCompat.Type.systemBars())
+                previousBehavior?.let { controller?.systemBarsBehavior = it } }
+        }
+        val insets = WindowInsets.systemBars.asPaddingValues()
+        // Keep the text viewport stable while system bars and toolbars toggle.
+        val stableTop = remember { insets.calculateTopPadding() }
+        val stableBottom = remember { insets.calculateBottomPadding() }
+        val tapLimit = LocalViewConfiguration.current.longPressTimeoutMillis
+        val tapSlop = LocalViewConfiguration.current.touchSlop
         var chaptersOpen by rememberSaveable {mutableStateOf(false)}
         var chapterChoices by remember {mutableStateOf(emptyList<NovelChapter>())}
         var chaptersComplete by remember {mutableStateOf(false)}
@@ -127,7 +181,7 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
             owner.lifecycle.addObserver(observer)
             onDispose {owner.lifecycle.removeObserver(observer);saveCurrent()}
         }
-        BackHandler {saveCurrent();navigator.pop()}
+        BackHandler { if (!controlsVisible) controlsVisible = true else { saveCurrent();navigator.pop() } }
         fun adjacent(forward: Boolean) {
             if(navigating || loading) return
             saveCurrent();navigating=true
@@ -156,48 +210,92 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
         val ink=if(appearance.theme=="dark") Color(0xFFE6DEED) else Color(0xFF2F2925)
         val gold=if(appearance.theme=="dark") Color(0xFFDCB965) else Color(0xFF795B28)
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-            Column(Modifier.fillMaxSize().background(background).safeDrawingPadding()) {
-                Row(Modifier.fillMaxWidth().heightIn(min=52.dp),verticalAlignment=Alignment.CenterVertically) {
-                    IconButton(onClick={saveCurrent();navigator.pop()}) {Icon(Icons.AutoMirrored.Outlined.ArrowBack,"رجوع",tint=ink)}
-                    Text(novel.title,Modifier.weight(1f),style=MaterialTheme.typography.labelLarge.copy(textDirection=TextDirection.ContentOrRtl),
-                        color=ink,maxLines=2)
-                    IconButton(onClick={scope.launch { try {repository.downloads.enqueue(novel,listOf(chapter))} catch(c: CancellationException) {throw c} catch(e: Exception) {error=novelError(e)} }},enabled=!offline) {Icon(Icons.Outlined.Download,"تحميل الفصل",tint=gold)}
-                    val entries by repository.library.collectAsState()
-                    val bookmarked = entries.firstOrNull { it.novel.id == novel.id }?.bookmarks?.contains(chapter.id) == true
-                    IconButton(onClick={scope.launch {
-                        try {repository.updateLibrary(novel, bookmark=chapter.id)} catch(c: CancellationException) {throw c} catch(e: Exception) {error=novelError(e)}
-                    }}) {Icon(if(bookmarked) Icons.Outlined.Bookmark else Icons.Outlined.BookmarkBorder,"إشارة مرجعية",tint=gold)}
-                    IconButton(onClick={settingsOpen=true}) {Icon(Icons.Outlined.FormatSize,"إعدادات القراءة",tint=gold)}
-                    IconButton(onClick={chaptersOpen=true;if(chapterChoices.isEmpty()) moreChapters()}) {Icon(Icons.Outlined.List,"قائمة الفصول",tint=gold)}
-                }
-                storageError?.let { Text(it,Modifier.padding(horizontal=20.dp),color=gold,style=MaterialTheme.typography.labelSmall) }
-                if(offline) Text("متاح دون إنترنت",Modifier.padding(horizontal=20.dp),color=gold,style=MaterialTheme.typography.labelSmall)
-                if(loading) LinearProgressIndicator(Modifier.fillMaxWidth(),color=gold)
-                if(error!=null) NovelFailure(error!!,chapter.url) {generation++}
-                val adVisible by remember { derivedStateOf { scroll.layoutInfo.visibleItemsInfo.any { it.key == "novel-ad" } } }
-                LazyColumn(state=scroll,modifier=Modifier.weight(1f),contentPadding=PaddingValues(horizontal=appearance.margin.dp,vertical=20.dp),
-                    verticalArrangement=Arrangement.spacedBy(appearance.paragraphSpacing.dp)) {
-                    item(key="chapter-heading") {Text(chapter.title,color=gold,fontWeight=FontWeight.Bold,
-                        style=MaterialTheme.typography.headlineSmall.copy(textDirection=TextDirection.ContentOrRtl),modifier=Modifier.padding(bottom=12.dp))}
-                    items(paragraphs.size,key={it}) {index ->
-                        Text(paragraphs[index],color=ink,style=MaterialTheme.typography.bodyLarge.copy(
-                            fontFamily=if(appearance.font=="system") FontFamily.Default else FontFamily(Font(R.font.novel_noto_naskh_arabic)),
-                            fontSize=appearance.fontSize.sp,lineHeight=(appearance.fontSize*appearance.lineSpacing).sp,
-                            textDirection=TextDirection.ContentOrRtl))
+            Box(Modifier.fillMaxSize().background(background).padding(top = stableTop, bottom = stableBottom)) {
+                Column(Modifier.fillMaxSize()) {
+                    storageError?.let { Text(it,Modifier.padding(horizontal=20.dp),color=gold,style=MaterialTheme.typography.labelSmall) }
+                    if(loading) LinearProgressIndicator(Modifier.fillMaxWidth(),color=gold)
+                    if(error!=null) NovelFailure(error!!,chapter.url) {generation++}
+                    val adVisible by remember { derivedStateOf { scroll.layoutInfo.visibleItemsInfo.any { it.key == "chapter-heading" } } }
+                    SelectionContainer {
+                        LazyColumn(state=scroll,modifier=Modifier.fillMaxSize().pointerInput(tapLimit) {
+                            awaitEachGesture {
+                                val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                                var moved = false
+                                while (true) {
+                                    val event = awaitPointerEvent(PointerEventPass.Final)
+                                    val pointer = event.changes.firstOrNull { it.id == down.id } ?: break
+                                    if ((pointer.position - down.position).getDistance() > tapSlop || event.changes.size > 1) moved = true
+                                    if (!pointer.pressed) {
+                                        val onHeaderOrAd = scroll.layoutInfo.visibleItemsInfo.any {
+                                            it.key in setOf("chapter-heading", "novel-ad") && down.position.y >= it.offset && down.position.y < it.offset + it.size
+                                        }
+                                        // Observe without consuming: long-press selection and scrolling keep their gestures.
+                                        if (!moved && !onHeaderOrAd && pointer.uptimeMillis - down.uptimeMillis < tapLimit && !scroll.isScrollInProgress) {
+                                            controlsVisible = !controlsVisible
+                                            if (!controlsVisible) { settingsOpen = false; chaptersOpen = false }
+                                        }
+                                        break
+                                    }
+                                }
+                            }
+                        },contentPadding=PaddingValues(start=appearance.margin.dp,end=appearance.margin.dp,top=64.dp,bottom=112.dp),
+                            verticalArrangement=Arrangement.spacedBy(appearance.paragraphSpacing.dp)) {
+                            item(key="chapter-heading") {
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    if (!loading && loadedChapter?.id == chapter.id && error == null)
+                                        NovelAdPlacement("reader:" + novelDigest(novel.id + "|" + chapter.id), visible = adVisible, allowStart = controlsVisible)
+                                    Text(chapter.title,color=gold,fontWeight=FontWeight.Bold,
+                                        style=MaterialTheme.typography.titleLarge.copy(textDirection=TextDirection.ContentOrRtl),
+                                        modifier=Modifier.alpha(if(controlsVisible) 1f else 0f).then(if(controlsVisible) Modifier else Modifier.clearAndSetSemantics { }))
+                                }
+                            }
+                            items(paragraphs.size,key={it}) {index ->
+                                Text(paragraphs[index],color=ink,style=MaterialTheme.typography.bodyLarge.copy(
+                                    fontFamily=if(appearance.font=="system") FontFamily.Default else FontFamily(Font(R.font.novel_noto_naskh_arabic)),
+                                    fontSize=appearance.fontSize.sp,lineHeight=(appearance.fontSize*appearance.lineSpacing).sp,
+                                    textDirection=TextDirection.ContentOrRtl))
+                            }
+                        }
                     }
-                    item(key="novel-ad") {
-                        if (!loading && loadedChapter?.id == chapter.id && error == null)
-                            NovelAdPlacement("reader:" + novelDigest(novel.id + "|" + chapter.id), visible = adVisible)
-                    }
                 }
-                Row(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=4.dp),horizontalArrangement=Arrangement.SpaceBetween) {
-                    TextButton(onClick={adjacent(false)},enabled=!loading && !navigating) {Text("الفصل السابق",color=gold)}
-                    TextButton(onClick={adjacent(true)},enabled=!loading && !navigating) {Text("الفصل التالي",color=gold)}
+                if (customBrightness && brightness < 0) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = (-brightness / 100f).coerceIn(0f, .75f))))
+                if (controlsVisible) {
+                    Surface(Modifier.align(Alignment.TopCenter).fillMaxWidth(), color = background.copy(alpha = .97f)) {
+                        Row(Modifier.heightIn(min=52.dp),verticalAlignment=Alignment.CenterVertically) {
+                            IconButton(onClick={saveCurrent();navigator.pop()}) {Icon(Icons.AutoMirrored.Outlined.ArrowBack,"رجوع",tint=ink)}
+                            Text(novel.title,Modifier.weight(1f),style=MaterialTheme.typography.labelLarge.copy(textDirection=TextDirection.ContentOrRtl),
+                                color=ink,maxLines=1,overflow=androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                            IconButton(onClick={settingsOpen=true}) {Icon(Icons.Outlined.FormatSize,"إعدادات القراءة",tint=gold)}
+                            IconButton(onClick={chaptersOpen=true;if(chapterChoices.isEmpty()) moreChapters()}) {Icon(Icons.Outlined.List,"قائمة الفصول",tint=gold)}
+                        }
+                    }
+                    Surface(Modifier.align(Alignment.BottomCenter).fillMaxWidth(), color = background.copy(alpha = .97f)) {
+                        Column(Modifier.padding(horizontal=12.dp,vertical=4.dp)) {
+                            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween, verticalAlignment=Alignment.CenterVertically) {
+                                TextButton(onClick={adjacent(false)},enabled=!loading && !navigating) {Text("السابق",color=gold)}
+                                val progress by remember { derivedStateOf { scroll.firstVisibleItemIndex.coerceAtMost(plain.size) } }
+                                Text(WesternDigits.isolate("$progress / ${plain.size}"),color=gold,style=MaterialTheme.typography.labelSmall)
+                                TextButton(onClick={adjacent(true)},enabled=!loading && !navigating) {Text("التالي",color=gold)}
+                            }
+                            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.Center,verticalAlignment=Alignment.CenterVertically) {
+                                IconButton(onClick={scope.launch { try {repository.downloads.enqueue(novel,listOf(chapter))} catch(c: CancellationException) {throw c} catch(e: Exception) {error=novelError(e)} }},enabled=!offline && !loading) {Icon(Icons.Outlined.Download,"تحميل الفصل",tint=gold)}
+                                val entries by repository.library.collectAsState()
+                                val bookmarked = entries.firstOrNull { it.novel.id == novel.id }?.bookmarks?.contains(chapter.id) == true
+                                IconButton(onClick={scope.launch {
+                                    try {repository.updateLibrary(novel, bookmark=chapter.id)} catch(c: CancellationException) {throw c} catch(e: Exception) {error=novelError(e)}
+                                }}) {Icon(if(bookmarked) Icons.Outlined.Bookmark else Icons.Outlined.BookmarkBorder,"إشارة مرجعية",tint=gold)}
+                                IconButton(onClick={saveCurrent();navigator.push(CommunityCommentsScreen(novelCommunityContext(novel,chapter)))}) {Icon(Icons.Outlined.ChatBubbleOutline,"تعليقات الفصل",tint=gold)}
+                                if (offline) Text("دون إنترنت",color=gold,style=MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
                 }
             }
             if(settingsOpen) ModalBottomSheet(onDismissRequest={settingsOpen=false},containerColor=Color(0xFF1B1423)) {
                 Column(Modifier.fillMaxWidth().padding(horizontal=24.dp,vertical=12.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
                     Text("إعدادات القراءة",color=Color.White,fontWeight=FontWeight.Bold,style=MaterialTheme.typography.titleMedium)
+                    ReaderSlider("السطوع", if(customBrightness) brightness.toFloat() else 0f, -75f..100f,
+                        onValue={ readerPreferences.customBrightness.set(it != 0f); readerPreferences.customBrightnessValue.set(it.toInt()) }, onSave={})
                     Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                         listOf("naskh" to "نسخ", "system" to "خط الجهاز").forEach { (font,label) ->
                             FilterChip(appearance.font==font,onClick={appearance=appearance.copy(font=font);repository.saveSettings(appearance)},label={Text(label)})

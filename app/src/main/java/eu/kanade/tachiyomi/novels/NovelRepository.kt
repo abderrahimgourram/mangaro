@@ -143,7 +143,7 @@ class NovelRepository private constructor(context: Context) {
                 }
         }
     }
-    suspend fun verifyCandidates(visible: Set<String>) {
+    suspend fun verifyCandidates(visible: Set<String>) = withContext(Dispatchers.Default) {
         val all = catalog.value.works.flatMap { it.editions }
         val groups = all.groupBy { NovelIdentity.titleKey(it.title) }.values.filter { group ->
             group.map { it.sourceId }.distinct().size > 1 && group.any { it.id in visible }
@@ -153,9 +153,9 @@ class NovelRepository private constructor(context: Context) {
             catch (e: Exception) { android.util.Log.w("MangaroNovels", "Edition corroboration unavailable", e) }
         }
     }
-    suspend fun discover(source: NovelSource, term: String, page: Int, genre: String?): NovelPage {
+    suspend fun discover(source: NovelSource, term: String, page: Int, genre: String?): NovelPage = withContext(Dispatchers.IO) {
         val key = listOf(source.id, term, page.toString(), genre.orEmpty()).joinToString("|")
-        return requestLock("discovery:" + key).withLock {
+        return@withContext requestLock("discovery:" + key).withLock {
         synchronized(discoveryCache) { discoveryCache[key]?.takeIf { System.currentTimeMillis() - it.at < 300_000 }?.let { return@withLock it.result } }
         val result = if (term.isNotBlank()) source.search(term, page) else source.catalog(page, latest = true, genre = genre)
         ingest(result.novels)
@@ -351,7 +351,7 @@ class NovelRepository private constructor(context: Context) {
             android.util.Log.w("MangaroNovels", "Edition sample unavailable", e)
         }
     }
-    suspend fun chapterPage(novel: Novel, page: Int): ChapterPage = source(novel.sourceId).chapters(novel, page)
+    suspend fun chapterPage(novel: Novel, page: Int): ChapterPage = withContext(Dispatchers.IO) { source(novel.sourceId).chapters(novel, page) }
     suspend fun adjacent(novel: Novel, chapter: NovelChapter, forward: Boolean): NovelChapter? = withContext(Dispatchers.IO) {
         fun neighbor(index: NovelChapterIndex?): NovelChapter? {
             val location = index?.chapters?.indexOfFirst { it.id == chapter.id } ?: -1

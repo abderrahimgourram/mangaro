@@ -148,7 +148,7 @@ object NovelGenres {
         "romance" to "رومانسي", "رومانسيه" to "رومانسي", "comedy" to "كوميدي", "كوميديا" to "كوميدي",
         "martial arts" to "فنون قتالية", "historical" to "تاريخي", "history" to "تاريخي", "تاريخ" to "تاريخي",
         "adventure" to "مغامرة", "مغامرات" to "مغامرة", "mystery" to "غموض", "science fiction" to "خيال علمي",
-        "drama" to "دراما", "horror" to "رعب", "supernatural" to "قوى خارقة", "reincarnation" to "تناسخ")
+        "drama" to "دراما", "horror" to "رعب", "supernatural" to "قوى خارقة", "reincarnation" to "تناسخ", "xianxia" to "خيال الخلود", "xuanhuan" to "فانتازيا شرقية")
     fun key(value: String): String {
         val normalized = NovelIdentity.normalize(value)
         return NovelIdentity.normalize(aliases[normalized] ?: value)

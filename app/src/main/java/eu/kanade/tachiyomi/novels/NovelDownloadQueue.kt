@@ -38,6 +38,8 @@ class NovelDownloadQueue(private val app: Context, private val repository: Novel
     private val mutableError = MutableStateFlow<String?>(null)
     val tasks = mutableTasks.asStateFlow()
     val error = mutableError.asStateFlow()
+    private val mutableRestored = MutableStateFlow(false)
+    val restored = mutableRestored.asStateFlow()
     private val helper by lazy { object : SQLiteOpenHelper(app, File(app.filesDir, "novels-local/downloads/queue.db").also { it.parentFile!!.mkdirs() }.absolutePath, null, 1) {
         override fun onCreate(db: SQLiteDatabase) {
             NovelQueueSql.schema.forEach { db.execSQL(it) }
@@ -57,7 +59,7 @@ class NovelDownloadQueue(private val app: Context, private val repository: Novel
                 mutableError.value = "تعذّر فتح قائمة التنزيلات. حاول مجددًا."
                 android.util.Log.e("MangaroNovels", "Novel queue restore failed", e)
                 ready.completeExceptionally(e)
-            }
+            } finally { mutableRestored.value = true }
         }
     }
     suspend fun awaitReady() = ready.await()

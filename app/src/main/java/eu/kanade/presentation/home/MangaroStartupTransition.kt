@@ -193,7 +193,7 @@ private class IntroPlayback(private val context: Context) : TextureView.SurfaceT
         try {
             val media = MediaPlayer()
             player = media
-            // Mute BEFORE preparation and again before playback. The supplied file has audio.
+            // Mute before preparation and playback as well; the packaged MP4 also has no audio stream.
             media.setVolume(0f, 0f)
             media.isLooping = false
             surface = Surface(view.surfaceTexture)

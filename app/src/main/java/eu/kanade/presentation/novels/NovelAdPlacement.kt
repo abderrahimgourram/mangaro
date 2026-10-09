@@ -19,7 +19,7 @@ import java.util.UUID
 
 /** Existing isolated display slot only, with separate explicit approval for novels. */
 @Composable
-internal fun NovelAdPlacement(key: String, visible: Boolean = true) {
+internal fun NovelAdPlacement(key: String, visible: Boolean = true, allowStart: Boolean = true) {
     val context = LocalContext.current
     val config = remember(context) { WebAdConfigRepository.get(context) }
     val policy = remember(context) { ReaderWebAdPolicy.get(context) }
@@ -37,14 +37,14 @@ internal fun NovelAdPlacement(key: String, visible: Boolean = true) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val eligible = visible && maxWidth >= 300.dp && lifecycle.isAtLeast(Lifecycle.State.RESUMED) &&
             settings.enabled && settings.novelPlacementsApproved && System.currentTimeMillis() >= adFreeUntil
-        LaunchedEffect(eligible, key) {
-            if (eligible && !started && !ended) reserved = policy.reserveContentPlacement(key, owner)
-            else if (!eligible && reserved && !started) {
+        LaunchedEffect(eligible, allowStart, key) {
+            if (eligible && allowStart && !started && !ended) reserved = policy.reserveContentPlacement(key, owner)
+            else if ((!eligible || !allowStart) && reserved && !started) {
                 policy.releaseContentPlacement(key, owner)
                 reserved = false
             }
         }
-        if (eligible && reserved && !ended) {
+        if (eligible && (allowStart || started) && reserved && !ended) {
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("إعلان", color = MangaroDesignSystem.LavenderPrimary, style = MaterialTheme.typography.labelSmall)
                 AdDisplayWebView(settings.displayAdUrl,

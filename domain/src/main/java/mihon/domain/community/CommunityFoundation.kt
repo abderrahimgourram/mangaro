@@ -20,6 +20,11 @@ data class CommunityMangaKey private constructor(val value: String) : Serializab
             require(value.matches(Regex("[0-9a-f]{64}")))
             return CommunityMangaKey(value)
         }
+        /** Reuse the opaque community target contract without pretending novels are manga sources. */
+        fun fromNovelEdition(sourceId: String, editionId: String): CommunityMangaKey {
+            require(sourceId.isNotBlank() && editionId.isNotBlank())
+            return CommunityMangaKey(communityHash("novel-edition-v1", sourceId, editionId))
+        }
         fun fromSource(sourceId: Long, mangaUrl: String, stableSourceId: String? = null): CommunityMangaKey {
             val identity = stableSourceId?.takeIf { it.isNotBlank() }
             return CommunityMangaKey(communityHash("manga-v1", sourceId.toString(),
