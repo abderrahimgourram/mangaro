@@ -49,7 +49,18 @@ class NovelDownloadDisk(private val root: File) {
         }.getOrNull()
     }
 
-    fun write(editionId: String, chapterId: String, text: NovelText, mayCommit: () -> Boolean = { true }) {
+    internal class PreparedChapter(private val part: File, private val destination: File) : java.io.Closeable {
+        fun commit(mayCommit: () -> Boolean) {
+            check(mayCommit()) { "Novel download cancelled before commit" }
+            try { Files.move(part.toPath(), destination.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING) }
+            catch (_: AtomicMoveNotSupportedException) { Files.move(part.toPath(), destination.toPath(), StandardCopyOption.REPLACE_EXISTING) }
+        }
+        override fun close() { active.remove(part.absolutePath); part.delete() }
+    }
+
+    // Serialization, compression and fsync are outside the queue state lock. Only the final
+    // atomic rename is guarded with the task generation check, so pause/cancel stay responsive.
+    internal fun prepare(editionId: String, chapterId: String, text: NovelText): PreparedChapter {
         validate(text)
         val value = StoredChapter(editionId, chapterId, novelDigest(json.encodeToString(text)), text)
         val bytes = json.encodeToString(value).toByteArray()
@@ -61,12 +72,14 @@ class NovelDownloadDisk(private val root: File) {
             FileOutputStream(part).use { file ->
                 GZIPOutputStream(file).use { gzip -> gzip.write(bytes); gzip.finish(); file.fd.sync() }
             }
-            check(mayCommit()) { "Novel download cancelled before commit" }
             val destination = target(editionId, chapterId)
             destination.parentFile!!.mkdirs()
-            try { Files.move(part.toPath(), destination.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING) }
-            catch (_: AtomicMoveNotSupportedException) { Files.move(part.toPath(), destination.toPath(), StandardCopyOption.REPLACE_EXISTING) }
-        } finally { active.remove(part.absolutePath); part.delete() }
+            return PreparedChapter(part, destination)
+        } catch (e: Exception) { active.remove(part.absolutePath); part.delete(); throw e }
+    }
+
+    fun write(editionId: String, chapterId: String, text: NovelText, mayCommit: () -> Boolean = { true }) {
+        prepare(editionId, chapterId, text).use { it.commit(mayCommit) }
     }
 
     /** Only abandoned .part files in the dedicated temporary directory; completed files are never scanned/deleted. */

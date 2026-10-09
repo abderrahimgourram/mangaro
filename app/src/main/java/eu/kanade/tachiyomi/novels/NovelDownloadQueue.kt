@@ -157,13 +157,18 @@ class NovelDownloadQueue(private val app: Context, private val repository: Novel
         changed(next.key, NovelDownloadState.RUNNING); next.copy(state = NovelDownloadState.RUNNING)
     }
     private suspend fun isCurrent(task: NovelDownloadTask): Boolean = mutex.withLock { stateOf(task.key) == (NovelDownloadState.RUNNING to task.generation) }
-    private suspend fun complete(task: NovelDownloadTask, text: NovelText) = mutex.withLock {
-        if (stateOf(task.key) != (NovelDownloadState.RUNNING to task.generation)) return@withLock
+    private suspend fun complete(task: NovelDownloadTask, text: NovelText) {
         currentCoroutineContext().ensureActive()
-        // Pause/cancel cannot race the short file commit. No network is performed while holding this lock.
         val context = currentCoroutineContext()
-        disk.write(task.novel.id, task.chapter.id, text) { context.isActive }
-        db.execSQL("UPDATE tasks SET state='DONE',error=NULL WHERE id=?", arrayOf(task.key)); changed(task.key, NovelDownloadState.DONE)
+        disk.prepare(task.novel.id, task.chapter.id, text).use { prepared ->
+            mutex.withLock {
+                if (stateOf(task.key) != (NovelDownloadState.RUNNING to task.generation)) return@withLock
+                context.ensureActive()
+                prepared.commit { context.isActive }
+                db.execSQL("UPDATE tasks SET state='DONE',error=NULL WHERE id=?", arrayOf(task.key))
+                changed(task.key, NovelDownloadState.DONE)
+            }
+        }
     }
     private suspend fun failed(task: NovelDownloadTask, error: Exception) = mutex.withLock {
         if (stateOf(task.key) != (NovelDownloadState.RUNNING to task.generation)) return@withLock

@@ -321,8 +321,16 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
         val index = indexes[novel.id] ?: NovelChapterIndex(novel.id)
         val states = remember(queue, novel.id) { queue.filter { it.novel.id == novel.id }.associate { it.chapter.id to it.state } }
         val groups = remember(index, descending) { chapterGroups(index, descending) }
+        fun toggleGroup(id: String) {
+            // Freeze the visible edition during interaction; verification may change the catalog primary.
+            selectedId = novel.id
+            val key = novel.id + "|" + id
+            collapsed = if (key in collapsed) ArrayList(collapsed - key) else ArrayList(collapsed + key)
+        }
+        fun openDownloads() { selectedId = novel.id; rangeOpen = true }
         fun download(chapters: List<NovelChapter>) {
             if (enqueueing || chapters.isEmpty()) return
+            selectedId = novel.id
             enqueueing = true
             scope.launch {
                 try { repository.downloads.enqueue(novel, chapters); notice = "أُضيفت الفصول إلى التنزيلات"; selected = arrayListOf(); selecting = false }
@@ -332,7 +340,7 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
         }
         fun chooseEdition(target: Novel) {
             if (resume != null && resume.novel.id != target.id) { switchChapter = null; switching = target }
-            else { selectedId = target.id; selected = arrayListOf(); collapsed = arrayListOf(); editionsOpen = false }
+            else { selectedId = target.id; selected = arrayListOf(); editionsOpen = false }
         }
         NovelShell("الرواية", actions = {
             IconButton(onClick = { scope.launch { repository.setSaved(novel, !saved) } }) { Icon(if (saved) Icons.Outlined.Bookmark else Icons.Outlined.BookmarkBorder, "مكتبة الروايات", tint = Design.GoldPrimary) }
@@ -361,6 +369,11 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
                     else if (resume.novel.id != novel.id) TextButton(onClick = { switchChapter = index.chapters.first(); switching = novel }) { Text("قراءة هذه الطبعة", color = Design.GoldPrimary) }
                 }
                 item {
+                    FilledTonalButton(onClick = { openDownloads() }, enabled = index.chapters.isNotEmpty() && !enqueueing, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Outlined.Download, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("تحميل الفصول")
+                    }
+                }
+                item {
                     val commentChapter = resume?.position?.chapter ?: index.chapters.firstOrNull()
                     TextButton(enabled = commentChapter != null, onClick = {
                         commentChapter?.let { navigator.push(eu.kanade.presentation.community.CommunityCommentsScreen(novelCommunityContext(resume?.novel ?: novel, it))) }
@@ -385,29 +398,29 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
                     IconButton(onClick = { descending = !descending }) { Icon(Icons.Outlined.SwapVert, "تغيير ترتيب الفصول", tint = Design.LavenderPrimary) }
                 } }
                 item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick = { rangeOpen = true }, enabled = index.chapters.isNotEmpty() && !enqueueing) { Text("تحميل الفصول", color = Design.GoldPrimary) }
+                    TextButton(onClick = { openDownloads() }, enabled = index.chapters.isNotEmpty() && !enqueueing) { Text("تحميل الفصول", color = Design.GoldPrimary) }
                     if (selecting) TextButton(onClick = { selected = ArrayList(index.chapters.filter { it.available }.map { it.id }) }) { Text("تحديد الكل", color = Design.LavenderPrimary) }
                 } }
                 if (novel.id in busy) item { LinearProgressIndicator(Modifier.fillMaxWidth(), color = Design.GoldPrimary) }
                 error?.let { message -> item { NovelFailure(message, novel.url) { retry++ } } }
                 notice?.let { message -> item { Text(message, color = Design.GoldPrimary, style = MaterialTheme.typography.labelSmall) } }
                 groups.forEach { group ->
-                    if (group.title != null) item(key = "group-" + group.id) {
+                    if (group.title != null) item(key = "group-" + novel.id + "|" + group.id) {
                         Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), color = Color(0xFF241A30)) {
-                            Row(Modifier.clickable { collapsed = if (group.id in collapsed) ArrayList(collapsed - group.id) else ArrayList(collapsed + group.id) }.padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Row(Modifier.clickable { toggleGroup(group.id) }.padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
                                     Text(group.title, color = Color.White, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                     Text(numeric(group.chapters.size) + " فصلًا" + if (!index.complete) " · جارٍ الاستكمال" else "", color = Color(0xFFAE99BE), style = MaterialTheme.typography.labelSmall)
                                 }
                                 IconButton(onClick = { download(group.chapters) }, enabled = index.complete && !enqueueing) { Icon(Icons.Outlined.Download, if (group.realVolume) "تحميل المجلد" else "تحميل هذه الفصول", tint = Design.GoldPrimary) }
-                                IconButton(onClick = { collapsed = if (group.id in collapsed) ArrayList(collapsed - group.id) else ArrayList(collapsed + group.id) }) {
-                                    Icon(if (group.id in collapsed) Icons.Outlined.ExpandMore else Icons.Outlined.ExpandLess,
-                                        if (group.id in collapsed) "فتح المجلد" else "طي المجلد", tint = Design.LavenderPrimary)
+                                IconButton(onClick = { toggleGroup(group.id) }) {
+                                    Icon(if (novel.id + "|" + group.id in collapsed) Icons.Outlined.ExpandMore else Icons.Outlined.ExpandLess,
+                                        if (novel.id + "|" + group.id in collapsed) "فتح المجلد" else "طي المجلد", tint = Design.LavenderPrimary)
                                 }
                             }
                         }
                     }
-                    if (group.id !in collapsed) items(group.chapters, key = { it.id }) { chapter ->
+                    if (novel.id + "|" + group.id !in collapsed) items(group.chapters, key = { it.id }) { chapter ->
                         NovelChapterRow(chapter, states[chapter.id], selecting, chapter.id in selected,
                             onSelect = { selected = if (chapter.id in selected) ArrayList(selected - chapter.id) else ArrayList(selected + chapter.id) },
                             onRead = { if (resume != null && resume.novel.id != novel.id) { switchChapter = chapter; switching = novel } else navigator.push(NovelReaderScreen(novel, chapter)) },
@@ -418,7 +431,7 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
             }
             if (selecting && selected.isNotEmpty()) Button(onClick = { download(index.chapters.filter { it.id in selected }) }, enabled = !enqueueing, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), colors = ButtonDefaults.buttonColors(containerColor = Design.GoldPrimary, contentColor = Design.BackgroundDark)) { Text("تحميل المحدد · " + numeric(selected.size)) }
         }
-        if (rangeOpen) NovelDownloadSelectionSheet(index, currentChapterId = resume?.takeIf { it.novel.id == novel.id }?.position?.chapter?.id, onDismiss = { rangeOpen = false }, onDownload = { chapters -> rangeOpen = false; download(chapters) })
+        if (rangeOpen) NovelDownloadSelectionSheet(index, currentChapterId = resume?.takeIf { it.novel.id == novel.id }?.position?.chapter?.id, onDismiss = { rangeOpen = false }, onSelect = { rangeOpen = false; selectedId = novel.id; selecting = true }, onDownload = { chapters -> rangeOpen = false; download(chapters) })
         if (editionsOpen) ModalBottomSheet(onDismissRequest = { editionsOpen = false }, containerColor = Design.SurfaceDark) {
             Column(Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("معلومات الرواية", color = Color.White, style = MaterialTheme.typography.titleMedium)
@@ -436,7 +449,7 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
             }
         }
         switching?.let { target -> AlertDialog(onDismissRequest = { switching = null }, title = { Text("طبعة أخرى") }, text = { Text("قد يختلف ترتيب الفصول والترجمة. سيبقى موضع قراءتك السابق وتنزيلاتك محفوظين.") },
-            confirmButton = { TextButton(onClick = { selectedId = target.id; selected = arrayListOf(); collapsed = arrayListOf(); editionsOpen = false; switching = null
+            confirmButton = { TextButton(onClick = { selectedId = target.id; selected = arrayListOf(); editionsOpen = false; switching = null
                 switchChapter?.let { navigator.push(NovelReaderScreen(target, it)) }; switchChapter = null }) { Text("اختيار الطبعة") } }, dismissButton = { TextButton(onClick = { switching = null }) { Text("رجوع") } }) }
     }
 }

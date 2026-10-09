@@ -47,10 +47,11 @@ class NovelHttp {
         return value
     }
     suspend fun post(url: String, fields: Map<String, String>): String = request(url, fields)
-    private suspend fun request(initial: String, fields: Map<String, String>?): String = requests.withPermit {
+    private suspend fun request(initial: String, fields: Map<String, String>?): String {
         var attempt = 0
         while (true) {
-            try { return@withPermit performRequest(initial, fields) }
+            // Backoff must not occupy a network slot needed by another provider or the reader.
+            try { return requests.withPermit { performRequest(initial, fields) } }
             catch (c: kotlinx.coroutines.CancellationException) { throw c }
             catch (e: Exception) {
                 // Retry only public GETs and transient failures, once. Never retry access barriers.

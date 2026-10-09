@@ -63,7 +63,7 @@ internal fun NovelChapterRow(chapter: NovelChapter, state: NovelDownloadState?, 
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun NovelDownloadSelectionSheet(index: NovelChapterIndex, currentChapterId: String? = null, onDismiss: () -> Unit, onDownload: (List<NovelChapter>) -> Unit) {
+internal fun NovelDownloadSelectionSheet(index: NovelChapterIndex, currentChapterId: String? = null, onDismiss: () -> Unit, onSelect: () -> Unit, onDownload: (List<NovelChapter>) -> Unit) {
     val current = index.chapters.indexOfFirst { it.id == currentChapterId }.takeIf { it >= 0 }
     val next = current?.plus(1) ?: 0
     val remaining = index.chapters.size - next
@@ -99,6 +99,7 @@ internal fun NovelDownloadSelectionSheet(index: NovelChapterIndex, currentChapte
             } }
             item { Button(onClick = { onDownload(index.chapters.subList(start!! - 1, end!!)) }, enabled = validRange, modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(containerColor = Design.GoldPrimary, contentColor = Design.BackgroundDark)) { Text("تحميل النطاق") } }
+            item { OutlinedButton(onClick = onSelect, modifier = Modifier.fillMaxWidth()) { Text("تحديد الفصول") } }
             item { OutlinedButton(onClick = { confirmAll = true }, enabled = index.complete && index.chapters.isNotEmpty(), modifier = Modifier.fillMaxWidth()) { Text("تحميل الكل") } }
             if (groups.isNotEmpty()) {
                 item { Text("المجلدات", color = Color.White, fontWeight = FontWeight.SemiBold) }
