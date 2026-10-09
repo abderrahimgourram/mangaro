@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.FormatSize
 import androidx.compose.material.icons.outlined.List
+import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -60,7 +61,9 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
         var settingsOpen by rememberSaveable {mutableStateOf(false)}
         var chaptersOpen by rememberSaveable {mutableStateOf(false)}
         var chapterChoices by remember {mutableStateOf(emptyList<NovelChapter>())}
-        var chapterPage by remember {mutableStateOf<Int?>(1)}
+        var chaptersComplete by remember {mutableStateOf(false)}
+        val tasks by repository.downloads.tasks.collectAsState()
+        val offline = tasks.any {it.novel.id==novel.id && it.chapter.id==chapter.id && it.state==NovelDownloadState.DONE}
         var choicesLoading by remember {mutableStateOf(false)}
         var paragraphs by remember {mutableStateOf(emptyList<AnnotatedString>())}
         var plain by remember {mutableStateOf(emptyList<String>())}
@@ -118,13 +121,13 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
             }
         }
         fun moreChapters() {
-            val page=chapterPage ?: return
-            if(choicesLoading) return
+            if(choicesLoading || chaptersComplete) return
             choicesLoading=true
             scope.launch {
                 try {
-                    val result=repository.chapterPage(novel,page)
-                    chapterChoices=(chapterChoices+result.chapters).distinctBy {it.id};chapterPage=result.nextPage
+                    repository.indexSnapshot(novel)?.let { chapterChoices=it.chapters; chaptersComplete=it.complete }
+                    val result=repository.completeIndex(novel) { partial -> withContext(Dispatchers.Main.immediate) {chapterChoices=partial.chapters; chaptersComplete=partial.complete} }
+                    chapterChoices=result.chapters; chaptersComplete=result.complete
                 } catch(c: CancellationException) {throw c} catch(e: Exception) {error=novelError(e)}
                 finally {choicesLoading=false}
             }
@@ -138,10 +141,12 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                     IconButton(onClick={saveCurrent();navigator.pop()}) {Icon(Icons.AutoMirrored.Outlined.ArrowBack,"رجوع",tint=ink)}
                     Text(novel.title,Modifier.weight(1f),style=MaterialTheme.typography.labelLarge.copy(textDirection=TextDirection.ContentOrRtl),
                         color=ink,maxLines=2)
+                    IconButton(onClick={scope.launch { try {repository.downloads.enqueue(novel,listOf(chapter))} catch(c: CancellationException) {throw c} catch(e: Exception) {error=novelError(e)} }},enabled=!offline) {Icon(Icons.Outlined.Download,"تحميل الفصل",tint=gold)}
                     IconButton(onClick={settingsOpen=true}) {Icon(Icons.Outlined.FormatSize,"إعدادات القراءة",tint=gold)}
                     IconButton(onClick={chaptersOpen=true;if(chapterChoices.isEmpty()) moreChapters()}) {Icon(Icons.Outlined.List,"قائمة الفصول",tint=gold)}
                 }
                 storageError?.let { Text(it,Modifier.padding(horizontal=20.dp),color=gold,style=MaterialTheme.typography.labelSmall) }
+                if(offline) Text("متاح دون إنترنت",Modifier.padding(horizontal=20.dp),color=gold,style=MaterialTheme.typography.labelSmall)
                 if(loading) LinearProgressIndicator(Modifier.fillMaxWidth(),color=gold)
                 if(error!=null) NovelFailure(error!!,chapter.url) {generation++}
                 LazyColumn(state=scroll,modifier=Modifier.weight(1f),contentPadding=PaddingValues(horizontal=appearance.margin.dp,vertical=20.dp),
@@ -150,7 +155,7 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                         style=MaterialTheme.typography.headlineSmall.copy(textDirection=TextDirection.ContentOrRtl),modifier=Modifier.padding(bottom=12.dp))}
                     items(paragraphs.size,key={it}) {index ->
                         Text(paragraphs[index],color=ink,style=MaterialTheme.typography.bodyLarge.copy(
-                            fontFamily=FontFamily(Font(R.font.novel_noto_naskh_arabic)),
+                            fontFamily=if(appearance.font=="system") FontFamily.Default else FontFamily(Font(R.font.novel_noto_naskh_arabic)),
                             fontSize=appearance.fontSize.sp,lineHeight=(appearance.fontSize*appearance.lineSpacing).sp,
                             textDirection=TextDirection.ContentOrRtl))
                     }
@@ -163,6 +168,11 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
             if(settingsOpen) ModalBottomSheet(onDismissRequest={settingsOpen=false},containerColor=Color(0xFF1B1423)) {
                 Column(Modifier.fillMaxWidth().padding(horizontal=24.dp,vertical=12.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
                     Text("إعدادات القراءة",color=Color.White,fontWeight=FontWeight.Bold,style=MaterialTheme.typography.titleMedium)
+                    Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                        listOf("naskh" to "نسخ", "system" to "خط الجهاز").forEach { (font,label) ->
+                            FilterChip(appearance.font==font,onClick={appearance=appearance.copy(font=font);repository.saveSettings(appearance)},label={Text(label)})
+                        }
+                    }
                     ReaderSlider("حجم الخط",appearance.fontSize,16f..32f,onValue={appearance=appearance.copy(fontSize=it)},onSave={repository.saveSettings(appearance)})
                     ReaderSlider("تباعد السطور",appearance.lineSpacing,1.3f..2.3f,onValue={appearance=appearance.copy(lineSpacing=it)},onSave={repository.saveSettings(appearance)})
                     ReaderSlider("تباعد الفقرات",appearance.paragraphSpacing.toFloat(),6f..30f,onValue={appearance=appearance.copy(paragraphSpacing=it.toInt())},onSave={repository.saveSettings(appearance)})
@@ -184,7 +194,8 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                             Text(choice.title,color=if(choice.id==chapter.id) gold else Color(0xFFDDCDE8))
                         }
                     }
-                    if(chapterPage!=null) item {TextButton(onClick=::moreChapters,enabled=!choicesLoading,modifier=Modifier.fillMaxWidth()) {Text("عرض المزيد")}}
+                    if(choicesLoading) item {LinearProgressIndicator(Modifier.fillMaxWidth(),color=gold)}
+                    else if(!chaptersComplete) item {TextButton(onClick=::moreChapters,modifier=Modifier.fillMaxWidth()) {Text("حاول مجددًا")}}
                 }
             }
         }

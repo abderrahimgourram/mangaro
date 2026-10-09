@@ -4,6 +4,10 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.graphics.res.animatedVectorResource
 import androidx.compose.animation.graphics.res.rememberAnimatedVectorPainter
 import androidx.compose.animation.graphics.vector.AnimatedImageVector
+import androidx.compose.foundation.layout.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import eu.kanade.presentation.novels.MangaroContentTabs
+import eu.kanade.presentation.novels.NovelLibraryContent
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -66,6 +70,22 @@ data object LibraryTab : Tab {
 
     @Composable
     override fun Content() {
+        var novels by rememberSaveable { mutableStateOf(false) }
+        LaunchedEffect(Unit) { sectionEvents.receiveAsFlow().collect { novels = it } }
+        Column(Modifier.fillMaxSize()) {
+            MangaroContentTabs(novels, onSelect = { novels = it })
+            Box(Modifier.weight(1f)) {
+                if (novels) NovelLibraryContent() else ManhwaContent()
+            }
+        }
+        LaunchedEffect(novels) { if (novels) HomeScreen.showBottomNav(true) }
+    }
+
+    private val sectionEvents = Channel<Boolean>(Channel.CONFLATED)
+    fun selectNovels() { sectionEvents.trySend(true) }
+
+    @Composable
+    private fun ManhwaContent() {
         val navigator = LocalNavigator.currentOrThrow
         val context = LocalContext.current
 

@@ -165,7 +165,7 @@ object HomeScreen : Screen() {
                 launch {
                     openTabEvent.receiveAsFlow().collectLatest {
                         tabNavigator.current = when (it) {
-                            is Tab.Library -> LibraryTab
+                            is Tab.Library -> LibraryTab.also { _ -> if (it.novels) LibraryTab.selectNovels() }
                             Tab.Updates -> HomeTab // Fallback
                             Tab.History -> HomeTab // Fallback
                             is Tab.Browse -> {
@@ -174,6 +174,7 @@ object HomeScreen : Screen() {
                                 }
                                 BrowseTab
                             }
+                            Tab.NovelDownloads -> DownloadsTab.also { DownloadsTab.selectNovels() }
                             is Tab.More -> MoreTab
                         }
 
@@ -325,7 +326,8 @@ object HomeScreen : Screen() {
     }
 
     sealed interface Tab {
-        data class Library(val mangaIdToOpen: Long? = null) : Tab
+        data class Library(val mangaIdToOpen: Long? = null, val novels: Boolean = false) : Tab
+        data object NovelDownloads : Tab
         data object Updates : Tab
         data object History : Tab
         data class Browse(val toExtensions: Boolean = false) : Tab

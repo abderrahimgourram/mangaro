@@ -169,6 +169,10 @@ object HomeTab : Tab {
                         )
                     }
 
+                    item(key = "novel_shelf") {
+                        eu.kanade.presentation.novels.HomeNovelShelf()
+                    }
+
                     item(key = "weekly_community_picks") {
                         MangaroWeeklyPicks(weeklyState,onOpen={ id ->
                             if(navigator.lastItem !is MangaScreen) navigator.push(MangaScreen(id,true))

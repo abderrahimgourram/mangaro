@@ -17,7 +17,7 @@ class NovelSourceTest {
     }
     @Test
     @EnabledIfEnvironmentVariable(named="MANGARO_NOVEL_PAGE_PROBE", matches="1")
-    fun liveCataloguePagination() = runBlocking {
+    fun liveCataloguePagination() = runBlocking<Unit> {
         val http=NovelHttp()
         for(source in listOf(KolNovelSource(http),CeneleSource(http))) {
             val first=source.catalog()
@@ -30,7 +30,7 @@ class NovelSourceTest {
     }
     @Test
     @EnabledIfEnvironmentVariable(named="MANGARO_NOVEL_SEA_PROBE", matches="1")
-    fun seaPublicParagraphVisibility() = runBlocking {
+    fun seaPublicParagraphVisibility() = runBlocking<Unit> {
         if(System.getenv("MANGARO_NOVEL_SEA_PROBE")!="1") return@runBlocking
         val text=SeaNovelSource(NovelHttp()).chapter(NovelChapter(
             "https://seanovel.org/novels/terra-nova-online-rise-of-the-strongest-player/chapters/1","الفصل 1.0",0))
@@ -88,7 +88,7 @@ class NovelSourceTest {
     /** Opt-in single-sample public probes; no story text/HTML is saved to this repository. */
     @Test
     @EnabledIfEnvironmentVariable(named="MANGARO_NOVEL_LIVE", matches="1")
-    fun livePublicSourceJourney() = runBlocking {
+    fun livePublicSourceJourney() = runBlocking<Unit> {
         if(System.getenv("MANGARO_NOVEL_LIVE")!="1") return@runBlocking
         val http=NovelHttp()
         val probes=listOf(

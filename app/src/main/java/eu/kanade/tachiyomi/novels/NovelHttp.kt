@@ -68,7 +68,7 @@ class NovelHttp {
                     } else {
                         if (!it.isSuccessful) throw NovelSourceFailure(
                             if (it.code in listOf(401,403)) "هذا المحتوى غير متاح حاليًا. يمكنك فتحه في الموقع."
-                            else "تعذّر تحميل الروايات حاليًا. حاول مجددًا.", "Novel HTTP " + it.code)
+                            else "تعذّر تحميل الروايات حاليًا. حاول مجددًا.", "Novel HTTP " + it.code, it.code)
                         val body = it.body
                         if (body.contentLength() > 8 * 1024 * 1024) throw IOException("Novel response too large")
                         val bytes = body.byteStream().use { stream ->

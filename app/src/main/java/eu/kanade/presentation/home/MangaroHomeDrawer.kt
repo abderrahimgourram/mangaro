@@ -151,9 +151,7 @@ fun MangaroHomeDrawer(
                                 .border(1.dp, Color(0x1A89709F), RoundedCornerShape(20.dp))
                                 .padding(4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 DrawerAction("أختام العوالم", Icons.Outlined.BookmarkBorder) { select(onAchievements) }
-                                if (BuildConfig.DEBUG) {
-                                    DrawerAction("الروايات", Icons.Outlined.MenuBook) { select(onNovels) }
-                                }
+                                DrawerAction("الروايات", Icons.Outlined.MenuBook) { select(onNovels) }
                                 DrawerAction("المكتبة", Icons.Outlined.BookmarkBorder) { select(onLibrary) }
                                 DrawerAction("السجل", Icons.Outlined.History) { select(onHistory) }
                                 DrawerAction("من نحن", Icons.Outlined.PersonOutline) { select { uriHandler.openUri("https://mangaro-web.vercel.app/about") } }

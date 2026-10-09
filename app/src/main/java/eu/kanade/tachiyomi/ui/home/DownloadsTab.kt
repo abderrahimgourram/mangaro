@@ -2,6 +2,14 @@ package eu.kanade.tachiyomi.ui.home
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Download
+import androidx.compose.foundation.layout.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Modifier
+import eu.kanade.presentation.novels.MangaroContentTabs
+import eu.kanade.presentation.novels.NovelDownloadsContent
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.receiveAsFlow
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import cafe.adriel.voyager.navigator.Navigator
@@ -40,6 +48,21 @@ object DownloadsTab : Tab {
 
     @Composable
     override fun Content() {
+        var novels by rememberSaveable { mutableStateOf(false) }
+        LaunchedEffect(Unit) { sectionEvents.receiveAsFlow().collect { novels = it } }
+        Column(Modifier.fillMaxSize()) {
+            MangaroContentTabs(novels, onSelect = { novels = it })
+            Box(Modifier.weight(1f)) {
+                if (novels) NovelDownloadsContent() else ManhwaContent()
+            }
+        }
+    }
+
+    private val sectionEvents = Channel<Boolean>(Channel.CONFLATED)
+    fun selectNovels() { sectionEvents.trySend(true) }
+
+    @Composable
+    private fun ManhwaContent() {
         if (!ifSourcesLoaded()) {
             LoadingScreen()
             return

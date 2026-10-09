@@ -98,7 +98,8 @@ class KolNovelSource(http: NovelHttp) : HtmlNovelSource(http) {
             author=d.selectFirst("[itemprop=author]")?.text()?.takeIf { it.isNotBlank() },
             status=d.selectFirst(".sertostat, .status")?.text()?.takeIf { it.isNotBlank() },
             genres=d.select(".sertogenre a, a[href*='/genre/']").map { it.text() }.distinct(),
-            chapterCount=d.select(".eplister li[data-id]").size.takeIf { it>0 })
+            chapterCount=d.select(".eplister li[data-id]").size.takeIf { it>0 },
+            originalTitle=d.selectFirst(selector("originalTitle",".alter"))?.text()?.takeIf {it.isNotBlank()})
     }
     override suspend fun chapters(novel: Novel, page: Int) = withContext(Dispatchers.IO) {
         val d=doc(http.get(novel.url,cache=true),novel.url)
@@ -138,37 +139,55 @@ class CeneleSource(http: NovelHttp) : HtmlNovelSource(http) {
             description=d.selectFirst(selector("description",".nhv-novel-synopsis"))?.wholeText()?.trim().orEmpty(),
             author=d.selectFirst(".nhv-novel-meta a[href*='/cont-author/']")?.text(),
             status=d.selectFirst(".nhv-novel-status strong")?.text(),
-            genres=d.select(".nhv-novel-hero a[href*='/cont-genre/']").map { it.text() }.distinct(),chapterCount=count)
+            genres=d.select(".nhv-novel-hero a[href*='/cont-genre/']").map { it.text() }.distinct(),chapterCount=count,
+            originalTitle=d.selectFirst(selector("originalTitle",".nhv-novel-kicker"))?.text()?.removePrefix("رواية ")?.takeIf {it.isNotBlank()})
     }
-    override suspend fun chapters(novel: Novel, page: Int) = withContext(Dispatchers.IO) {
+    private data class ChapterContext(val config: JsonObject, val volumes: List<JsonObject>, val at: Long)
+    private val contexts = LinkedHashMap<String, ChapterContext>()
+    private suspend fun chapterContext(novel: Novel): ChapterContext {
+        synchronized(contexts) { contexts[novel.id]?.takeIf {System.currentTimeMillis()-it.at<120_000}?.let {return it} }
         val d=doc(http.get(novel.url,cache=true),novel.url)
         val script=d.selectFirst("#nhv-novel-single-v2-js-extra")?.data().orEmpty()
         val raw=Regex("var nhvNovelV2 = (\\{.*?\\});",RegexOption.DOT_MATCHES_ALL).find(script)?.groupValues?.get(1)
             ?: throw NovelSourceFailure("تعذّر تحميل الفصول. حاول مجددًا.", "Cenele chapter configuration missing")
         val config=Json.parseToJsonElement(raw).jsonObject
-        val common=mapOf("action" to "nhv_manga_single_chapters_page", "nonce" to config.string("chaptersNonce"),
-            "manga_id" to config.string("postId"), "per_page" to "50","order" to "asc")
-        val meta=Json.parseToJsonElement(http.post(url("wp-admin/admin-ajax.php"), common +
-            mapOf("volume" to "-1", "page" to "1", "meta_only" to "1"))).jsonObject
-        val volumes=(meta["volumes"] as? JsonArray).orEmpty().map { it.jsonObject }
-        if(volumes.isEmpty()) throw NovelSourceFailure("تعذّر تحميل الفصول. حاول مجددًا.", "Cenele volumes missing")
-        var remainingPage=page
-        var selected: JsonObject?=null
-        for(volume in volumes) {
-            val pages=((volume["count"]?.jsonPrimitive?.intOrNull ?: 0)+49)/50
-            if(remainingPage<=pages) {selected=volume;break}
-            remainingPage-=pages
+        val meta=Json.parseToJsonElement(http.post(url("wp-admin/admin-ajax.php"),mapOf(
+            "action" to "nhv_manga_single_chapters_page", "nonce" to config.string("chaptersNonce"),
+            "manga_id" to config.string("postId"), "volume" to "-1", "page" to "1", "per_page" to "50", "meta_only" to "1", "order" to "asc"))).jsonObject
+        check(meta["success"]?.jsonPrimitive?.booleanOrNull==true)
+        val volumes=(meta["volumes"] as? JsonArray).orEmpty().map {it.jsonObject}
+        check(volumes.isNotEmpty())
+        return ChapterContext(config,volumes,System.currentTimeMillis()).also {context ->
+            synchronized(contexts) {contexts[novel.id]=context;while(contexts.size>8) contexts.remove(contexts.keys.first())}
         }
-        val volume=selected ?: return@withContext ChapterPage(emptyList())
-        val fields=common + mapOf("volume" to volume.string("num"),"page" to remainingPage.toString())
-        val result=Json.parseToJsonElement(http.post(url("wp-admin/admin-ajax.php"),fields)).jsonObject
-        if(result["success"]?.jsonPrimitive?.booleanOrNull != true)
+    }
+    override suspend fun chapters(novel: Novel, page: Int) = withContext(Dispatchers.IO) {
+        val context=chapterContext(novel)
+        // Independent cursor components; declared counts never decide where a volume ends.
+        val volumeIndex=(page-1)/1_000_000
+        val localPage=(page-1)%1_000_000+1
+        val volume=context.volumes.getOrNull(volumeIndex) ?: error("Invalid Cenele volume cursor")
+        val config=context.config
+        val result=Json.parseToJsonElement(http.post(url("wp-admin/admin-ajax.php"),mapOf(
+            "action" to "nhv_manga_single_chapters_page", "nonce" to config.string("chaptersNonce"),
+            "manga_id" to config.string("postId"), "per_page" to "50", "order" to "asc",
+            "volume" to volume.string("num"), "page" to localPage.toString()))).jsonObject
+        if(result["success"]?.jsonPrimitive?.booleanOrNull!=true)
             throw NovelSourceFailure("تعذّر تحميل الفصول. حاول مجددًا.", "Cenele chapter request rejected")
+        val label=volume.string("label").takeUnless {it.isBlank() || it in setOf("بدون مجلدات","بدون مجلد","الفصول")}
+        val volumeId=if(label!=null) volume.string("num") else null
         val fragment=doc(result.string("html"),novel.url)
-        val chapters=chapterLinks(fragment,selector("chapterLinks",".wp-manga-chapter a")).mapIndexed { i,ch -> ch.copy(order=(page-1)*50+i,volume=volume.string("label")) }
-        val hasMore=result["has_more"]?.jsonPrimitive?.booleanOrNull ?: (chapters.size==50)
-        val totalPages=volumes.sumOf { ((it["count"]?.jsonPrimitive?.intOrNull ?: 0)+49)/50 }
-        ChapterPage(chapters,if(hasMore || page<totalPages) page+1 else null)
+        val chapters=chapterLinks(fragment,selector("chapterLinks",".wp-manga-chapter a")).map { ch ->
+            ch.copy(volume=label,volumeId=volumeId,sourcePage=page)
+        }
+        val more=result["has_more"]?.jsonPrimitive?.booleanOrNull
+            ?: throw NovelSourceFailure("تعذّر إكمال قائمة الفصول.", "Cenele pagination state missing")
+        val next=if(more) page+1 else if(volumeIndex+1<context.volumes.size) (volumeIndex+1)*1_000_000+1 else null
+        val volumes=context.volumes.mapNotNull {v ->
+            val name=v.string("label").takeUnless {it.isBlank() || it in setOf("بدون مجلدات","بدون مجلد","الفصول")} ?: return@mapNotNull null
+            NovelVolume(v.string("num"),name,v["count"]?.jsonPrimitive?.intOrNull)
+        }
+        ChapterPage(chapters,next,volumes=volumes,allowEmpty=!more && chapters.isEmpty())
     }
     override suspend fun chapter(chapter: NovelChapter) = withContext(Dispatchers.IO) {
         text(doc(http.get(chapter.url),chapter.url),selector("text",".reading-content"))
@@ -235,7 +254,8 @@ class SunovelsSource(http: NovelHttp) : HtmlNovelSource(http) {
             description=d.selectFirst(selector("description",".description"))?.wholeText()?.trim().orEmpty(),
             author=d.selectFirst("a[href*='author=']")?.text(),
             genres=d.select("a[href*='category=']").map { it.text() }.distinct(),
-            status=d.selectFirst(".top.Ongoing, .top.Completed")?.text())
+            status=d.selectFirst(".top.Ongoing, .top.Completed")?.text(),
+            originalTitle=d.selectFirst(selector("originalTitle",".main-head h1"))?.text()?.takeIf {it.isNotBlank()})
     }
     override suspend fun chapters(novel: Novel, page: Int) = withContext(Dispatchers.IO) {
         val link=novel.url.toHttpUrl().newBuilder().addQueryParameter("activeTab","chapters").addQueryParameter("page",(page-1).toString()).build().toString()
@@ -277,12 +297,14 @@ class SeaNovelSource(http: NovelHttp) : HtmlNovelSource(http) {
         novel.copy(title=item.string("title_ar").ifBlank { novel.title },cover=novel.cover ?: url("api/novel/"+slug+"/cover?type=webp"),description=item.string("description"),
             author=item.string("author").takeIf { it.isNotBlank() },status=item.string("status"),
             genres=(item["genres"] as? JsonArray)?.map { it.jsonPrimitive.content }.orEmpty(),
-            chapterCount=item["chapters_count"]?.jsonPrimitive?.intOrNull)
+            chapterCount=item["chapters_count"]?.jsonPrimitive?.intOrNull,
+            originalTitle=item.string("title_original").takeIf {it.isNotBlank()})
     }
     override suspend fun chapters(novel: Novel, page: Int) = withContext(Dispatchers.IO) {
         val slug=novel.url.toHttpUrl().pathSegments.last { it.isNotBlank() }
         val item=Json.parseToJsonElement(http.get(url("api/novel/"+slug),cache=true)).jsonObject
-        val chapters=(item["chapters"] as? JsonArray).orEmpty().mapIndexed { index,value ->
+        val entries=item["chapters"] as? JsonArray ?: throw NovelSourceFailure("تعذّر تحميل الفصول. حاول مجددًا.", "Sea chapter index missing")
+        val chapters=entries.mapIndexed { index,value ->
             val ch=value.jsonObject
             NovelChapter(url("novels/"+slug+"/chapters/"+ch.string("id")),ch.string("title"),index)
         }
