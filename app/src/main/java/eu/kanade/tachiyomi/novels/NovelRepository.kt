@@ -27,6 +27,8 @@ class NovelRepository private constructor(context: Context) {
         mutableStorageError.value = "تعذّر حفظ تغييرات القراءة. حاول مجددًا."
     })
     private val lock = Mutex()
+    // Memory hits cannot queue behind account snapshots or AtomicFile fsync.
+    private val memoryCacheLock = Mutex()
     private val catalogLock = Mutex()
     private data class RequestLock(val mutex: Mutex = Mutex(), var users: Int = 0)
     private val requestLocks = mutableMapOf<String, RequestLock>()
@@ -237,7 +239,7 @@ class NovelRepository private constructor(context: Context) {
         } catch (c: CancellationException) { throw c }
         catch (e: Exception) { android.util.Log.w("MangaroNovels", "Library change failed", e); mutableStorageError.value = "تعذّر حفظ التغيير. حاول مجددًا." }
     }
-    fun savePosition(novel: Novel, chapter: NovelChapter, paragraph: Int, offset: Int, anchor: String = "") {
+    fun savePosition(novel: Novel, chapter: NovelChapter, paragraph: Int, offset: Int, anchor: String = "", refreshHistory: Boolean = false) {
         val owner = cloudAccount
         val sequence = positionSequence.incrementAndGet()
         val key = Triple(owner, novel.id, chapter.id)
@@ -256,6 +258,13 @@ class NovelRepository private constructor(context: Context) {
                 } else if (target.baseFile.exists() || File(target.baseFile.path + ".bak").exists())
                     json.decodeFromString<List<NovelLibraryItem>>(target.openRead().use { it.readBytes().decodeToString() }) else emptyList()
                 if (sequence < (appliedChapterSequence[key] ?: 0L)) return@withLock
+                val last = entries.firstOrNull { it.novel.id == novel.id }?.position
+                if (!refreshHistory && last?.chapter?.id == chapter.id && last.paragraph == position.paragraph &&
+                    last.offset == position.offset && last.anchor == position.anchor) {
+                    appliedChapterSequence[key] = sequence
+                    synchronized(pendingPositions) { if (pendingPositions[key]?.first == sequence) pendingPositions.remove(key) }
+                    return@withLock
+                }
                 metadata.write(positionPath(novel, chapter, owner), json.encodeToString(position))
                 appliedChapterSequence[key] = sequence
                 val editionKey = accountPrefix(owner) + novel.id
@@ -468,12 +477,12 @@ class NovelRepository private constructor(context: Context) {
     }
     private fun indexPath(novel: Novel) = "indexes/" + novelDigest(novel.id) + ".json"
     suspend fun indexSnapshot(novel: Novel): NovelChapterIndex? = withContext(Dispatchers.IO) {
-        lock.withLock { indexes[novel.id] } ?: runCatching {
+        memoryCacheLock.withLock { indexes[novel.id] } ?: runCatching {
             (metadata.read(indexPath(novel)) ?: indexCache.read(indexPath(novel)))?.let { json.decodeFromString<NovelChapterIndex>(it) }
                 ?.takeIf { it.editionId == novel.id }
         }.getOrNull()?.also { cacheIndex(it) }
     }
-    private suspend fun cacheIndex(index: NovelChapterIndex) = lock.withLock {
+    private suspend fun cacheIndex(index: NovelChapterIndex) = memoryCacheLock.withLock {
         indexes[index.editionId] = index
         while (indexes.size > 5) indexes.remove(indexes.keys.first())
         indexRevision.update { it + 1 }
@@ -659,19 +668,19 @@ class NovelRepository private constructor(context: Context) {
     suspend fun chapterText(novel: Novel, chapter: NovelChapter): NovelText = withContext(Dispatchers.IO) {
         val identity = novel.id to chapter.id
         val key = novel.id + "|" + chapter.id
-        lock.withLock { texts[key] }?.let { return@withContext it }
+        memoryCacheLock.withLock { texts[key] }?.let { return@withContext it }
         // A text request must not wait on an unrelated catalog/detail hash collision.
         // Share the actual result with all callers, even if the small text LRU changes meanwhile.
         val flight = synchronized(chapterFlights) {
             chapterFlights[identity]?.also { it.readers++ } ?: ChapterFlight(io.async(start = CoroutineStart.LAZY) {
-                lock.withLock { texts[key] }?.let { return@async it }
+                memoryCacheLock.withLock { texts[key] }?.let { return@async it }
                 val offline = disk.read(novel.id, chapter.id)
                 if (offline == null && downloadQueue.isInitialized() && downloads.tasks.value.any {
                     it.novel.id == novel.id && it.chapter.id == chapter.id && it.state == NovelDownloadState.DONE
                 }) downloads.invalidate(novel, chapter)
                 val result = offline ?: source(novel.sourceId).chapter(chapter)
                 check(result.paragraphs.size >= 3 && result.paragraphs.sumOf { it.length } >= 200) { "Incomplete novel chapter" }
-                lock.withLock {
+                memoryCacheLock.withLock {
                     texts[key] = result
                     while (texts.size > 2 || texts.values.sumOf { v -> v.paragraphs.sumOf { it.length } + v.markup.sumOf { it.length } } > 1_000_000) texts.remove(texts.keys.first())
                 }
@@ -691,7 +700,7 @@ class NovelRepository private constructor(context: Context) {
         }
     }
     internal suspend fun evictChapter(editionId: String, chapterId: String) {
-        lock.withLock { texts.remove(editionId + "|" + chapterId) }
+        memoryCacheLock.withLock { texts.remove(editionId + "|" + chapterId) }
     }
     internal fun activeDownloads(): NovelDownloadQueue? = if (downloadQueue.isInitialized()) downloads else null
     companion object {

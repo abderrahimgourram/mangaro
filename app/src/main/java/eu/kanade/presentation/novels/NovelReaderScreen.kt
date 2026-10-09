@@ -67,6 +67,7 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.flowOn
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import tachiyomi.core.common.util.lang.WesternDigits
 
@@ -78,8 +79,8 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
         val repository=remember(context) {NovelRepository.get(context)}
         val navigator=LocalNavigator.currentOrThrow
         NovelForegroundRefresh(repository)
-        val storageError by repository.storageError.collectAsState()
-        val savedSettings by repository.settings.collectAsState()
+        val storageError by repository.storageError.collectAsStateWithLifecycle()
+        val savedSettings by repository.settings.collectAsStateWithLifecycle()
         var appearance by remember {mutableStateOf(savedSettings)}
         LaunchedEffect(savedSettings) {appearance=savedSettings}
         var chapter by rememberSaveable {mutableStateOf(initialChapter)}
@@ -117,6 +118,14 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
             onDispose { chromeOwner.lifecycle.removeObserver(observer); controller?.show(WindowInsetsCompat.Type.systemBars())
                 previousBehavior?.let { controller?.systemBarsBehavior = it } }
         }
+        val baseTextStyle = MaterialTheme.typography.bodyLarge
+        val paragraphStyle = remember(baseTextStyle, appearance.font, appearance.fontSize, appearance.lineSpacing) {
+            baseTextStyle.copy(
+                fontFamily = if (appearance.font == "system") FontFamily.Default else FontFamily(Font(R.font.novel_noto_naskh_arabic)),
+                fontSize = appearance.fontSize.sp, lineHeight = (appearance.fontSize * appearance.lineSpacing).sp,
+                textDirection = TextDirection.ContentOrRtl,
+            )
+        }
         val insets = WindowInsets.systemBars.asPaddingValues()
         // Keep the text viewport stable while system bars and toolbars toggle.
         val stableTop = remember { insets.calculateTopPadding() }
@@ -130,12 +139,13 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
             repository.downloads.tasks.map { tasks -> tasks.any {
                 it.novel.id == novel.id && it.chapter.id == chapter.id && it.state == NovelDownloadState.DONE
             } }.distinctUntilChanged().flowOn(Dispatchers.Default)
-        }.collectAsState(initial = false)
+        }.collectAsStateWithLifecycle(initialValue = false)
         var choicesLoading by remember {mutableStateOf(false)}
         var paragraphs by remember {mutableStateOf(emptyList<AnnotatedString>())}
         var loadedChapter by remember { mutableStateOf<NovelChapter?>(null) }
         var restoring by remember { mutableStateOf(false) }
         var plain by remember {mutableStateOf(emptyList<String>())}
+        var anchors by remember { mutableStateOf(emptyList<String>()) }
         var error by remember {mutableStateOf<String?>(null)}
         var loading by remember {mutableStateOf(true)}
         var navigationJob by remember { mutableStateOf<Job?>(null) }
@@ -144,16 +154,18 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
         val scroll=rememberLazyListState()
         val scope=rememberCoroutineScope()
         LaunchedEffect(chapter.id,generation) {
-            loading=true;restoring=true;loadedChapter=null;error=null;paragraphs=emptyList();plain=emptyList()
+            loading=true;restoring=true;loadedChapter=null;error=null;paragraphs=emptyList();plain=emptyList();anchors=emptyList()
             try {
                 repository.awaitLocal()
                 val text=repository.chapterText(novel,chapter)
                 plain=text.paragraphs
-                paragraphs=withContext(Dispatchers.Default) {text.paragraphs.mapIndexed {i,p -> styledParagraph(text.markup.getOrNull(i),p)}}
+                val document = preparedDocument(novel.id + "|" + chapter.id, text)
+                paragraphs = document.paragraphs
+                anchors = document.anchors
                 val position=repository.readingPosition(novel,chapter)
                 val index = withContext(Dispatchers.Default) {
                     val anchor = position?.anchor?.takeIf { it.isNotEmpty() }?.let { hash ->
-                        plain.indices.filter { paragraphAnchor(plain[it]) == hash }.minByOrNull { kotlin.math.abs(it - ((position?.paragraph ?: 1) - 1)) } ?: -1
+                        anchors.indices.filter { anchors[it] == hash }.minByOrNull { kotlin.math.abs(it - ((position?.paragraph ?: 1) - 1)) } ?: -1
                     } ?: -1
                     if (anchor >= 0) anchor + 1 else (position?.paragraph ?: 0).coerceIn(0, paragraphs.size)
                 }
@@ -164,7 +176,7 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                 loadedChapter = chapter
                 restoring = false
                 repository.savePosition(novel, chapter, index, position?.offset ?: 0,
-                    plain.getOrNull(index - 1)?.let(::paragraphAnchor).orEmpty())
+                    anchors.getOrNull(index - 1).orEmpty(), refreshHistory = true)
             } catch(c: CancellationException) {throw c}
             catch(e: Exception) {error=novelError(e)}
             finally {loading=false}
@@ -194,12 +206,13 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
         val currentChapter by rememberUpdatedState(loadedChapter)
         val currentRestoring by rememberUpdatedState(restoring)
         val currentPlain by rememberUpdatedState(plain)
+        val currentAnchors by rememberUpdatedState(anchors)
         fun saveCurrent() {
             val shown = currentChapter ?: return
             if(!currentRestoring && currentPlain.isNotEmpty()) {
                 val index=scroll.firstVisibleItemIndex.coerceAtMost(currentPlain.size)
                 repository.savePosition(novel,shown,index,scroll.firstVisibleItemScrollOffset,
-                    currentPlain.getOrNull(index-1)?.let(::paragraphAnchor).orEmpty())
+                    currentAnchors.getOrNull(index-1).orEmpty())
             }
         }
         LaunchedEffect(loadedChapter?.id,restoring) {
@@ -282,10 +295,7 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                                 }
                             }
                             items(paragraphs.size,key={it},contentType={"paragraph"}) {index ->
-                                Text(paragraphs[index],color=ink,style=MaterialTheme.typography.bodyLarge.copy(
-                                    fontFamily=if(appearance.font=="system") FontFamily.Default else FontFamily(Font(R.font.novel_noto_naskh_arabic)),
-                                    fontSize=appearance.fontSize.sp,lineHeight=(appearance.fontSize*appearance.lineSpacing).sp,
-                                    textDirection=TextDirection.ContentOrRtl))
+                                Text(paragraphs[index],color=ink,style=paragraphStyle)
                             }
                         }
                     }
@@ -306,14 +316,15 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                         Column(Modifier.padding(horizontal=12.dp,vertical=4.dp)) {
                             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween, verticalAlignment=Alignment.CenterVertically) {
                                 TextButton(onClick={adjacent(false)},enabled=!loading && !navigating) {Text("السابق",color=gold)}
-                                val progress by remember { derivedStateOf { scroll.firstVisibleItemIndex.coerceAtMost(plain.size) } }
-                                Text(WesternDigits.isolate("$progress / ${plain.size}"),color=gold,style=MaterialTheme.typography.labelSmall)
+                                ReaderProgress(scroll, plain.size, gold)
                                 TextButton(onClick={adjacent(true)},enabled=!loading && !navigating) {Text("التالي",color=gold)}
                             }
                             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.Center,verticalAlignment=Alignment.CenterVertically) {
                                 IconButton(onClick={scope.launch { try {repository.downloads.enqueue(novel,listOf(chapter))} catch(c: CancellationException) {throw c} catch(e: Exception) {error=novelError(e)} }},enabled=!offline && !loading) {Icon(Icons.Outlined.Download,"تحميل الفصل",tint=gold)}
-                                val entries by repository.library.collectAsState()
-                                val bookmarked = entries.firstOrNull { it.novel.id == novel.id }?.bookmarks?.contains(chapter.id) == true
+                                val bookmarked by remember(repository, novel.id, chapter.id) {
+                                    repository.library.map { entries -> entries.firstOrNull { it.novel.id == novel.id }?.bookmarks?.contains(chapter.id) == true }
+                                        .distinctUntilChanged().flowOn(Dispatchers.Default)
+                                }.collectAsStateWithLifecycle(initialValue = false)
                                 IconButton(onClick={scope.launch {
                                     try {repository.updateLibrary(novel, bookmark=chapter.id)} catch(c: CancellationException) {throw c} catch(e: Exception) {error=novelError(e)}
                                 }}) {Icon(if(bookmarked) Icons.Outlined.Bookmark else Icons.Outlined.BookmarkBorder,"إشارة مرجعية",tint=gold)}
@@ -374,8 +385,31 @@ private fun ReaderSlider(label: String, value: Float, range: ClosedFloatingPoint
     }
     Slider(value,onValue,valueRange=range,onValueChangeFinished=onSave)
 }
-private fun paragraphAnchor(value: String) = java.security.MessageDigest.getInstance("SHA-256")
-    .digest(value.toByteArray()).joinToString("") {"%02x".format(it)}
+private fun paragraphAnchor(value: String): String {
+    val bytes = java.security.MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))
+    val hex = "0123456789abcdef"
+    return buildString(64) { bytes.forEach { b -> val v = b.toInt() and 255; append(hex[v ushr 4]); append(hex[v and 15]) } }
+}
+
+private data class PreparedNovelDocument(val source: NovelText, val paragraphs: List<AnnotatedString>, val anchors: List<String>)
+private val preparedDocuments = LinkedHashMap<String, PreparedNovelDocument>(4, .75f, true)
+
+/** Mirrors the existing two-chapter text budget; never retains an entire novel. */
+private suspend fun preparedDocument(key: String, text: NovelText): PreparedNovelDocument = withContext(Dispatchers.Default) {
+    synchronized(preparedDocuments) { preparedDocuments[key]?.takeIf { it.source === text } }?.let { return@withContext it }
+    val paragraphs = text.paragraphs.mapIndexed { index, paragraph ->
+        ensureActive()
+        styledParagraph(text.markup.getOrNull(index), paragraph)
+    }
+    val result = PreparedNovelDocument(text, paragraphs, text.paragraphs.map { ensureActive(); paragraphAnchor(it) })
+    synchronized(preparedDocuments) {
+        preparedDocuments[key] = result
+        while (preparedDocuments.size > 2 || preparedDocuments.values.sumOf { doc ->
+            doc.source.paragraphs.sumOf { it.length } + doc.source.markup.sumOf { it.length }
+        } > 1_000_000) preparedDocuments.remove(preparedDocuments.keys.first())
+    }
+    result
+}
 
 /** Standard HTML styling conversion happens off the main thread, never in a WebView. */
 private fun styledParagraph(markup: String?, plain: String): AnnotatedString {
@@ -390,4 +424,10 @@ private fun styledParagraph(markup: String?, plain: String): AnnotatedString {
             addStyle(SpanStyle(fontWeight=if(bold) FontWeight.Bold else null,fontStyle=if(italic) FontStyle.Italic else null),start,end)
         }
     }
+}
+
+@Composable
+private fun ReaderProgress(scroll: androidx.compose.foundation.lazy.LazyListState, count: Int, color: Color) {
+    val progress by remember(scroll, count) { derivedStateOf { scroll.firstVisibleItemIndex.coerceAtMost(count) } }
+    Text(WesternDigits.isolate("$progress / $count"), color = color, style = MaterialTheme.typography.labelSmall)
 }

@@ -302,7 +302,13 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
         val repository = remember(context) { NovelRepository.get(context) }
         val navigator = LocalNavigator.currentOrThrow
         val catalog by repository.catalog.collectAsState()
-        val library by repository.library.collectAsState()
+        val workIds = remember(catalog, initial.id) {
+            catalog.work(initial.id)?.editions?.map { it.id }?.toSet() ?: setOf(initial.id)
+        }
+        val library by remember(repository, workIds) {
+            repository.library.map { entries -> entries.filter { it.novel.id in workIds } }
+                .distinctUntilChanged().flowOn(Dispatchers.Default)
+        }.collectAsState(initial = emptyList())
         val storageError by repository.storageError.collectAsState()
         val work = catalog.work(initial.id) ?: UnifiedNovelWork(NovelIdentity.initialWorkId(initial.id), listOf(initial), initial.id)
         val scope = rememberCoroutineScope()
