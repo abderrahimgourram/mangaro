@@ -221,7 +221,6 @@ class NovelHomeScreen(private val initialGenre: String? = null) : Screen() {
         NovelShell("الروايات", actions = {
             IconButton(onClick = { navigator.push(NovelDownloadsScreen()) }) { Icon(Icons.Outlined.Download, "تنزيلات الروايات", tint = Design.GoldPrimary) }
             IconButton(onClick = { navigator.push(NovelLibraryScreen()) }) { Icon(Icons.Outlined.Bookmarks, "مكتبة الروايات", tint = Design.GoldPrimary) }
-            IconButton(onClick = { navigator.push(NovelCreditsScreen()) }) { Icon(Icons.Outlined.Info, "حول الروايات", tint = Design.LavenderPrimary) }
         }) {
             OutlinedTextField(input, { input = it }, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
                 placeholder = { Text("ابحث عن روايتك القادمة") }, singleLine = true, shape = RoundedCornerShape(16.dp),
@@ -547,21 +546,6 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
 class NovelLibraryScreen : Screen() {
     @Composable override fun Content() {
         OpenNovelAppSection(downloads = false)
-    }
-}
-
-class NovelCreditsScreen : Screen() {
-    @Composable override fun Content() {
-        val repository = NovelRepository.get(LocalContext.current)
-        val browser = LocalUriHandler.current
-        NovelShell("حول الروايات") {
-            LazyColumn(contentPadding = PaddingValues(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                item { Text("حكايات من مكتبات الروايات العربية", color = Design.GoldPrimary, style = MaterialTheme.typography.titleMedium) }
-                item { Text("الروايات والأغلفة والترجمات لأصحاب حقوقها. تجد هنا معلومات المصادر وروابطها الأصلية.", color = Color(0xFFCEC0D8)) }
-                items(repository.sources, key = { it.id }) { source -> TextButton(onClick = { runCatching { browser.openUri(source.baseUrl) } }) { Text(source.name, color = Design.LavenderPrimary) } }
-                item { Text("الخط العربي: Noto Naskh Arabic — SIL Open Font License 1.1", color = Color(0xFFAE99BE), style = MaterialTheme.typography.bodySmall) }
-            }
-        }
     }
 }
 

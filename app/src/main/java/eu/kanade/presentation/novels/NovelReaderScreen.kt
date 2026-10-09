@@ -154,6 +154,7 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
         var navigating by remember {mutableStateOf(false)}
         var generation by remember {mutableIntStateOf(0)}
         val scroll=rememberLazyListState()
+        val chapterAd = remember(novel.id, chapter.id) { NovelAdRequest("reader:" + novelDigest(novel.id + "|" + chapter.id)) }
         val scope=rememberCoroutineScope()
         LaunchedEffect(chapter.id,generation) {
             loading=true;restoring=true;loadedChapter=null;error=null;paragraphs=emptyList();plain=emptyList();anchors=emptyList();blocks=emptyList();blockPositions=emptyList()
@@ -294,7 +295,7 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Box(Modifier.fillMaxWidth().onSizeChanged { inlineAdHeight = it.height }) {
                                         if (!loading && loadedChapter?.id == chapter.id && error == null)
-                                            NovelAdPlacement("reader:" + novelDigest(novel.id + "|" + chapter.id), visible = adVisible, allowStart = controlsVisible)
+                                            NovelAdPlacement(chapterAd, visible = adVisible, allowStart = controlsVisible && !scroll.isScrollInProgress)
                                     }
                                     Text(chapter.title,color=gold,fontWeight=FontWeight.Bold,
                                         style=MaterialTheme.typography.titleLarge.copy(textDirection=TextDirection.ContentOrRtl),

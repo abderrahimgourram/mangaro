@@ -18,9 +18,17 @@ import eu.kanade.tachiyomi.data.ads.ReaderWebAdPolicy
 import eu.kanade.tachiyomi.data.ads.WebAdConfigRepository
 import java.util.UUID
 
-/** Existing isolated display slot only, with separate explicit approval for novels. */
+/** Screen-owned request state survives lazy-item disposal without reloading the creative. */
+internal class NovelAdRequest(val key: String) {
+    val owner = UUID.randomUUID().toString()
+    var reserved by mutableStateOf(false)
+    var started by mutableStateOf(false)
+    var ended by mutableStateOf(false)
+}
+
+/** Reuses the Manhwa display loader and policy; novel authorization remains fail-closed. */
 @Composable
-internal fun NovelAdPlacement(key: String, visible: Boolean = true, allowStart: Boolean = true) {
+internal fun NovelAdPlacement(request: NovelAdRequest, visible: Boolean = true, allowStart: Boolean = true) {
     val context = LocalContext.current
     val config = remember(context) { WebAdConfigRepository.get(context) }
     val policy = remember(context) { ReaderWebAdPolicy.get(context) }
@@ -28,36 +36,40 @@ internal fun NovelAdPlacement(key: String, visible: Boolean = true, allowStart: 
     val settings by config.config.collectAsStateWithLifecycle()
     val adFreeUntil by rewards.activeUntil.collectAsStateWithLifecycle()
     val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
-    val owner = remember(key) { UUID.randomUUID().toString() }
-    var reserved by remember(key) { mutableStateOf(false) }
-    var started by remember(key) { mutableStateOf(false) }
-    var ended by remember(key) { mutableStateOf(false) }
-    DisposableEffect(key, owner) {
-        onDispose { policy.releaseContentPlacement(key, owner) }
+    val key = request.key
+    val owner = request.owner
+    DisposableEffect(request) {
+        onDispose {
+            policy.releaseContentPlacement(key, owner)
+            request.reserved = false
+            if (request.started) request.ended = true
+        }
     }
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val eligible = visible && maxWidth >= 300.dp && lifecycle.isAtLeast(Lifecycle.State.RESUMED) &&
             settings.enabled && settings.novelPlacementsApproved && System.currentTimeMillis() >= adFreeUntil
         LaunchedEffect(eligible, allowStart, key) {
-            if (eligible && allowStart && !started && !ended) reserved = policy.reserveContentPlacement(key, owner)
-            else if ((!eligible || !allowStart) && reserved && !started) {
+            if (eligible && allowStart && !request.started && !request.ended) request.reserved = policy.reserveContentPlacement(key, owner)
+            else if ((!eligible || !allowStart) && request.reserved && !request.started) {
                 policy.releaseContentPlacement(key, owner)
-                reserved = false
+                request.reserved = false
             }
         }
-        if (eligible && (allowStart || started) && reserved && !ended) {
+        if (eligible && (allowStart || request.started) && request.reserved && !request.ended) {
             // Keep the shared creative intact: constrain width, never crop its reported height.
             Column(Modifier.widthIn(max = 320.dp).fillMaxWidth().align(Alignment.TopCenter), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("إعلان", color = MangaroDesignSystem.LavenderPrimary, style = MaterialTheme.typography.labelSmall)
                 AdDisplayWebView(settings.displayAdUrl,
                     onRequestStarted = {
-                        started = policy.commitContentPlacement(key, owner)
-                        if (!started) ended = true
+                        if (!request.started) {
+                            request.started = policy.commitContentPlacement(key, owner)
+                            if (!request.started) request.ended = true
+                        }
                     },
-                    onFailedToLoad = { ended = true },
+                    onFailedToLoad = { request.ended = true },
                     onReleased = {
                         policy.releaseContentPlacement(key, owner)
-                        if (started) ended = true
+                        if (request.started) request.ended = true
                     })
             }
         }

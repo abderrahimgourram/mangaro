@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -85,7 +86,10 @@ internal fun NovelDownloadSelectionSheet(index: NovelChapterIndex, currentChapte
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var confirmAll by remember { mutableStateOf(false) }
-    val placement = remember { "download-selection:" + java.util.UUID.randomUUID().toString() }
+    val placement = rememberSaveable { "download-selection:" + java.util.UUID.randomUUID().toString() }
+    val selectionAd = remember(placement) { NovelAdRequest(placement) }
+    val selectionScroll = rememberLazyListState()
+    val selectionAdVisible by remember { derivedStateOf { selectionScroll.layoutInfo.visibleItemsInfo.any { it.key == "selection-heading" } } }
     var from by rememberSaveable { mutableStateOf("1") }
     var to by rememberSaveable { mutableStateOf(index.chapters.size.coerceAtLeast(1).toString()) }
     var volumes by rememberSaveable { mutableStateOf(arrayListOf<String>()) }
@@ -121,9 +125,13 @@ internal fun NovelDownloadSelectionSheet(index: NovelChapterIndex, currentChapte
         }
     }
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Design.SurfaceDark) {
-        LazyColumn(Modifier.fillMaxWidth().heightIn(max = 540.dp), contentPadding = PaddingValues(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            item { NovelAdPlacement(placement) }
-            item { Text("تحميل الفصول", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium) }
+        LazyColumn(Modifier.fillMaxWidth().heightIn(max = 540.dp), state = selectionScroll, contentPadding = PaddingValues(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            item(key = "selection-heading") {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    NovelAdPlacement(selectionAd, visible = selectionAdVisible, allowStart = !selectionScroll.isScrollInProgress)
+                    Text("تحميل الفصول", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                }
+            }
             if (loading) item { CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp) }
             error?.let { message -> item { Text(message, color = Color(0xFFE5B5AB), style = MaterialTheme.typography.bodySmall) } }
             item {
@@ -196,13 +204,17 @@ fun NovelDownloadsContent() {
             error = null
             scope.launch { try { queue.control(id, action, chapterId) } catch (c: CancellationException) { throw c } catch (e: Exception) { error = novelError(e) } }
         }
+        val operation = rememberSaveable { "downloads:" + java.util.UUID.randomUUID().toString() }
+        val managementAd = remember(operation) { NovelAdRequest(operation) }
+        val downloadScroll = rememberLazyListState()
+        // The unloaded slot is zero-height: use the first batch as its visibility anchor.
+        val managementAdVisible by remember { derivedStateOf { downloadScroll.layoutInfo.visibleItemsInfo.any { it.index <= 1 } } }
         Column(Modifier.fillMaxSize().background(Design.BackgroundDark)) {
             (error ?: queueError)?.let { Text(it, Modifier.padding(16.dp), color = Color(0xFFE5B5AB)) }
-            val operation = remember { "downloads:" + java.util.UUID.randomUUID().toString() }
             if (!restored) CircularProgressIndicator(Modifier.padding(16.dp).size(24.dp), strokeWidth = 2.dp)
             else if (tasks.isEmpty() && queueError == null) Text("لا توجد تنزيلات للروايات بعد.", Modifier.padding(24.dp), color = Design.LavenderPrimary)
-            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (tasks.any { it.state in setOf(NovelDownloadState.PENDING, NovelDownloadState.RUNNING) }) item(key = "advertisement") { NovelAdPlacement(operation) }
+            LazyColumn(Modifier.fillMaxSize(), state = downloadScroll, contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (tasks.any { it.state in setOf(NovelDownloadState.PENDING, NovelDownloadState.RUNNING) }) item(key = "advertisement") { NovelAdPlacement(managementAd, visible = managementAdVisible, allowStart = !downloadScroll.isScrollInProgress) }
                 summaries.forEach { summary ->
                     item(key = summary.novel.id) {
                         var menu by remember { mutableStateOf(false) }
