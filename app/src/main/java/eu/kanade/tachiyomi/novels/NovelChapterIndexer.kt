@@ -7,6 +7,7 @@ import kotlinx.coroutines.delay
 /** Every cursor is source supplied. Fifty is a transport page size, never a library limit. */
 internal object NovelChapterIndexer {
     suspend fun collect(source: NovelSource, novel: Novel, initial: NovelChapterIndex = NovelChapterIndex(novel.id),
+        stopWhen: (NovelChapterIndex) -> Boolean = { false },
         onPage: suspend (NovelChapterIndex) -> Unit = {}): NovelChapterIndex {
         var index = initial
         val seen = index.chapters.associateByTo(LinkedHashMap()) { it.id }
@@ -33,6 +34,7 @@ internal object NovelChapterIndexer {
             index = NovelChapterIndex(novel.id, seen.values.toList(), volumes.values.toList(), result.nextPage,
                 result.nextPage == null, pages.toSet(), System.currentTimeMillis())
             onPage(index)
+            if (stopWhen(index)) return index
             if (index.nextPage != null) delay(250)
         }
         return index

@@ -23,8 +23,8 @@ import kotlin.coroutines.resumeWithException
 class NovelHttp {
     private val client by lazy {
         OkHttpClient.Builder().cookieJar(CookieJar.NO_COOKIES).followRedirects(false)
-            .followSslRedirects(false).connectTimeout(12, TimeUnit.SECONDS).readTimeout(20, TimeUnit.SECONDS)
-            .callTimeout(30, TimeUnit.SECONDS).build()
+            .followSslRedirects(false).connectTimeout(8, TimeUnit.SECONDS).readTimeout(15, TimeUnit.SECONDS)
+            .callTimeout(20, TimeUnit.SECONDS).build()
     }
     private val requests = Semaphore(2)
     private data class Cached(val value: String, val at: Long)
@@ -48,6 +48,21 @@ class NovelHttp {
     }
     suspend fun post(url: String, fields: Map<String, String>): String = request(url, fields)
     private suspend fun request(initial: String, fields: Map<String, String>?): String = requests.withPermit {
+        var attempt = 0
+        while (true) {
+            try { return@withPermit performRequest(initial, fields) }
+            catch (c: kotlinx.coroutines.CancellationException) { throw c }
+            catch (e: Exception) {
+                // Retry only public GETs and transient failures, once. Never retry access barriers.
+                val transient = e is IOException || (e as? NovelSourceFailure)?.httpStatus in setOf(408, 429, 500, 502, 503, 504)
+                val wait = (e as? NovelSourceFailure)?.retryAfterMs ?: 750L
+                if (fields != null || !transient || attempt++ >= 1 || wait > 5_000L) throw e
+                kotlinx.coroutines.delay(wait.coerceAtLeast(750L))
+            }
+        }
+        @Suppress("UNREACHABLE_CODE") error("No response")
+    }
+    private suspend fun performRequest(initial: String, fields: Map<String, String>?): String =
         withContext(Dispatchers.IO) {
             var url = initial
             repeat(5) {
@@ -68,7 +83,7 @@ class NovelHttp {
                     } else {
                         if (!it.isSuccessful) throw NovelSourceFailure(
                             if (it.code in listOf(401,403)) "هذا المحتوى غير متاح حاليًا. يمكنك فتحه في الموقع."
-                            else "تعذّر تحميل الروايات حاليًا. حاول مجددًا.", "Novel HTTP " + it.code, it.code)
+                            else "تعذّر تحميل الروايات حاليًا. حاول مجددًا.", "Novel HTTP " + it.code, it.code, it.header("Retry-After")?.toLongOrNull()?.takeIf { seconds -> seconds >= 0 }?.let { seconds -> if (seconds > 5) 6_000L else seconds * 1000 })
                         val body = it.body
                         if (body.contentLength() > 8 * 1024 * 1024) throw IOException("Novel response too large")
                         val bytes = body.byteStream().use { stream ->
@@ -89,7 +104,6 @@ class NovelHttp {
             }
             throw IOException("Too many novel redirects")
         }
-    }
     private suspend fun execute(request: Request): Response = suspendCancellableCoroutine { continuation ->
         val call = client.newCall(request)
         continuation.invokeOnCancellation { call.cancel() }

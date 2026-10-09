@@ -28,6 +28,9 @@ class NovelRepository private constructor(context: Context) {
     })
     private val lock = Mutex()
     private val catalogLock = Mutex()
+    private val requestLocks = Array(32) { Mutex() }
+    private fun requestLock(key: String) = requestLocks[(key.hashCode() and Int.MAX_VALUE) % requestLocks.size]
+    private val detailCache = LinkedHashMap<String, Pair<Novel, Long>>(32, .75f, true)
     private val indexLocks = ConcurrentHashMap<String, Mutex>()
     private val settingsSequence = java.util.concurrent.atomic.AtomicLong()
     private val positionSequence = java.util.concurrent.atomic.AtomicLong()
@@ -118,7 +121,18 @@ class NovelRepository private constructor(context: Context) {
             }
         }
     }
-    suspend fun detail(novel: Novel): Novel = source(novel.sourceId).details(novel).also { ingest(listOf(it)) }
+    suspend fun detail(novel: Novel): Novel = withContext(Dispatchers.IO) {
+        requestLock("detail:" + novel.id).withLock {
+            synchronized(detailCache) { detailCache[novel.id]?.takeIf { System.nanoTime() - it.second < 600_000_000_000L } }?.first
+                ?: source(novel.sourceId).details(novel).also {
+                    ingest(listOf(it))
+                    synchronized(detailCache) {
+                        detailCache[novel.id] = it to System.nanoTime()
+                        while (detailCache.size > 32) detailCache.remove(detailCache.keys.first())
+                    }
+                }
+        }
+    }
     suspend fun verifyCandidates(visible: Set<String>) {
         val all = catalog.value.works.flatMap { it.editions }
         val groups = all.groupBy { NovelIdentity.titleKey(it.title) }.values.filter { group ->
@@ -131,14 +145,16 @@ class NovelRepository private constructor(context: Context) {
     }
     suspend fun discover(source: NovelSource, term: String, page: Int, genre: String?): NovelPage {
         val key = listOf(source.id, term, page.toString(), genre.orEmpty()).joinToString("|")
-        synchronized(discoveryCache) { discoveryCache[key]?.takeIf { System.currentTimeMillis() - it.at < 300_000 }?.let { return it.result } }
+        return requestLock("discovery:" + key).withLock {
+        synchronized(discoveryCache) { discoveryCache[key]?.takeIf { System.currentTimeMillis() - it.at < 300_000 }?.let { return@withLock it.result } }
         val result = if (term.isNotBlank()) source.search(term, page) else source.catalog(page, latest = true, genre = genre)
         ingest(result.novels)
         synchronized(discoveryCache) {
             discoveryCache[key] = DiscoveryCache(result, System.currentTimeMillis())
             while (discoveryCache.size > 16) discoveryCache.remove(discoveryCache.keys.first())
         }
-        return result
+        result
+        }
     }
     suspend fun setSaved(novel: Novel, saved: Boolean) {
         try {
@@ -203,7 +219,7 @@ class NovelRepository private constructor(context: Context) {
     private suspend fun change(update: List<NovelLibraryItem>.() -> List<NovelLibraryItem>) {
         ready.await()
         withContext(Dispatchers.IO) { lock.withLock {
-            val next = mutableLibrary.value.update().filter { it.saved || it.position != null }.sortedByDescending { it.position?.updatedAt ?: 0 }
+            val next = mutableLibrary.value.update().filter { it.saved || it.position != null || it.favorite || it.bookmarks.isNotEmpty() }.sortedByDescending { it.position?.updatedAt ?: 0 }
             write(file, json.encodeToString(next)); mutableLibrary.value = next; mutableStorageError.value = null
         } }
     }
@@ -266,9 +282,15 @@ class NovelRepository private constructor(context: Context) {
             for (file in files) { if (bytes <= 16L * 1024 * 1024) break; val size = file.length(); if (file.delete()) bytes -= size }
         }
     }
-    suspend fun protectOfflineIndex(novel: Novel) {
-        val index = completeIndex(novel)
-        withContext(Dispatchers.IO) { metadata.write(indexPath(novel), json.encodeToString(index)) }
+    suspend fun protectOfflineIndex(novel: Novel, chapters: List<NovelChapter>) = withContext(Dispatchers.IO) {
+        require(chapters.all { NovelHttp.allowed(it.url) })
+        // Snapshot only. Do not wait behind a full remote index refresh or invent chapter ordering.
+        val index = indexSnapshot(novel) ?: NovelChapterIndex(novel.id)
+        synchronized(metadata) {
+            val stored = metadata.read(indexPath(novel))?.let { json.decodeFromString<NovelChapterIndex>(it) }
+            if (stored == null || stored.updatedAt <= index.updatedAt)
+                metadata.write(indexPath(novel), json.encodeToString(index))
+        }
     }
     suspend fun updateEvidence(novel: Novel, evidence: NovelEditionEvidence) = withContext(Dispatchers.IO) {
         ingest(listOf(novel))
@@ -292,28 +314,51 @@ class NovelRepository private constructor(context: Context) {
         }
     }
     suspend fun chapterPage(novel: Novel, page: Int): ChapterPage = source(novel.sourceId).chapters(novel, page)
-    suspend fun adjacent(novel: Novel, chapter: NovelChapter, forward: Boolean): NovelChapter? {
-        var index = indexSnapshot(novel)
-        var location = index?.chapters?.indexOfFirst { it.id == chapter.id } ?: -1
-        val cached = if (location >= 0) index?.chapters?.getOrNull(location + if (forward) 1 else -1) else null
-        if (cached != null) return cached
-        if (index?.complete != true) { index = completeIndex(novel); location = index.chapters.indexOfFirst { it.id == chapter.id } }
-        return if (location < 0) null else index?.chapters?.getOrNull(location + if (forward) 1 else -1)
+    suspend fun adjacent(novel: Novel, chapter: NovelChapter, forward: Boolean): NovelChapter? = withContext(Dispatchers.IO) {
+        fun neighbor(index: NovelChapterIndex?): NovelChapter? {
+            val location = index?.chapters?.indexOfFirst { it.id == chapter.id } ?: -1
+            return if (location < 0) null else index?.chapters?.getOrNull(location + if (forward) 1 else -1)
+        }
+        val cached = indexSnapshot(novel)
+        neighbor(cached)?.let { return@withContext it }
+        if (cached?.complete == true) return@withContext null
+        indexLocks.getOrPut(novel.id) { Mutex() }.withLock {
+            val current = indexSnapshot(novel) ?: NovelChapterIndex(novel.id)
+            neighbor(current)?.let { return@withLock it }
+            if (current.complete) return@withLock null
+            val index = NovelChapterIndexer.collect(source(novel.sourceId), novel, current,
+                onPage = { cacheIndex(it); persistIndex(novel, it) },
+                stopWhen = { neighbor(it) != null || (!forward && it.chapters.firstOrNull()?.id == chapter.id) })
+            neighbor(index)
+        }
     }
     suspend fun chapterText(novel: Novel, chapter: NovelChapter): NovelText = withContext(Dispatchers.IO) {
-        disk.read(novel.id, chapter.id)?.let { return@withContext it }
-        if (downloadQueue.isInitialized() && downloads.tasks.value.any { it.novel.id == novel.id && it.chapter.id == chapter.id && it.state == NovelDownloadState.DONE }) downloads.invalidate(novel, chapter)
         val key = novel.id + "|" + chapter.id
-        lock.withLock { texts[key] }?.let { return@withContext it }
-        val result = source(novel.sourceId).chapter(chapter)
-        lock.withLock {
-            texts[key] = result
-            while (texts.size > 2 || texts.values.sumOf { v -> v.paragraphs.sumOf { it.length } + v.markup.sumOf { it.length } } > 1_000_000) texts.remove(texts.keys.first())
+        requestLock("text:" + key).withLock {
+            lock.withLock { texts[key] }?.let { return@withLock it }
+            val offline = disk.read(novel.id, chapter.id)
+            if (offline == null && downloadQueue.isInitialized() && downloads.tasks.value.any {
+                it.novel.id == novel.id && it.chapter.id == chapter.id && it.state == NovelDownloadState.DONE
+            }) downloads.invalidate(novel, chapter)
+            val result = offline ?: source(novel.sourceId).chapter(chapter)
+            check(result.paragraphs.size >= 3 && result.paragraphs.sumOf { it.length } >= 200) { "Incomplete novel chapter" }
+            lock.withLock {
+                texts[key] = result
+                while (texts.size > 2 || texts.values.sumOf { v -> v.paragraphs.sumOf { it.length } + v.markup.sumOf { it.length } } > 1_000_000) texts.remove(texts.keys.first())
+            }
+            result
         }
-        result
     }
+    internal fun activeDownloads(): NovelDownloadQueue? = if (downloadQueue.isInitialized()) downloads else null
     companion object {
         @Volatile private var instance: NovelRepository? = null
+        internal fun peek(): NovelRepository? = instance
+        internal suspend fun recoverDownloads(context: Context): NovelDownloadQueue? = withContext(Dispatchers.IO) {
+            val active = instance?.activeDownloads()
+            if (active != null) active
+            else if (File(context.filesDir, "novels-local/downloads/queue.db").isFile) get(context).downloads
+            else null
+        }
         fun get(context: Context): NovelRepository = instance ?: synchronized(this) { instance ?: NovelRepository(context).also { instance = it } }
     }
 }

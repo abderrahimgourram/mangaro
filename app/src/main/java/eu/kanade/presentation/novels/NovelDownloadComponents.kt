@@ -28,6 +28,9 @@ import eu.kanade.presentation.theme.MangaroDesignSystem as Design
 import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.novels.*
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
 
 internal fun chapterGroups(index: NovelChapterIndex, descending: Boolean) = novelChapterGroups(index, descending)
@@ -102,7 +105,7 @@ fun NovelDownloadsContent() {
         val queue = repository.downloads
         val tasks by queue.tasks.collectAsState()
         val queueError by queue.error.collectAsState()
-        val summaries = remember(tasks) { queue.summaries() }
+        val summaries by remember(queue) { queue.tasks.map { queue.summaries(it) }.flowOn(Dispatchers.Default) }.collectAsState(initial = emptyList())
         val navigator = LocalNavigator.currentOrThrow
         val scope = rememberCoroutineScope()
         var expanded by rememberSaveable { mutableStateOf(arrayListOf<String>()) }

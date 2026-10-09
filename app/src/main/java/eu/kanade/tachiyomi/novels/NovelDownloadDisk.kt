@@ -20,7 +20,7 @@ internal fun novelDigest(value: String): String = MessageDigest.getInstance("SHA
 /** Shared by queue and reader. No manga paths, external storage, executable HTML or temporary image copies. */
 class NovelDownloadDisk(private val root: File) {
     private val json = Json { ignoreUnknownKeys = true }
-    private val active = ConcurrentHashMap.newKeySet<String>()
+    private companion object { val active = ConcurrentHashMap.newKeySet<String>() }
     private val temporary get() = File(root, "temporary")
     private fun target(editionId: String, chapterId: String) = File(File(root, "chapters/" + novelDigest(editionId)), novelDigest(chapterId) + ".json.gz")
     @Serializable private data class StoredChapter(val editionId: String, val chapterId: String, val checksum: String, val text: NovelText)
@@ -56,7 +56,7 @@ class NovelDownloadDisk(private val root: File) {
         check(bytes.size <= 8 * 1024 * 1024)
         temporary.mkdirs()
         val part = File(temporary, UUID.randomUUID().toString() + ".part")
-        active.add(part.name)
+        active.add(part.absolutePath)
         try {
             FileOutputStream(part).use { file ->
                 GZIPOutputStream(file).use { gzip -> gzip.write(bytes); gzip.finish(); file.fd.sync() }
@@ -66,7 +66,7 @@ class NovelDownloadDisk(private val root: File) {
             destination.parentFile!!.mkdirs()
             try { Files.move(part.toPath(), destination.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING) }
             catch (_: AtomicMoveNotSupportedException) { Files.move(part.toPath(), destination.toPath(), StandardCopyOption.REPLACE_EXISTING) }
-        } finally { active.remove(part.name); part.delete() }
+        } finally { active.remove(part.absolutePath); part.delete() }
     }
 
     /** Only abandoned .part files in the dedicated temporary directory; completed files are never scanned/deleted. */
@@ -74,7 +74,7 @@ class NovelDownloadDisk(private val root: File) {
         var deleted = 0
         temporary.listFiles().orEmpty().take(2000).forEach { file ->
             if (cancelled()) return deleted
-            if (file.isFile && file.name.endsWith(".part") && file.name !in active && now - file.lastModified() > 86_400_000 && file.delete()) deleted++
+            if (file.isFile && file.name.endsWith(".part") && file.absolutePath !in active && now - file.lastModified() > 86_400_000 && file.delete()) deleted++
         }
         return deleted
     }

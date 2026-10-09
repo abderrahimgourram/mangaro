@@ -18,6 +18,17 @@ import eu.kanade.tachiyomi.util.system.activeNetworkState
 import eu.kanade.tachiyomi.util.system.networkStateFlow
 import eu.kanade.tachiyomi.util.system.notificationBuilder
 import eu.kanade.tachiyomi.util.system.setForegroundSafely
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
+import eu.kanade.tachiyomi.novels.NovelRepository
+import eu.kanade.tachiyomi.novels.NovelDownloadState
+import eu.kanade.tachiyomi.data.notification.NotificationHandler
+import androidx.work.Constraints
+import androidx.work.NetworkType
+import androidx.work.BackoffPolicy
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combineTransform
@@ -41,6 +52,13 @@ class DownloadJob(context: Context, workerParams: WorkerParameters) : CoroutineW
         val notification = applicationContext.notificationBuilder(Notifications.CHANNEL_DOWNLOADER_PROGRESS) {
             setContentTitle(applicationContext.getString(R.string.download_notifier_downloader_title))
             setSmallIcon(android.R.drawable.stat_sys_download)
+            setContentIntent(NotificationHandler.openDownloadManagerPendingActivity(applicationContext))
+            setOnlyAlertOnce(true)
+            NovelRepository.peek()?.activeDownloads()?.tasks?.value?.let { tasks ->
+                val completed = tasks.count { it.state == NovelDownloadState.DONE }
+                val pending = tasks.count { it.state in setOf(NovelDownloadState.PENDING, NovelDownloadState.RUNNING) }
+                if (pending > 0) setContentText("روايات · تم تحميل $completed فصلًا · المتبقي $pending")
+            }
         }.build()
         return ForegroundInfo(
             Notifications.ID_DOWNLOAD_CHAPTER_PROGRESS,
@@ -53,35 +71,55 @@ class DownloadJob(context: Context, workerParams: WorkerParameters) : CoroutineW
         )
     }
 
-    override suspend fun doWork(): Result {
-        var networkCheck = checkNetworkState(
-            applicationContext.activeNetworkState(),
-            downloadPreferences.downloadOnlyOverWifi.get(),
-        )
-        var active = networkCheck && downloadManager.downloaderStart()
-
-        if (!active) {
-            return Result.failure()
-        }
-
+    @OptIn(FlowPreview::class)
+    override suspend fun doWork(): Result = try { coroutineScope {
+        val novels = NovelRepository.recoverDownloads(applicationContext)
+        novels?.awaitReady()
+        var networkCheck = checkNetworkState(applicationContext.activeNetworkState(), downloadPreferences.downloadOnlyOverWifi.get())
+        if (!networkCheck) return@coroutineScope if (novels?.hasPending() == true) Result.retry() else Result.failure()
+        val mangaStarted = downloadManager.downloaderStart()
+        if (!mangaStarted && novels?.hasPending() != true) return@coroutineScope Result.success()
         setForegroundSafely()
-
-        coroutineScope {
-            combineTransform(
-                applicationContext.networkStateFlow(),
-                downloadPreferences.downloadOnlyOverWifi.changes(),
-                transform = { a, b -> emit(checkNetworkState(a, b)) },
-            )
-                .onEach { networkCheck = it }
-                .launchIn(this)
+        var moreNovels = false
+        var textDownloads = launch(Dispatchers.IO) {
+            if (novels?.hasPending() == true) moreNovels = novels.runBatch()
         }
-
-        // Keep the worker running when needed
-        while (active) {
-            active = !isStopped && downloadManager.isRunning && networkCheck
+        val network = launch {
+            combine(applicationContext.networkStateFlow(), downloadPreferences.downloadOnlyOverWifi.changes()) { state, wifi ->
+                checkNetworkState(state, wifi)
+            }.collect { allowed ->
+                networkCheck = allowed
+                if (!allowed) textDownloads.cancel()
+            }
         }
+        val notification = launch {
+            novels?.tasks?.debounce(1000)?.collect { setForegroundSafely() }
+        }
+        try {
+            // The monitor is cancelled explicitly; no infinite collector scope or busy-spin loop.
+            while (isActive && !isStopped && networkCheck && (downloadManager.isRunning || textDownloads.isActive)) {
+                delay(250)
+                if (!textDownloads.isActive && novels?.hasPending() == true) {
+                    textDownloads = launch(Dispatchers.IO) { moreNovels = novels.runBatch() }
+                }
+            }
+            if (moreNovels || (!networkCheck && novels?.hasPending() == true)) Result.retry() else Result.success()
+        } finally {
+            val interrupted = isStopped || !currentCoroutineContext().isActive
+            withContext(NonCancellable) {
+                network.cancelAndJoin()
+                notification.cancelAndJoin()
+                textDownloads.cancelAndJoin()
+                if (interrupted) downloadManager.downloaderStop()
+            }
+        }
+    }
 
-        return Result.success()
+    } catch (c: CancellationException) { throw c }
+    catch (e: Exception) {
+        android.util.Log.e("MangaroDownloads", "Shared download worker failed; durable queue retained", e)
+        NovelRepository.peek()?.activeDownloads()?.workerFailed()
+        if (runAttemptCount < 3) Result.retry() else Result.failure()
     }
 
     private fun checkNetworkState(state: NetworkState, requireWifi: Boolean): Boolean {
@@ -102,12 +140,14 @@ class DownloadJob(context: Context, workerParams: WorkerParameters) : CoroutineW
     companion object {
         private const val TAG = "Downloader"
 
-        fun start(context: Context) {
+        fun start(context: Context, shared: Boolean = false, append: Boolean = true) {
             val request = OneTimeWorkRequestBuilder<DownloadJob>()
                 .addTag(TAG)
+                .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
                 .build()
             WorkManager.getInstance(context)
-                .enqueueUniqueWork(TAG, ExistingWorkPolicy.REPLACE, request)
+                .enqueueUniqueWork(TAG, if (!shared) ExistingWorkPolicy.REPLACE else if (append) ExistingWorkPolicy.APPEND_OR_REPLACE else ExistingWorkPolicy.KEEP, request)
         }
 
         fun stop(context: Context) {

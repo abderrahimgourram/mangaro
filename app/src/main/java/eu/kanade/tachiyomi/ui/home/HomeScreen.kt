@@ -175,14 +175,11 @@ object HomeScreen : Screen() {
                                 BrowseTab
                             }
                             Tab.NovelDownloads -> DownloadsTab.also { DownloadsTab.selectNovels() }
-                            is Tab.More -> MoreTab
+                            is Tab.More -> if (it.toDownloads) DownloadsTab else MoreTab
                         }
 
                         if (it is Tab.Library && it.mangaIdToOpen != null) {
                             navigator.push(MangaScreen(it.mangaIdToOpen))
-                        }
-                        if (it is Tab.More && it.toDownloads) {
-                            navigator.push(DownloadQueueScreen)
                         }
                     }
                 }

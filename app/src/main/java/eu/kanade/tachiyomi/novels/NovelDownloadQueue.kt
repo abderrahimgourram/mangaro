@@ -27,6 +27,7 @@ internal fun novelDownloadKey(editionId: String, chapterId: String) = novelDiges
 class NovelDownloadQueue(private val app: Context, private val repository: NovelRepository, private val disk: NovelDownloadDisk) {
     private val json = Json { ignoreUnknownKeys = true }
     private val mutex = Mutex()
+    private val batchMutex = Mutex()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val ready = CompletableDeferred<Unit>()
     private val active = ConcurrentHashMap<String, Job>()
@@ -65,8 +66,9 @@ class NovelDownloadQueue(private val app: Context, private val repository: Novel
     }
     suspend fun enqueue(novel: Novel, chapters: List<NovelChapter>) = withContext(Dispatchers.IO) {
         ready.await()
+        mutableError.value = null
         repository.source(novel.sourceId) // approved edition only
-        repository.protectOfflineIndex(novel)
+        repository.protectOfflineIndex(novel, chapters)
         val unique = chapters.distinctBy { it.id }.filter { it.available }
         require(unique.all { NovelHttp.allowed(it.url) && java.net.URI(it.url).host == java.net.URI(novel.url).host })
         mutex.withLock {
@@ -86,10 +88,11 @@ class NovelDownloadQueue(private val app: Context, private val repository: Novel
             publish()
         }
         if (tasks.value.any { it.state == NovelDownloadState.PENDING }) schedule(append = true)
-        NovelStorageMaintenanceJob.schedule(app)
+        eu.kanade.tachiyomi.data.cache.StorageMaintenanceJob.schedule(app)
     }
     suspend fun control(editionId: String, action: NovelDownloadState, chapterId: String? = null) = withContext(Dispatchers.IO) {
         ready.await()
+        mutableError.value = null
         val cancelKeys = mutableListOf<String>()
         val suffix = if (chapterId == null) "" else " AND id=?"
         val arguments = if (chapterId == null) arrayOf(editionId) else arrayOf(editionId, novelDownloadKey(editionId, chapterId))
@@ -134,7 +137,7 @@ class NovelDownloadQueue(private val app: Context, private val repository: Novel
         } }
         mutableError.value = null
     }
-    fun summaries(): List<NovelDownloadSummary> = tasks.value.groupBy { it.novel.id }.values.map { list ->
+    fun summaries(snapshot: List<NovelDownloadTask> = tasks.value): List<NovelDownloadSummary> = snapshot.groupBy { it.novel.id }.values.map { list ->
         fun count(state: NovelDownloadState) = list.count { it.state == state }
         NovelDownloadSummary(list.first().novel, list.size, count(NovelDownloadState.DONE), count(NovelDownloadState.PENDING),
             count(NovelDownloadState.RUNNING), count(NovelDownloadState.PAUSED), count(NovelDownloadState.FAILED), count(NovelDownloadState.CANCELLED))
@@ -172,7 +175,7 @@ class NovelDownloadQueue(private val app: Context, private val repository: Novel
             db.execSQL("UPDATE tasks SET state='PENDING',generation=generation+1 WHERE id=?", arrayOf(task.key)); changed(task.key, NovelDownloadState.PENDING, increment = true)
         }
     }
-    suspend fun runBatch(): Boolean = supervisorScope {
+    suspend fun runBatch(): Boolean = batchMutex.withLock { supervisorScope {
         ready.await()
         val until = System.currentTimeMillis() + 7 * 60_000
         val lanes = List(2) {
@@ -201,12 +204,12 @@ class NovelDownloadQueue(private val app: Context, private val repository: Novel
         lanes.joinAll()
         tasks.value.any { it.state == NovelDownloadState.PENDING }
     }
+    }
+    internal fun workerFailed() { mutableError.value = "تعذّر إكمال التنزيل. حاول مجددًا." }
+    fun hasPending() = tasks.value.any { it.state in setOf(NovelDownloadState.PENDING, NovelDownloadState.RUNNING) }
     private fun schedule(append: Boolean) {
         try {
-            val request = OneTimeWorkRequestBuilder<NovelDownloadWorker>()
-                .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
-                .setBackoffCriteria(BackoffPolicy.LINEAR, 10, TimeUnit.SECONDS).build()
-            WorkManager.getInstance(app).enqueueUniqueWork("novels.downloads.v1", if (append) ExistingWorkPolicy.APPEND_OR_REPLACE else ExistingWorkPolicy.KEEP, request)
+            eu.kanade.tachiyomi.data.download.DownloadJob.start(app, shared = true, append = append)
         } catch (e: Exception) { mutableError.value = "تعذّر بدء التنزيل. حاول مجددًا."; android.util.Log.e("MangaroNovels", "Novel worker scheduling failed", e) }
     }
 }

@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.outlined.Bookmark
+import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.FormatSize
@@ -42,6 +44,7 @@ import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.novels.*
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import tachiyomi.core.common.util.lang.WesternDigits
@@ -66,6 +69,8 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
         val offline = tasks.any {it.novel.id==novel.id && it.chapter.id==chapter.id && it.state==NovelDownloadState.DONE}
         var choicesLoading by remember {mutableStateOf(false)}
         var paragraphs by remember {mutableStateOf(emptyList<AnnotatedString>())}
+        var loadedChapter by remember { mutableStateOf<NovelChapter?>(null) }
+        var restoring by remember { mutableStateOf(false) }
         var plain by remember {mutableStateOf(emptyList<String>())}
         var error by remember {mutableStateOf<String?>(null)}
         var loading by remember {mutableStateOf(true)}
@@ -74,32 +79,43 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
         val scroll=rememberLazyListState()
         val scope=rememberCoroutineScope()
         LaunchedEffect(chapter.id,generation) {
-            loading=true;error=null;paragraphs=emptyList();plain=emptyList()
+            loading=true;restoring=true;loadedChapter=null;error=null;paragraphs=emptyList();plain=emptyList()
             try {
                 repository.awaitLocal()
                 val text=repository.chapterText(novel,chapter)
                 plain=text.paragraphs
                 paragraphs=withContext(Dispatchers.Default) {text.paragraphs.mapIndexed {i,p -> styledParagraph(text.markup.getOrNull(i),p)}}
                 val position=repository.library.value.firstOrNull {it.novel.id==novel.id}?.position?.takeIf {it.chapter.id==chapter.id}
-                val anchor=position?.anchor?.takeIf {it.isNotEmpty()}?.let {hash -> plain.indices.filter {paragraphAnchor(plain[it])==hash}.minByOrNull {kotlin.math.abs(it-((position?.paragraph ?: 1)-1))} ?: -1 } ?: -1
-                val index=if(anchor>=0) anchor+1 else (position?.paragraph ?: 0).coerceIn(0,paragraphs.size)
-                scroll.scrollToItem(index,position?.offset ?: 0)
-                repository.savePosition(novel,chapter,index,position?.offset ?: 0,plain.getOrNull(index-1)?.let(::paragraphAnchor).orEmpty())
+                val index = withContext(Dispatchers.Default) {
+                    val anchor = position?.anchor?.takeIf { it.isNotEmpty() }?.let { hash ->
+                        plain.indices.filter { paragraphAnchor(plain[it]) == hash }.minByOrNull { kotlin.math.abs(it - ((position?.paragraph ?: 1) - 1)) } ?: -1
+                    } ?: -1
+                    if (anchor >= 0) anchor + 1 else (position?.paragraph ?: 0).coerceIn(0, paragraphs.size)
+                }
+                // Wait for this chapter's lazy-list layout, not merely the old heading-only list.
+                snapshotFlow { scroll.layoutInfo.totalItemsCount }.first { it >= paragraphs.size + 1 }
+                scroll.scrollToItem(index, position?.offset ?: 0)
+                loadedChapter = chapter
+                restoring = false
+                repository.savePosition(novel, chapter, index, position?.offset ?: 0,
+                    plain.getOrNull(index - 1)?.let(::paragraphAnchor).orEmpty())
             } catch(c: CancellationException) {throw c}
             catch(e: Exception) {error=novelError(e)}
             finally {loading=false}
         }
-        val currentChapter by rememberUpdatedState(chapter)
+        val currentChapter by rememberUpdatedState(loadedChapter)
+        val currentRestoring by rememberUpdatedState(restoring)
         val currentPlain by rememberUpdatedState(plain)
         fun saveCurrent() {
-            if(currentPlain.isNotEmpty()) {
+            val shown = currentChapter ?: return
+            if(!currentRestoring && currentPlain.isNotEmpty()) {
                 val index=scroll.firstVisibleItemIndex
-                repository.savePosition(novel,currentChapter,index,scroll.firstVisibleItemScrollOffset,
+                repository.savePosition(novel,shown,index,scroll.firstVisibleItemScrollOffset,
                     currentPlain.getOrNull(index-1)?.let(::paragraphAnchor).orEmpty())
             }
         }
-        LaunchedEffect(chapter.id,paragraphs) {
-            if(paragraphs.isNotEmpty()) snapshotFlow {Triple(scroll.firstVisibleItemIndex,scroll.firstVisibleItemScrollOffset,scroll.isScrollInProgress)}
+        LaunchedEffect(loadedChapter?.id,restoring) {
+            if(loadedChapter != null && !restoring && paragraphs.isNotEmpty()) snapshotFlow {Triple(scroll.firstVisibleItemIndex,scroll.firstVisibleItemScrollOffset,scroll.isScrollInProgress)}
                 .debounce(600).distinctUntilChanged().collect {if(!it.third) saveCurrent()}
         }
         val owner=LocalLifecycleOwner.current
@@ -142,6 +158,11 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                     Text(novel.title,Modifier.weight(1f),style=MaterialTheme.typography.labelLarge.copy(textDirection=TextDirection.ContentOrRtl),
                         color=ink,maxLines=2)
                     IconButton(onClick={scope.launch { try {repository.downloads.enqueue(novel,listOf(chapter))} catch(c: CancellationException) {throw c} catch(e: Exception) {error=novelError(e)} }},enabled=!offline) {Icon(Icons.Outlined.Download,"تحميل الفصل",tint=gold)}
+                    val entries by repository.library.collectAsState()
+                    val bookmarked = entries.firstOrNull { it.novel.id == novel.id }?.bookmarks?.contains(chapter.id) == true
+                    IconButton(onClick={scope.launch {
+                        try {repository.updateLibrary(novel, bookmark=chapter.id)} catch(c: CancellationException) {throw c} catch(e: Exception) {error=novelError(e)}
+                    }}) {Icon(if(bookmarked) Icons.Outlined.Bookmark else Icons.Outlined.BookmarkBorder,"إشارة مرجعية",tint=gold)}
                     IconButton(onClick={settingsOpen=true}) {Icon(Icons.Outlined.FormatSize,"إعدادات القراءة",tint=gold)}
                     IconButton(onClick={chaptersOpen=true;if(chapterChoices.isEmpty()) moreChapters()}) {Icon(Icons.Outlined.List,"قائمة الفصول",tint=gold)}
                 }

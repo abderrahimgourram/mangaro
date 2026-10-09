@@ -7,7 +7,7 @@ import java.nio.file.StandardCopyOption
 
 /** Small metadata snapshots with atomic replacement. The previous legacy library is not deleted. */
 internal class NovelMetadataStore(private val root: File) {
-    fun read(name: String): String? {
+    @Synchronized fun read(name: String): String? {
         require(Regex("[a-zA-Z0-9./_-]+").matches(name) && ".." !in name)
         val file = File(root, name)
         return listOf(file, File(file.parentFile, file.name + ".backup")).firstNotNullOfOrNull { candidate ->
@@ -17,7 +17,7 @@ internal class NovelMetadataStore(private val root: File) {
             }.getOrNull()
         }
     }
-    fun write(name: String, value: String) {
+    @Synchronized fun write(name: String, value: String) {
         require(Regex("[a-zA-Z0-9./_-]+").matches(name) && ".." !in name)
         val file = File(root, name)
         file.parentFile!!.mkdirs()

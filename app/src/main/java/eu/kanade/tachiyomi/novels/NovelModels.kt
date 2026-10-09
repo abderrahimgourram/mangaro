@@ -40,7 +40,7 @@ data class NovelLibraryItem(val novel: Novel, val saved: Boolean = false, val po
 data class NovelReaderSettings(val fontSize: Float = 21f, val lineSpacing: Float = 1.8f,
     val paragraphSpacing: Int = 18, val margin: Int = 24, val theme: String = "dark", val font: String = "naskh")
 
-class NovelSourceFailure(val publicMessage: String, detail: String, val httpStatus: Int? = null) : Exception(detail)
+class NovelSourceFailure(val publicMessage: String, detail: String, val httpStatus: Int? = null, val retryAfterMs: Long? = null) : Exception(detail)
 
 interface NovelSource {
     val id: String

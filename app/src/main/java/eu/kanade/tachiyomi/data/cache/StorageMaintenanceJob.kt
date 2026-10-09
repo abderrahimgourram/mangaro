@@ -9,6 +9,7 @@ import eu.kanade.tachiyomi.data.download.DownloadManager
 import eu.kanade.tachiyomi.util.system.workManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import logcat.LogPriority
@@ -40,6 +41,9 @@ class StorageMaintenanceJob(context: Context, params: WorkerParameters) : Corout
                 // Recent writes retain a grace period; decoder/writer leases always take precedence.
                 val covers = sweep.prune(roots, CacheMaintenance::isCover, now, maxBytes = CacheBudgets.COVERS,
                     minAge = TimeUnit.MINUTES.toMillis(10), stillIdle = idle)
+                val context = kotlinx.coroutines.currentCoroutineContext()
+                eu.kanade.tachiyomi.novels.NovelDownloadDisk(File(applicationContext.filesDir, "novels-local/text-downloads"))
+                    .cleanTemporary(cancelled = { !context.isActive || !idle() })
                 listOf(staging, shares, covers)
             }
             if (finished == null || finished.any { !it.scanComplete || it.deleted >= 512 }) Result.retry() else Result.success()
