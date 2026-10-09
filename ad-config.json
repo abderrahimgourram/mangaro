@@ -1,5 +1,6 @@
 {
   "enabled": true,
   "displayAdUrl": "https://mangaro-web.vercel.app/ad-slot",
-  "smartLink": "https://asiafilm.org/4/71f2337020da186c3958a071da292bec"
+  "smartLink": "https://asiafilm.org/4/71f2337020da186c3958a071da292bec",
+  "novelPlacementsApproved": true
 }
