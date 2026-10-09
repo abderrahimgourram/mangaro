@@ -4,6 +4,7 @@ import org.jsoup.nodes.Element
 import org.jsoup.nodes.Entities
 import org.jsoup.nodes.Node
 import org.jsoup.nodes.TextNode
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 /** Walk only the already-sanitized story container. No scripts, browser or document-body scraping. */
 internal fun extractNovelContent(content: Element): NovelText {
@@ -35,9 +36,10 @@ internal fun extractNovelContent(content: Element): NovelText {
             Regex("(?:^|[\\s_-])(avatar|emoji|smiley|icon|logo|banner|advert|ads|tracking|pixel)(?:$|[\\s_-])", RegexOption.IGNORE_CASE).containsMatchIn(identity)) return
         val candidates = listOf("data-src", "data-lazy-src", "data-original", "src").map { element.absUrl(it) } +
             listOf("data-srcset", "srcset").flatMap { attr -> element.attr(attr).split(',').map { it.trim().substringBefore(' ') } }
-                .map { org.jsoup.helper.StringUtil.resolve(element.baseUri(), it) }
-        val url = candidates.firstOrNull { NovelHttp.allowed(it) && !it.contains("placeholder", ignoreCase = true) } ?: return
-        if (blocks.lastOrNull()?.let { it.kind == NovelBlockKind.IMAGE && it.imageUrl == url } == true) return
+                .map { element.baseUri().toHttpUrlOrNull()?.resolve(it)?.toString().orEmpty() }
+        val url = candidates.firstOrNull { NovelHttp.allowed(it) && !it.contains("placeholder", ignoreCase = true) }
+        if (url == null && candidates.none { it.startsWith("https://") || it.startsWith("http://") }) return
+        if (url != null && blocks.lastOrNull()?.let { it.kind == NovelBlockKind.IMAGE && it.imageUrl == url } == true) return
         check(blocks.count { it.kind == NovelBlockKind.IMAGE } < 256) { "Chapter illustration budget exceeded" }
         blocks += NovelContentBlock(NovelBlockKind.IMAGE, imageUrl = url, alt = element.attr("alt").take(1024), width = w, height = h)
     }

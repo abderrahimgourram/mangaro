@@ -24,7 +24,11 @@ import kotlinx.coroutines.withContext
 /** One existing Coil request per visible block; a fixed frame prevents image loads moving saved text. */
 @Composable
 internal fun NovelIllustration(repository: NovelRepository, block: NovelContentBlock, offline: Boolean, accent: Color) {
-    val url = block.imageUrl ?: return
+    val url = block.imageUrl
+    if (url == null) {
+        Text("الصورة غير متاحة من هذا المصدر", color = accent, style = MaterialTheme.typography.labelMedium)
+        return
+    }
     val context = LocalContext.current
     var retry by remember(url) { mutableIntStateOf(0) }
     val data by produceState<Any?>(null, repository, url, offline, retry) {

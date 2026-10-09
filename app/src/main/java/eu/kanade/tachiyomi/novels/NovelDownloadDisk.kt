@@ -121,6 +121,7 @@ class NovelDownloadDisk(private val root: File) {
     internal suspend fun prepareWithIllustrations(edition: String, chapter: String, text: NovelText,
         fetch: suspend (String) -> ByteArray): PreparedChapter {
         val prepared = prepare(edition, chapter, text)
+        prepared.imagesComplete = text.blocks.none { it.kind == NovelBlockKind.IMAGE && it.imageUrl == null }
         val owner = ownerKey(edition, chapter)
         val ownerIdentity = root.absolutePath + "/" + owner
         val leases = mutableListOf<Lease>()
@@ -226,7 +227,7 @@ class NovelDownloadDisk(private val root: File) {
         check(text.blocks.size <= 20000)
         check(text.blocks.filter { it.kind == NovelBlockKind.IMAGE }.size <= 256)
         text.blocks.forEach { block ->
-            if (block.kind == NovelBlockKind.IMAGE) require(block.imageUrl != null && NovelHttp.allowed(block.imageUrl))
+            if (block.kind == NovelBlockKind.IMAGE) require(block.imageUrl == null || NovelHttp.allowed(block.imageUrl))
             else require(block.paragraph != null && block.paragraph in text.paragraphs.indices)
         }
     }

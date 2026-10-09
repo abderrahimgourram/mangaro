@@ -169,7 +169,7 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                 val position=repository.readingPosition(novel,chapter)
                 val index = withContext(Dispatchers.Default) {
                     val anchor = position?.anchor?.takeIf { it.isNotEmpty() }?.let { hash ->
-                        anchors.indices.filter { anchors[it] == hash }.minByOrNull { kotlin.math.abs(it - ((position?.paragraph ?: 1) - 1)) } ?: -1
+                        anchors.indices.filter { anchors[it] == hash }.minByOrNull { kotlin.math.abs(document.positions[it] - (position?.paragraph ?: 0)) } ?: -1
                     } ?: -1
                     if (anchor >= 0) anchor + 1 else if ((position?.paragraph ?: 0) == 0) 0 else
                         (blocks.indexOfFirst { it.paragraph == (position!!.paragraph - 1) } + 1).coerceIn(0, blocks.size)
@@ -424,7 +424,7 @@ private suspend fun preparedDocument(key: String, text: NovelText): PreparedNove
     var lastParagraph = 0
     val positions = blocks.map { block -> block.paragraph?.let { lastParagraph = it + 1 }; lastParagraph }
     val anchors = blocks.map { block ->
-        if (block.kind == NovelBlockKind.IMAGE) "image:" + paragraphAnchor(block.imageUrl.orEmpty()) else paragraphAnchors[block.paragraph!!]
+        if (block.kind == NovelBlockKind.IMAGE) "image:" + paragraphAnchor(block.imageUrl ?: "blocked:" + block.alt) else paragraphAnchors[block.paragraph!!]
     }
     val result = PreparedNovelDocument(text, paragraphs, anchors, blocks, positions)
     synchronized(preparedDocuments) {
