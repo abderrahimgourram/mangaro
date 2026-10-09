@@ -151,11 +151,14 @@ class MainActivity : BaseActivity() {
         registerSecureActivity(this)
     }
 
+    private var launchSplashRemoved by mutableStateOf(false)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         val isLaunch = savedInstanceState == null
 
         // Prevent splash screen showing up on configuration changes
         val splashScreen = if (isLaunch) installSplashScreen() else null
+        launchSplashRemoved = splashScreen == null
 
         super.onCreate(savedInstanceState)
         // Consume auth before the duplicate-activity guard. A callback arriving over Reader
@@ -178,6 +181,14 @@ class MainActivity : BaseActivity() {
             val introState by introSession.state.collectAsState()
             val showStartupOverlay = playStartupIntro && !introState.dismissed
             var minimumCompleted by remember { mutableStateOf(false) }
+            var videoFrameDelivered by remember { mutableStateOf(false) }
+            LaunchedEffect(launchSplashRemoved, videoFrameDelivered) {
+                if (launchSplashRemoved && videoFrameDelivered) {
+                    // Do not count frames that are still covered by Android's launch splash.
+                    withFrameNanos { }
+                    introSession.firstFrame()
+                }
+            }
             var initializationError by remember { mutableStateOf(false) }
             var startupAttempt by remember { mutableStateOf(0) }
             val introOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
@@ -386,7 +397,7 @@ class MainActivity : BaseActivity() {
                         ready = localInitialized && startupReady &&
                             (minimumCompleted || introState.skipRequested || introState.failed),
                         canSkip = localInitialized && startupReady,
-                        onFirstFrame = introSession::firstFrame,
+                        onFirstFrame = { videoFrameDelivered = true },
                         onFailure = introSession::fail,
                         onSkip = introSession::skip,
                         onDismissed = introSession::dismiss,
@@ -581,7 +592,7 @@ class MainActivity : BaseActivity() {
             provider.view.animate()
                 .alpha(0f)
                 .setDuration(100L)
-                .withEndAction { provider.remove() }
+                .withEndAction { provider.remove(); launchSplashRemoved = true }
                 .start()
         }
     }
