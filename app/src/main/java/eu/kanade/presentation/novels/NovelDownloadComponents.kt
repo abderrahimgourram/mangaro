@@ -116,6 +116,10 @@ fun NovelDownloadsContent() {
         }
         Column(Modifier.fillMaxSize().background(Design.BackgroundDark)) {
             (error ?: queueError)?.let { Text(it, Modifier.padding(16.dp), color = Color(0xFFE5B5AB)) }
+            if (tasks.any { it.state in setOf(NovelDownloadState.PENDING, NovelDownloadState.RUNNING) }) {
+                val operation = remember { java.util.UUID.randomUUID().toString() }
+                NovelAdPlacement("downloads:" + operation)
+            }
             if (summaries.isEmpty()) Text("فصولك المحمّلة ستظهر هنا.", Modifier.padding(24.dp), color = Color(0xFFBEABCC))
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 summaries.forEach { summary ->

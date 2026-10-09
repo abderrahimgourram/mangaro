@@ -22,6 +22,8 @@ data class WebAdConfig(
     val enabled: Boolean = false,
     val displayAdUrl: String = DEFAULT_DISPLAY_URL,
     val smartLink: String = "",
+    // Separate explicit authorization for novel placements; existing manga configuration cannot enable these.
+    val novelPlacementsApproved: Boolean = false,
 ) {
     companion object {
         const val SITE_ORIGIN = "https://mangaro-web.vercel.app"
@@ -72,6 +74,7 @@ class WebAdConfigRepository private constructor(context: Context) {
                     val json = JSONObject(response.body.string())
                     WebAdConfig(
                         enabled = json.optBoolean("enabled", false),
+                        novelPlacementsApproved = json.optBoolean("novelPlacementsApproved", false),
                         displayAdUrl = safeDisplayUrl(json.optString("displayAdUrl")) ?: return@use null,
                         smartLink = safeSmartLink(json.optString("smartLink")) ?: "",
                     )
@@ -83,6 +86,7 @@ class WebAdConfigRepository private constructor(context: Context) {
                     mutableConfig.value = fresh
                     preferences.edit()
                         .putBoolean("enabled", fresh.enabled)
+                        .putBoolean("novels_approved", fresh.novelPlacementsApproved)
                         .putString("display", fresh.displayAdUrl)
                         .putString("smart", fresh.smartLink)
                         .putLong("fetched_at", System.currentTimeMillis())
@@ -99,6 +103,7 @@ class WebAdConfigRepository private constructor(context: Context) {
             preferences.getBoolean("enabled", false),
             safeDisplayUrl(preferences.getString("display", "").orEmpty()) ?: WebAdConfig.DEFAULT_DISPLAY_URL,
             safeSmartLink(preferences.getString("smart", "").orEmpty()) ?: "",
+            preferences.getBoolean("novels_approved", false),
         )
     }
 

@@ -25,6 +25,31 @@ class ReaderWebAdPolicy(context: Context) {
         .orEmpty().mapNotNullTo(mutableSetOf()) { it.toLongOrNull() }
     private val rewardState = AdFreeRewardState.get(context)
 
+    private val namedHandled = LinkedHashSet(preferences.getStringSet("handled_content_placements", emptySet()).orEmpty())
+    private val namedReserved = mutableMapOf<String, String>()
+    private var lastNamedRequest = 0L
+
+    /** Namespaced content identities never enter the manga chapter/XP identity space. */
+    @Synchronized fun reserveContentPlacement(key: String, owner: String): Boolean {
+        if (rewardState.isActive() || key in namedHandled || reservedBoundaries.isNotEmpty()) return false
+        if (namedReserved[key] == owner) return true
+        if (namedReserved.isNotEmpty() || android.os.SystemClock.elapsedRealtime() - lastNamedRequest < 60_000L && lastNamedRequest != 0L) return false
+        namedReserved[key] = owner
+        return true
+    }
+    @Synchronized fun commitContentPlacement(key: String, owner: String): Boolean {
+        if (namedReserved[key] != owner || rewardState.isActive()) return false
+        namedReserved.remove(key)
+        namedHandled.add(key)
+        while (namedHandled.size > 512) namedHandled.remove(namedHandled.first())
+        lastNamedRequest = android.os.SystemClock.elapsedRealtime()
+        preferences.edit().putStringSet("handled_content_placements", namedHandled.toSet()).apply()
+        return true
+    }
+    @Synchronized fun releaseContentPlacement(key: String, owner: String) {
+        if (namedReserved[key] == owner) namedReserved.remove(key)
+    }
+
     @Synchronized
     fun startSession(id: String) { sessions.getOrPut(id) { linkedMapOf() } }
 

@@ -109,7 +109,7 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
         fun saveCurrent() {
             val shown = currentChapter ?: return
             if(!currentRestoring && currentPlain.isNotEmpty()) {
-                val index=scroll.firstVisibleItemIndex
+                val index=scroll.firstVisibleItemIndex.coerceAtMost(currentPlain.size)
                 repository.savePosition(novel,shown,index,scroll.firstVisibleItemScrollOffset,
                     currentPlain.getOrNull(index-1)?.let(::paragraphAnchor).orEmpty())
             }
@@ -170,6 +170,7 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                 if(offline) Text("متاح دون إنترنت",Modifier.padding(horizontal=20.dp),color=gold,style=MaterialTheme.typography.labelSmall)
                 if(loading) LinearProgressIndicator(Modifier.fillMaxWidth(),color=gold)
                 if(error!=null) NovelFailure(error!!,chapter.url) {generation++}
+                val adVisible by remember { derivedStateOf { scroll.layoutInfo.visibleItemsInfo.any { it.key == "novel-ad" } } }
                 LazyColumn(state=scroll,modifier=Modifier.weight(1f),contentPadding=PaddingValues(horizontal=appearance.margin.dp,vertical=20.dp),
                     verticalArrangement=Arrangement.spacedBy(appearance.paragraphSpacing.dp)) {
                     item(key="chapter-heading") {Text(chapter.title,color=gold,fontWeight=FontWeight.Bold,
@@ -179,6 +180,10 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                             fontFamily=if(appearance.font=="system") FontFamily.Default else FontFamily(Font(R.font.novel_noto_naskh_arabic)),
                             fontSize=appearance.fontSize.sp,lineHeight=(appearance.fontSize*appearance.lineSpacing).sp,
                             textDirection=TextDirection.ContentOrRtl))
+                    }
+                    item(key="novel-ad") {
+                        if (!loading && loadedChapter?.id == chapter.id && error == null)
+                            NovelAdPlacement("reader:" + novelDigest(novel.id + "|" + chapter.id), visible = adVisible)
                     }
                 }
                 Row(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=4.dp),horizontalArrangement=Arrangement.SpaceBetween) {

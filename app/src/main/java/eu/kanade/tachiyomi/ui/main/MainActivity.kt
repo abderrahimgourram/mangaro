@@ -17,6 +17,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -78,6 +79,7 @@ import eu.kanade.presentation.components.AppStateBanners
 import eu.kanade.presentation.components.DownloadedOnlyBannerBackgroundColor
 import eu.kanade.presentation.components.IncognitoModeBannerBackgroundColor
 import eu.kanade.presentation.components.IndexingBannerBackgroundColor
+import eu.kanade.presentation.sigils.rememberSigilMotionAllowed
 import eu.kanade.presentation.home.MangaroStartupTransition
 import eu.kanade.presentation.more.settings.screen.data.RestoreBackupScreen
 import eu.kanade.presentation.util.AssistContentScreen
@@ -174,7 +176,36 @@ class MainActivity : BaseActivity() {
             var localInitialized by remember { mutableStateOf(false) }
             var navigationInitialized by remember { mutableStateOf(false) }
             var startupReady by remember { mutableStateOf(false) }
-            var showStartupOverlay by remember { mutableStateOf(playStartupIntro) }
+            var showStartupOverlay by remember { mutableStateOf(false) }
+            var introSkipped by remember { mutableStateOf(false) }
+            val introMotionAllowed = rememberSigilMotionAllowed()
+            val introOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+            DisposableEffect(introOwner) {
+                val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+                    if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) {
+                        introSkipped = true
+                        showStartupOverlay = false
+                    }
+                }
+                introOwner.lifecycle.addObserver(observer)
+                onDispose { introOwner.lifecycle.removeObserver(observer) }
+            }
+            LaunchedEffect(playStartupIntro, introMotionAllowed) {
+                if (playStartupIntro && introMotionAllowed && !introSkipped) {
+                    kotlinx.coroutines.delay(1500)
+                    if (!(localInitialized && startupReady) && !introSkipped &&
+                        introOwner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
+                        showStartupOverlay = true
+                    }
+                }
+            }
+            LaunchedEffect(showStartupOverlay) {
+                if (showStartupOverlay) {
+                    kotlinx.coroutines.delay(4000)
+                    introSkipped = true
+                    showStartupOverlay = false
+                }
+            }
             val highlights = remember { (application as eu.kanade.tachiyomi.App).updateHighlights }
             val highlightsVersion by highlights.pendingVersion.changes().collectAsState(initial = highlights.pendingVersion.get())
             val view = LocalView.current
@@ -333,10 +364,18 @@ class MainActivity : BaseActivity() {
                         }
                     }
                 }
+                if (!localInitialized && !showStartupOverlay) {
+                    androidx.compose.foundation.Image(
+                        painter = androidx.compose.ui.res.painterResource(eu.kanade.tachiyomi.R.drawable.ic_splash_logo),
+                        contentDescription = null,
+                        modifier = Modifier.align(androidx.compose.ui.Alignment.Center).size(96.dp),
+                    )
+                }
                 if (showStartupOverlay) {
                     MangaroStartupTransition(
                         ready = localInitialized && startupReady,
                         onDismissed = {
+                            introSkipped = true
                             showStartupOverlay = false
                         },
                     )

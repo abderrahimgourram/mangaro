@@ -20,6 +20,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -61,6 +65,9 @@ fun MangaroStartupTransition(ready: Boolean, onDismissed: () -> Unit, modifier: 
     ) {
         Box(Modifier.fillMaxSize().background(Color(0xFF0F0B13)), contentAlignment = Alignment.Center) {
             LocalIntroVideo(playing = !ready)
+            TextButton(onClick = onDismissed, modifier = Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(16.dp)) {
+                Text("تخطي", color = Color(0xFFD4AF37))
+            }
         }
     }
     LaunchedEffect(ready, visibility.isIdle, visibility.currentState) {
@@ -115,6 +122,10 @@ private fun LocalIntroVideo(playing: Boolean) {
 /** Starts immediately while decoding, on decoder failure, or over the final held frame. */
 @Composable
 private fun StartupFallback(showLogo: Boolean) {
+    if (!eu.kanade.presentation.sigils.rememberSigilMotionAllowed()) {
+        if (showLogo) Image(painterResource(R.drawable.ic_splash_logo), "Mangaro", Modifier.size(128.dp))
+        return
+    }
     val pulse = rememberInfiniteTransition(label = "startupFallback")
     val scale by pulse.animateFloat(0.98f, 1.02f,
         infiniteRepeatable(tween(1100), RepeatMode.Reverse), label = "logoScale")
@@ -184,7 +195,7 @@ private class IntroPlayback(private val context: Context) : TextureView.SurfaceT
             player = media
             // Mute BEFORE preparation and again before playback. The supplied file has audio.
             media.setVolume(0f, 0f)
-            media.isLooping = true
+            media.isLooping = false
             surface = Surface(view.surfaceTexture)
             media.setSurface(surface)
             context.resources.openRawResourceFd(R.raw.mangaro_intro).use { descriptor ->
