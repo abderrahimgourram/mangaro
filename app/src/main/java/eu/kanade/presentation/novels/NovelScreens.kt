@@ -333,6 +333,7 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
         val storageError by repository.storageError.collectAsState()
         val work = remember(catalog, initial.id) { catalog.work(initial.id) ?: UnifiedNovelWork(NovelIdentity.initialWorkId(initial.id), listOf(initial), initial.id) }
         val scope = rememberCoroutineScope()
+        val downloadAdGate = rememberNovelDownloadAdGate()
         var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
         val novel = work.editions.firstOrNull { it.id == selectedId } ?: work.primary
         val saved = library.any { entry -> entry.saved && work.editions.any { it.id == entry.novel.id } }
@@ -428,11 +429,20 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
         fun download(chapters: List<NovelChapter>) {
             if (enqueueing || chapters.isEmpty()) return
             selectedId = novel.id
-            enqueueing = true; error = null; notice = null
-            scope.launch {
-                try { repository.downloads.enqueue(novel, chapters); notice = "أُضيفت الفصول إلى التنزيلات"; selected = emptySet(); selecting = false }
-                catch (c: CancellationException) { throw c } catch (e: Exception) { error = novelError(e) }
-                finally { enqueueing = false }
+            val pending = chapters.distinctBy { it.id }.filter { it.available && states[it.id] !in setOf(
+                NovelDownloadState.DONE, NovelDownloadState.PENDING, NovelDownloadState.RUNNING,
+                NovelDownloadState.PAUSED, NovelDownloadState.DELETING,
+            ) }
+            if (pending.isEmpty()) { notice = "الفصول محمّلة أو قيد التنزيل بالفعل"; return }
+            // All batch, volume, range and chapter-row actions enter the same shared gate.
+            // Dismissing that gate must not leave the queue UI stuck in an enqueueing state.
+            downloadAdGate(pending.size) {
+                enqueueing = true; error = null; notice = null
+                scope.launch {
+                    try { repository.downloads.enqueue(novel, pending); notice = "أُضيفت الفصول إلى التنزيلات"; selected = emptySet(); selecting = false }
+                    catch (c: CancellationException) { throw c } catch (e: Exception) { error = novelError(e) }
+                    finally { enqueueing = false }
+                }
             }
         }
         fun chooseEdition(target: Novel) {

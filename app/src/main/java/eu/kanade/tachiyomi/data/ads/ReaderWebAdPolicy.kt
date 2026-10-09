@@ -37,6 +37,10 @@ class ReaderWebAdPolicy(context: Context) {
         namedReserved[key] = owner
         return true
     }
+    @Synchronized fun contentPlacementCooldownMillis(key: String): Long {
+        if (key in namedHandled || lastNamedRequest == 0L) return 0L
+        return (60_000L - (android.os.SystemClock.elapsedRealtime() - lastNamedRequest)).coerceAtLeast(0L)
+    }
     @Synchronized fun commitContentPlacement(key: String, owner: String): Boolean {
         if (namedReserved[key] != owner || rewardState.isActive()) return false
         namedReserved.remove(key)

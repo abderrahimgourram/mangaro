@@ -17,6 +17,8 @@ import eu.kanade.tachiyomi.data.ads.AdFreeRewardState
 import eu.kanade.tachiyomi.data.ads.ReaderWebAdPolicy
 import eu.kanade.tachiyomi.data.ads.WebAdConfigRepository
 import java.util.UUID
+import kotlinx.coroutines.delay
+import eu.kanade.tachiyomi.data.ads.rememberDownloadAdGate
 
 /** Screen-owned request state survives lazy-item disposal without reloading the creative. */
 internal class NovelAdRequest(val key: String) {
@@ -46,16 +48,26 @@ internal fun NovelAdPlacement(request: NovelAdRequest, visible: Boolean = true, 
         }
     }
     BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val eligible = visible && maxWidth >= 300.dp && lifecycle.isAtLeast(Lifecycle.State.RESUMED) &&
+        val authorized = maxWidth >= 300.dp && lifecycle.isAtLeast(Lifecycle.State.RESUMED) &&
             settings.enabled && settings.novelPlacementsApproved && System.currentTimeMillis() >= adFreeUntil
+        val eligible = authorized && visible
         LaunchedEffect(eligible, allowStart, key) {
-            if (eligible && allowStart && !request.started && !request.ended) request.reserved = policy.reserveContentPlacement(key, owner)
-            else if ((!eligible || !allowStart) && request.reserved && !request.started) {
+            if (eligible && allowStart && !request.started && !request.ended) {
+                request.reserved = policy.reserveContentPlacement(key, owner)
+                // One cancellable wake-up at the existing cooldown boundary; no polling.
+                if (!request.reserved) {
+                    val wait = policy.contentPlacementCooldownMillis(key)
+                    if (wait > 0) {
+                        delay(wait)
+                        request.reserved = policy.reserveContentPlacement(key, owner)
+                    }
+                }
+            } else if ((!eligible || !allowStart) && request.reserved && !request.started) {
                 policy.releaseContentPlacement(key, owner)
                 request.reserved = false
             }
         }
-        if (eligible && (allowStart || request.started) && request.reserved && !request.ended) {
+        if (authorized && (eligible && allowStart || request.started) && request.reserved && !request.ended) {
             // Keep the shared creative intact: constrain width, never crop its reported height.
             Column(Modifier.widthIn(max = 320.dp).fillMaxWidth().align(Alignment.TopCenter), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("إعلان", color = MangaroDesignSystem.LavenderPrimary, style = MaterialTheme.typography.labelSmall)
@@ -73,5 +85,17 @@ internal fun NovelAdPlacement(request: NovelAdRequest, visible: Boolean = true, 
                     })
             }
         }
+    }
+}
+
+/** The actual Manhwa pre-download workflow, with the existing extra novel authorization. */
+@Composable
+internal fun rememberNovelDownloadAdGate(): (Int, () -> Unit) -> Unit {
+    val context = LocalContext.current
+    val repository = remember(context) { WebAdConfigRepository.get(context) }
+    val approved by repository.config.collectAsStateWithLifecycle()
+    val gate = rememberDownloadAdGate()
+    return { count, proceed ->
+        if (approved.novelPlacementsApproved) gate(count, proceed) else proceed()
     }
 }

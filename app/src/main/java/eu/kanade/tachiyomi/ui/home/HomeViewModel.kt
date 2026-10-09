@@ -19,6 +19,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
@@ -83,27 +86,40 @@ class HomeViewModel(
         }
         viewModelScope.launch {
             PreferredMangaVariants.changes.collectLatest {
-                _state.update { current ->
-                    val combined = GroupDiscoveryItems.group(current.popularManga + listOfNotNull(current.discoveryFeatured))
-                    val featured = GroupDiscoveryItems.findSelectedWork(combined, current.discoveryFeatured) ?: combined.firstOrNull()
-                    current.copy(discoveryFeatured=featured, popularManga=combined.filterNot { it.mangaId == featured?.mangaId },
-                        latestManga=GroupDiscoveryItems.group(current.latestManga), newManga=GroupDiscoveryItems.group(current.newManga),
-                        completedManga=GroupDiscoveryItems.group(current.completedManga), discoveryLatest=GroupDiscoveryItems.group(current.discoveryLatest))
+                withContext(Dispatchers.Default) {
+                    _state.update { current ->
+                        val combined = GroupDiscoveryItems.group(current.popularManga + listOfNotNull(current.discoveryFeatured))
+                        val featured = GroupDiscoveryItems.findSelectedWork(combined, current.discoveryFeatured) ?: combined.firstOrNull()
+                        current.copy(discoveryFeatured=featured, popularManga=combined.filterNot { it.mangaId == featured?.mangaId },
+                            latestManga=GroupDiscoveryItems.group(current.latestManga), newManga=GroupDiscoveryItems.group(current.newManga),
+                            completedManga=GroupDiscoveryItems.group(current.completedManga), discoveryLatest=GroupDiscoveryItems.group(current.discoveryLatest))
+                    }
                 }
             }
         }
         viewModelScope.launch {
             var unavailable = emptySet<Long>()
+            var previousHealth: Map<Long, mihon.domain.source.health.SourceHealthMonitor.State>? = null
             mihon.domain.source.health.SourceHealthMonitor.shared.states.collectLatest { health ->
                 val hidden = health.filterValues { it.state == mihon.domain.source.health.SourceHealthMonitor.State.UNAVAILABLE }.keys
-                _state.update { current -> current.copy(
-                    discoveryFeatured = GroupDiscoveryItems.group(listOfNotNull(current.discoveryFeatured)).firstOrNull(),
-                    popularManga = GroupDiscoveryItems.group(current.popularManga + listOfNotNull(current.discoveryFeatured)).filterNot { it.mangaId == GroupDiscoveryItems.group(listOfNotNull(current.discoveryFeatured)).firstOrNull()?.mangaId },
-                    latestManga = GroupDiscoveryItems.group(current.latestManga),
-                    newManga = GroupDiscoveryItems.group(current.newManga),
-                    completedManga = GroupDiscoveryItems.group(current.completedManga),
-                    discoveryLatest = GroupDiscoveryItems.group(current.discoveryLatest),
-                ) }
+                val statuses = health.mapValues { it.value.state }
+                // Request counters/timestamps change frequently; regroup only for visibility/health changes.
+                if (statuses != previousHealth) {
+                    withContext(Dispatchers.Default) {
+                        _state.update { current ->
+                            val featured = GroupDiscoveryItems.group(listOfNotNull(current.discoveryFeatured)).firstOrNull()
+                            current.copy(
+                                discoveryFeatured = featured,
+                                popularManga = GroupDiscoveryItems.group(current.popularManga + listOfNotNull(current.discoveryFeatured)).filterNot { it.mangaId == featured?.mangaId },
+                                latestManga = GroupDiscoveryItems.group(current.latestManga),
+                                newManga = GroupDiscoveryItems.group(current.newManga),
+                                completedManga = GroupDiscoveryItems.group(current.completedManga),
+                                discoveryLatest = GroupDiscoveryItems.group(current.discoveryLatest),
+                            )
+                        }
+                    }
+                    previousHealth = statuses
+                }
                 allDiscoveryItems.removeAll { it.sourceId in hidden }
                 val failed = health.filterValues { it.failures > 0 || it.state == mihon.domain.source.health.SourceHealthMonitor.State.UNAVAILABLE }.keys
                 if ((unavailable - failed).isNotEmpty()) {
@@ -114,9 +130,10 @@ class HomeViewModel(
         }
         // Collect history
         viewModelScope.launch {
-            getHistory.subscribe("").collectLatest { history ->
-                _state.update { it.copy(recentHistory = history.distinctBy { h -> h.mangaId }.take(6), continueReadingResolved = true) }
-            }
+            getHistory.subscribe("").map { history -> history.distinctBy { it.mangaId }.take(6) }
+                .distinctUntilChanged().flowOn(Dispatchers.Default).collectLatest { history ->
+                _state.update { it.copy(recentHistory = history, continueReadingResolved = true) }
+                }
         }
 
         // Collect active downloads
@@ -360,7 +377,7 @@ class HomeViewModel(
         }
     }
 
-    private fun updateDiscoveryState(batchResult: DiscoveryBatchResultPayload, isFinal: Boolean) {
+    private suspend fun updateDiscoveryState(batchResult: DiscoveryBatchResultPayload, isFinal: Boolean) {
         sourcePageMap.putAll(batchResult.pageMapUpdates)
         hasMorePagesMap.putAll(batchResult.hasMoreMapUpdates)
         allDiscoveryItems = batchResult.popularItems.toMutableList()
@@ -373,10 +390,15 @@ class HomeViewModel(
             })
         }
         val old = _state.value
-        val popularList = preserve(batchResult.popularItems, old.popularManga + listOfNotNull(old.discoveryFeatured))
-        val latestList = preserve(batchResult.latestItems, old.latestManga)
-        val newList = preserve(batchResult.newItems, old.newManga)
-        val completedList = preserve(batchResult.completedItems, old.completedManga)
+        val lists = withContext(Dispatchers.Default) {
+            listOf(
+                preserve(batchResult.popularItems, old.popularManga + listOfNotNull(old.discoveryFeatured)),
+                preserve(batchResult.latestItems, old.latestManga),
+                preserve(batchResult.newItems, old.newManga),
+                preserve(batchResult.completedItems, old.completedManga),
+            )
+        }
+        val (popularList, latestList, newList, completedList) = lists
 
         if (popularList.isNotEmpty()) {
             val featured = popularList.first()

@@ -32,7 +32,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -100,9 +100,9 @@ object HomeTab : Tab {
     @Composable
     override fun Content() {
         val viewModel = viewModel<HomeViewModel>()
-        val state by viewModel.state.collectAsState()
+        val state by viewModel.state.collectAsStateWithLifecycle()
         val weekly = viewModel<WeeklyPicksViewModel>()
-        val weeklyState by weekly.state.collectAsState()
+        val weeklyState by weekly.state.collectAsStateWithLifecycle()
         androidx.compose.runtime.LaunchedEffect(state.popularManga,state.latestManga,state.discoveryFeatured) {
             weekly.offer(state.popularManga + state.latestManga + listOfNotNull(state.discoveryFeatured))
         }
@@ -111,16 +111,15 @@ object HomeTab : Tab {
         val navigator = LocalNavigator.currentOrThrow
 
         val account = androidx.compose.runtime.remember { uy.kohesive.injekt.Injekt.get<mihon.domain.account.AccountFoundation>() }
-        val accountSession by account.session.collectAsState()
+        val accountSession by account.session.collectAsStateWithLifecycle()
         val inbox = viewModel<eu.kanade.presentation.inbox.InboxViewModel>(key = "home-inbox")
-        val inboxState by inbox.state.collectAsState()
-        val workNotices by inbox.work.notices.collectAsState()
+        val inboxState by inbox.state.collectAsStateWithLifecycle()
+        val workNotices by inbox.work.notices.collectAsStateWithLifecycle()
         val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
         androidx.compose.runtime.DisposableEffect(lifecycleOwner, inbox) {
             val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
                 if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) { inbox.refreshBadge(); weekly.refresh() }
             }
-            inbox.refreshBadge()
             lifecycleOwner.lifecycle.addObserver(observer)
             onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
         }

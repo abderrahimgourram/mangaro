@@ -24,6 +24,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.presentation.theme.MangaroDesignSystem as Design
@@ -70,7 +73,11 @@ internal fun OpenNovelAppSection(downloads: Boolean) {
 fun HomeNovelShelf() {
     val context = LocalContext.current
     val repository = remember(context) { NovelRepository.get(context) }
-    val catalog by repository.catalog.collectAsState()
+    // Shelf presentation observes only its bounded cards, not every catalogue/evidence mutation.
+    val shelf by remember(repository) {
+        repository.catalog.map { state -> state.works.take(12).map { it.primary } }
+            .distinctUntilChanged().flowOn(Dispatchers.Default)
+    }.collectAsStateWithLifecycle(initialValue = emptyList())
     val navigator = LocalNavigator.currentOrThrow
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     var loading by remember { mutableStateOf(false) }
@@ -78,22 +85,30 @@ fun HomeNovelShelf() {
     LaunchedEffect(lifecycle, retry) {
         // Optional discovery starts after a rendered frame and stops when Home is no longer visible.
         withFrameNanos { }
+        var settled = false
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            if (settled) return@repeatOnLifecycle
             (context.applicationContext as? eu.kanade.tachiyomi.App)?.awaitFirstUsableFrame()
             repository.awaitLocal()
             loading = true
             try {
                 val lanes = Semaphore(2)
+                val seedCached = repository.catalog.value.works.isEmpty()
                 coroutineScope {
                     repository.sources.forEach { source -> launch {
                         lanes.withPermit {
-                            try { repository.discover(source, "", 1, null) }
+                            try {
+                                // Seed the existing persistent cache before deciding a network refresh is needed.
+                                val cached = repository.discoverySnapshot(source, "", 1, null)
+                                if (cached != null && seedCached) repository.ingest(cached.novels)
+                                repository.discover(source, "", 1, null)
+                            }
                             catch (c: CancellationException) { throw c }
                             catch (e: Exception) { android.util.Log.w("MangaroNovels", "Home shelf unavailable: ${source.id}", e) }
                         }
                     } }
                 }
-            } finally { loading = false }
+            } finally { loading = false; if (currentCoroutineContext().isActive) settled = true }
         }
     }
     Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
@@ -102,13 +117,13 @@ fun HomeNovelShelf() {
                 style = MaterialTheme.typography.titleMedium)
             TextButton(onClick = { navigator.push(NovelHomeScreen()) }) { Text("استكشف", color = Design.GoldPrimary) }
         }
-        if (catalog.works.isNotEmpty()) {
+        if (shelf.isNotEmpty()) {
             LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(catalog.works.take(12), key = { it.id }) { work ->
-                    Column(Modifier.width(96.dp).clickable { navigator.push(NovelDetailsScreen(work.primary)) },
+                items(shelf, key = { it.id }) { novel ->
+                    Column(Modifier.width(96.dp).clickable { navigator.push(NovelDetailsScreen(novel)) },
                         verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        NovelCover(work.primary, Modifier.fillMaxWidth().height(136.dp))
-                        Text(work.primary.title, color = Color(0xFFD7CBE1), maxLines = 2, overflow = TextOverflow.Ellipsis,
+                        NovelCover(novel, Modifier.fillMaxWidth().height(136.dp))
+                        Text(novel.title, color = Color(0xFFD7CBE1), maxLines = 2, overflow = TextOverflow.Ellipsis,
                             style = MaterialTheme.typography.labelMedium.copy(textDirection = TextDirection.ContentOrRtl))
                     }
                 }

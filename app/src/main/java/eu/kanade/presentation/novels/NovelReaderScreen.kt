@@ -77,6 +77,7 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
     @Composable override fun Content() {
         val context=LocalContext.current
         val repository=remember(context) {NovelRepository.get(context)}
+        val downloadAdGate = rememberNovelDownloadAdGate()
         val navigator=LocalNavigator.currentOrThrow
         NovelForegroundRefresh(repository)
         val storageError by repository.storageError.collectAsStateWithLifecycle()
@@ -289,26 +290,26 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                                     }
                                 }
                             }
-                        },contentPadding=PaddingValues(start=appearance.margin.dp,end=appearance.margin.dp,top=64.dp,bottom=112.dp),
+                        },contentPadding=PaddingValues(top=64.dp,bottom=112.dp),
                             verticalArrangement=Arrangement.spacedBy(appearance.paragraphSpacing.dp)) {
                             item(key="chapter-heading") {
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Box(Modifier.fillMaxWidth().onSizeChanged { inlineAdHeight = it.height }) {
                                         if (!loading && loadedChapter?.id == chapter.id && error == null)
-                                            NovelAdPlacement(chapterAd, visible = adVisible, allowStart = controlsVisible && !scroll.isScrollInProgress)
+                                            NovelAdPlacement(chapterAd, visible = adVisible, allowStart = !scroll.isScrollInProgress)
                                     }
                                     Text(chapter.title,color=gold,fontWeight=FontWeight.Bold,
                                         style=MaterialTheme.typography.titleLarge.copy(textDirection=TextDirection.ContentOrRtl),
-                                        modifier=Modifier.alpha(if(controlsVisible) 1f else 0f).then(if(controlsVisible) Modifier else Modifier.clearAndSetSemantics { }))
+                                        modifier=Modifier.padding(horizontal=appearance.margin.dp).alpha(if(controlsVisible) 1f else 0f).then(if(controlsVisible) Modifier else Modifier.clearAndSetSemantics { }))
                                 }
                             }
                             items(blocks.size, key = { "block-$it" }, contentType = { blocks[it].kind }) { index ->
                                 val block = blocks[index]
                                 if (block.kind == NovelBlockKind.IMAGE) {
-                                    NovelIllustration(repository, block, offline, gold)
+                                    Box(Modifier.padding(horizontal=appearance.margin.dp)) { NovelIllustration(repository, block, offline, gold) }
                                 } else {
                                     val value = paragraphs[block.paragraph!!]
-                                    Text(value, color = ink, style = when (block.kind) {
+                                    Text(value, modifier = Modifier.padding(horizontal=appearance.margin.dp), color = ink, style = when (block.kind) {
                                         NovelBlockKind.HEADING -> paragraphStyle.copy(fontWeight = FontWeight.Bold)
                                         NovelBlockKind.CAPTION -> paragraphStyle.copy(fontSize = (appearance.fontSize * .8f).sp)
                                         else -> paragraphStyle
@@ -338,7 +339,7 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                                 TextButton(onClick={adjacent(true)},enabled=!loading && !navigating) {Text("التالي",color=gold)}
                             }
                             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.Center,verticalAlignment=Alignment.CenterVertically) {
-                                IconButton(onClick={scope.launch { try {repository.downloads.enqueue(novel,listOf(chapter))} catch(c: CancellationException) {throw c} catch(e: Exception) {error=novelError(e)} }},enabled=!offline && !loading) {Icon(Icons.Outlined.Download,"تحميل الفصل",tint=gold)}
+                                IconButton(onClick={downloadAdGate(1) { scope.launch { try {repository.downloads.enqueue(novel,listOf(chapter))} catch(c: CancellationException) {throw c} catch(e: Exception) {error=novelError(e)} } }},enabled=!offline && !loading) {Icon(Icons.Outlined.Download,"تحميل الفصل",tint=gold)}
                                 val bookmarked by remember(repository, novel.id, chapter.id) {
                                     repository.library.map { entries -> entries.firstOrNull { it.novel.id == novel.id }?.bookmarks?.contains(chapter.id) == true }
                                         .distinctUntilChanged().flowOn(Dispatchers.Default)
