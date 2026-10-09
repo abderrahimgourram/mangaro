@@ -41,12 +41,13 @@ internal fun downloadLabel(state: NovelDownloadState?) = when (state) {
     NovelDownloadState.PAUSED -> "متوقف مؤقتًا"
     NovelDownloadState.FAILED -> "تعذّر التحميل"
     NovelDownloadState.CANCELLED -> "أُلغي التحميل"
+    NovelDownloadState.DELETING -> "الحذف قيد الإكمال"
     null -> null
 }
 
 @Composable
 internal fun NovelChapterRow(chapter: NovelChapter, state: NovelDownloadState?, selecting: Boolean, selected: Boolean,
-    onSelect: () -> Unit, onRead: () -> Unit, onDownload: () -> Unit, onCommunity: (() -> Unit)? = null) {
+    onSelect: () -> Unit, onRead: () -> Unit, onDownload: () -> Unit, onCommunity: (() -> Unit)? = null, onDelete: (() -> Unit)? = null) {
     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Design.SurfaceDark)
         .clickable(onClick = if (selecting) onSelect else onRead).padding(horizontal = 10.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         if (selecting) Checkbox(selected, onCheckedChange = { onSelect() }, enabled = chapter.available)
@@ -59,7 +60,9 @@ internal fun NovelChapterRow(chapter: NovelChapter, state: NovelDownloadState?, 
                 Icon(Icons.Outlined.ChatBubbleOutline, "تعليقات الفصل", Modifier.size(16.dp), tint = Design.LavenderPrimary.copy(alpha = .75f))
             }
         }
-        if (!selecting) IconButton(onClick = onDownload, enabled = chapter.available && state !in setOf(NovelDownloadState.DONE, NovelDownloadState.RUNNING, NovelDownloadState.PENDING, NovelDownloadState.PAUSED)) {
+        if (!selecting && onDelete != null && state in setOf(NovelDownloadState.DONE, NovelDownloadState.DELETING)) {
+            IconButton(onClick = onDelete) { Icon(Icons.Outlined.DeleteOutline, "حذف الفصل المحمّل", tint = Design.LavenderPrimary) }
+        } else if (!selecting) IconButton(onClick = onDownload, enabled = chapter.available && state !in setOf(NovelDownloadState.DONE, NovelDownloadState.RUNNING, NovelDownloadState.PENDING, NovelDownloadState.PAUSED, NovelDownloadState.DELETING)) {
             Icon(if (state == NovelDownloadState.DONE) Icons.Outlined.DownloadDone else Icons.Outlined.Download,
                 if (state == NovelDownloadState.FAILED) "إعادة المحاولة" else "تحميل الفصل", tint = Design.GoldPrimary)
         }
@@ -114,7 +117,7 @@ internal fun NovelDownloadSelectionSheet(index: NovelChapterIndex, currentChapte
                 } }
                 item { Button(onClick = { onDownload(groups.filter { it.id in volumes }.flatMap { it.chapters }) }, enabled = volumes.isNotEmpty() && index.complete, modifier = Modifier.fillMaxWidth()) { Text("تحميل المجلدات المختارة") } }
             }
-        }
+    }
     }
     if (confirmAll) AlertDialog(onDismissRequest = { confirmAll = false }, title = { Text("تحميل جميع الفصول؟") },
         text = { Text("سيُضاف " + numeric(index.chapters.count { it.available }) + " فصلًا إلى التنزيلات، مع الاحتفاظ بالفصول المحمّلة.") },
@@ -126,6 +129,7 @@ class NovelDownloadsScreen : Screen() {
     @Composable override fun Content() { OpenNovelAppSection(downloads = true) }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NovelDownloadsContent() {
         val context = LocalContext.current
@@ -140,6 +144,9 @@ fun NovelDownloadsContent() {
         val scope = rememberCoroutineScope()
         var expanded by rememberSaveable { mutableStateOf(arrayListOf<String>()) }
         var pendingCancel by remember { mutableStateOf<String?>(null) }
+        var manageId by remember { mutableStateOf<String?>(null) }
+        var selectedChapters by remember { mutableStateOf(emptySet<String>()) }
+        var pendingDelete by remember { mutableStateOf<Pair<String, Set<String>>?>(null) }
         var error by remember { mutableStateOf<String?>(null) }
         fun control(id: String, action: NovelDownloadState, chapterId: String? = null) {
             scope.launch { try { queue.control(id, action, chapterId) } catch (c: CancellationException) { throw c } catch (e: Exception) { error = novelError(e) } }
@@ -157,6 +164,7 @@ fun NovelDownloadsContent() {
                         val active = summary.pending + summary.running > 0
                         val retryable = summary.failed + summary.cancelled > 0
                         val status = when {
+                            summary.deleting > 0 -> "الحذف قيد الإكمال"
                             summary.running > 0 -> "جارٍ التحميل"
                             summary.pending > 0 -> "في الانتظار"
                             summary.paused > 0 -> "متوقف مؤقتًا"
@@ -185,6 +193,11 @@ fun NovelDownloadsContent() {
                                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, containerColor = Design.SurfaceDark) {
                                         if (retryable) DropdownMenuItem(text = { Text("إعادة المحاولة") }, onClick = { menu = false; control(summary.novel.id, NovelDownloadState.FAILED) })
                                         if (active || summary.paused > 0) DropdownMenuItem(text = { Text("إلغاء التنزيل") }, onClick = { menu = false; pendingCancel = summary.novel.id })
+                                        DropdownMenuItem(text = { Text("إدارة الفصول") }, onClick = { menu = false; selectedChapters = emptySet(); manageId = summary.novel.id })
+                                        if (summary.done + summary.deleting > 0) DropdownMenuItem(text = { Text("حذف الفصول المحمّلة") }, onClick = {
+                                            menu = false
+                                            pendingDelete = summary.novel.id to tasks.filter { it.novel.id == summary.novel.id && it.state in setOf(NovelDownloadState.DONE, NovelDownloadState.DELETING) }.map { it.chapter.id }.toSet()
+                                        })
                                         DropdownMenuItem(text = { Text("فتح الرواية") }, onClick = { menu = false; navigator.push(NovelDetailsScreen(summary.novel)) })
                                     }
                                 }
@@ -195,10 +208,49 @@ fun NovelDownloadsContent() {
                         NovelChapterRow(task.chapter, task.state, false, false, {},
                             onRead = { navigator.push(NovelReaderScreen(task.novel, task.chapter)) },
                             onDownload = { control(task.novel.id, NovelDownloadState.FAILED, task.chapter.id) },
-                            onCommunity = { navigator.push(eu.kanade.presentation.community.CommunityCommentsScreen(novelCommunityContext(task.novel, task.chapter))) })
+                            onCommunity = { navigator.push(eu.kanade.presentation.community.CommunityCommentsScreen(novelCommunityContext(task.novel, task.chapter))) },
+                            onDelete = { pendingDelete = task.novel.id to setOf(task.chapter.id) })
                     }
                 }
             }
+        }
+        manageId?.let { id ->
+            val chapters = remember(tasks, id) { tasks.filter { it.novel.id == id } }
+            ModalBottomSheet(onDismissRequest = { manageId = null }, containerColor = Design.SurfaceDark) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("إدارة الفصول", Modifier.weight(1f), color = Color.White, fontWeight = FontWeight.SemiBold)
+                    TextButton(onClick = { selectedChapters = chapters.map { it.chapter.id }.toSet() }) { Text("تحديد الكل") }
+                }
+                Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val downloaded = chapters.filter { it.chapter.id in selectedChapters && it.state in setOf(NovelDownloadState.DONE, NovelDownloadState.DELETING) }.map { it.chapter.id }.toSet()
+                    TextButton(onClick = { pendingDelete = id to downloaded }, enabled = downloaded.isNotEmpty()) { Text("حذف المحدد") }
+                    val pending = chapters.filter { it.chapter.id in selectedChapters && it.state !in setOf(NovelDownloadState.DONE, NovelDownloadState.DELETING, NovelDownloadState.CANCELLED) }.map { it.chapter.id }.toSet()
+                    TextButton(onClick = { scope.launch {
+                        try { queue.cancelSelected(id, pending); selectedChapters = emptySet() }
+                        catch (c: CancellationException) { throw c } catch (e: Exception) { error = novelError(e) }
+                    } }, enabled = pending.isNotEmpty()) { Text("إلغاء المحدد") }
+                }
+                LazyColumn(Modifier.fillMaxWidth().heightIn(max = 480.dp), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(chapters, key = { it.key }) { task ->
+                        NovelChapterRow(task.chapter, task.state, true, task.chapter.id in selectedChapters,
+                            onSelect = { selectedChapters = if (task.chapter.id in selectedChapters) selectedChapters - task.chapter.id else selectedChapters + task.chapter.id },
+                            onRead = {}, onDownload = {})
+                        task.error?.let { Text(it, color = Color(0xFFE5B5AB), style = MaterialTheme.typography.labelSmall) }
+                    }
+                }
+            }
+        }
+        pendingDelete?.let { (id, chapters) ->
+            AlertDialog(onDismissRequest = { pendingDelete = null }, title = { Text("حذف الفصول المحمّلة؟") },
+                text = { Text("سيُحذف " + numeric(chapters.size) + " فصلًا من هذا الجهاز فقط. ستبقى المكتبة والمفضلة وتقدّم القراءة محفوظة.") },
+                confirmButton = { TextButton(onClick = {
+                    pendingDelete = null
+                    scope.launch {
+                        try { queue.deleteChapters(id, chapters); selectedChapters = selectedChapters - chapters }
+                        catch (c: CancellationException) { throw c } catch (e: Exception) { error = novelError(e) }
+                    }
+                }) { Text("حذف") } },
+                dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text("رجوع") } })
         }
         pendingCancel?.let { id -> AlertDialog(onDismissRequest = { pendingCancel = null }, title = { Text("إلغاء التنزيل؟") }, text = { Text("ستبقى الفصول المكتملة متاحة دون إنترنت.") },
             confirmButton = { TextButton(onClick = { control(id, NovelDownloadState.CANCELLED); pendingCancel = null }) { Text("إلغاء التنزيل") } }, dismissButton = { TextButton(onClick = { pendingCancel = null }) { Text("رجوع") } }) }

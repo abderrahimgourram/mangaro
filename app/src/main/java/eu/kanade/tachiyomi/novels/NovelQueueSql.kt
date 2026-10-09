@@ -9,7 +9,7 @@ internal object NovelQueueSql {
     )
     const val recover = "UPDATE tasks SET state='PENDING',generation=generation+1 WHERE state='RUNNING'"
     const val pause = "UPDATE tasks SET state='PAUSED',generation=generation+1 WHERE edition_id=? AND state IN ('PENDING','RUNNING')"
-    const val cancel = "UPDATE tasks SET state='CANCELLED',generation=generation+1 WHERE edition_id=? AND state!='DONE'"
+    const val cancel = "UPDATE tasks SET state='CANCELLED',generation=generation+1 WHERE edition_id=? AND state NOT IN ('DONE','DELETING')"
     const val resume = "UPDATE tasks SET state='PENDING',generation=generation+1,error=NULL WHERE edition_id=? AND state='PAUSED'"
     const val retry = "UPDATE tasks SET state='PENDING',generation=generation+1,error=NULL WHERE edition_id=? AND state IN ('FAILED','CANCELLED')"
 }

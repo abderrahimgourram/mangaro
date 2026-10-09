@@ -49,6 +49,12 @@ class NovelDownloadDisk(private val root: File) {
         }.getOrNull()
     }
 
+    internal fun delete(editionId: String, chapterId: String) {
+        // Exact hashed payload only. No library, position, bookmark, index or manga paths.
+        val file = target(editionId, chapterId)
+        check(!file.exists() || file.delete()) { "Unable to delete downloaded novel chapter" }
+    }
+
     internal class PreparedChapter(private val part: File, private val destination: File) : java.io.Closeable {
         fun commit(mayCommit: () -> Boolean) {
             check(mayCommit()) { "Novel download cancelled before commit" }
