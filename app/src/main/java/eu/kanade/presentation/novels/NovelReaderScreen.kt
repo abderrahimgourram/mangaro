@@ -9,6 +9,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.draw.alpha
@@ -82,6 +83,7 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
         var settingsOpen by rememberSaveable {mutableStateOf(false)}
         var commentsOpen by rememberSaveable { mutableStateOf(false) }
         var controlsVisible by rememberSaveable { mutableStateOf(true) }
+        var inlineAdHeight by remember { mutableIntStateOf(0) }
         val activity = remember(context) { generateSequence(context) { (it as? android.content.ContextWrapper)?.baseContext }
             .filterIsInstance<android.app.Activity>().firstOrNull() }
         val readerPreferences = remember { Injekt.get<ReaderPreferences>() }
@@ -214,7 +216,7 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
             Box(Modifier.fillMaxSize().background(background).padding(top = stableTop, bottom = stableBottom)) {
                 Column(Modifier.fillMaxSize()) {
                     storageError?.let { Text(it,Modifier.padding(horizontal=20.dp),color=gold,style=MaterialTheme.typography.labelSmall) }
-                    if(loading) LinearProgressIndicator(Modifier.fillMaxWidth(),color=gold)
+                    if(loading) CircularProgressIndicator(Modifier.padding(horizontal=20.dp, vertical=8.dp).size(20.dp),color=gold,strokeWidth=2.dp)
                     if(error!=null) NovelFailure(error!!,chapter.url) {generation++}
                     val adVisible by remember { derivedStateOf { scroll.layoutInfo.visibleItemsInfo.any { it.key == "chapter-heading" } } }
                     SelectionContainer {
@@ -228,7 +230,7 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                                     if ((pointer.position - down.position).getDistance() > tapSlop || event.changes.size > 1) moved = true
                                     if (!pointer.pressed) {
                                         val onHeaderOrAd = scroll.layoutInfo.visibleItemsInfo.any {
-                                            it.key in setOf("chapter-heading", "novel-ad") && down.position.y >= it.offset && down.position.y < it.offset + it.size
+                                            it.key == "chapter-heading" && inlineAdHeight > 0 && down.position.y >= it.offset && down.position.y < it.offset + inlineAdHeight
                                         }
                                         // Observe without consuming: long-press selection and scrolling keep their gestures.
                                         if (!moved && !onHeaderOrAd && pointer.uptimeMillis - down.uptimeMillis < tapLimit && !scroll.isScrollInProgress) {
@@ -243,8 +245,10 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                             verticalArrangement=Arrangement.spacedBy(appearance.paragraphSpacing.dp)) {
                             item(key="chapter-heading") {
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    if (!loading && loadedChapter?.id == chapter.id && error == null)
-                                        NovelAdPlacement("reader:" + novelDigest(novel.id + "|" + chapter.id), visible = adVisible, allowStart = controlsVisible)
+                                    Box(Modifier.fillMaxWidth().onSizeChanged { inlineAdHeight = it.height }) {
+                                        if (!loading && loadedChapter?.id == chapter.id && error == null)
+                                            NovelAdPlacement("reader:" + novelDigest(novel.id + "|" + chapter.id), visible = adVisible, allowStart = controlsVisible)
+                                    }
                                     Text(chapter.title,color=gold,fontWeight=FontWeight.Bold,
                                         style=MaterialTheme.typography.titleLarge.copy(textDirection=TextDirection.ContentOrRtl),
                                         modifier=Modifier.alpha(if(controlsVisible) 1f else 0f).then(if(controlsVisible) Modifier else Modifier.clearAndSetSemantics { }))

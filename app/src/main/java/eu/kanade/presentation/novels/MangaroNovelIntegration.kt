@@ -160,7 +160,10 @@ fun NovelLibraryContent(history: Boolean = false) {
                 TextButton(onClick = { sort = value; sortPreference.set(value) }) { Text(title, color = if (sort == value) Design.GoldPrimary else Design.LavenderPrimary) }
             }
         }
-        (error ?: storageError)?.let { Text(it, Modifier.padding(horizontal = 16.dp), color = Color(0xFFE5B5AB)) }
+        (error ?: storageError)?.let {
+            Text(it, Modifier.padding(horizontal = 16.dp), color = Color(0xFFE5B5AB))
+            if (repository.libraryRestoreFailed && restored) TextButton(onClick = { scope.launch { repository.retryLibraryRestore() } }) { Text("حاول مجددًا") }
+        }
         LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (!restored) item { CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp) }
             else if (visible.isEmpty() && storageError == null) item {

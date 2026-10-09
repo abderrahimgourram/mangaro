@@ -47,10 +47,10 @@ internal fun downloadLabel(state: NovelDownloadState?) = when (state) {
 
 @Composable
 internal fun NovelChapterRow(chapter: NovelChapter, state: NovelDownloadState?, selecting: Boolean, selected: Boolean,
-    onSelect: () -> Unit, onRead: () -> Unit, onDownload: () -> Unit, onCommunity: (() -> Unit)? = null, onDelete: (() -> Unit)? = null) {
+    onSelect: () -> Unit, onRead: () -> Unit, onDownload: () -> Unit, onCommunity: (() -> Unit)? = null, onDelete: (() -> Unit)? = null, selectionEnabled: Boolean = chapter.available) {
     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Design.SurfaceDark)
-        .clickable(onClick = if (selecting) onSelect else onRead).padding(horizontal = 10.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        if (selecting) Checkbox(selected, onCheckedChange = { onSelect() }, enabled = chapter.available)
+        .clickable(enabled = !selecting || selectionEnabled, onClick = if (selecting) onSelect else onRead).padding(horizontal = 10.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (selecting) Checkbox(selected, onCheckedChange = { onSelect() }, enabled = selectionEnabled)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(chapter.title, color = Color(0xFFE5DAED), style = MaterialTheme.typography.bodyMedium.copy(textDirection = TextDirection.ContentOrRtl), maxLines = 2, overflow = TextOverflow.Ellipsis)
             downloadLabel(state)?.let { Text(it, color = if (state == NovelDownloadState.DONE) Design.GoldPrimary else Design.LavenderPrimary, style = MaterialTheme.typography.labelSmall) }
@@ -71,10 +71,11 @@ internal fun NovelChapterRow(chapter: NovelChapter, state: NovelDownloadState?, 
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun NovelDownloadSelectionSheet(index: NovelChapterIndex, currentChapterId: String? = null, onDismiss: () -> Unit, onSelect: () -> Unit, onDownload: (List<NovelChapter>) -> Unit) {
+internal fun NovelDownloadSelectionSheet(index: NovelChapterIndex, currentChapterId: String? = null, knownCurrent: NovelChapter? = null, onDismiss: () -> Unit, onSelect: () -> Unit, onDownload: (List<NovelChapter>) -> Unit) {
     val current = index.chapters.indexOfFirst { it.id == currentChapterId }.takeIf { it >= 0 }
     val next = current?.plus(1) ?: 0
     val remaining = index.chapters.size - next
+    val followingKnown = currentChapterId == null || current != null
     var confirmAll by remember { mutableStateOf(false) }
     val placement = remember { "download-selection:" + java.util.UUID.randomUUID().toString() }
     var from by rememberSaveable { mutableStateOf("1") }
@@ -89,15 +90,17 @@ internal fun NovelDownloadSelectionSheet(index: NovelChapterIndex, currentChapte
             item { Text("تحميل الفصول", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium) }
             item {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    current?.let { at -> AssistChip(onClick = { onDownload(listOf(index.chapters[at])) }, label = { Text("تحميل الفصل") }) }
+                    (current?.let { index.chapters[it] } ?: knownCurrent)?.let { chapter ->
+                        AssistChip(onClick = { onDownload(listOf(chapter)) }, enabled = chapter.available, label = { Text("تحميل الفصل") })
+                    }
                     listOf(10, 25, 50, 100).forEach { count ->
-                        AssistChip(onClick = { onDownload(index.chapters.subList(next, next + count)) }, enabled = remaining >= count,
+                        AssistChip(onClick = { onDownload(index.chapters.subList(next, next + count)) }, enabled = followingKnown && remaining >= count,
                             label = { Text("تحميل " + numeric(count) + " فصلًا") })
                     }
-                    if (index.complete && remaining in 1..9) AssistChip(onClick = { onDownload(index.chapters.drop(next)) }, label = { Text("تحميل المتبقي") })
+                    if (followingKnown && index.complete && remaining in 1..9) AssistChip(onClick = { onDownload(index.chapters.drop(next)) }, label = { Text("تحميل المتبقي") })
                 }
             }
-            if (!index.complete) item { Text("جارٍ استكمال قائمة الفصول…", color = Design.LavenderPrimary, style = MaterialTheme.typography.labelSmall) }
+            if (!index.complete) item { Text("يمكنك اختيار الفصول المتاحة الآن.", color = Design.LavenderPrimary, style = MaterialTheme.typography.labelSmall) }
             item { Text("اختر نطاقًا بحسب ترتيب الفصول في القائمة.", color = Color(0xFFBEABCC), style = MaterialTheme.typography.bodySmall) }
             item { Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(from, { from = it.filter(Char::isDigit) }, Modifier.weight(1f), label = { Text("من") }, singleLine = true,
@@ -149,6 +152,7 @@ fun NovelDownloadsContent() {
         var pendingDelete by remember { mutableStateOf<Pair<String, Set<String>>?>(null) }
         var error by remember { mutableStateOf<String?>(null) }
         fun control(id: String, action: NovelDownloadState, chapterId: String? = null) {
+            error = null
             scope.launch { try { queue.control(id, action, chapterId) } catch (c: CancellationException) { throw c } catch (e: Exception) { error = novelError(e) } }
         }
         Column(Modifier.fillMaxSize().background(Design.BackgroundDark)) {
@@ -226,7 +230,7 @@ fun NovelDownloadsContent() {
                     TextButton(onClick = { pendingDelete = id to downloaded }, enabled = downloaded.isNotEmpty()) { Text("حذف المحدد") }
                     val pending = chapters.filter { it.chapter.id in selectedChapters && it.state !in setOf(NovelDownloadState.DONE, NovelDownloadState.DELETING, NovelDownloadState.CANCELLED) }.map { it.chapter.id }.toSet()
                     TextButton(onClick = { scope.launch {
-                        try { queue.cancelSelected(id, pending); selectedChapters = emptySet() }
+                        try { error = null; queue.cancelSelected(id, pending); selectedChapters = emptySet() }
                         catch (c: CancellationException) { throw c } catch (e: Exception) { error = novelError(e) }
                     } }, enabled = pending.isNotEmpty()) { Text("إلغاء المحدد") }
                 }
@@ -234,7 +238,7 @@ fun NovelDownloadsContent() {
                     items(chapters, key = { it.key }) { task ->
                         NovelChapterRow(task.chapter, task.state, true, task.chapter.id in selectedChapters,
                             onSelect = { selectedChapters = if (task.chapter.id in selectedChapters) selectedChapters - task.chapter.id else selectedChapters + task.chapter.id },
-                            onRead = {}, onDownload = {})
+                            onRead = {}, onDownload = {}, selectionEnabled = true)
                         task.error?.let { Text(it, color = Color(0xFFE5B5AB), style = MaterialTheme.typography.labelSmall) }
                     }
                 }
@@ -246,7 +250,7 @@ fun NovelDownloadsContent() {
                 confirmButton = { TextButton(onClick = {
                     pendingDelete = null
                     scope.launch {
-                        try { queue.deleteChapters(id, chapters); selectedChapters = selectedChapters - chapters }
+                        try { error = null; queue.deleteChapters(id, chapters); selectedChapters = selectedChapters - chapters }
                         catch (c: CancellationException) { throw c } catch (e: Exception) { error = novelError(e) }
                     }
                 }) { Text("حذف") } },

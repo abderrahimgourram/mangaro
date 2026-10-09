@@ -296,6 +296,7 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
         val catalog by repository.catalog.collectAsState()
         val library by repository.library.collectAsState()
         val queue by repository.downloads.tasks.collectAsState()
+        val storageError by repository.storageError.collectAsState()
         val work = catalog.work(initial.id) ?: UnifiedNovelWork(NovelIdentity.initialWorkId(initial.id), listOf(initial), initial.id)
         val scope = rememberCoroutineScope()
         var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -341,7 +342,12 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
                         }
                     }
                 } catch (c: CancellationException) { throw c }
-                catch (e: Exception) { if (request == indexEpoch) indexErrors = indexErrors + (edition.id to novelError(e)) }
+                catch (e: Exception) {
+                    if (request == indexEpoch) {
+                        repository.indexSnapshot(edition)?.let { indexes = indexes + (edition.id to it) }
+                        indexErrors = indexErrors + (edition.id to novelError(e))
+                    }
+                }
                 finally { if (request == indexEpoch) busy = busy - edition.id }
             } }
             // Optional metadata/access evidence never keeps chapter selection in a loading state.
@@ -373,7 +379,7 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
         fun download(chapters: List<NovelChapter>) {
             if (enqueueing || chapters.isEmpty()) return
             selectedId = novel.id
-            enqueueing = true
+            enqueueing = true; error = null; notice = null
             scope.launch {
                 try { repository.downloads.enqueue(novel, chapters); notice = "أُضيفت الفصول إلى التنزيلات"; selected = arrayListOf(); selecting = false }
                 catch (c: CancellationException) { throw c } catch (e: Exception) { error = novelError(e) }
@@ -449,7 +455,11 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
                         Text("جارٍ تحميل الفصول…", color = Design.LavenderPrimary, style = MaterialTheme.typography.labelSmall)
                     }
                 }
-                (error ?: indexErrors[novel.id])?.let { message -> item { NovelFailure(message, novel.url) { retry++ } } }
+                (error ?: indexErrors[novel.id])?.let { message -> item { NovelFailure(message, novel.url) { error = null; retry++ } } }
+                storageError?.let { message -> item {
+                    Text(message, color = Color(0xFFE5B5AB), style = MaterialTheme.typography.bodySmall)
+                    if (repository.libraryRestoreFailed) TextButton(onClick = { scope.launch { repository.retryLibraryRestore() } }) { Text("حاول مجددًا") }
+                } }
                 notice?.let { message -> item { Text(message, color = Design.GoldPrimary, style = MaterialTheme.typography.labelSmall) } }
                 groups.forEach { group ->
                     if (group.title != null) item(key = "group-" + novel.id + "|" + group.id) {
@@ -479,7 +489,9 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
             }
             if (selecting && selected.isNotEmpty()) Button(onClick = { download(index.chapters.filter { it.id in selected }) }, enabled = !enqueueing, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), colors = ButtonDefaults.buttonColors(containerColor = Design.GoldPrimary, contentColor = Design.BackgroundDark)) { Text("تحميل المحدد · " + numeric(selected.size)) }
         }
-        if (rangeOpen) NovelDownloadSelectionSheet(index, currentChapterId = resume?.takeIf { it.novel.id == novel.id }?.position?.chapter?.id, onDismiss = { rangeOpen = false }, onSelect = { rangeOpen = false; selectedId = novel.id; selecting = true }, onDownload = { chapters -> rangeOpen = false; download(chapters) })
+        if (rangeOpen) NovelDownloadSelectionSheet(indexes[novel.id] ?: NovelChapterIndex(novel.id),
+            currentChapterId = resume?.takeIf { it.novel.id == novel.id }?.position?.chapter?.id,
+            knownCurrent = resume?.takeIf { it.novel.id == novel.id }?.position?.chapter, onDismiss = { rangeOpen = false }, onSelect = { rangeOpen = false; selectedId = novel.id; selecting = true }, onDownload = { chapters -> rangeOpen = false; download(chapters) })
         if (editionsOpen) ModalBottomSheet(onDismissRequest = { editionsOpen = false }, containerColor = Design.SurfaceDark) {
             Column(Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("معلومات الرواية", color = Color.White, style = MaterialTheme.typography.titleMedium)

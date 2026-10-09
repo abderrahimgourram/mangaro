@@ -3,6 +3,8 @@ package eu.kanade.tachiyomi.novels
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
@@ -30,6 +32,8 @@ class NovelHttp {
     // The download worker still has only two lanes and retains its per-source start cap.
     private val requests = Semaphore(4)
     private val hosts = domains.associateWith { Semaphore(1) }
+    private data class CacheLock(val mutex: Mutex = Mutex(), var users: Int = 0)
+    private val cacheLocks = mutableMapOf<String, CacheLock>()
     private data class Cached(val value: String, val at: Long)
     private val metadata = LinkedHashMap<String,Cached>(16,.75f,true)
     companion object {
@@ -41,13 +45,19 @@ class NovelHttp {
         }.getOrDefault(false)
     }
     suspend fun get(url: String, cache: Boolean = false): String {
-        if(cache) synchronized(metadata) { metadata[url]?.takeIf { System.nanoTime()-it.at < TimeUnit.MINUTES.toNanos(2) }?.let { return it.value } }
-        val value=request(url,null)
-        if(cache) synchronized(metadata) {
-            metadata[url]=Cached(value,System.nanoTime())
-            while(metadata.size>8 || metadata.values.sumOf { it.value.length }>2_000_000) metadata.remove(metadata.keys.first())
-        }
-        return value
+        if (!cache) return request(url, null)
+        val entry = synchronized(cacheLocks) { cacheLocks.getOrPut(url) { CacheLock() }.also { it.users++ } }
+        try {
+            return entry.mutex.withLock {
+                synchronized(metadata) { metadata[url]?.takeIf { System.nanoTime() - it.at < TimeUnit.MINUTES.toNanos(2) }?.let { return@withLock it.value } }
+                val value = request(url, null)
+                synchronized(metadata) {
+                    metadata[url] = Cached(value, System.nanoTime())
+                    while (metadata.size > 8 || metadata.values.sumOf { it.value.length } > 2_000_000) metadata.remove(metadata.keys.first())
+                }
+                value
+            }
+        } finally { synchronized(cacheLocks) { if (--entry.users == 0) cacheLocks.remove(url) } }
     }
     suspend fun post(url: String, fields: Map<String, String>): String = request(url, fields)
     private suspend fun request(initial: String, fields: Map<String, String>?): String {

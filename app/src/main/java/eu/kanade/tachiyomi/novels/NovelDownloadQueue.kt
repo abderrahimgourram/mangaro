@@ -155,14 +155,15 @@ class NovelDownloadQueue(private val app: Context, private val repository: Novel
     }
     private suspend fun finishDeletion(targets: List<NovelDownloadTask>) {
         var failure: Exception? = null
+        val removed = mutableListOf<NovelDownloadTask>()
         db.beginTransaction()
         try {
             targets.forEach { task ->
                 if (stateOf(task.key)?.first != NovelDownloadState.DELETING) return@forEach
                 try {
                     disk.delete(task.novel.id, task.chapter.id)
-                    repository.evictChapter(task.novel.id, task.chapter.id)
                     db.execSQL("DELETE FROM tasks WHERE id=? AND state='DELETING'", arrayOf(task.key))
+                    removed += task
                 } catch (e: Exception) {
                     failure = e
                     android.util.Log.w("MangaroNovels", "Local chapter deletion failed", e)
@@ -171,6 +172,8 @@ class NovelDownloadQueue(private val app: Context, private val repository: Novel
             }
             db.setTransactionSuccessful()
         } finally { db.endTransaction() }
+        // SQLite transactions are thread-affine: suspend only after endTransaction().
+        removed.forEach { repository.evictChapter(it.novel.id, it.chapter.id) }
         // Failed deletions remain fenced and retryable, never falsely reported as removed.
         failure?.let { mutableError.value = "تعذّر حذف بعض الفصول. حاول مجددًا." }
     }

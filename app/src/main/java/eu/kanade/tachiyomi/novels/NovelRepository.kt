@@ -178,21 +178,43 @@ class NovelRepository private constructor(context: Context) {
         synchronized(discoveryCache) { discoveryCache[key]?.takeIf { System.currentTimeMillis() - it.at < 300_000 }?.let { return@coalesce it.result } }
         val result = if (term.isNotBlank()) source.search(term, page) else source.catalog(page, latest = true, genre = genre)
         ingest(result.novels)
+        val snapshot = DiscoveryCache(result, System.currentTimeMillis())
         synchronized(discoveryCache) {
-            discoveryCache[key] = DiscoveryCache(result, System.currentTimeMillis())
+            discoveryCache[key] = snapshot
             while (discoveryCache.size > 16) discoveryCache.remove(discoveryCache.keys.first())
         }
         io.launch {
             runCatching {
-                indexCache.write("discovery/" + novelDigest(key) + ".json", json.encodeToString(DiscoveryCache(result, System.currentTimeMillis())))
-                val directory = File(app.cacheDir, "novels-indexes/discovery")
-                val files = directory.listFiles().orEmpty().sortedByDescending { it.lastModified() }
-                var bytes = 0L
-                files.forEachIndexed { i, file -> bytes += file.length(); if (i >= 32 || bytes > 16L * 1024 * 1024) file.delete() }
+                synchronized(indexCache) {
+                    val path = "discovery/" + novelDigest(key) + ".json"
+                    val old = indexCache.read(path)?.let { json.decodeFromString<DiscoveryCache>(it) }
+                    if (old == null || old.at <= snapshot.at) indexCache.write(path, json.encodeToString(snapshot))
+                    val directory = File(app.cacheDir, "novels-indexes/discovery")
+                    val files = directory.listFiles().orEmpty().sortedByDescending { it.lastModified() }
+                    var bytes = 0L
+                    files.forEachIndexed { i, file -> bytes += file.length(); if (i >= 32 || bytes > 16L * 1024 * 1024) file.delete() }
+                }
             }.onFailure { android.util.Log.w("MangaroNovels", "Discovery cache write failed", it) }
         }
         result
         }
+    }
+    val libraryRestoreFailed: Boolean get() = !libraryReadable
+    suspend fun retryLibraryRestore() = withContext(Dispatchers.IO) {
+        ready.await()
+        mutableRestored.value = false
+        try {
+            lock.withLock {
+                val restored = json.decodeFromString<List<NovelLibraryItem>>(file.openRead().use { it.readBytes().decodeToString() })
+                    .map { if (it.favorite) it.copy(saved = true) else it }
+                mutableLibrary.value = restored
+                libraryReadable = true
+                mutableStorageError.value = null
+            }
+            ingest(library.value.map { it.novel })
+        } catch (c: CancellationException) { throw c }
+        catch (e: Exception) { mutableStorageError.value = "تعذّر استعادة مكتبة الروايات."; android.util.Log.w("MangaroNovels", "Library restore retry failed", e) }
+        finally { mutableRestored.value = true }
     }
     suspend fun setSaved(novel: Novel, saved: Boolean) {
         try {
@@ -314,7 +336,7 @@ class NovelRepository private constructor(context: Context) {
         indexLocks.getOrPut(novel.id) { Mutex() }.withLock {
             val old = indexSnapshot(novel)
             if (!refresh && old?.complete == true && System.currentTimeMillis() - old.updatedAt < 21_600_000) {
-                onPage(old)
+                onPage(old); return@withLock old
             }
             val initial = if (!refresh && old?.complete == false) old else NovelChapterIndex(novel.id)
             try {
