@@ -48,7 +48,7 @@ internal fun NovelAdPlacement(request: NovelAdRequest, visible: Boolean = true, 
         }
     }
     BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val authorized = maxWidth >= 300.dp && lifecycle.isAtLeast(Lifecycle.State.RESUMED) &&
+        val authorized = maxWidth >= 300.dp && lifecycle.isAtLeast(Lifecycle.State.STARTED) &&
             settings.enabled && settings.novelPlacementsApproved && System.currentTimeMillis() >= adFreeUntil
         val eligible = authorized && visible
         LaunchedEffect(eligible, allowStart, key) {

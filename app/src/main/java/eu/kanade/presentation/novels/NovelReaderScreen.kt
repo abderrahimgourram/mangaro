@@ -222,6 +222,7 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                 // Match image-reader preloading: one neighbor once reading approaches the end.
                 snapshotFlow { scroll.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0 }
                     .first { it >= (blocks.size * 2 / 3).coerceAtLeast(1) }
+                submitCompletedNovelChapter(novel, shown)
                 val network = context.getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
                 if (network == null || network.activeNetwork == null || network.isActiveNetworkMetered) return@repeatOnLifecycle
                 try {

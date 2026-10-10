@@ -7,6 +7,8 @@ import androidx.lifecycle.viewModelScope
 import eu.kanade.domain.source.service.SourcePreferences
 import eu.kanade.tachiyomi.extension.ExtensionManager
 import eu.kanade.tachiyomi.source.Source
+import eu.kanade.tachiyomi.source.internal.util.DiscoveryChapterGate
+import eu.kanade.tachiyomi.ui.home.PreferredMangaVariants
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -27,6 +29,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import mihon.core.viewmodel.StateViewModel
 import mihon.domain.manga.model.toDomainManga
+import mihon.domain.source.health.SourceHealthMonitor
 import tachiyomi.core.common.preference.toggle
 import tachiyomi.core.common.util.lang.launchIO
 import tachiyomi.domain.manga.interactor.GetManga
@@ -189,65 +192,71 @@ abstract class SearchViewModel(
         mutableState.update { it.copy(items = sources.associateWith { SearchItemResult.Loading }, activeQuery = query, isSearching = true, generation = request, pages = emptyMap(), isLoadingMore = false, paginationFailed = false) }
 
         searchJob = viewModelScope.launchIO {
-            supervisorScope {
-                sources.map { source ->
-                    async {
-                        sourceSlots.withPermit {
-                            var nextPage: SearchPage? = null
-                            val result = try {
-                                val page = mihon.domain.source.health.SourceHealthMonitor.shared.run(source.id, 30_000) {
-                                    source.getSearchManga(1, query, source.getFilterList())
+            try {
+                supervisorScope {
+                    sources.map { source ->
+                        async {
+                            sourceSlots.withPermit {
+                                var nextPage: SearchPage? = null
+                                val result = try {
+                                    val page = SourceHealthMonitor.shared.run(source.id, 30_000) {
+                                        source.getSearchManga(1, query, source.getFilterList())
+                                    }
+                                    val titles = page.mangas
+                                        .map { it.toDomainManga(source.id) }
+                                        .distinctBy { it.url }
+                                        .let { networkToLocalManga(it) }
+                                        .let { DiscoveryChapterGate.filter(it) }
+                                    nextPage = SearchPage(2, page.hasNextPage)
+                                    SearchItemResult.Success(titles)
+                                } catch (e: CancellationException) {
+                                    throw e
+                                } catch (e: Exception) {
+                                    SearchItemResult.Error(e)
                                 }
-                                val titles = page.mangas
-                                    .map { it.toDomainManga(source.id) }
-                                    .distinctBy { it.url }
-                                    .let { networkToLocalManga(it) }
-                                    .let { eu.kanade.tachiyomi.source.internal.util.DiscoveryChapterGate.filter(it) }
-                                nextPage = SearchPage(2, page.hasNextPage)
-                                SearchItemResult.Success(titles)
-                            } catch (e: CancellationException) {
-                                throw e
-                            } catch (e: Exception) {
-                                SearchItemResult.Error(e)
-                            }
-                            // Serialize publication, not source requests. An old request can never
-                            // publish into a newer query, including A -> B -> A transitions.
-                            resultMutex.withLock {
-                                if (!isActive || generation.get() != request) return@withLock
-                                if (result is SearchItemResult.Success) result.result.forEach(eu.kanade.tachiyomi.ui.home.PreferredMangaVariants::remember)
-                                val items = state.value.items + (source to result)
-                                val ranked = withContext(Dispatchers.Default) { relevance.rank(items, sourceOrder) }
-                                mutableState.update { current ->
-                                    if (generation.get() != request) current else current.copy(
-                                        items = items.toSortedMap(sortComparator(items)),
-                                        pages = nextPage?.let { current.pages + (source to it) } ?: current.pages,
-                                        // Keep useful previous-query rows until the new query yields
-                                        // rows or finishes. Counts use resultQuery, never stale rows.
-                                        rankedResults = if (ranked.isNotEmpty()) ranked else current.rankedResults,
-                                        resultQuery = if (ranked.isNotEmpty()) query else current.resultQuery,
-                                    )
+                                // Serialize publication, not source requests. An old request can never
+                                // publish into a newer query, including A -> B -> A transitions.
+                                resultMutex.withLock {
+                                    if (!isActive || generation.get() != request) return@withLock
+                                    if (result is SearchItemResult.Success) result.result.forEach(PreferredMangaVariants::remember)
+                                    val items = state.value.items + (source to result)
+                                    val ranked = withContext(Dispatchers.Default) { relevance.rank(items, sourceOrder) }
+                                    mutableState.update { current ->
+                                        if (generation.get() != request) current else current.copy(
+                                            items = items.toSortedMap(sortComparator(items)),
+                                            pages = nextPage?.let { current.pages + (source to it) } ?: current.pages,
+                                            // Keep useful previous-query rows until the new query yields
+                                            // rows or finishes. Counts use resultQuery, never stale rows.
+                                            rankedResults = if (ranked.isNotEmpty()) ranked else current.rankedResults,
+                                            resultQuery = if (ranked.isNotEmpty()) query else current.resultQuery,
+                                        )
+                                    }
                                 }
                             }
                         }
+                    }.awaitAll()
+                }
+                resultMutex.withLock {
+                    if (!isActive || generation.get() != request) return@withLock
+                    val items = state.value.items
+                    val ranked = withContext(Dispatchers.Default) { relevance.rank(items, sourceOrder) }
+                    mutableState.update { current ->
+                        if (generation.get() != request) current else {
+                            val allFailed = items.isNotEmpty() && items.values.all { it is SearchItemResult.Error }
+                            current.copy(rankedResults = if (allFailed) current.rankedResults else ranked,
+                                resultQuery = if (allFailed && current.rankedResults.isNotEmpty()) current.resultQuery else query, generation = request, isSearching = false)
+                        }
                     }
-                }.awaitAll()
-            }
-            resultMutex.withLock {
-                if (!isActive || generation.get() != request) return@withLock
-                val items = state.value.items
-                val ranked = withContext(Dispatchers.Default) { relevance.rank(items, sourceOrder) }
-                mutableState.update { current ->
-                    if (generation.get() != request) current else {
-                        val allFailed = items.isNotEmpty() && items.values.all { it is SearchItemResult.Error }
-                        current.copy(rankedResults = if (allFailed) current.rankedResults else ranked,
-                            resultQuery = if (allFailed && current.rankedResults.isNotEmpty()) current.resultQuery else query, generation = request, isSearching = false)
+                    if (generation.get() == request && items.values.all { it is SearchItemResult.Success }) {
+                        synchronized(queryCache) {
+                            queryCache[key] = CachedQuery(System.nanoTime(), items, ranked, state.value.pages)
+                            while (queryCache.size > 12) queryCache.remove(queryCache.keys.first())
+                        }
                     }
                 }
-                if (generation.get() == request && items.values.all { it is SearchItemResult.Success }) {
-                    synchronized(queryCache) {
-                        queryCache[key] = CachedQuery(System.nanoTime(), items, ranked, state.value.pages)
-                        while (queryCache.size > 12) queryCache.remove(queryCache.keys.first())
-                    }
+            } finally {
+                if (generation.get() == request) {
+                    mutableState.update { if (it.generation == request) it.copy(isSearching = false) else it }
                 }
             }
         }

@@ -2,6 +2,7 @@ package eu.kanade.tachiyomi.novels
 
 import android.content.Context
 import android.util.AtomicFile
+import android.util.Log
 import coil3.ImageLoader
 import coil3.disk.DiskCache
 import coil3.memory.MemoryCache
@@ -15,6 +16,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import mihon.domain.sigils.SigilEvents
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
@@ -271,7 +273,10 @@ class NovelRepository private constructor(context: Context) {
                 if (updated.any { it.novel.id == novel.id }) updated
                 else updated + NovelLibraryItem(novel, saved, existing?.position, addedAt = if (saved) System.currentTimeMillis() else 0)
             }
-            if (saved) withContext(Dispatchers.IO) { runCatching { indexSnapshot(novel)?.let { metadata.write(indexPath(novel), json.encodeToString(it)) } }.onFailure { android.util.Log.w("MangaroNovels", "Saved index cache failed", it) } }
+            if (saved) {
+                SigilEvents.emit(SigilEvents.Kind.LIBRARY, 0, owner = owner)
+                withContext(Dispatchers.IO) { runCatching { indexSnapshot(novel)?.let { metadata.write(indexPath(novel), json.encodeToString(it)) } }.onFailure { Log.w("MangaroNovels", "Saved index cache failed", it) } }
+            }
         } catch (c: CancellationException) { throw c }
         catch (e: Exception) { android.util.Log.w("MangaroNovels", "Library change failed", e); mutableStorageError.value = "تعذّر حفظ التغيير. حاول مجددًا." }
     }

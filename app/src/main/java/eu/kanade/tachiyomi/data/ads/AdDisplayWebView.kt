@@ -91,6 +91,8 @@ fun AdDisplayWebView(
                     isVerticalScrollBarEnabled = false
                     isHorizontalScrollBarEnabled = false
                     overScrollMode = WebView.OVER_SCROLL_NEVER
+                    isFocusable = false
+                    isFocusableInTouchMode = false
                     settings.apply {
                         javaScriptEnabled = true
                         domStorageEnabled = false
@@ -123,6 +125,7 @@ fun AdDisplayWebView(
                             val uri = request.url
                             if (!request.isForMainFrame) {
                                 if (request.hasGesture() && isWebUri(uri)) {
+                                    view?.clearFocus()
                                     SmartLinkAdLauncher.open(context, uri.toString())
                                     return true
                                 }
@@ -131,6 +134,7 @@ fun AdDisplayWebView(
                             }
                             if (safeSlotUri(uri.toString()) != null) return false
                             if (request.hasGesture() && isWebUri(uri)) {
+                                view?.clearFocus()
                                 SmartLinkAdLauncher.open(context, uri.toString())
                             }
                             // Block redirects and top-level navigation without an explicit gesture.
@@ -167,6 +171,7 @@ fun AdDisplayWebView(
             onRelease = { webView ->
                 alive.set(false)
                 runCatching {
+                    webView.clearFocus()
                     webView.webViewClient = WebViewClient()
                     webView.stopLoading()
                     webView.removeJavascriptInterface("MangaroAdBridge")
