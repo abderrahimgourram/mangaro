@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.ui.main
 
+import android.Manifest
 import android.app.SearchManager
 import android.app.assist.AssistContent
 import android.content.Context
@@ -79,6 +80,7 @@ import eu.kanade.presentation.components.AppStateBanners
 import eu.kanade.presentation.components.DownloadedOnlyBannerBackgroundColor
 import eu.kanade.presentation.components.IncognitoModeBannerBackgroundColor
 import eu.kanade.presentation.components.IndexingBannerBackgroundColor
+import eu.kanade.presentation.home.MangaroNotificationPermissionPrompt
 import eu.kanade.presentation.home.MangaroStartupTransition
 import eu.kanade.presentation.more.settings.screen.data.RestoreBackupScreen
 import eu.kanade.presentation.util.AssistContentScreen
@@ -407,6 +409,8 @@ class MainActivity : BaseActivity() {
                     highlightsVersion == eu.kanade.tachiyomi.data.updater.UpdateHighlightsState.RELEASE_CODE
                 ) {
                     eu.kanade.presentation.home.MangaroUpdateHighlights(onContinue = highlights::acknowledge)
+                } else if (localInitialized && startupReady && !showStartupOverlay) {
+                    ShowNotificationPromptIfNeeded(preferences)
                 }
             }
         }
@@ -423,6 +427,26 @@ class MainActivity : BaseActivity() {
             is AssistContentScreen -> {
                 screen.onProvideAssistUrl()?.let { outContent.webUri = it.toUri() }
             }
+        }
+    }
+
+    @Composable
+    private fun ShowNotificationPromptIfNeeded(preferences: BasePreferences) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+
+        val context = LocalContext.current
+        var showPrompt by remember {
+            mutableStateOf(
+                !preferences.notificationPromptHandled.get() &&
+                    context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED,
+            )
+        }
+
+        if (showPrompt) {
+            MangaroNotificationPermissionPrompt(
+                preferences = preferences,
+                onDismiss = { showPrompt = false },
+            )
         }
     }
 

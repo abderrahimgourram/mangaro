@@ -24,6 +24,7 @@ import tachiyomi.domain.chapter.interactor.GetChaptersByMangaId
 import tachiyomi.domain.chapter.interactor.ShouldUpdateDbChapter
 import tachiyomi.domain.chapter.interactor.UpdateChapter
 import tachiyomi.domain.chapter.model.Chapter
+import tachiyomi.domain.chapter.model.ChapterUpdate
 import tachiyomi.domain.chapter.repository.ChapterRepository
 import tachiyomi.domain.library.service.LibraryPreferences
 import tachiyomi.domain.manga.model.Manga
@@ -58,6 +59,8 @@ class ReliabilityAndCollapseProtectionTest {
 
         coEvery { getExcludedScanlators.await(any()) } returns emptySet()
         coEvery { libraryPreferences.markDuplicateReadChapterAsRead.get() } returns emptySet()
+        coEvery { chapterRepository.applySourceChanges(any(), any(), any()) } answers { firstArg() }
+        coEvery { chapterRepository.getChapterByMangaId(any(), any()) } coAnswers { getChaptersByMangaId.await(firstArg()) }
 
         syncChaptersWithSource = SyncChaptersWithSource(
             downloadManager,
@@ -208,7 +211,7 @@ class ReliabilityAndCollapseProtectionTest {
         coEvery { chapterRepository.getChapterById(7) } returns old
         val remote = SChapter.create().apply { url = "/new"; name = "Chapter 1"; this.memo = memo }
         syncChaptersWithSource.await(listOf(remote), manga, source, completeness = ChapterFetchCompleteness.PARTIAL)
-        coVerify(exactly = 1) { chapterRepository.update(tachiyomi.domain.chapter.model.ChapterUpdate(7, url = "/new", memo = memo)) }
+        coVerify(exactly = 1) { chapterRepository.update(ChapterUpdate(7, url = "/new", memo = memo)) }
         coVerify(exactly = 0) { chapterRepository.addAll(any()) }
         coVerify(exactly = 0) { chapterRepository.removeChaptersWithIds(any()) }
     }

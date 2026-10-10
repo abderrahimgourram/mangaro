@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.data.account.sync
 
+import android.content.Context
 import io.kotest.matchers.shouldBe
 import io.mockk.*
 import kotlinx.coroutines.flow.flowOf
@@ -32,7 +33,8 @@ class CloudLocalGatewayTest {
     private val c=Chapter.create().copy(id=71,mangaId=42,url="/chapter",name="Chapter",lastPageRead=8,totalPages=12)
     private val mk=CommunityMangaKey.fromSource(m.source,m.url)
     private val ck=CommunityChapterKey.fromSource(mk,c.url).value
-    private val gateway=CloudLocalGateway(mangas,chapters,categories,history,sources,store,preferences)
+    private val context=mockk<Context>(relaxed=true)
+    private val gateway=CloudLocalGateway(mangas,chapters,categories,history,sources,store,preferences,context)
     init {
         every {store.get(any(),any())} answers {values[firstArg<String>() to secondArg<String>()]}
         every {store.put(any(),any(),any())} answers {values[firstArg<String>() to secondArg<String>()]=thirdArg<String>()}

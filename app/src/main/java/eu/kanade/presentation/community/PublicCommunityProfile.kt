@@ -91,7 +91,7 @@ internal fun PublicCommunityProfilePanel(userId: String, onBack: () -> Unit) {
                         (if (profile.showcaseEnabled) listOf("أعمال معروضة" to profile.favorites.size.toLong()) else emptyList()) +
                         (profile.chaptersRead?.let { listOf("فصل مقروء" to it) } ?: emptyList()))
                     if (profile.showcaseEnabled) {
-                        LibraryShowcase(profile.favorites.map { ShowcaseDisplayItem(it.mangaKey,it.title,it.coverUrl,it.featured) }, onOpen = { key ->
+                        LibraryShowcase(profile.favorites.map { ShowcaseDisplayItem(it.mangaKey, it.title, it.coverUrl, it.featured, isNovel = it.isNovel, chapterCount = it.chapterCount) }, onOpen = { key ->
                             val item = profile.favorites.firstOrNull { it.mangaKey == key }
                             if (item != null && navigationGate.tryStart()) {
                                 resolving = true; favoriteError = null

@@ -53,13 +53,13 @@ internal fun NovelAdPlacement(request: NovelAdRequest, visible: Boolean = true, 
         val eligible = authorized && visible
         LaunchedEffect(eligible, allowStart, key) {
             if (eligible && allowStart && !request.started && !request.ended) {
-                request.reserved = policy.reserveContentPlacement(key, owner)
-                // One cancellable wake-up at the existing cooldown boundary; no polling.
+                request.reserved = policy.reserveContentPlacement(key, owner, skipCooldown = true)
+                // Short retry for previous chapter cleanup; no one-minute wait.
                 if (!request.reserved) {
-                    val wait = policy.contentPlacementCooldownMillis(key)
+                    val wait = 250L
                     if (wait > 0) {
                         delay(wait)
-                        request.reserved = policy.reserveContentPlacement(key, owner)
+                        request.reserved = policy.reserveContentPlacement(key, owner, skipCooldown = true)
                     }
                 }
             } else if ((!eligible || !allowStart) && request.reserved && !request.started) {

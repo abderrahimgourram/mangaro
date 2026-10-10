@@ -85,6 +85,63 @@ class NovelSourceTest {
         parsed.paragraphs.any {"NOISE" in it || "MENU" in it || "SEO SUMMARY" in it} shouldBe false
         runCatching {parser.parse("<div id=story><p>Loading</p></div>")}.isFailure shouldBe true
     }
+    @Test fun ceneleSanitizerRemovesInjectedProtectionNoticesAndHexIdentifiers() {
+        val originalParagraphs = listOf(
+            "كان الضباب الأبيض كثيفاً ومستمراً، حيث تسلل من الخارج وابتلع سون لينغتونغ ونينغ تشو داخل الغرفة.",
+            "انطفأ الخط الأخير في المشهد. هذا التطبيق يسرق من موقع وتطبيق فضاء الروايات b9fea347bf اقرأ آلاف الفصول لأشهر الروايات على موقع وتطبيق فضاء الروايات ... وبدأ النهار بالبزوغ.",
+            "انطفأ الخط الأخير في المشهد. هذا التطبيق يسرق من موقع وتطبيق فضاء الروايات b9fea347bf اقرأ آلاف الفصول لأشهر الروايات على موقع وتطبيق فضاء الروايات ...",
+            "هذا التطبيق يسرق من موقع وتطبيق فضاء الروايات 6b86ba9dff e4d909c29b",
+            "وسار الاثنان للأمام، هذا الفصل تم سرقته بواسطة تطبيق مانجارو من موقع وتطبيق فضاء الروايات، رمز الحماية: 6b86ba9dff e4d909c29b، وفتحا الباب.",
+            "كان الجو هادئاً (تطبيق مانجارو يسرق الفصول من فضاء الروايات 0x7f3a9b) وقرر الخروج.",
+            "المترجم : الدوق سيد دجاجة – فضاء الروايات",
+            "ألم ينجُ بسرقة حظ شخص آخر؟",
+            "كنت أعتقد أنني سأحتاج إلى تطبيق عدة جرعات على المريض."
+        )
+        val text = NovelText(originalParagraphs)
+        val sanitized = CeneleSanitizer.sanitize(text)
+
+        sanitized.paragraphs.size shouldBe 7
+        sanitized.paragraphs[0] shouldBe "كان الضباب الأبيض كثيفاً ومستمراً، حيث تسلل من الخارج وابتلع سون لينغتونغ ونينغ تشو داخل الغرفة."
+        sanitized.paragraphs[1] shouldBe "وبدأ النهار بالبزوغ."
+        sanitized.paragraphs[2] shouldBe "وسار الاثنان للأمام، وفتحا الباب."
+        sanitized.paragraphs[3] shouldBe "كان الجو هادئاً وقرر الخروج."
+        sanitized.paragraphs[4] shouldBe "المترجم : الدوق سيد دجاجة – فضاء الروايات"
+        sanitized.paragraphs[5] shouldBe "ألم ينجُ بسرقة حظ شخص آخر؟"
+        sanitized.paragraphs[6] shouldBe "كنت أعتقد أنني سأحتاج إلى تطبيق عدة جرعات على المريض."
+    }
+    @Test fun ceneleSourceIdMismatchIsSanitized() {
+        val novel = Novel("novel.cenele", "https://cenele.com/cont/book/", "الكتاب")
+        novel.id shouldBe "novel.cenele:https://cenele.com/cont/book/"
+
+        val contaminatedText = NovelText(listOf(
+            "وكان الجو هادئاً.",
+            "انطفأ الخط الأخير في المشهد. هذا التطبيق يسرق من موقع وتطبيق فضاء الروايات 6b86ba9dff وبدأ النهار بالبزوغ.",
+            "وسار الاثنان للأمام."
+        ))
+
+        val sanitized = CeneleSanitizer.sanitize(contaminatedText)
+        sanitized.paragraphs.size shouldBe 3
+        sanitized.paragraphs[1] shouldBe "وبدأ النهار بالبزوغ."
+    }
+    @Test fun ceneleSanitizerIsIdempotentAndCleansConcatenatedNotice() {
+        val concatenatedInput = NovelText(listOf(
+            "انطفأ الخط الأخير في المشهد. هـٰـذَا اﻟـتـطـبـيـق يـسـرـق مِـن مـوـقـع وـتـطـبـيـق فــضـاـء الروايات b9fea347bf اقرأ آلاف الفصول لأشهر الروايات على موقع وتطبيق فضاء الروايات ...",
+            "انطفأ الخط الأخير في المشهد. اﻟـقـس اﻟـمـجـنـوـن، عـوـدـة طـاـئـفـة جـبـل اﻟـهـوـا، ﻟـوـرـد اﻟـغـوـاـمـض، عـلـى مـوـقـع وـتـطـبـيـق فــضـاـء اﻟـرـوـاـيـاـت",
+            "انطفأ الخط الأخير في المشهد. هذا التطبيق يسرق من موقع وتطبيق فضاء الروايات b9fea347bf اقرأ آلاف الفصول لأشهر الروايات على موقع وتطبيق فضاء الروايات ... وبدأ النهار بالبزوغ.",
+            "المترجم : الدوق سيد دجاجة – فضاء الروايات",
+            "ألم ينجُ بسرقة حظ شخص آخر؟"
+        ))
+
+        val pass1 = CeneleSanitizer.sanitize(concatenatedInput)
+        val pass2 = CeneleSanitizer.sanitize(pass1)
+
+        pass1.paragraphs.size shouldBe 3
+        pass1.paragraphs[0] shouldBe "وبدأ النهار بالبزوغ."
+        pass1.paragraphs[1] shouldBe "المترجم : الدوق سيد دجاجة – فضاء الروايات"
+        pass1.paragraphs[2] shouldBe "ألم ينجُ بسرقة حظ شخص آخر؟"
+
+        pass2 shouldBe pass1
+    }
     /** Opt-in single-sample public probes; no story text/HTML is saved to this repository. */
     @Test
     @EnabledIfEnvironmentVariable(named="MANGARO_NOVEL_LIVE", matches="1")

@@ -4,6 +4,7 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import androidx.work.*
+import eu.kanade.tachiyomi.data.download.DownloadNotifier
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -228,6 +229,7 @@ class NovelDownloadQueue(private val app: Context, private val repository: Novel
                 context.ensureActive()
                 prepared.commit { context.isActive }
                 val state = if (prepared.imagesComplete) NovelDownloadState.DONE else NovelDownloadState.FAILED
+                if (state == NovelDownloadState.DONE) DownloadNotifier.incrementSuccessCount(1)
                 val error = if (prepared.imagesComplete) null else "النص محفوظ، وتعذّر تحميل بعض الصور. أعد المحاولة."
                 db.execSQL("UPDATE tasks SET state=?,error=? WHERE id=?", arrayOf(state.name, error, task.key))
                 changed(task.key, state, error)

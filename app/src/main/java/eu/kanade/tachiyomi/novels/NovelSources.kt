@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.novels
 
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.*
@@ -7,6 +8,8 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
+import java.text.Normalizer
+import java.util.concurrent.atomic.AtomicInteger
 
 /** Parsers written against inspected October 2026 public pages; no executable remote code. */
 abstract class HtmlNovelSource(protected val http: NovelHttp) : NovelSource {
@@ -191,7 +194,207 @@ class CeneleSource(http: NovelHttp) : HtmlNovelSource(http) {
         ChapterPage(chapters,next,volumes=volumes,allowEmpty=!more && chapters.isEmpty())
     }
     override suspend fun chapter(chapter: NovelChapter) = withContext(Dispatchers.IO) {
-        text(doc(http.get(chapter.url),chapter.url),selector("text",".reading-content"))
+        val d = doc(http.get(chapter.url), chapter.url)
+        val content = d.selectFirst(selector("text", ".reading-content"))?.clone()
+            ?: throw NovelSourceFailure("هذا الفصل غير متاح حاليًا. يمكنك فتحه في الموقع.", "Missing novel text container")
+        content.select(".nhv-reading-chapter-head, .nhv-reading-volume-name, .nhv-reading-meta-strip, .nhv-reading-chapter-progress, .nhv-reading-progress-text, .chapter-warning, .nhv-reader-promo, .nhv-reader-store-promo").remove()
+        val parsed = extractNovelContent(content)
+        CeneleSanitizer.sanitize(parsed)
+    }
+}
+
+internal object CeneleSanitizer {
+    @Volatile var lastSanitizerInvoked = false
+    private val invocationCount = AtomicInteger(0)
+    private val bracketRegex = Regex("""[\(\[\{\«][^\(\)\[\]\{\}\«\»]+?[\)\]\}\»]""")
+    private val hexRegex = Regex("""[0-9a-fA-F]{8,}""")
+    private val concatFixRegex = Regex("""(فضاء\s*الروايات)(اقرأ|اقرا)""", RegexOption.IGNORE_CASE)
+
+    private val noticeAnchorStr = (
+        """(?:""" +
+            """(?:هذا\s+التطبيق|تطبيق\s+(?:مانجارو|مانغارو)|هذا\s+(?:النص|الفصل|المحتوى))\s+(?:تم\s+)?(?:يسرق|مسروق|سرق)""" +
+            """|""" +
+            """تم[ت]?\s+(?:سرقة|سرق)\s+(?:هذا\s+)?(?:الفصل|النص|المحتوى)?""" +
+            """|""" +
+            """(?:مانجارو|مانغارو|mangaro)\s+يسرق""" +
+            """|""" +
+            """(?:يسرق|مسروق)\s+من\s+(?:موقع\s+وتطبيق|موقع|تطبيق|وتطبيق)?\s*(?:فضاء\s*الروايات|cenele)""" +
+            """|""" +
+            """اقرأ\s+آلاف\s+الفصول""" +
+            """)"""
+    )
+
+    private val sloganPatternStr = """(?:اقرأ|اقرا)\s+آلاف\s+الفصول\s+لأشهر\s+الروايات\s+على\s+(?:موقع\s+وتطبيق|موقع|تطبيق|وتطبيق)?\s*(?:فضاء\s*الروايات|cenele)?(?:\s*\.{2,})?"""
+
+    private val novelTitlesSloganPatternStr = (
+        """(?:(?:القس\s+المجنون|عودة\s+طائفة\s+جبل\s+الهوا|لورد\s+الغوامض|سيد\s+الغوامض|انشاء\s+القوانين\s+السماوية|دفاع\s+الخنادق)\s*[\,،\-–—]*\s*)+""" +
+            """على\s+(?:موقع\s+وتطبيق|موقع|تطبيق|وتطبيق)?\s*(?:فضاء\s*الروايات|cenele)"""
+    )
+
+    private val noticeSpanRegex = Regex(
+        """(?:\s*[\(\[\{\«—–]*\s*)?""" +
+            noticeAnchorStr +
+            """[^.\!\?\n]*?""" +
+            """(?:فضاء\s*الروايات|cenele|cenele\.com)""" +
+            """(?:\s*""" + sloganPatternStr + """)?""" +
+            """(?:\s*(?:(?:0x)?[0-9a-fA-F]{8,12}|0x[0-9a-fA-F]{4,}|[0-9a-fA-F]{8,12}|\.{2,}|:|رمز\s*(?:الحماية|الجلسة)?|\s+))*""" +
+            """(?:\s*(?:""" + novelTitlesSloganPatternStr + """|""" + sloganPatternStr + """))*""" +
+            """(?:\s*(?:(?:0x)?[0-9a-fA-F]{8,12}|0x[0-9a-fA-F]{4,}|[0-9a-fA-F]{8,12}|\.{2,}|:|رمز\s*(?:الحماية|الجلسة)?|\s+))*""" +
+            """(?:\s*[\)\]\}\»—–,-،]*\s*)?""",
+        RegexOption.IGNORE_CASE,
+    )
+
+    private val orphanedPromoSuffixRegex = Regex(
+        """(?:\s*[\(\[\{\«—–]*\s*)?""" +
+            novelTitlesSloganPatternStr +
+            """(?:\s*\.{2,})?\s*(?:\s*[\)\]\}\»—–,-،\.]*\s*)?""",
+        RegexOption.IGNORE_CASE,
+    )
+
+    private val sloganRegex = Regex(
+        """\s*(?:انطفأ\s+الخط\s+الأخير\s+في\s+المشهد\.?|\s*""" + sloganPatternStr + """)\s*""",
+        RegexOption.IGNORE_CASE,
+    )
+
+    private val hexCleanerRegex = Regex("""[\(\[\{]?\s*(?:رمز\s*(?:الحماية|الجلسة)?\s*:?\s*)?(?:0x[0-9a-fA-F]{4,}|[0-9a-fA-F]{8,12})\s*[\)\]\}]?""", RegexOption.IGNORE_CASE)
+
+    private fun normalizeWithMap(text: String): Pair<String, IntArray> {
+        val nfkc = Normalizer.normalize(text, Normalizer.Form.NFKC)
+        val nfkcMap = IntArray(nfkc.length)
+        var origIdx = 0
+        var nfkcIdx = 0
+        while (origIdx < text.length && nfkcIdx < nfkc.length) {
+            val n = Normalizer.normalize(text.substring(origIdx, origIdx + 1), Normalizer.Form.NFKC)
+            repeat(n.length) {
+                if (nfkcIdx < nfkc.length) {
+                    nfkcMap[nfkcIdx] = origIdx
+                    nfkcIdx++
+                }
+            }
+            origIdx++
+        }
+
+        val normSb = StringBuilder(nfkc.length)
+        val idxList = IntArray(nfkc.length)
+        var normCount = 0
+
+        for (i in 0 until nfkcIdx) {
+            val ch = nfkc[i]
+            if (ch == '\u0640') continue // tatweel
+            if (ch in '\u064B'..'\u065F' || ch == '\u0670') continue // diacritics
+            normSb.append(ch)
+            idxList[normCount] = if (i < nfkcMap.size) nfkcMap[i] else 0
+            normCount++
+        }
+
+        return normSb.toString() to idxList.copyOf(normCount)
+    }
+
+    fun cleanParagraph(p: String): String {
+        val (normStr, idxMap) = normalizeWithMap(p)
+        val normStrFixed = concatFixRegex.replace(normStr, "$1 $2")
+
+        val matches = mutableListOf<Pair<Int, Int>>()
+
+        bracketRegex.findAll(normStrFixed).forEach { m ->
+            val valStr = m.value
+            val lower = valStr.lowercase()
+            val hasTheft = lower.contains("يسرق") || lower.contains("مسروق") || lower.contains("سرقة") || lower.contains("مانجارو") || lower.contains("mangaro") || lower.contains("اقرأ آلاف الفصول") || lower.contains("انطفأ الخط")
+            val hasContext = lower.contains("فضاء") || lower.contains("cenele") || lower.contains("تطبيق") || lower.contains("0x") || hexRegex.containsMatchIn(valStr)
+            if (hasTheft && hasContext) matches.add(m.range.first to m.range.last + 1)
+        }
+
+        noticeSpanRegex.findAll(normStrFixed).forEach { m -> matches.add(m.range.first to m.range.last + 1) }
+        orphanedPromoSuffixRegex.findAll(normStrFixed).forEach { m -> matches.add(m.range.first to m.range.last + 1) }
+        sloganRegex.findAll(normStrFixed).forEach { m -> matches.add(m.range.first to m.range.last + 1) }
+        hexCleanerRegex.findAll(normStrFixed).forEach { m -> matches.add(m.range.first to m.range.last + 1) }
+
+        val res = if (matches.isEmpty() || idxMap.isEmpty()) {
+            p
+        } else {
+            matches.sortBy { it.first }
+            val merged = mutableListOf<Pair<Int, Int>>()
+            for (match in matches) {
+                if (merged.isEmpty()) {
+                    merged.add(match)
+                } else {
+                    val prev = merged.last()
+                    if (match.first <= prev.second + 2) {
+                        merged[merged.lastIndex] = prev.first to maxOf(prev.second, match.second)
+                    } else {
+                        merged.add(match)
+                    }
+                }
+            }
+
+            val removeRanges = mutableListOf<Pair<Int, Int>>()
+            for ((startNorm, endNorm) in merged) {
+                if (startNorm < idxMap.size && endNorm <= idxMap.size) {
+                    val origStart = idxMap[startNorm]
+                    val origEnd = idxMap[endNorm - 1] + 1
+                    removeRanges.add(origStart to origEnd)
+                } else if (startNorm < idxMap.size) {
+                    val origStart = idxMap[startNorm]
+                    removeRanges.add(origStart to p.length)
+                }
+            }
+
+            val sb = StringBuilder()
+            var lastIdx = 0
+            for ((rStart, rEnd) in removeRanges) {
+                if (rStart in 0..p.length && rEnd in rStart..p.length) {
+                    sb.append(p.substring(lastIdx, rStart))
+                    sb.append(" ")
+                    lastIdx = rEnd
+                }
+            }
+            if (lastIdx < p.length) sb.append(p.substring(lastIdx))
+            sb.toString()
+        }
+
+        var cleaned = Regex("""([،,])\s*([،,])""").replace(res, "$1")
+        cleaned = Regex("""([\.\!\?،,])([أ-يA-Za-z])""").replace(cleaned, "$1 $2")
+        return Regex("""\s+""").replace(cleaned, " ").trim()
+    }
+
+    fun sanitize(text: NovelText): NovelText {
+        lastSanitizerInvoked = true
+        val count = invocationCount.incrementAndGet()
+        val inLen = text.paragraphs.sumOf { it.length }
+        val newParagraphs = mutableListOf<String>()
+        val newMarkup = mutableListOf<String>()
+        val paragraphIndexMap = mutableMapOf<Int, Int>()
+
+        text.paragraphs.forEachIndexed { oldIndex, p ->
+            val cleaned = cleanParagraph(p)
+            if (cleaned.isNotBlank()) {
+                val newIndex = newParagraphs.size
+                paragraphIndexMap[oldIndex] = newIndex
+                newParagraphs.add(cleaned)
+                if (oldIndex < text.markup.size) {
+                    newMarkup.add(text.markup[oldIndex])
+                }
+            }
+        }
+
+        val outLen = newParagraphs.sumOf { it.length }
+        val noticeDetected = inLen != outLen || text.paragraphs.size != newParagraphs.size
+        runCatching { Log.d("CeneleSanitizer", "invocations=$count noticeDetected=$noticeDetected inParagraphs=${text.paragraphs.size} outParagraphs=${newParagraphs.size} inLen=$inLen outLen=$outLen") }
+
+        if (newParagraphs == text.paragraphs) return text
+
+        val newBlocks = text.blocks.mapNotNull { block ->
+            val mappedParagraphIndex = paragraphIndexMap[block.paragraph]
+            if (mappedParagraphIndex != null || block.kind == NovelBlockKind.IMAGE) {
+                block.copy(paragraph = mappedParagraphIndex ?: 0)
+            } else null
+        }
+
+        return NovelText(
+            paragraphs = newParagraphs,
+            markup = if (newMarkup.size == newParagraphs.size) newMarkup else emptyList(),
+            blocks = newBlocks
+        )
     }
 }
 

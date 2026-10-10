@@ -72,7 +72,7 @@ class MangaroDownloadsViewModel(
                         } else flowOf(Queued(download, status, if (status == Download.State.DOWNLOADED) 100 else 0))
                     }
                 }) { it.toList() }
-            }.distinctUntilChanged().flowOn(Dispatchers.Default)
+            }.distinctUntilChanged()
                 .collectLatest { rows -> mutableState.update { it.copy(queue = rows) } }
         }
         viewModelScope.launch {

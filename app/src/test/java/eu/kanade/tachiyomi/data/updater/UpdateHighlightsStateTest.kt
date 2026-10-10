@@ -18,58 +18,58 @@ class UpdateHighlightsStateTest {
 
     @Test fun `fresh installs do not see upgrade highlights`() {
         val state = UpdateHighlightsState(store)
-        state.prepare(0, 17)
+        state.prepare(0, 19)
         assertEquals(0, state.pendingVersion.get())
-        state.prepare(17, 17)
+        state.prepare(19, 19)
         assertEquals(0, state.pendingVersion.get())
     }
 
     @Test fun `a real upgrade queues current highlights`() {
         val state = UpdateHighlightsState(store)
-        state.prepare(16, 17)
-        assertEquals(17, state.pendingVersion.get())
+        state.prepare(18, 19)
+        assertEquals(19, state.pendingVersion.get())
     }
 
     @Test fun `pending highlights survive migration completion and process recreation`() {
-        UpdateHighlightsState(store).prepare(16, 17)
+        UpdateHighlightsState(store).prepare(18, 19)
         val restarted = UpdateHighlightsState(store)
-        restarted.prepare(17, 17)
-        assertEquals(17, restarted.pendingVersion.get())
+        restarted.prepare(19, 19)
+        assertEquals(19, restarted.pendingVersion.get())
     }
 
     @Test fun `acknowledgement survives restarts and is idempotent`() {
         val state = UpdateHighlightsState(store)
-        state.prepare(16, 17)
+        state.prepare(18, 19)
         state.acknowledge()
         state.acknowledge()
         val restarted = UpdateHighlightsState(store)
-        restarted.prepare(17, 17)
+        restarted.prepare(19, 19)
         assertEquals(0, restarted.pendingVersion.get())
     }
 
     @Test fun `a stale pending value cannot replay an acknowledged release`() {
         val state = UpdateHighlightsState(store)
-        state.prepare(16, 17)
+        state.prepare(18, 19)
         state.acknowledge()
-        state.pendingVersion.set(17) // Simulate interruption between separate preference writes.
+        state.pendingVersion.set(19) // Simulate interruption between separate preference writes.
         val restarted = UpdateHighlightsState(store)
-        restarted.prepare(17, 17)
+        restarted.prepare(19, 19)
         assertEquals(0, restarted.pendingVersion.get())
     }
 
     @Test fun `retrying an interrupted migration does not requeue acknowledged highlights`() {
         val state = UpdateHighlightsState(store)
-        state.prepare(16, 17)
+        state.prepare(18, 19)
         state.acknowledge()
-        state.prepare(16, 17)
+        state.prepare(18, 19)
         assertEquals(0, state.pendingVersion.get())
     }
 
     @Test fun `the release does not schedule highlights for other builds`() {
         val state = UpdateHighlightsState(store)
-        state.prepare(16, 16)
-        state.prepare(17, 18)
-        state.prepare(18, 17)
+        state.prepare(18, 18)
+        state.prepare(19, 20)
+        state.prepare(20, 19)
         assertEquals(0, state.pendingVersion.get())
     }
 }

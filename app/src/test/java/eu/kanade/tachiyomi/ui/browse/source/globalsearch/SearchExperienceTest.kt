@@ -52,12 +52,19 @@ class SearchExperienceTest {
         store.put("search", model)
         return model
     }
-    private suspend fun SearchViewModel.finished(query: String) = withContext(Dispatchers.Default) {
-        withTimeout(5_000) { state.first { !it.isSearching && it.activeQuery == query } }
-    }
-    private suspend fun SearchViewModel.finishedPage() = withContext(Dispatchers.Default) {
-        withTimeout(5_000) { state.first { !it.isLoadingMore } }
-    }
+    private suspend fun SearchViewModel.finished(query: String, expectedGen: Long? = null) =
+        withContext(Dispatchers.Default.limitedParallelism(1)) {
+            withTimeout(15_000) {
+                state.first {
+                    !it.isSearching && it.activeQuery == query && (expectedGen == null || it.generation >= expectedGen) &&
+                        it.items.values.isNotEmpty() && it.items.values.none { item -> item is SearchItemResult.Loading }
+                }
+            }
+        }
+    private suspend fun SearchViewModel.finishedPage() =
+        withContext(Dispatchers.Default.limitedParallelism(1)) {
+            withTimeout(15_000) { state.first { !it.isLoadingMore } }
+        }
 
     @Test fun `typing debounces for 350ms and whitespace never searches`() = runTest(dispatcher) {
         val calls = AtomicInteger()
@@ -158,8 +165,9 @@ class SearchExperienceTest {
         model.updateSearchQuery("Naruto"); model.search()
         val before = model.finished("Naruto").rankedResults
         offline = true
+        val genBefore = model.state.value.generation
         model.retrySearch()
-        val result = model.finished("Naruto")
+        val result = withContext(Dispatchers.IO) { model.finished("Naruto", expectedGen = genBefore + 1) }
         result.rankedResults shouldBe before
         result.isSearching shouldBe false
         (result.items.values.single() is SearchItemResult.Error) shouldBe true

@@ -6,6 +6,7 @@ import io.kotest.matchers.shouldBe
 import mihon.domain.source.discovery.model.DiscoveryCategory
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.manga.model.MangaCover
 
 class HomePreviewLimitAndHandoffTest {
@@ -72,12 +73,19 @@ class HomePreviewLimitAndHandoffTest {
         merged.map { it.mangaId } shouldContainExactly listOf(1L, 2L)
     }
 
+    private fun known(item: HomeDiscoveryItem): HomeDiscoveryItem = item.copy(url = "/work/${item.mangaId}").also {
+        PreferredMangaVariants.remember(
+            Manga.create().copy(
+            id = it.mangaId, source = it.sourceId, url = it.url, title = it.title, author = "Known Creator",
+        ))
+    }
+
     @Test
     fun `verify same-title manga from different sources remain distinct during snapshot handoff`() {
         val itemA = HomeDiscoveryItem(mangaId = 10L, title = "Solo Leveling", coverData = MangaCover(10L, 1L, false, "http://coverA.jpg", 0L), sourceId = 100L, sourceName = "Azora")
         val itemB = HomeDiscoveryItem(mangaId = 20L, title = "Solo Leveling", coverData = MangaCover(20L, 1L, false, "http://coverB.jpg", 0L), sourceId = 200L, sourceName = "MangaDar")
 
-        DiscoverySnapshotStore.setSnapshot(DiscoveryCategory.LATEST, listOf(itemA, itemB))
+        DiscoverySnapshotStore.setSnapshot(DiscoveryCategory.LATEST, listOf(known(itemA), known(itemB)))
 
         val retrieved = DiscoverySnapshotStore.getSnapshot(DiscoveryCategory.LATEST)
 

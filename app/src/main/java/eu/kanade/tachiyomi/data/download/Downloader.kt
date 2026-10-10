@@ -141,6 +141,7 @@ class Downloader(
         }
 
         isPaused = false
+        DownloadNotifier.resetBatch()
 
         launchDownloaderJob()
 
@@ -470,6 +471,7 @@ class Downloader(
             DiskUtil.createNoMediaFile(tmpDir, context)
 
             download.status = Download.State.DOWNLOADED
+            DownloadNotifier.incrementSuccessCount(1)
             try {
                 // The final file/directory must exist; a failed storage rename is not achievement evidence.
                 val completedFile = mangaDir.findFile(chapterDirname) ?: mangaDir.findFile("$chapterDirname.cbz")

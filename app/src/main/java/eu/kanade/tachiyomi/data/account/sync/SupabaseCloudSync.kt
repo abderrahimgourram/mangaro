@@ -1,6 +1,9 @@
 package eu.kanade.tachiyomi.data.account.sync
 
 import android.content.Context
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.work.*
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.postgrest.postgrest
@@ -117,11 +120,13 @@ class SupabaseCloudSync(private val context:Context,private val client:SupabaseC
                 catch(_:Exception) { /* Cached unresolved state remains durable and can retry later. */ }
             }
         }
-        scope.launch(Dispatchers.Main.immediate) { androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.addObserver(object : androidx.lifecycle.DefaultLifecycleObserver {
-            override fun onStart(owner:androidx.lifecycle.LifecycleOwner) {
-                scope.launch { active()?.takeIf {enabled(it)}?.let {schedule(it, immediate=true)} }
-            }
-        }) }
+        runCatching {
+            scope.launch(Dispatchers.Main.immediate) { ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
+                override fun onStart(owner: LifecycleOwner) {
+                    scope.launch { active()?.takeIf {enabled(it)}?.let {schedule(it, immediate=true)} }
+                }
+            }) }
+        }
         scope.launch {
             var previous:String?=null
             auth.observeSession().collectLatest { session ->

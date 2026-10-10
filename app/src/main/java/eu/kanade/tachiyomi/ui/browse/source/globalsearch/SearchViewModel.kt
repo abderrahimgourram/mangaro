@@ -186,7 +186,7 @@ abstract class SearchViewModel(
         }
         val sourceOrder = sources.mapIndexed { index, source -> source.id to index }.toMap()
         val relevance = SearchRelevance(query)
-        mutableState.update { it.copy(items = sources.associateWith { SearchItemResult.Loading }, activeQuery = query, isSearching = true, pages = emptyMap(), isLoadingMore = false, paginationFailed = false) }
+        mutableState.update { it.copy(items = sources.associateWith { SearchItemResult.Loading }, activeQuery = query, isSearching = true, generation = request, pages = emptyMap(), isLoadingMore = false, paginationFailed = false) }
 
         searchJob = viewModelScope.launchIO {
             supervisorScope {
@@ -240,7 +240,7 @@ abstract class SearchViewModel(
                     if (generation.get() != request) current else {
                         val allFailed = items.isNotEmpty() && items.values.all { it is SearchItemResult.Error }
                         current.copy(rankedResults = if (allFailed) current.rankedResults else ranked,
-                            resultQuery = if (allFailed && current.rankedResults.isNotEmpty()) current.resultQuery else query, isSearching = false)
+                            resultQuery = if (allFailed && current.rankedResults.isNotEmpty()) current.resultQuery else query, generation = request, isSearching = false)
                     }
                 }
                 if (generation.get() == request && items.values.all { it is SearchItemResult.Success }) {
@@ -330,6 +330,7 @@ abstract class SearchViewModel(
         val isLoadingMore: Boolean = false,
         val paginationFailed: Boolean = false,
         val healthRevision: Long = 0,
+        val generation: Long = 0,
         val from: Manga? = null,
         val searchQuery: String? = null,
         val activeQuery: String? = null,

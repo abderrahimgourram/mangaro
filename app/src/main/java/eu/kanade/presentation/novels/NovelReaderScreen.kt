@@ -59,6 +59,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.presentation.util.Screen
+import eu.kanade.tachiyomi.BuildConfig
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.novels.*
 import kotlinx.coroutines.*
@@ -70,6 +71,7 @@ import kotlinx.coroutines.flow.flowOn
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import tachiyomi.core.common.util.lang.WesternDigits
+import java.text.Normalizer
 
 /** Dedicated, paragraph-lazy text reader. Never enters manga ReaderActivity or XP hooks. */
 class NovelReaderScreen(private val novel: Novel, private val initialChapter: NovelChapter) : Screen() {
@@ -154,6 +156,17 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
         var navigationJob by remember { mutableStateOf<Job?>(null) }
         var navigating by remember {mutableStateOf(false)}
         var generation by remember {mutableIntStateOf(0)}
+        val isCenele = remember(novel.id, novel.sourceId) {
+            novel.sourceId == "novel.cenele" || novel.id == "novel.cenele" || novel.id.startsWith("novel.cenele:") || novel.id.startsWith("novel.cenele/")
+        }
+        var ceneleDiagSourceMatch by remember { mutableStateOf(false) }
+        var ceneleDiagOrigin by remember { mutableStateOf("unknown") }
+        var ceneleDiagRawTheft by remember { mutableIntStateOf(0) }
+        var ceneleDiagRawCenele by remember { mutableIntStateOf(0) }
+        var ceneleDiagSanitizerTheft by remember { mutableIntStateOf(0) }
+        var ceneleDiagSanitizerCenele by remember { mutableIntStateOf(0) }
+        var ceneleDiagRenderedTheft by remember { mutableIntStateOf(0) }
+        var ceneleDiagRenderedCenele by remember { mutableIntStateOf(0) }
         val scroll=rememberLazyListState()
         val chapterAd = remember(novel.id, chapter.id) { NovelAdRequest("reader:" + novelDigest(novel.id + "|" + chapter.id)) }
         val scope=rememberCoroutineScope()
@@ -168,6 +181,19 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                 anchors = document.anchors
                 blocks = document.blocks
                 blockPositions = document.positions
+
+                fun countWord(list: List<String>, word: String): Int = list.sumOf { p ->
+                    val normP = Normalizer.normalize(p, Normalizer.Form.NFKC).replace("\u0640", "")
+                    Regex(Regex.escape(word), RegexOption.IGNORE_CASE).findAll(normP).count()
+                }
+                ceneleDiagSourceMatch = isCenele
+                ceneleDiagOrigin = repository.lastDataOrigin
+                ceneleDiagRawTheft = countWord(text.paragraphs, "يسرق")
+                ceneleDiagRawCenele = countWord(text.paragraphs, "فضاء")
+                ceneleDiagSanitizerTheft = countWord(plain, "يسرق")
+                ceneleDiagSanitizerCenele = countWord(plain, "فضاء")
+                ceneleDiagRenderedTheft = countWord(paragraphs.map { it.text }, "يسرق")
+                ceneleDiagRenderedCenele = countWord(paragraphs.map { it.text }, "فضاء")
                 val position=repository.readingPosition(novel,chapter)
                 val index = withContext(Dispatchers.Default) {
                     val anchor = position?.anchor?.takeIf { it.isNotEmpty() }?.let { hash ->
@@ -268,8 +294,7 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                     storageError?.let { Text(it,Modifier.padding(horizontal=20.dp),color=gold,style=MaterialTheme.typography.labelSmall) }
                     if(error!=null) NovelFailure(error!!,chapter.url) {generation++}
                     val adVisible by remember { derivedStateOf { scroll.layoutInfo.visibleItemsInfo.any { it.key == "chapter-heading" } } }
-                    SelectionContainer {
-                        LazyColumn(state=scroll,modifier=Modifier.fillMaxSize().pointerInput(tapLimit) {
+                    LazyColumn(state=scroll,modifier=Modifier.fillMaxSize().pointerInput(tapLimit) {
                             awaitEachGesture {
                                 val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
                                 var moved = false
@@ -321,6 +346,21 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                                     })
                                 }
                             }
+                        }
+                }
+                if (BuildConfig.DEBUG && isCenele) {
+                    Surface(
+                        modifier = Modifier.align(Alignment.CenterStart).padding(start = 8.dp, top = 60.dp),
+                        color = Color.Black.copy(alpha = 0.88f),
+                        shape = RoundedCornerShape(8.dp),
+                    ) {
+                        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("CENELE DIAGNOSTICS", color = Color.Yellow, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text("Source Match: $ceneleDiagSourceMatch", color = Color.White, fontSize = 10.sp)
+                            Text("Origin: $ceneleDiagOrigin", color = Color.White, fontSize = 10.sp)
+                            Text("Raw 'يسرق' / 'فضاء': $ceneleDiagRawTheft / $ceneleDiagRawCenele", color = Color.White, fontSize = 10.sp)
+                            Text("Sanitized 'يسرق' / 'فضاء': $ceneleDiagSanitizerTheft / $ceneleDiagSanitizerCenele", color = Color.White, fontSize = 10.sp)
+                            Text("Rendered 'يسرق' / 'فضاء': $ceneleDiagRenderedTheft / $ceneleDiagRenderedCenele", color = Color.White, fontSize = 10.sp)
                         }
                     }
                 }
@@ -443,17 +483,40 @@ private suspend fun preparedDocument(key: String, text: NovelText): PreparedNove
     result
 }
 
-/** Standard HTML styling conversion happens off the main thread, never in a WebView. */
+/** Use the verified plain text as the source of truth. */
 private fun styledParagraph(markup: String?, plain: String): AnnotatedString {
-    if(markup==null) return AnnotatedString(plain)
-    val text=HtmlCompat.fromHtml(markup,HtmlCompat.FROM_HTML_MODE_COMPACT)
+    if (markup == null) return AnnotatedString(plain)
+
+    val text = HtmlCompat.fromHtml(
+        markup,
+        HtmlCompat.FROM_HTML_MODE_COMPACT,
+    )
+
+    val rendered = text.toString().trimEnd()
+
+    // Never restore unsanitized text from the original HTML.
+    if (rendered != plain) {
+        return AnnotatedString(plain)
+    }
+
     return buildAnnotatedString {
-        append(text.toString().trimEnd())
-        text.getSpans(0,text.length,StyleSpan::class.java).forEach {span ->
-            val start=text.getSpanStart(span).coerceIn(0,length);val end=text.getSpanEnd(span).coerceIn(start,length)
-            val bold=span.style and android.graphics.Typeface.BOLD != 0
-            val italic=span.style and android.graphics.Typeface.ITALIC != 0
-            addStyle(SpanStyle(fontWeight=if(bold) FontWeight.Bold else null,fontStyle=if(italic) FontStyle.Italic else null),start,end)
+        append(rendered)
+
+        text.getSpans(0, text.length, StyleSpan::class.java).forEach { span ->
+            val start = text.getSpanStart(span).coerceIn(0, length)
+            val end = text.getSpanEnd(span).coerceIn(start, length)
+
+            val bold = span.style and android.graphics.Typeface.BOLD != 0
+            val italic = span.style and android.graphics.Typeface.ITALIC != 0
+
+            addStyle(
+                SpanStyle(
+                    fontWeight = if (bold) FontWeight.Bold else null,
+                    fontStyle = if (italic) FontStyle.Italic else null,
+                ),
+                start,
+                end,
+            )
         }
     }
 }

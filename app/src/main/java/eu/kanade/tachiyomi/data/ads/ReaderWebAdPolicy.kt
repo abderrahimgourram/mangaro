@@ -30,10 +30,10 @@ class ReaderWebAdPolicy(context: Context) {
     private var lastNamedRequest = 0L
 
     /** Namespaced content identities never enter the manga chapter/XP identity space. */
-    @Synchronized fun reserveContentPlacement(key: String, owner: String): Boolean {
+    @Synchronized fun reserveContentPlacement(key: String, owner: String, skipCooldown: Boolean = false): Boolean {
         if (rewardState.isActive() || key in namedHandled || reservedBoundaries.isNotEmpty()) return false
         if (namedReserved[key] == owner) return true
-        if (namedReserved.isNotEmpty() || android.os.SystemClock.elapsedRealtime() - lastNamedRequest < 60_000L && lastNamedRequest != 0L) return false
+        if (namedReserved.isNotEmpty() || (!skipCooldown && lastNamedRequest != 0L && android.os.SystemClock.elapsedRealtime() - lastNamedRequest < 60_000L)) return false
         namedReserved[key] = owner
         return true
     }

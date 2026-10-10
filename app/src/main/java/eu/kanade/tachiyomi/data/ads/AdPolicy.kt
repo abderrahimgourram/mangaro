@@ -26,6 +26,7 @@ class AdPolicy(private val now: () -> Long) {
     }
 
     private val sessions = mutableMapOf<String, LinkedHashMap<Long, Int>>()
+    private val lastNativeCompletion = mutableMapOf<String, Int>()
     private val nativeChapters = mutableSetOf<Pair<String, Long>>()
     private val nativeReservations = mutableSetOf<Pair<String, Long>>()
     private val operations = LinkedHashSet<String>()
@@ -45,6 +46,7 @@ class AdPolicy(private val now: () -> Long) {
     @Synchronized fun startSession(id: String) { sessions.getOrPut(id) { linkedMapOf() } }
     @Synchronized fun endSession(id: String) {
         sessions.remove(id)
+        lastNativeCompletion.remove(id)
         nativeChapters.removeAll { it.first == id }
         nativeReservations.removeAll { it.first == id }
     }
@@ -61,13 +63,15 @@ class AdPolicy(private val now: () -> Long) {
         return (chapters[chapterId] ?: chapters.size) >= 3
     }
     @Synchronized fun adFree() = now() < adFreeUntil
-    @Synchronized fun requestsAllowed(consent: Boolean, online: Boolean) = consent && online
+    @Synchronized fun requestsAllowed(consent: Boolean, online: Boolean) = consent && online && !adFree()
 
     @Synchronized fun nativeEligible(session: String, chapterId: Long): Boolean {
         val chapters = sessions[session] ?: return false
         val count = chapters[chapterId] ?: return false
+        val separated = lastNativeCompletion[session]?.let { chapters.size - it >= 3 } ?: true
         nativeTimes.removeAll { now() - it >= NATIVE_WINDOW }
-        return !adFree() && count > 3 && (session to chapterId) !in nativeChapters
+        return !adFree() && count > 3 && (count - 4) % 3 == 0 &&
+            nativeTimes.size < 4 && separated && (session to chapterId) !in nativeChapters
     }
     /** Diagnostics only; eligibility and all limits remain in nativeEligible(). */
     @Synchronized internal fun nativeStatus(session: String, chapterId: Long): NativePolicyStatus {
@@ -81,7 +85,9 @@ class AdPolicy(private val now: () -> Long) {
             ordinal == null -> "chapter_not_completed"
             ordinal <= 3 -> "first_three_grace"
             (session to chapterId) in nativeChapters -> "boundary_already_claimed"
-            else -> "not_eligible"
+            (ordinal - 4) % 3 != 0 -> "three_chapter_interval"
+            nativeTimes.size >= 4 -> "hourly_cap"
+            else -> "completion_gap"
         }
         return NativePolicyStatus(chapters?.size ?: 0, ordinal, eligible, reason)
     }
@@ -102,6 +108,7 @@ class AdPolicy(private val now: () -> Long) {
     @Synchronized fun claimNative(session: String, chapterId: Long): Boolean {
         if (!nativeEligible(session, chapterId)) return false
         nativeChapters.add(session to chapterId)
+        lastNativeCompletion[session] = sessions.getValue(session).size
         // Committed only after the registered SDK view is attached and visible.
         nativeTimes.add(now())
         if (nativeTimes.size > 1000) nativeTimes.removeAt(0)
@@ -110,7 +117,7 @@ class AdPolicy(private val now: () -> Long) {
     @Synchronized fun downloadEligible(count: Int, operation: String, readerActive: Boolean): Boolean {
         interstitialTimes.removeAll { now() - it >= INTERSTITIAL_WINDOW }
         return count > DOWNLOAD_THRESHOLD && !readerActive && !adFree() && operation !in operations &&
-            fullscreenEligible()
+            interstitialTimes.size < 2 && fullscreenEligible()
     }
     @Synchronized fun claimDownload(count: Int, operation: String, readerActive: Boolean): Boolean {
         if (!downloadEligible(count, operation, readerActive)) return false
@@ -126,7 +133,7 @@ class AdPolicy(private val now: () -> Long) {
         lastFullscreen = now()
     }
     @Synchronized fun fullscreenEligible() = lastFullscreen?.let { now() - it >= FULLSCREEN_GAP } ?: true
-    @Synchronized fun rewardedEligible(explicit: Boolean, readerActive: Boolean) = explicit && !readerActive && fullscreenEligible()
+    @Synchronized fun rewardedEligible(explicit: Boolean, readerActive: Boolean) = explicit && !readerActive && !adFree() && fullscreenEligible()
     @Synchronized fun fullscreenStarted() { lastFullscreen = now() }
     @Synchronized fun rewardEarned() { adFreeUntil = now() + REWARD_DURATION }
     @Synchronized fun snapshot() = AdPolicySnapshot(adFreeUntil, nativeTimes.toList(), interstitialTimes.toList(), lastFullscreen)

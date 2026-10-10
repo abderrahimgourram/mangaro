@@ -152,13 +152,57 @@ internal class DownloadNotifier(private val context: Context) {
     }
 
     /**
-     * Resets the state once downloads are completed.
+     * Resets the state once downloads are completed and shows a single batch summary notification.
      */
     fun onComplete() {
         dismissProgress()
 
-        // Reset states to default
+        val count = batchSuccessCount
+        if (count > 0 && count != lastNotifiedBatchCount) {
+            lastNotifiedBatchCount = count
+            showBatchCompleteNotification(count)
+        }
+
         isDownloading = false
+    }
+
+    fun showBatchCompleteNotification(count: Int) {
+        if (count <= 0) return
+        val text = when {
+            count == 1 -> "اكتمل تحميل فصل واحد"
+            count == 2 -> "اكتمل تحميل فصلين"
+            count in 3..10 -> "اكتمل تحميل $count فصول"
+            else -> "اكتمل تحميل $count فصلًا"
+        }
+
+        context.notify(
+            Notifications.ID_DOWNLOADS_COMPLETE,
+            Notifications.CHANNEL_DOWNLOADS_COMPLETE,
+        ) {
+            setContentTitle("اكتمل التحميل")
+            setContentText(text)
+            setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            setSmallIcon(android.R.drawable.stat_sys_download_done)
+            setLargeIcon(BitmapFactory.decodeResource(context.resources, R.mipmap.ic_launcher))
+            setAutoCancel(true)
+            setContentIntent(NotificationHandler.openDownloadManagerPendingActivity(context))
+        }
+    }
+
+    companion object {
+        @Volatile private var batchSuccessCount = 0
+        @Volatile private var lastNotifiedBatchCount = -1
+
+        fun incrementSuccessCount(count: Int = 1) {
+            batchSuccessCount += count
+        }
+
+        fun resetBatch() {
+            batchSuccessCount = 0
+            lastNotifiedBatchCount = -1
+        }
+
+        fun getBatchSuccessCount(): Int = batchSuccessCount
     }
 
     /**

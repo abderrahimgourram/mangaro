@@ -704,20 +704,36 @@ class NovelRepository private constructor(context: Context) {
         }
         @Suppress("UNREACHABLE_CODE") null
     }
+    @Volatile var lastDataOrigin = "unknown"
+
     suspend fun chapterText(novel: Novel, chapter: NovelChapter): NovelText = withContext(Dispatchers.IO) {
         val identity = novel.id to chapter.id
         val key = novel.id + "|" + chapter.id
-        memoryCacheLock.withLock { texts[key] }?.let { return@withContext it }
+        val isCenele = novel.sourceId == "novel.cenele" || novel.id == "novel.cenele" || novel.id.startsWith("novel.cenele:") || novel.id.startsWith("novel.cenele/")
+        memoryCacheLock.withLock { texts[key] }?.let {
+            lastDataOrigin = "memory"
+            return@withContext if (isCenele) CeneleSanitizer.sanitize(it) else it
+        }
         // A text request must not wait on an unrelated catalog/detail hash collision.
         // Share the actual result with all callers, even if the small text LRU changes meanwhile.
         val flight = synchronized(chapterFlights) {
             chapterFlights[identity]?.also { it.readers++ } ?: ChapterFlight(io.async(start = CoroutineStart.LAZY) {
-                memoryCacheLock.withLock { texts[key] }?.let { return@async it }
+                memoryCacheLock.withLock { texts[key] }?.let {
+                    lastDataOrigin = "memory"
+                    return@async if (isCenele) CeneleSanitizer.sanitize(it) else it
+                }
                 val offline = disk.read(novel.id, chapter.id)
                 if (offline == null && downloadQueue.isInitialized() && downloads.tasks.value.any {
                     it.novel.id == novel.id && it.chapter.id == chapter.id && it.state == NovelDownloadState.DONE
                 }) downloads.invalidate(novel, chapter)
-                val result = offline ?: source(novel.sourceId).chapter(chapter)
+                val rawResult = if (offline != null) {
+                    lastDataOrigin = "disk"
+                    offline
+                } else {
+                    lastDataOrigin = "network"
+                    source(novel.sourceId).chapter(chapter)
+                }
+                val result = if (isCenele) CeneleSanitizer.sanitize(rawResult) else rawResult
                 check(result.paragraphs.size >= 3 && result.paragraphs.sumOf { it.length } >= 200) { "Incomplete novel chapter" }
                 memoryCacheLock.withLock {
                     texts[key] = result

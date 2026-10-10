@@ -51,8 +51,12 @@ class NovelDownloadDisk(private val root: File) {
             val stored = json.decodeFromString<StoredChapter>(bytes.decodeToString())
             check(stored.editionId == editionId && stored.chapterId == chapterId)
             check(stored.checksum == novelDigest(json.encodeToString(stored.text)))
-            validate(stored.text)
-            stored.text
+            var text = stored.text
+            if (editionId == "novel.cenele" || editionId.startsWith("novel.cenele:") || editionId.startsWith("novel.cenele/")) {
+                text = CeneleSanitizer.sanitize(text)
+            }
+            validate(text)
+            text
         }.getOrNull()
     }
 
@@ -83,8 +87,11 @@ class NovelDownloadDisk(private val root: File) {
     // Serialization, compression and fsync are outside the queue state lock. Only the final
     // atomic rename is guarded with the task generation check, so pause/cancel stay responsive.
     internal fun prepare(editionId: String, chapterId: String, text: NovelText): PreparedChapter {
-        validate(text)
-        val value = StoredChapter(editionId, chapterId, novelDigest(json.encodeToString(text)), text)
+        val sanitized = if (editionId == "novel.cenele" || editionId.startsWith("novel.cenele:") || editionId.startsWith("novel.cenele/")) {
+            CeneleSanitizer.sanitize(text)
+        } else text
+        validate(sanitized)
+        val value = StoredChapter(editionId, chapterId, novelDigest(json.encodeToString(sanitized)), sanitized)
         val bytes = json.encodeToString(value).toByteArray()
         check(bytes.size <= 8 * 1024 * 1024)
         temporary.mkdirs()

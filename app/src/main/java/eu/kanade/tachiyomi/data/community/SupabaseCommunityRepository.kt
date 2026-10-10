@@ -162,7 +162,7 @@ class SupabaseCommunityRepository(private val client: SupabaseClient, private va
             CommunityProfileResult.Loaded(CommunityPublicProfile(
                 AccountAuthor(row.user_id, row.display_name, row.username, custom ?: google, row.level, AccountRole.fromServer(row.role)),
                 row.bio, cover, google, row.comment_count, row.rating_count, row.chapters_read,
-                safeFavorites.map { PublicFavorite(it.manga_key, it.title, covers[it.cover_path], it.featured) }, row.showcase_enabled,
+                safeFavorites.map { PublicFavorite(it.manga_key, it.title, covers[it.cover_path], it.featured, isNovel = it.is_novel, chapterCount = it.chapter_count) }, row.showcase_enabled,
             ))
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (failure: Exception) { CommunityProfileResult.Failed(error(failure)) }
@@ -329,7 +329,7 @@ class SupabaseCommunityRepository(private val client: SupabaseClient, private va
         val avatar_path: String?, val google_avatar_url: String?, val cover_path: String?, val bio: String?,
         val updated_at: String, val level: Int, val comment_count: Long, val rating_count: Long,
         val role: String = "user", val chapters_read: Long? = null, val favorites: List<FavoriteRow> = emptyList(), val showcase_enabled: Boolean = false)
-    @Serializable private data class FavoriteRow(val manga_key: String, val title: String, val cover_path: String? = null, val featured: Boolean = false)
+    @Serializable private data class FavoriteRow(val manga_key: String, val title: String, val cover_path: String? = null, val featured: Boolean = false, val is_novel: Boolean = false, val chapter_count: Int? = null)
     @Serializable private data class PostedComment(val id: String, val user_id: String, val target_type: String, val manga_key: String,
         val chapter_key: String?, val parent_comment_id: String?, val body: String, val spoiler: Boolean = false)
     @Serializable private data class EditedComment(val id: String, val body: String, val updated_at: String, val spoiler: Boolean = false)

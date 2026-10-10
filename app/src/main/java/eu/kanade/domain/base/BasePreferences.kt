@@ -51,4 +51,9 @@ class BasePreferences(
         Preference.appStateKey("donation_campaign_shown"),
         false,
     )
+
+    val notificationPromptHandled: Preference<Boolean> = preferenceStore.getBoolean(
+        Preference.appStateKey("notification_prompt_handled"),
+        false,
+    )
 }

@@ -1,10 +1,12 @@
 package eu.kanade.tachiyomi.ui.home
 
+import android.app.Application
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import eu.kanade.domain.source.interactor.GetEnabledSources
 import eu.kanade.domain.source.service.SourcePreferences
 import eu.kanade.tachiyomi.data.download.DownloadManager
+import eu.kanade.tachiyomi.data.notification.DiscoveryWorkDeduplicator
 import eu.kanade.tachiyomi.source.CatalogueSource
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.online.HttpSource
@@ -362,6 +364,14 @@ class HomeViewModel(
         val incoming = local.map { manga ->
             HomeDiscoveryItem(mangaId = manga.id, title = manga.title, coverData = manga.also { PreferredMangaVariants.remember(it) }.asMangaCover(),
                 sourceId = result.sourceId, sourceName = result.sourceName, url = manga.url)
+        }
+        if (incoming.isNotEmpty()) {
+            runCatching {
+                DiscoveryWorkDeduplicator.processDiscoveredWorks(
+                    Injekt.get<Application>(),
+                    incoming.map { it.sourceId to it.url },
+                )
+            }
         }
         _state.update { current ->
             if (result.category == DiscoveryCategory.LATEST) return@update current.copy(
