@@ -32,7 +32,8 @@ internal data class MangaroVersionConfig(
             val uri = URI(url)
             if (uri.scheme != "https" || uri.host != "github.com" || uri.port != -1 ||
                 uri.userInfo != null || uri.query != null || uri.fragment != null ||
-                uri.path != "/abderrahimgourram/mangaro/releases/download/v$name/Mangaro-release.apk"
+                !uri.path.startsWith("/abderrahimgourram/mangaro/releases/download/v$name/Mangaro-") ||
+                !uri.path.endsWith(".apk")
             ) return null
             MangaroVersionConfig(name, latest, minimum, force, url)
         }.getOrNull()

@@ -68,8 +68,8 @@ android {
         buildConfigField("String", "SUPABASE_PUBLISHABLE_KEY", "\"$supabaseKey\"")
         manifestPlaceholders["accountAuthScheme"] = "mangaro"
 
-        versionCode = 20
-        versionName = "2.0.2"
+        versionCode = 21
+        versionName = "2.0.3"
 
         buildConfigField("String", "COMMIT_COUNT", "\"${getLatestCommitCount()}\"")
         buildConfigField("String", "COMMIT_SHA", "\"${getLatestCommitSha()}\"")

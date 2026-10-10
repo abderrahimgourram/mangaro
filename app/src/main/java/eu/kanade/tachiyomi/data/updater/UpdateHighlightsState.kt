@@ -29,6 +29,6 @@ internal class UpdateHighlightsState(store: PreferenceStore) {
     }
 
     companion object {
-        const val RELEASE_CODE = 19
+        const val RELEASE_CODE = 21
     }
 }

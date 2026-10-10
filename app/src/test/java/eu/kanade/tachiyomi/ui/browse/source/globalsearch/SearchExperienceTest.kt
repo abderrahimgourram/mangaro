@@ -158,16 +158,19 @@ class SearchExperienceTest {
     @Test fun `failed refresh preserves previously usable results`() = runTest(dispatcher) {
         var offline = false
         val model = model(source(110) { _, _ -> if (offline) throw java.io.IOException("offline") else page("/one") })
+        store.put("failed_refresh", model)
         model.updateSearchQuery("Naruto"); model.search()
         val before = model.finished("Naruto").rankedResults
         offline = true
         val genBefore = model.state.value.generation
         model.retrySearch()
+        runCurrent()
         testScheduler.advanceUntilIdle()
         val result = model.finished("Naruto", expectedGen = genBefore + 1)
         result.rankedResults shouldBe before
         result.isSearching shouldBe false
         (result.items.values.single() is SearchItemResult.Error) shouldBe true
+        store.clear()
     }
     @Test fun `recent queries persist newest first with exact deduplication and ten entry bound`() {
         val preference = InMemoryPreferenceStore.InMemoryPreference("recent", null, "[]")

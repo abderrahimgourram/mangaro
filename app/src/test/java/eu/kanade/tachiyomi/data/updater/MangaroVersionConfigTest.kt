@@ -49,8 +49,18 @@ class MangaroVersionConfigTest {
             config.replace("https://github.com", "http://github.com"),
             config.replace("github.com", "example.com"),
             config.replace("/v1.1.3/", "/v1.1.2/"),
-            config.replace("Mangaro-release.apk", "app-debug.apk"),
+            config.replace("Mangaro-release.apk", "app-debug.zip"),
             config.replace("github.com/", "github.com:443/"),
         ).forEach { MangaroVersionConfig.parse(it) shouldBe null }
+    }
+
+    @Test fun `update landing page URL is official website download route`() {
+        MandatoryUpdateController.UPDATE_LANDING_PAGE shouldBe "https://mangaro-web.vercel.app/download"
+    }
+
+    @Test fun `config accepts both Mangaro-release and Mangaro-Universal asset URLs`() {
+        val universalConfig = config.replace("Mangaro-release.apk", "Mangaro-Universal.apk")
+        val parsed = requireNotNull(MangaroVersionConfig.parse(universalConfig))
+        parsed.downloadUrl shouldBe "https://github.com/abderrahimgourram/mangaro/releases/download/v1.1.3/Mangaro-Universal.apk"
     }
 }

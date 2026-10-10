@@ -27,6 +27,7 @@ internal class MandatoryUpdateController private constructor() :
     DefaultLifecycleObserver, Application.ActivityLifecycleCallbacks {
 
     companion object {
+        const val UPDATE_LANDING_PAGE = "https://mangaro-web.vercel.app/download"
         private var installed = false
 
         fun install(application: Application) {
@@ -94,17 +95,20 @@ internal class MandatoryUpdateController private constructor() :
             if (openingDownload) return
             try {
                 openingDownload = true
-                activity.startActivity(Intent(Intent.ACTION_VIEW, config.downloadUrl.toUri()))
+                val intent = Intent(Intent.ACTION_VIEW, UPDATE_LANDING_PAGE.toUri())
+                activity.startActivity(intent)
                 updateDialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = false
                 if (!mandatory) dismissDialog()
-            } catch (_: android.content.ActivityNotFoundException) {
-                openingDownload = false
-                retry?.visibility = View.VISIBLE
-                Toast.makeText(activity, "تعذّر فتح رابط التحديث. حاول مجددًا.", Toast.LENGTH_SHORT).show()
-            } catch (_: SecurityException) {
-                openingDownload = false
-                retry?.visibility = View.VISIBLE
-                Toast.makeText(activity, "تعذّر فتح رابط التحديث. حاول مجددًا.", Toast.LENGTH_SHORT).show()
+            } catch (_: Exception) {
+                try {
+                    activity.startActivity(Intent(Intent.ACTION_VIEW, config.downloadUrl.toUri()))
+                    updateDialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = false
+                    if (!mandatory) dismissDialog()
+                } catch (_: Exception) {
+                    openingDownload = false
+                    retry?.visibility = View.VISIBLE
+                    Toast.makeText(activity, "تعذّر فتح رابط التحديث. حاول مجددًا.", Toast.LENGTH_SHORT).show()
+                }
             }
         }
         updateDialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener { openDownload() }
