@@ -1,39 +1,39 @@
 {
-  "versionName": "2.0.1",
-  "versionCode": 19,
+  "versionName": "2.0.2",
+  "versionCode": 20,
   "bytes": 75581068,
-  "sha256": "a4494b1a8471bc91badf4d09e79f12bdfb1d7b8f1b2c7369a7b19003a113a2a1",
+  "sha256": "396a258cee6459b9294279c1cc83316dd4960e7f942016cddf25fdc140b5fe21",
   "date": "2026-10-10",
-  "url": "https://github.com/abderrahimgourram/mangaro/releases/download/v2.0.1/Mangaro-Universal.apk",
+  "url": "https://github.com/abderrahimgourram/mangaro/releases/download/v2.0.2/Mangaro-Universal.apk",
   "variants": {
     "arm64": {
-      "url": "https://github.com/abderrahimgourram/mangaro/releases/download/v2.0.1/Mangaro-ARM64.apk",
+      "url": "https://github.com/abderrahimgourram/mangaro/releases/download/v2.0.2/Mangaro-ARM64.apk",
       "filename": "Mangaro-ARM64.apk",
-      "sha256": "25bef4b13825c38a64ce3b2c478b182b6f175d0fac1ce9f3b3a47c2538fcd001",
+      "sha256": "adb454b0125fdb459fd52a425ab359aa5a293c78bc6823f796384ba54c2bb452",
       "bytes": 35583365
     },
     "arm32": {
-      "url": "https://github.com/abderrahimgourram/mangaro/releases/download/v2.0.1/Mangaro-ARM32.apk",
+      "url": "https://github.com/abderrahimgourram/mangaro/releases/download/v2.0.2/Mangaro-ARM32.apk",
       "filename": "Mangaro-ARM32.apk",
-      "sha256": "391c6c7a94c677a649287ae1ba01f814c0959030904ed51666191efb37f86509",
+      "sha256": "2c5463d6d55479e6f4ce37a20d774683d81c501d77e06bd147287b496a954025",
       "bytes": 32469383
     },
     "x86": {
-      "url": "https://github.com/abderrahimgourram/mangaro/releases/download/v2.0.1/Mangaro-x86.apk",
+      "url": "https://github.com/abderrahimgourram/mangaro/releases/download/v2.0.2/Mangaro-x86.apk",
       "filename": "Mangaro-x86.apk",
-      "sha256": "cd1fef2629f4751ead6761a93b8d51830871d983373551c7ca31a2f7571d04b6",
+      "sha256": "eeba9996ed542b3a9312d80044045b8461bf6ddab2757cabd3cf79b93a405445",
       "bytes": 36921647
     },
     "x86_64": {
-      "url": "https://github.com/abderrahimgourram/mangaro/releases/download/v2.0.1/Mangaro-x86_64.apk",
+      "url": "https://github.com/abderrahimgourram/mangaro/releases/download/v2.0.2/Mangaro-x86_64.apk",
       "filename": "Mangaro-x86_64.apk",
-      "sha256": "a51454f5addece89e1fac7945b26d1e1b207b8a136668e6d88d7e968806a2ea8",
+      "sha256": "b083d01ec29e2e257bbf3a5174610a84b33b4252291cf564b5f5e0c52397a8b2",
       "bytes": 37978184
     },
     "universal": {
-      "url": "https://github.com/abderrahimgourram/mangaro/releases/download/v2.0.1/Mangaro-Universal.apk",
+      "url": "https://github.com/abderrahimgourram/mangaro/releases/download/v2.0.2/Mangaro-Universal.apk",
       "filename": "Mangaro-Universal.apk",
-      "sha256": "a4494b1a8471bc91badf4d09e79f12bdfb1d7b8f1b2c7369a7b19003a113a2a1",
+      "sha256": "396a258cee6459b9294279c1cc83316dd4960e7f942016cddf25fdc140b5fe21",
       "bytes": 75581068
     }
   }

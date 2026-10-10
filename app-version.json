@@ -1,7 +1,7 @@
 {
-  "latestVersionName": "2.0.1",
-  "latestVersionCode": 19,
-  "minSupportedVersionCode": 19,
+  "latestVersionName": "2.0.2",
+  "latestVersionCode": 20,
+  "minSupportedVersionCode": 20,
   "forceUpdate": true,
-  "downloadUrl": "https://github.com/abderrahimgourram/mangaro/releases/download/v2.0.1/Mangaro-Universal.apk"
+  "downloadUrl": "https://github.com/abderrahimgourram/mangaro/releases/download/v2.0.2/Mangaro-Universal.apk"
 }
