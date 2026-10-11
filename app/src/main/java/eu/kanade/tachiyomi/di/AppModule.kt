@@ -27,6 +27,7 @@ import eu.kanade.tachiyomi.source.internal.mangalek.MangaLek
 import eu.kanade.tachiyomi.source.internal.mangatime.MangaTime
 import eu.kanade.tachiyomi.source.internal.teamx.TeamX
 import eu.kanade.tachiyomi.source.internal.mangaswat.MangaSwat
+import eu.kanade.tachiyomi.source.internal.mangastarz.MangaStarz
 import mihon.domain.source.registry.DefaultInternalSourceRegistry
 import mihon.domain.source.registry.DefaultSourceCollisionPolicy
 import mihon.domain.source.registry.InternalSourceRegistry
@@ -149,6 +150,7 @@ class AppModule(val app: Application) : InjektModule {
                     MangaLek(),
                     MangaDar(),
                     MangaSwat(),
+                    MangaStarz(),
                 ).map { source ->
                     mihon.domain.source.health.SourceHealthMonitor.shared.expectCatalogue(source.id)
                     val engine = get<eu.kanade.tachiyomi.source.repair.RuleRepairEngine>()

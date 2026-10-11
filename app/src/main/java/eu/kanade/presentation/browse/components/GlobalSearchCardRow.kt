@@ -2,6 +2,7 @@ package eu.kanade.presentation.browse.components
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -12,16 +13,23 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextDirection
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.library.components.CommonMangaItemDefaults
 import eu.kanade.presentation.library.components.MangaComfortableGridItem
+import eu.kanade.presentation.theme.MangaroDesignSystem
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.manga.model.MangaCover
 import tachiyomi.domain.manga.model.asMangaCover
+import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.padding
 import tachiyomi.presentation.core.i18n.stringResource
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.get
 
 @Composable
 fun GlobalSearchCardRow(
@@ -43,6 +51,7 @@ fun GlobalSearchCardRow(
             val title by getManga(it)
             MangaItem(
                 title = title.title,
+                sourceId = title.source,
                 cover = title.asMangaCover(),
                 isFavorite = title.favorite,
                 onClick = { onClick(title) },
@@ -55,23 +64,42 @@ fun GlobalSearchCardRow(
 @Composable
 private fun MangaItem(
     title: String,
+    sourceId: Long,
     cover: MangaCover,
     isFavorite: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
+    val sourceName = remember(sourceId) {
+        try {
+            val sm: SourceManager = Injekt.get()
+            sm.getOrStub(sourceId).name.ifBlank { "مصدر غير معروف" }
+        } catch (_: Exception) {
+            "مصدر غير معروف"
+        }
+    }
     Box(modifier = Modifier.width(96.dp)) {
-        MangaComfortableGridItem(
-            title = title,
-            titleMaxLines = 3,
-            coverData = cover,
-            coverBadgeStart = {
-                InLibraryBadge(enabled = isFavorite)
-            },
-            coverAlpha = if (isFavorite) CommonMangaItemDefaults.BrowseFavoriteCoverAlpha else 1f,
-            onClick = onClick,
-            onLongClick = onLongClick,
-        )
+        Column {
+            MangaComfortableGridItem(
+                title = title,
+                titleMaxLines = 2,
+                coverData = cover,
+                coverBadgeStart = {
+                    InLibraryBadge(enabled = isFavorite)
+                },
+                coverAlpha = if (isFavorite) CommonMangaItemDefaults.BrowseFavoriteCoverAlpha else 1f,
+                onClick = onClick,
+                onLongClick = onLongClick,
+            )
+            Text(
+                text = "المصدر: $sourceName",
+                color = MangaroDesignSystem.GoldPrimary,
+                style = MaterialTheme.typography.labelSmall.copy(textDirection = TextDirection.ContentOrRtl),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(horizontal = 4.dp),
+            )
+        }
     }
 }
 

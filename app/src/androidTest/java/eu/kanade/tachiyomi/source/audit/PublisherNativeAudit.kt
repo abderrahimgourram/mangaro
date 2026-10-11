@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.source.audit
 
 import android.content.Context
+import android.os.SystemClock
 import eu.kanade.tachiyomi.network.NetworkHelper
 import eu.kanade.tachiyomi.network.awaitSuccess
 import eu.kanade.tachiyomi.source.internal.azora.Azora
@@ -9,6 +10,7 @@ import eu.kanade.tachiyomi.source.internal.mangadar.MangaDar
 import eu.kanade.tachiyomi.source.internal.mangalek.MangaLek
 import eu.kanade.tachiyomi.source.internal.mangatime.MangaTime
 import eu.kanade.tachiyomi.source.internal.mangaswat.MangaSwat
+import eu.kanade.tachiyomi.source.internal.mangastarz.MangaStarz
 import eu.kanade.tachiyomi.source.internal.teamx.TeamX
 import eu.kanade.tachiyomi.source.model.*
 import eu.kanade.tachiyomi.source.online.HttpSource
@@ -16,12 +18,17 @@ import java.io.File
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.*
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
+import java.net.ConnectException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
+import java.util.concurrent.TimeUnit
 
 /** Publisher-only evidence; real parsers/NetworkHelper. Raw responses stay private and ephemeral.
  * No library writes, downloads, cookies/auth headers in records, or normal source registration.
@@ -34,12 +41,13 @@ object PublisherNativeAudit {
         val factories: List<Pair<String, (OkHttpClient) -> HttpSource>> = listOf(
             "TeamX" to { TeamX(it) }, "MangaTime" to { MangaTime(it) }, "MangaLek" to { MangaLek(it) },
             "Azora" to { Azora(it) }, "Hijala" to { Hijala(it) }, "MangaDar" to { MangaDar(it) }, "MangaSwat" to { MangaSwat(it) },
+            "Manga Starz" to { MangaStarz(it) },
         )
         for ((name, factory) in factories.filter { selected == null || it.first == selected }) {
             val requests = AtomicInteger()
             val traces = mutableListOf<JsonObject>()
             var operation = ""
-            val client = network.newBuilder().callTimeout(12, java.util.concurrent.TimeUnit.SECONDS).addInterceptor { chain ->
+            val client = network.newBuilder().callTimeout(12, TimeUnit.SECONDS).addInterceptor { chain ->
                 if (requests.incrementAndGet() > 48) throw ProbeBudget()
                 val request = chain.request()
                 val response = chain.proceed(request)
@@ -57,20 +65,20 @@ object PublisherNativeAudit {
             val source = factory(client)
             val steps = linkedMapOf<String, String>()
             val diagnostics = linkedMapOf<String, String>()
-            val deadline = android.os.SystemClock.elapsedRealtime() + 150_000
+            val deadline = SystemClock.elapsedRealtime() + 150_000
             val observations = mutableListOf<JsonObject>()
             var popular = emptyList<SManga>()
             suspend fun step(label: String, action: suspend () -> Unit) {
                 operation = label
-                val remaining = deadline - android.os.SystemClock.elapsedRealtime()
+                val remaining = deadline - SystemClock.elapsedRealtime()
                 if (remaining <= 0) { steps[label] = "TRANSIENT_BUDGET"; return }
                 try { withTimeout(minOf(90_000, remaining)) { action() }; steps[label] = "PASS" }
-                catch (e: CancellationException) { if (e !is kotlinx.coroutines.TimeoutCancellationException) throw e; steps[label] = "TRANSIENT_TIMEOUT" }
+                catch (e: CancellationException) { if (e !is TimeoutCancellationException) throw e; steps[label] = "TRANSIENT_TIMEOUT" }
                 catch (e: Exception) {
                     // Never include raw exception messages/URLs/headers in public diagnostics.
                     steps[label] = when (e) {
                         is ProbeBudget -> "TRANSIENT_BUDGET"
-                        is java.net.SocketTimeoutException, is java.net.UnknownHostException, is java.net.ConnectException -> "TRANSIENT_NETWORK"
+                        is SocketTimeoutException, is UnknownHostException, is ConnectException -> "TRANSIENT_NETWORK"
                         else -> "SEMANTIC_ERROR"
                     }
                     val message = e.message.orEmpty().lowercase()
@@ -116,19 +124,31 @@ object PublisherNativeAudit {
                         } }))
                     }
                 }
-                steps["chapters-$i"] = if (update != null && (update!!.chapters.isNotEmpty() || update!!.chapterCompleteness == ChapterFetchCompleteness.COMPLETE)) "PASS_${update!!.chapterCompleteness.name}_${update!!.chapters.size}" else "SEMANTIC_ERROR"
-                if (i == 0) step("reader") {
-                    val chapter = requireNotNull(update).chapters.last()
-                    val pages = source.getPageList(chapter); check(pages.isNotEmpty())
-                    observations += buildJsonObject { put("operation", "pages"); put("chapterUrl", chapter.url); put("chapterMemo", chapter.memo); put("images", JsonArray(pages.map { JsonPrimitive(it.imageUrl.orEmpty()) })) }
-                    operation = "image"
-                    val page = pages.first()
-                    if (page.imageUrl.isNullOrBlank()) page.imageUrl = source.getImageUrl(page)
-                    client.newCall(source.repairImageRequest(page).newBuilder().header("Range", "bytes=0-511").build()).awaitSuccess().use { response ->
-                        check(response.header("Content-Type").orEmpty().startsWith("image/"))
-                        val bytes = response.body.source(); bytes.request(16)
-                        val magic = bytes.readByteArray(minOf(16L, bytes.buffer.size)).toString(Charsets.ISO_8859_1)
-                        check(magic.startsWith("\u00ff\u00d8\u00ff") || magic.startsWith("\u0089PNG") || magic.startsWith("GIF8") || magic.startsWith("RIFF") && magic.contains("WEBP") || magic.contains("ftypavif"))
+                val detailsValid = steps["details-$i"] == "PASS"
+                val chaptersValid = update != null && (update!!.chapters.isNotEmpty() || update!!.chapterCompleteness == ChapterFetchCompleteness.COMPLETE)
+                steps["chapters-$i"] = when {
+                    !detailsValid -> "DEPENDENT_FAILURE"
+                    !chaptersValid -> "SEMANTIC_ERROR"
+                    else -> "PASS_${update!!.chapterCompleteness.name}_${update!!.chapters.size}"
+                }
+                if (i == 0) {
+                    if (steps["details-0"] != "PASS" || steps["chapters-0"]?.startsWith("PASS") != true) {
+                        steps["reader"] = "DEPENDENT_FAILURE"
+                    } else {
+                        step("reader") {
+                            val chapter = requireNotNull(update).chapters.last()
+                            val pages = source.getPageList(chapter); check(pages.isNotEmpty())
+                            observations += buildJsonObject { put("operation", "pages"); put("chapterUrl", chapter.url); put("chapterMemo", chapter.memo); put("images", JsonArray(pages.map { JsonPrimitive(it.imageUrl.orEmpty()) })) }
+                            operation = "image"
+                            val page = pages.first()
+                            if (page.imageUrl.isNullOrBlank()) page.imageUrl = source.getImageUrl(page)
+                            client.newCall(source.repairImageRequest(page).newBuilder().header("Range", "bytes=0-511").build()).awaitSuccess().use { response ->
+                                check(response.header("Content-Type").orEmpty().startsWith("image/"))
+                                val bytes = response.body.source(); bytes.request(16)
+                                val magic = bytes.readByteArray(minOf(16L, bytes.buffer.size)).toString(Charsets.ISO_8859_1)
+                                check(magic.startsWith("\u00ff\u00d8\u00ff") || magic.startsWith("\u0089PNG") || magic.startsWith("GIF8") || magic.startsWith("RIFF") && magic.contains("WEBP") || magic.contains("ftypavif"))
+                            }
+                        }
                     }
                 }
             }
@@ -169,8 +189,78 @@ object PublisherNativeAudit {
             }
             record("Publisher native $name: ${steps.entries.joinToString { "${it.key}=${it.value}" }} requests=${requests.get()}")
         }
+        var crossSourceDiagnostic: JsonObject? = null
+        val starzResult = results.find { it["name"]?.jsonPrimitive?.content == "Manga Starz" }
+        val lekResult = results.find { it["name"]?.jsonPrimitive?.content == "MangaLek" }
+        if (starzResult != null && lekResult != null) {
+            fun extractSlugs(urls: List<String?>?): List<String>? {
+                if (urls.isNullOrEmpty()) return null
+                return urls.mapNotNull { url ->
+                    url?.removeSuffix("/")?.substringAfterLast("/")?.takeIf { it.isNotBlank() }
+                }
+            }
+
+            val starzPopUrls = starzResult["observations"]?.jsonArray?.find { it.jsonObject["operation"]?.jsonPrimitive?.content == "popular" }?.jsonObject?.get("mangas")?.jsonArray?.map { it.jsonObject["url"]?.jsonPrimitive?.content }
+            val lekPopUrls = lekResult["observations"]?.jsonArray?.find { it.jsonObject["operation"]?.jsonPrimitive?.content == "popular" }?.jsonObject?.get("mangas")?.jsonArray?.map { it.jsonObject["url"]?.jsonPrimitive?.content }
+
+            val starzPopSlugs = extractSlugs(starzPopUrls)
+            val lekPopSlugs = extractSlugs(lekPopUrls)
+
+            val identicalPopularSlugs = if (starzPopSlugs.isNullOrEmpty() || lekPopSlugs.isNullOrEmpty()) "INSUFFICIENT_EVIDENCE" else (starzPopSlugs == lekPopSlugs).toString()
+
+            val starzPopTitles = starzResult["observations"]?.jsonArray?.find { it.jsonObject["operation"]?.jsonPrimitive?.content == "popular" }?.jsonObject?.get("mangas")?.jsonArray?.map { it.jsonObject["title"]?.jsonPrimitive?.content }
+            val lekPopTitles = lekResult["observations"]?.jsonArray?.find { it.jsonObject["operation"]?.jsonPrimitive?.content == "popular" }?.jsonObject?.get("mangas")?.jsonArray?.map { it.jsonObject["title"]?.jsonPrimitive?.content }
+
+            val identicalTitles = if (starzPopTitles.isNullOrEmpty() || lekPopTitles.isNullOrEmpty()) "INSUFFICIENT_EVIDENCE" else (starzPopTitles == lekPopTitles).toString()
+
+            val starzChapters = starzResult["observations"]?.jsonArray?.filter { it.jsonObject["operation"]?.jsonPrimitive?.content == "details" }?.flatMap { it.jsonObject["chapters"]?.jsonArray?.map { c -> c.jsonObject["url"]?.jsonPrimitive?.content } ?: emptyList() }
+            val lekChapters = lekResult["observations"]?.jsonArray?.filter { it.jsonObject["operation"]?.jsonPrimitive?.content == "details" }?.flatMap { it.jsonObject["chapters"]?.jsonArray?.map { c -> c.jsonObject["url"]?.jsonPrimitive?.content } ?: emptyList() }
+
+            val starzChapterNames = starzResult["observations"]?.jsonArray?.filter { it.jsonObject["operation"]?.jsonPrimitive?.content == "details" }?.flatMap { it.jsonObject["chapters"]?.jsonArray?.map { c -> c.jsonObject["name"]?.jsonPrimitive?.content } ?: emptyList() }
+            val lekChapterNames = lekResult["observations"]?.jsonArray?.filter { it.jsonObject["operation"]?.jsonPrimitive?.content == "details" }?.flatMap { it.jsonObject["chapters"]?.jsonArray?.map { c -> c.jsonObject["name"]?.jsonPrimitive?.content } ?: emptyList() }
+
+            val starzChapterSteps = starzResult["steps"]?.jsonObject?.filterKeys { it.startsWith("chapters-") }?.values?.map { it.jsonPrimitive.content } ?: emptyList()
+            val lekChapterSteps = lekResult["steps"]?.jsonObject?.filterKeys { it.startsWith("chapters-") }?.values?.map { it.jsonPrimitive.content } ?: emptyList()
+
+            val starzChaptersSuccess = starzChapterSteps.isNotEmpty() && starzChapterSteps.all { it.startsWith("PASS_") }
+            val lekChaptersSuccess = lekChapterSteps.isNotEmpty() && lekChapterSteps.all { it.startsWith("PASS_") }
+
+            val identicalChapterUrls = if (!starzChaptersSuccess || !lekChaptersSuccess || starzChapters.isNullOrEmpty() || lekChapters.isNullOrEmpty()) {
+                "INSUFFICIENT_EVIDENCE"
+            } else {
+                (starzChapters == lekChapters).toString()
+            }
+
+            val identicalChapterNames = if (!starzChaptersSuccess || !lekChaptersSuccess || starzChapterNames.isNullOrEmpty() || lekChapterNames.isNullOrEmpty()) {
+                "INSUFFICIENT_EVIDENCE"
+            } else {
+                (starzChapterNames == lekChapterNames).toString()
+            }
+
+            val starzBase = starzResult["baseUrl"]?.jsonPrimitive?.content
+            val lekBase = lekResult["baseUrl"]?.jsonPrimitive?.content
+            val sameBaseUrl = if (starzBase.isNullOrBlank() || lekBase.isNullOrBlank()) "INSUFFICIENT_EVIDENCE" else (starzBase == lekBase).toString()
+
+            crossSourceDiagnostic = buildJsonObject {
+                put("type", "CROSS_SOURCE_EVIDENCE")
+                put("identicalPopularSlugs", identicalPopularSlugs)
+                put("identicalTitles", identicalTitles)
+                put("identicalChapterUrls", identicalChapterUrls)
+                put("identicalChapterNames", identicalChapterNames)
+                put("sameBaseUrl", sameBaseUrl)
+                put("starzChapterCount", starzChapters?.size ?: 0)
+                put("lekChapterCount", lekChapters?.size ?: 0)
+            }
+            record("Cross-source diagnostic generated: $crossSourceDiagnostic")
+        }
         val target = File(context.filesDir, "publisher-native-evidence.json")
-        target.writeText(buildJsonObject { put("schema", 1); put("sources", JsonArray(results)) }.toString())
+        target.writeText(buildJsonObject {
+            put("schema", 1)
+            put("sources", JsonArray(results))
+            if (crossSourceDiagnostic != null) {
+                put("crossSourceEvidence", crossSourceDiagnostic!!)
+            }
+        }.toString())
         record("Publisher private evidence written; sources=${results.size}")
     }
 }

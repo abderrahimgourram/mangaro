@@ -77,12 +77,20 @@ import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 import eu.kanade.presentation.manga.components.MangaCover
 import eu.kanade.presentation.theme.MangaroDesignSystem
+import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.ui.browse.source.globalsearch.SearchItemResult
 import eu.kanade.tachiyomi.ui.browse.source.globalsearch.SearchViewModel
+import eu.kanade.tachiyomi.ui.webview.WebViewActivity
+import mihon.domain.source.health.SourceHealthMonitor
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.manga.model.asMangaCover
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.get
+import tachiyomi.domain.source.service.SourceManager
+import uy.kohesive.injekt.Injekt
 
 /** Isolated primary-search presentation; search and source health remain in SearchViewModel. */
 @Composable
@@ -126,7 +134,12 @@ fun MangaroSearchScreen(
     val focusManager = LocalFocusManager.current
     var focused by remember { mutableStateOf(false) }
     // Keep real source-scoped variants; equal titles are not the same manga.
+    val context = LocalContext.current
     val results = state.rankedResults
+    val mangaStarzId = 6058166507489091982L
+    val mangaStarzError = remember(state.items) {
+        state.items.entries.firstOrNull { it.key.id == mangaStarzId && it.value is SearchItemResult.Error }
+    }
     val hasSearch = query.isNotBlank()
     val loading = hasSearch && state.isSearching
     val currentResults = state.resultQuery == query.trim()
@@ -272,7 +285,43 @@ fun MangaroSearchScreen(
                 else -> LazyVerticalGrid(columns = GridCells.Adaptive(108.dp), state = resultsListState,
                     modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 18.dp, vertical = 12.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    if (failed) item(key = "searchNotice", span = { GridItemSpan(maxLineSpan) }) {
+                    if (mangaStarzError != null) {
+                        item(key = "mangaStarzNotice", span = { GridItemSpan(maxLineSpan) }) {
+                            val (mangaStarzSource, result) = mangaStarzError
+                            val err = (result as? SearchItemResult.Error)?.throwable
+                            val msg = err?.message.orEmpty()
+                            val isCloudflare = msg.contains("Cloudflare", ignoreCase = true) ||
+                                msg.contains("cf-", ignoreCase = true) ||
+                                msg.contains("403") ||
+                                msg.contains("protection", ignoreCase = true) ||
+                                msg.contains("challenge", ignoreCase = true)
+
+                            Row(
+                                Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(MangaroDesignSystem.SurfaceDark).padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        "Manga Starz: ${if (isCloudflare) "يتطلب إكمال التحقق الأمني" else "تعذّر الاتصال بالمصدر"}",
+                                        color = Color(0xFFE5B5AB),
+                                        style = MaterialTheme.typography.bodySmall,
+                                    )
+                                }
+                                TextButton(onClick = {
+                                    val intent = WebViewActivity.newIntent(context, "https://starzmanga.com", mangaStarzId, "Manga Starz")
+                                    context.startActivity(intent)
+                                }) {
+                                    Text("التحقق الأمني", color = MangaroDesignSystem.GoldPrimary)
+                                }
+                                TextButton(enabled = !loading, onClick = {
+                                    SourceHealthMonitor.shared.requestUserRetry(mangaStarzId)
+                                    onRetry()
+                                }) {
+                                    Text("إعادة المحاولة", color = Color.White)
+                                }
+                            }
+                        }
+                    } else if (failed) item(key = "searchNotice", span = { GridItemSpan(maxLineSpan) }) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Text(if (currentResults) "بعض النتائج غير متاحة حاليًا" else "تعذّر تحديث النتائج، نحتفظ بالبحث السابق", Modifier.weight(1f), color = Color(0xFF9E95AC), style = MaterialTheme.typography.bodySmall)
                             TextButton(enabled = !loading, onClick = onRetry) { Text("إعادة المحاولة") }
@@ -305,6 +354,14 @@ private fun SearchMangaCard(manga: Manga, onClick: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(if (pressed) 0.97f else 1f, tween(140), label = "searchCardPress")
+    val sourceName = remember(manga.source) {
+        try {
+            Injekt.get<SourceManager>()
+                .getOrStub(manga.source).name.ifBlank { "مصدر غير معروف" }
+        } catch (_: Exception) {
+            "مصدر غير معروف"
+        }
+    }
     Column(Modifier.fillMaxWidth().graphicsLayer { scaleX = scale; scaleY = scale }
         .clip(RoundedCornerShape(12.dp)).clickable(interactionSource = interaction, indication = null, onClick = onClick),
         verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -316,6 +373,7 @@ private fun SearchMangaCard(manga: Manga, onClick: () -> Unit) {
         }
         Text(manga.title, color = Color.White, style = MaterialTheme.typography.bodyMedium.copy(textDirection = TextDirection.Content),
             fontWeight = FontWeight.SemiBold, minLines = 2, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text("المصدر: $sourceName", color = MangaroDesignSystem.GoldPrimary, style = MaterialTheme.typography.labelSmall.copy(textDirection = TextDirection.ContentOrRtl), maxLines = 1, overflow = TextOverflow.Ellipsis)
         manga.author?.takeIf { it.isNotBlank() }?.let {
             Text(it, color = Color(0xFF9E95AC), style = MaterialTheme.typography.labelSmall.copy(textDirection = TextDirection.Content), maxLines = 1, overflow = TextOverflow.Ellipsis)
         }

@@ -27,6 +27,12 @@ class SourceHealthMonitor(private val clock: () -> Long = System::currentTimeMil
     @Synchronized fun degrade(id: Long) { mutable.value = mutable.value + (id to health(id).copy(state = State.DEGRADED)) }
     /** Explicit user refresh permits one bounded probe without erasing failure history. */
     @Synchronized fun requestProbe(id: Long) { mutable.value = mutable.value + (id to health(id).copy(nextProbeAt = 0)) }
+    /** Narrowly-scoped explicit user retry for a specific source after interactive verification. */
+    @Synchronized fun requestUserRetry(id: Long) {
+        val old = health(id)
+        val newState = if (old.state == State.UNAVAILABLE) State.DEGRADED else old.state
+        mutable.value = mutable.value + (id to old.copy(state = newState, nextProbeAt = 0))
+    }
     @Synchronized fun success(id: Long) { mutable.value = mutable.value + (id to Health()) }
     @Synchronized fun failure(id: Long, semantic: Boolean) {
         val old = health(id)
