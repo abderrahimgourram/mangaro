@@ -191,7 +191,9 @@ class CeneleSource(http: NovelHttp) : HtmlNovelSource(http) {
             val name=v.string("label").takeUnless {it.isBlank() || it in setOf("بدون مجلدات","بدون مجلد","الفصول")} ?: return@mapNotNull null
             NovelVolume(v.string("num"),name,v["count"]?.jsonPrimitive?.intOrNull)
         }
-        ChapterPage(chapters,next,volumes=volumes,allowEmpty=!more && chapters.isEmpty())
+        val counts = context.volumes.map { it["count"]?.jsonPrimitive?.intOrNull }
+        val total = counts.takeIf { it.all { count -> count != null && count >= 0 } }?.sumOf { it!! }
+        ChapterPage(chapters,next,volumes=volumes,allowEmpty=!more && chapters.isEmpty(),declaredTotal=total)
     }
     override suspend fun chapter(chapter: NovelChapter) = withContext(Dispatchers.IO) {
         val d = doc(http.get(chapter.url), chapter.url)
@@ -512,7 +514,7 @@ class SeaNovelSource(http: NovelHttp) : HtmlNovelSource(http) {
             val ch=value.jsonObject
             NovelChapter(url("novels/"+slug+"/chapters/"+ch.string("id")),ch.string("title"),index)
         }
-        ChapterPage(chapters)
+        ChapterPage(chapters, declaredTotal=item["chapters_count"]?.jsonPrimitive?.intOrNull)
     }
     override suspend fun chapter(chapter: NovelChapter) = withContext(Dispatchers.IO) {
         text(doc(http.get(chapter.url),chapter.url),selector("text","article.reader-content"))

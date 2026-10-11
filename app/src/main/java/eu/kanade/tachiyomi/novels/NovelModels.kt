@@ -23,7 +23,7 @@ data class NovelPage(val novels: List<Novel>, val nextPage: Int? = null, val not
 @Serializable
 data class NovelVolume(val id: String, val title: String, val declaredCount: Int? = null)
 data class ChapterPage(val chapters: List<NovelChapter>, val nextPage: Int? = null, val notice: String? = null,
-    val volumes: List<NovelVolume> = emptyList(), val allowEmpty: Boolean = false)
+    val volumes: List<NovelVolume> = emptyList(), val allowEmpty: Boolean = false, val declaredTotal: Int? = null)
 @Serializable
 data class NovelText(val paragraphs: List<String>, val markup: List<String> = emptyList(),
     val blocks: List<NovelContentBlock> = emptyList())
@@ -40,7 +40,8 @@ internal fun NovelText.orderedBlocks(): List<NovelContentBlock> = blocks.ifEmpty
 @Serializable
 data class NovelChapterIndex(val editionId: String, val chapters: List<NovelChapter> = emptyList(),
     val volumes: List<NovelVolume> = emptyList(), val nextPage: Int? = 1, val complete: Boolean = false,
-    val fetchedPages: Set<Int> = emptySet(), val updatedAt: Long = 0) {
+    val fetchedPages: Set<Int> = emptySet(), val updatedAt: Long = 0,
+    val declaredTotal: Int? = null, val parserKey: String? = null) {
     val availableCount: Int get() = chapters.count { it.available }
 }
 @Serializable

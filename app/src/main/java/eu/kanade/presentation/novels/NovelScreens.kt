@@ -345,6 +345,7 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
         var error by remember { mutableStateOf<String?>(null) }
         var retry by remember { mutableIntStateOf(0) }
         var descending by rememberSaveable { mutableStateOf(false) }
+        var retryEditionId by remember { mutableStateOf<String?>(null) }
         var expandedDescription by rememberSaveable { mutableStateOf(false) }
         var collapsed by rememberSaveable { mutableStateOf(arrayListOf<String>()) }
         // Selection may contain thousands of URLs; keep it out of Activity's size-limited Bundle.
@@ -361,8 +362,8 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
         LaunchedEffect(initial.id) { repository.awaitLocal(); repository.ingest(listOf(initial)) }
         LaunchedEffect(work.editions.map { it.id }, retry) {
             val request = ++indexEpoch
-            val editions = work.editions
-            busy = editions.map { it.id }.toSet(); indexErrors = emptyMap()
+            val editions = if (retryEditionId == null) work.editions else work.editions.filter { it.id == retryEditionId }
+            busy = editions.map { it.id }.toSet(); indexErrors = indexErrors - busy
             // Cached indexes and known offline/history rows are available before any HTTP request.
             editions.forEach { edition ->
                 repository.indexSnapshot(edition)?.let { indexes = indexes + (edition.id to it) }
@@ -371,7 +372,7 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
             editions.forEach { edition -> launch {
                 try {
                     gate.withPermit {
-                        repository.completeIndex(edition, refresh = retry > 0) { partial ->
+                        repository.completeIndex(edition, refresh = retry > 0, maxPages = 8) { partial ->
                             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
                                 if (request == indexEpoch) indexes = indexes + (edition.id to partial)
                             }
@@ -508,10 +509,13 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
                 if (novel.id in busy) item {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Design.LavenderPrimary)
-                        Text("جارٍ تحميل الفصول…", color = Design.LavenderPrimary, style = MaterialTheme.typography.labelSmall)
+                        Text(if (index.chapters.isEmpty()) "جاري تحميل الفصول..." else "جاري تحميل المزيد من الفصول...", color = Design.LavenderPrimary, style = MaterialTheme.typography.labelSmall)
                     }
                 }
-                (error ?: indexErrors[novel.id])?.let { message -> item { NovelFailure(message, novel.url) { error = null; retry++ } } }
+                if (novel.id !in busy && !index.complete && index.nextPage != null && indexErrors[novel.id] == null) item {
+                    TextButton(onClick = { retryEditionId = novel.id; retry++ }) { Text("تحميل المزيد من الفصول", color = Design.GoldPrimary) }
+                }
+                (error ?: indexErrors[novel.id])?.let { message -> item { NovelFailure(message, novel.url) { error = null; retryEditionId = novel.id; retry++ } } }
                 storageError?.let { message -> item {
                     Text(message, color = Color(0xFFE5B5AB), style = MaterialTheme.typography.bodySmall)
                     if (repository.libraryRestoreFailed) TextButton(onClick = { scope.launch { repository.retryLibraryRestore() } }) { Text("حاول مجددًا") }

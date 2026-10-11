@@ -280,7 +280,7 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
             scope.launch {
                 try {
                     repository.indexSnapshot(novel)?.let { chapterChoices=it.chapters; chaptersComplete=it.complete }
-                    val result=repository.completeIndex(novel) { partial -> withContext(Dispatchers.Main.immediate) {chapterChoices=partial.chapters; chaptersComplete=partial.complete} }
+                    val result=repository.completeIndex(novel, maxPages = 8) { partial -> withContext(Dispatchers.Main.immediate) {chapterChoices=partial.chapters; chaptersComplete=partial.complete} }
                     chapterChoices=result.chapters; chaptersComplete=result.complete
                 } catch(c: CancellationException) {throw c} catch(e: Exception) {error=novelError(e)}
                 finally {choicesLoading=false}

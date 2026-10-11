@@ -8,6 +8,7 @@ import coil3.disk.DiskCache
 import coil3.memory.MemoryCache
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import okhttp3.OkHttpClient
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okio.Path.Companion.toOkioPath
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -519,25 +520,39 @@ class NovelRepository private constructor(context: Context) {
         try { stream.write(value.toByteArray()); target.finishWrite(stream) }
         catch (e: Exception) { target.failWrite(stream); throw e }
     }
+    private fun indexKey(novel: Novel) = novelDigest("index-v2|${novel.sourceId}|${NovelRules.selector(novel.sourceId, "chapterLinks", "compiled")}|${NovelRules.selector(novel.sourceId, "chapterTitle", "compiled")}")
     private fun indexPath(novel: Novel) = "indexes/" + novelDigest(novel.id) + ".json"
     suspend fun indexSnapshot(novel: Novel): NovelChapterIndex? = withContext(Dispatchers.IO) {
-        memoryCacheLock.withLock { indexes[novel.id] } ?: runCatching {
+        memoryCacheLock.withLock { indexes[novel.id] }?.let {
+            if (it.parserKey != indexKey(novel)) it.copy(complete = false) else it
+        } ?: runCatching {
             (metadata.read(indexPath(novel)) ?: indexCache.read(indexPath(novel)))?.let { json.decodeFromString<NovelChapterIndex>(it) }
-                ?.takeIf { it.editionId == novel.id }
-        }.getOrNull()?.also { cacheIndex(it) }
+                ?.takeIf { it.editionId == novel.id && it.chapters.distinctBy { ch -> ch.id }.size == it.chapters.size &&
+                    it.chapters.all { ch -> NovelHttp.allowed(ch.url) && ch.title.isNotBlank() &&
+                        ch.url.toHttpUrl().host.removePrefix("www.") == novel.url.toHttpUrl().host.removePrefix("www.") } }
+        }.getOrNull()?.let { if (it.parserKey != indexKey(novel)) it.copy(complete = false) else it }?.also { cacheIndex(it) }
     }
     private suspend fun cacheIndex(index: NovelChapterIndex) = memoryCacheLock.withLock {
         indexes[index.editionId] = index
         while (indexes.size > 5) indexes.remove(indexes.keys.first())
         indexRevision.update { it + 1 }
     }
-    suspend fun completeIndex(novel: Novel, refresh: Boolean = false, onPage: suspend (NovelChapterIndex) -> Unit = {}): NovelChapterIndex = withContext(Dispatchers.IO) {
+    suspend fun completeIndex(novel: Novel, refresh: Boolean = false, onPage: suspend (NovelChapterIndex) -> Unit = {}): NovelChapterIndex =
+        completeIndex(novel, refresh, Int.MAX_VALUE, onPage)
+
+    suspend fun completeIndex(novel: Novel, refresh: Boolean = false, maxPages: Int, onPage: suspend (NovelChapterIndex) -> Unit = {}): NovelChapterIndex = withContext(Dispatchers.IO) {
         ready.await()
-        // One metadata collector per edition, including quick back/forward navigation.
+        // Bounded UI callers and explicit full-index callers share the edition mutation lock.
+        val flightKey = novel.id + ":" + maxPages
+        require(maxPages > 0)
         val flight = synchronized(indexFlights) {
-            indexFlights[novel.id]?.also { it.readers++; it.release?.cancel(); it.release = null }
-                ?: IndexFlight(io.async(start = CoroutineStart.LAZY) { collectCompleteIndex(novel, refresh) })
-                    .also { indexFlights[novel.id] = it }
+            indexFlights[flightKey]?.also { it.readers++; it.release?.cancel(); it.release = null }
+                ?: IndexFlight(io.async(start = CoroutineStart.LAZY) {
+                    if (maxPages == Int.MAX_VALUE) collectCompleteIndex(novel, refresh, maxPages)
+                    else withTimeoutOrNull(20_000) { collectCompleteIndex(novel, refresh, maxPages) }
+                        ?: throw NovelSourceFailure("تعذّر تحميل بقية الفصول. أعد المحاولة.", "Chapter discovery session timed out")
+                })
+                    .also { indexFlights[flightKey] = it }
         }
         try {
             coroutineScope {
@@ -565,13 +580,13 @@ class NovelRepository private constructor(context: Context) {
         } finally {
             synchronized(indexFlights) {
                 if (--flight.readers == 0) {
-                    if (flight.result.isCompleted) indexFlights.remove(novel.id, flight)
+                    if (flight.result.isCompleted) indexFlights.remove(flightKey, flight)
                     else flight.release = io.launch {
                         // Short ownership grace keeps an in-flight page across navigation; no UI delay.
                         delay(3000)
                         synchronized(indexFlights) {
-                            if (flight.readers == 0 && indexFlights[novel.id] === flight) {
-                                indexFlights.remove(novel.id); flight.result.cancel()
+                            if (flight.readers == 0 && indexFlights[flightKey] === flight) {
+                                indexFlights.remove(flightKey); flight.result.cancel()
                             }
                         }
                     }
@@ -579,33 +594,55 @@ class NovelRepository private constructor(context: Context) {
             }
         }
     }
-    private suspend fun collectCompleteIndex(novel: Novel, refresh: Boolean): NovelChapterIndex = withContext(Dispatchers.IO) {
+    private suspend fun collectCompleteIndex(novel: Novel, refresh: Boolean, maxPages: Int): NovelChapterIndex = withContext(Dispatchers.IO) {
         ready.await()
-        val before = indexSnapshot(novel)
         indexLocks.getOrPut(novel.id) { Mutex() }.withLock {
             val old = indexSnapshot(novel)
-            // A refresh already completed while this caller waited: share it rather than refetch.
-            if (old?.complete == true && ((!refresh && System.currentTimeMillis() - old.updatedAt < 21_600_000) || old.updatedAt != before?.updatedAt)) {
-                return@withLock old
+            val key = indexKey(novel)
+            val checkpointPath = indexPath(novel).removeSuffix(".json") + ".refresh.json"
+            val pending = runCatching {
+                indexCache.read(checkpointPath)?.let { json.decodeFromString<NovelChapterIndex>(it) }
+                    ?.takeIf { it.editionId == novel.id && it.parserKey == key && it.updatedAt > (old?.updatedAt ?: 0) }
+            }.getOrNull()
+            if (old?.complete == true && old.parserKey == key && pending == null && !refresh &&
+                System.currentTimeMillis() - old.updatedAt < 21_600_000) return@withLock old
+            val preserve = old != null && (old.complete || old.parserKey != key || pending != null)
+            // Retry resumes a partial traversal; refresh only restarts a finished index.
+            val initial = pending ?: old?.takeIf { !it.complete && it.parserKey == key }
+                ?: NovelChapterIndex(novel.id, parserKey = key)
+            var latest = initial
+            suspend fun checkpoint(index: NovelChapterIndex) {
+                if (preserve && index.complete) {
+                    val ids = index.chapters.mapTo(HashSet()) { it.id }
+                    check(old!!.chapters.all { it.id in ids }) { "Chapter index unexpectedly decreased" }
+                }
+                latest = index
+                if (preserve && !index.complete) indexCache.write(checkpointPath, json.encodeToString(index))
+                else { cacheIndex(index); persistIndex(novel, index) }
             }
-            val initial = if (!refresh && old?.complete == false) old else NovelChapterIndex(novel.id)
             try {
-                val result = NovelChapterIndexer.collect(source(novel.sourceId), novel, initial) { index ->
-                    // Keep a complete last-known-good index during refresh, including offline failures.
-                    if (old?.complete != true || index.complete) {
-                        cacheIndex(index)
-                        if (index.complete || index.fetchedPages.size % 4 == 0) persistIndex(novel, index)
+                suspend fun collect() = NovelChapterIndexer.collect(source(novel.sourceId), novel, initial, maxPages = maxPages) { index ->
+                    if (index.complete && preserve) {
+                        val ids = index.chapters.mapTo(HashSet()) { it.id }
+                        check(old!!.chapters.all { it.id in ids }) { "Chapter index unexpectedly decreased" }
                     }
+                    latest = index
+                    if (!preserve || index.complete) cacheIndex(index)
+                    if (index.complete || index.fetchedPages.size == 1 || index.fetchedPages.size % 4 == 0) checkpoint(index)
                 }
-                updateEvidence(novel, NovelEditionEvidence(true, result.availableCount, catalog.value.evidence[novel.id]?.accessWorks, result.updatedAt))
-                result
+                val result = collect()
+                checkpoint(result)
+                if (result.complete) updateEvidence(novel, NovelEditionEvidence(true, result.availableCount, catalog.value.evidence[novel.id]?.accessWorks, result.updatedAt))
+                if (preserve && !result.complete) old!!.copy(complete = false, nextPage = result.nextPage, declaredTotal = result.declaredTotal) else result
             } catch (c: CancellationException) {
-                indexSnapshot(novel)?.let { withContext(NonCancellable) { persistIndex(novel, it) } }; throw c
+                withContext(NonCancellable) { checkpoint(latest) }; throw c
             } catch (e: Exception) {
-                indexSnapshot(novel)?.let { persistIndex(novel, it) }
-                if (old?.complete == true) {
-                    android.util.Log.w("MangaroNovels", "Index refresh failed; retaining verified cached chapters", e)
-                }
+                // Never overwrite the prior usable index with an unfinished refresh.
+                if (e.message == "Chapter total changed during pagination") {
+                    // A changing source invalidates the continuation, not the usable chapters.
+                    indexCache.write(checkpointPath, json.encodeToString(NovelChapterIndex(novel.id,
+                        parserKey = key, updatedAt = System.currentTimeMillis())))
+                } else checkpoint(latest)
                 throw e
             }
         }
