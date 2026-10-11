@@ -1,11 +1,26 @@
 package eu.kanade.tachiyomi.source.internal.hijala
 
 import eu.kanade.tachiyomi.source.model.SManga
+import eu.kanade.tachiyomi.source.model.ChapterFetchCompleteness
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
+import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import okhttp3.OkHttpClient
+import okhttp3.Protocol
+import okhttp3.Response
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.jsoup.Jsoup
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
+import java.io.IOException
 
 class HijalaParserTest {
 
@@ -133,6 +148,122 @@ class HijalaParserTest {
     @Test
     fun `search retains WordPress path pagination independently of catalogue query pagination`() {
         hijala.searchMangaRequest(2, "ma", eu.kanade.tachiyomi.source.model.FilterList()).url.toString() shouldBe "https://hijala.com/page/2/?s=ma"
+    }
+
+    private fun capturedDocument(file: String, url: String) = Jsoup.parse(
+        javaClass.getResource("/hijala/$file")!!.readText(), url,
+    )
+
+    @Test
+    fun `official full index verifies all 203 captured legacy chapter identities`() {
+        val manga = SManga.create().apply { url = "/the-bully-in-charge/"; title = "The Bully In Charge" }
+        val chapters = hijala.parseChapters(capturedDocument("bully-legacy-chapters.html", hijala.baseUrl + manga.url))
+        chapters.size shouldBe 203
+        chapters.map { it.chapter_number }.toSet().size shouldBe 203
+        chapters.first().url shouldBe "/the-bully-in-charge-202/"
+        chapters.last().url shouldBe "/the-bully-in-charge-00/"
+        chapters.map { it.chapter_number } shouldBe chapters.map { it.chapter_number }.sortedDescending()
+        hijala.verifyOfficialChapterIndex(
+            capturedDocument("bully-official-index.html", "https://hijala.org/series/the-bully-in-charge"), manga, chapters,
+        ) shouldBe 203
+    }
+
+    @Test
+    fun `official index detects a missing legacy chapter and wrong chapter number`() {
+        val manga = SManga.create().apply { url = "/the-bully-in-charge/"; title = "The Bully In Charge" }
+        val chapters = hijala.parseChapters(capturedDocument("bully-legacy-chapters.html", hijala.baseUrl + manga.url))
+        val official = capturedDocument("bully-official-index.html", "https://hijala.org/series/the-bully-in-charge")
+        assertThrows<IOException> { hijala.verifyOfficialChapterIndex(official, manga, chapters.dropLast(1)) }
+        chapters.last().chapter_number = 999f
+        assertThrows<IOException> { hijala.verifyOfficialChapterIndex(official, manga, chapters) }
+    }
+
+    @Test
+    fun `redirect or different title cannot verify chapter completeness`() {
+        val manga = SManga.create().apply { url = "/the-bully-in-charge/"; title = "The Bully In Charge" }
+        val redirected = capturedDocument("bully-official-index.html", "https://hijala.org/")
+        hijala.verifyOfficialChapterIndex(redirected, manga, emptyList()) shouldBe null
+        manga.title = "Different work"
+        hijala.verifyOfficialChapterIndex(
+            capturedDocument("bully-official-index.html", "https://hijala.org/series/the-bully-in-charge"), manga, emptyList(),
+        ) shouldBe null
+    }
+
+    private fun officialDocument(transform: (JsonObject) -> JsonObject = { it }): org.jsoup.nodes.Document {
+        val document = capturedDocument("bully-official-index.html", "https://hijala.org/series/the-bully-in-charge")
+        val script = document.selectFirst("script")!!
+        val push = Json.parseToJsonElement(script.data().removePrefix("self.__next_f.push(").substringBeforeLast(')')).jsonArray
+        val payload = push[1].jsonPrimitive.content
+        val frame = Json.parseToJsonElement(payload.substringAfter(':').trim()).jsonArray
+        val model = transform(frame[3].jsonObject.getValue("manga").jsonObject)
+        val changed = JsonArray(frame.take(3) + JsonObject(mapOf("manga" to model)))
+        script.html("self.__next_f.push(${JsonArray(listOf(push[0], JsonPrimitive(payload.substringBefore(':') + ":" + changed + "\n")))})")
+        return document
+    }
+
+    @Test
+    fun `truncated official index duplicate IDs and wrong or absent totals cannot certify chapters`() {
+        val manga = SManga.create().apply { url = "/the-bully-in-charge/"; title = "The Bully In Charge" }
+        val chapters = hijala.parseChapters(capturedDocument("bully-legacy-chapters.html", hijala.baseUrl + manga.url))
+        val invalidIndexes = listOf(
+            officialDocument { JsonObject(it + ("chapters" to JsonArray(it.getValue("chapters").jsonArray.dropLast(1)))) },
+            officialDocument {
+                val rows = it.getValue("chapters").jsonArray
+                JsonObject(it + ("chapters" to JsonArray(listOf(rows[1]) + rows.drop(1))))
+            },
+            officialDocument { JsonObject(it + ("totalChapters" to JsonPrimitive(204))) },
+            officialDocument { JsonObject(it - "totalChapters") },
+        )
+        invalidIndexes.forEach { official ->
+            assertThrows<IOException> { hijala.verifyOfficialChapterIndex(official, manga, chapters) }
+        }
+    }
+
+    @Test
+    fun `verification uses the supplied total rather than a fixed chapter count`() {
+        val manga = SManga.create().apply { url = "/the-bully-in-charge/"; title = "The Bully In Charge" }
+        val chapters = hijala.parseChapters(capturedDocument("bully-legacy-chapters.html", hijala.baseUrl + manga.url)).take(2)
+        val official = officialDocument {
+            val numbers = chapters.map { chapter -> chapter.chapter_number }
+            val rows = it.getValue("chapters").jsonArray.filter { row -> row.jsonObject.getValue("num").jsonPrimitive.content.toFloat() in numbers }
+            JsonObject(it + mapOf("totalChapters" to JsonPrimitive(rows.size), "chapters" to JsonArray(rows)))
+        }
+        hijala.verifyOfficialChapterIndex(official, manga, chapters) shouldBe 2
+    }
+
+    @Test
+    fun `update marks matching evidence complete and blocked or inconsistent evidence degraded`() = runTest {
+        val legacy = capturedDocument("bully-legacy-chapters.html", hijala.baseUrl + "/the-bully-in-charge/")
+        legacy.body().prepend("<h1 class='entry-title'>The Bully In Charge</h1>")
+        val truncated = legacy.clone().apply { select("#chapterlist li").last()!!.remove() }
+        val invalidOfficial = officialDocument { JsonObject(it + ("chapters" to JsonPrimitive("invalid"))) }
+        // Fixture-backed transport tests; these do not assert live website availability.
+        val cases = listOf(
+            Triple(legacy, officialDocument().outerHtml(), ChapterFetchCompleteness.COMPLETE),
+            Triple(truncated, officialDocument().outerHtml(), ChapterFetchCompleteness.DEGRADED),
+            Triple(legacy, invalidOfficial.outerHtml(), ChapterFetchCompleteness.DEGRADED),
+            Triple(legacy, "<title>Just a moment</title><div id='challenge-form'>Verify</div>", ChapterFetchCompleteness.DEGRADED),
+            Triple(legacy, "<h1>Unverifiable response</h1>", ChapterFetchCompleteness.DEGRADED),
+            Triple(legacy, null, ChapterFetchCompleteness.DEGRADED),
+        )
+        for ((details, official, expected) in cases) {
+            val client = OkHttpClient.Builder().addInterceptor { chain ->
+                val request = chain.request()
+                request.header("Cache-Control") shouldBe "no-cache"
+                val body = when (request.url.host) {
+                    "hijala.com" -> details.outerHtml()
+                    "hijala.org" -> official ?: throw IOException("Official site unavailable")
+                    else -> error("Unexpected request")
+                }
+                Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(200).message("OK")
+                    .body(body.toResponseBody()).build()
+            }.build()
+            val manga = SManga.create().apply { url = "/the-bully-in-charge/"; title = "The Bully In Charge" }
+            val result = Hijala(client).getMangaUpdate(manga, emptyList(), false, true)
+            result.chapterCompleteness shouldBe expected
+            result.declaredChapterCount shouldBe if (expected == ChapterFetchCompleteness.COMPLETE) 203 else null
+            result.chapters.map { it.url } shouldBe hijala.parseChapters(details).map { it.url }
+        }
     }
 
 }

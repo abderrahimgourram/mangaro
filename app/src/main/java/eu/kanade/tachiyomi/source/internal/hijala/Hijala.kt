@@ -15,6 +15,11 @@ import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.SMangaUpdate
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.intOrNull
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Headers
 import okhttp3.Interceptor
@@ -215,11 +220,58 @@ class Hijala(
             chapters
         }
 
-        val declared = HtmlMangaIntegrity.count(document)
+        val declared = HtmlMangaIntegrity.count(document) ?: if (fetchChapters) {
+            // The legacy site omits totals. The official site named in its reader
+            // publishes a total and the entire chapter index in server-rendered data.
+            val slug = manga.url.substringBefore('?').substringBefore('#').trim('/').removePrefix("manga/")
+            try {
+                client.newCall(GET("https://hijala.org/series/$slug", headers, cache = okhttp3.CacheControl.FORCE_NETWORK))
+                    .awaitSuccess()
+                    .use { verifyOfficialChapterIndex(it.asJsoup(), updatedManga, updatedChapters) }
+            } catch (_: IOException) {
+                null // Unavailable or inconsistent evidence cannot certify completeness.
+            } catch (_: IllegalArgumentException) {
+                null // Malformed server-rendered data is also unverifiable.
+            }
+        } else null
         if (fetchChapters && declared != null && declared != updatedChapters.size) throw IOException("Hijala chapter total mismatch")
         return SMangaUpdate(updatedManga, updatedChapters,
             if (fetchChapters && declared == updatedChapters.size) eu.kanade.tachiyomi.source.model.ChapterFetchCompleteness.COMPLETE
             else eu.kanade.tachiyomi.source.model.ChapterFetchCompleteness.DEGRADED).withDeclaredChapterCount(if (fetchChapters) declared else null)
+    }
+
+    internal fun verifyOfficialChapterIndex(document: Document, manga: SManga, chapters: List<SChapter>): Int? {
+        SourceValidationUtil.checkCloudflareOrError(document)
+        val slug = manga.url.substringBefore('?').substringBefore('#').trim('/').removePrefix("manga/")
+        val location = document.location().toHttpUrl()
+        if (location.host != "hijala.org" || location.encodedPath.trim('/') != "series/$slug") return null
+        val payload = document.select("script").mapNotNull { script ->
+            val data = script.data()
+            if (!data.startsWith("self.__next_f.push(")) return@mapNotNull null
+            val argument = data.removePrefix("self.__next_f.push(").substringBeforeLast(')')
+            runCatching { Json.parseToJsonElement(argument).jsonArray.getOrNull(1)?.jsonPrimitive?.content }.getOrNull()
+        }.joinToString("")
+        val models = payload.lineSequence().mapNotNull { line ->
+            val value = line.substringAfter(':', "")
+            if (!value.startsWith('[')) return@mapNotNull null
+            runCatching { Json.parseToJsonElement(value).jsonArray.getOrNull(3)?.jsonObject?.get("manga")?.jsonObject }.getOrNull()
+        }.filter { it["slug"]?.jsonPrimitive?.content == slug && it["title"]?.jsonPrimitive?.content == manga.title }.toList()
+        if (models.isEmpty()) return null
+        if (models.size != 1) throw IOException("Hijala conflicting official series indexes")
+        val model = models.single()
+        val total = model["totalChapters"]?.jsonPrimitive?.intOrNull?.takeIf { it >= 0 }
+            ?: throw IOException("Hijala official chapter total missing")
+        val rows = model["chapters"]?.jsonArray ?: throw IOException("Hijala official chapter index missing")
+        val ids = rows.map { it.jsonObject["id"]?.jsonPrimitive?.intOrNull?.takeIf { id -> id > 0 }
+            ?: throw IOException("Hijala official chapter ID missing") }
+        val numbers = rows.map { it.jsonObject["num"]?.jsonPrimitive?.content?.toFloatOrNull()?.takeIf { number -> number.isFinite() && number >= 0 }
+            ?: throw IOException("Hijala official chapter number missing") }
+        if (rows.size != total || ids.toSet().size != total) throw IOException("Hijala incomplete official chapter index")
+        // Compare published numbers as a multiset, never manufacture or merge URLs.
+        if (chapters.size != total || numbers.sorted() != chapters.map { it.chapter_number }.sorted()) {
+            throw IOException("Hijala missing chapters: official total $total, legacy list ${chapters.size}")
+        }
+        return total
     }
 
     fun parseMangaDetails(document: Document, manga: SManga): SManga {
