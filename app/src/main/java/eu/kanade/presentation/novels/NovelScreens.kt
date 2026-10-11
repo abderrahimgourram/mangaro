@@ -39,6 +39,8 @@ import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import coil3.compose.AsyncImage
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInWindow
 import eu.kanade.presentation.theme.MangaroDesignSystem as Design
 import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.novels.*
@@ -82,10 +84,40 @@ internal fun NovelShell(title: String, actions: @Composable RowScope.() -> Unit 
 
 @Composable
 internal fun NovelCover(novel: Novel, modifier: Modifier) {
-    val loader=NovelRepository.get(LocalContext.current).covers
-    Box(modifier.clip(RoundedCornerShape(14.dp)).background(Design.SurfaceHigh),contentAlignment=Alignment.Center) {
+    val context = LocalContext.current
+    val loader=NovelRepository.get(context).covers
+    val owner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val view = androidx.compose.ui.platform.LocalView.current
+    val motion = android.provider.Settings.Global.getFloat(context.contentResolver,
+        android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) > 0f
+    var animation by remember(novel.cover) { mutableStateOf<android.graphics.drawable.Animatable?>(null) }
+    var visible by remember(novel.cover) { mutableStateOf(false) }
+    DisposableEffect(owner, animation, motion, visible) {
+        val current = animation
+        fun update() {
+            if (motion && visible && owner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) current?.start()
+            else current?.stop()
+        }
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, _ -> update() }
+        owner.lifecycle.addObserver(observer); update()
+        onDispose { owner.lifecycle.removeObserver(observer); current?.stop() }
+    }
+    BoxWithConstraints(modifier.onGloballyPositioned { coordinates ->
+        val bounds = coordinates.boundsInWindow()
+        visible = bounds.width > 0 && bounds.height > 0 && bounds.bottom > 0 && bounds.right > 0 &&
+            bounds.top < view.height && bounds.left < view.width
+    }.clip(RoundedCornerShape(14.dp)).background(Design.SurfaceHigh),contentAlignment=Alignment.Center) {
         Icon(Icons.Outlined.MenuBook,null,Modifier.size(40.dp),tint=Design.GoldPrimary.copy(alpha=.5f))
-        novel.cover?.let { AsyncImage(it,null,imageLoader=loader,modifier=Modifier.fillMaxSize(),contentScale=ContentScale.Crop) }
+        val width = with(density) { maxWidth.toPx() }.toInt().coerceIn(1, 960)
+        val height = with(density) { maxHeight.toPx() }.toInt().coerceIn(1, 1280)
+        val request = remember(novel.cover, width, height, motion, context) {
+            novel.cover?.let { url -> coil3.request.ImageRequest.Builder(context).data(url)
+                .size(width, height).diskCacheKey(url).memoryCacheKey("$url|motion=$motion")
+                .apply { if (!motion) decoderFactory(coil3.decode.BitmapFactoryDecoder.Factory()) }.build() }
+        }
+        request?.let { AsyncImage(it,null,imageLoader=loader,modifier=Modifier.fillMaxSize(),contentScale=ContentScale.Crop,
+            onSuccess = { state -> animation = (state.result.image as? coil3.DrawableImage)?.drawable as? android.graphics.drawable.Animatable }) }
     }
 }
 

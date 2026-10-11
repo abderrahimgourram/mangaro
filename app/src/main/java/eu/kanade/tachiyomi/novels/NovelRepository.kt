@@ -105,12 +105,23 @@ class NovelRepository private constructor(context: Context) {
             .followRedirects(false).followSslRedirects(false)
             .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS).callTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
             .addInterceptor { chain ->
-                if (!NovelHttp.allowed(chain.request().url.toString())) throw java.io.IOException("Unapproved novel cover host")
-                chain.proceed(chain.request())
+                var request = chain.request().newBuilder()
+                    .header("User-Agent", "MangaroNovelPrototype/0.1").header("Accept", "image/*").build()
+                repeat(5) {
+                    if (!NovelHttp.allowed(request.url.toString())) throw java.io.IOException("Unapproved novel cover host")
+                    val response = chain.proceed(request)
+                    if (response.code !in setOf(301, 302, 303, 307, 308)) return@addInterceptor response
+                    val next = response.header("Location")?.let { request.url.resolve(it) }
+                    response.close()
+                    if (next == null || next.host != request.url.host || !NovelHttp.allowed(next.toString()))
+                        throw java.io.IOException("Unapproved novel cover redirect")
+                    request = request.newBuilder().url(next).build()
+                }
+                throw java.io.IOException("Novel cover redirect limit")
             }.build()
         ImageLoader.Builder(app).components { add(OkHttpNetworkFetcherFactory(callFactory = { client })) }
-            .memoryCache { MemoryCache.Builder().maxSizeBytes(8L * 1024 * 1024).build() }
-            .diskCache { DiskCache.Builder().directory(File(app.cacheDir, "novels-covers").toOkioPath()).maxSizeBytes(16L * 1024 * 1024).build() }.build()
+            .memoryCache { MemoryCache.Builder().maxSizeBytes(16L * 1024 * 1024).build() }
+            .diskCache { DiskCache.Builder().directory(File(app.cacheDir, "novels-covers").toOkioPath()).maxSizeBytes(64L * 1024 * 1024).build() }.build()
     }
     private val chapterNetwork by lazy { NovelHttp() }
     internal suspend fun illustrationBytes(url: String): ByteArray = withContext(Dispatchers.IO) {

@@ -86,6 +86,8 @@ android {
 
         testInstrumentationRunner = if (providers.gradleProperty("adsBoundaryAudit").orNull == "true") {
             "eu.kanade.tachiyomi.data.ads.NativeBoundaryInstrumentation"
+        } else if (providers.gradleProperty("novelPerformanceAudit").orNull == "true") {
+            "eu.kanade.tachiyomi.novels.NovelPerformanceInstrumentation"
         } else if (providers.gradleProperty("sourceAudit").orNull == "true") {
             "eu.kanade.tachiyomi.source.audit.SourceAuditInstrumentation"
         } else {
