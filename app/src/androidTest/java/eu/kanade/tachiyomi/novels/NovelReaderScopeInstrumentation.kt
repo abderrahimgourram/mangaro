@@ -22,16 +22,65 @@ import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.addFactory
 import uy.kohesive.injekt.api.get
 
-/** Test account is restored after UI acceptance; no login, server XP writes or rule updates. */
+/** Test account and isolated rule overrides are restored; no login, server XP writes or production cache writes. */
 class NovelReaderScopeInstrumentation : Instrumentation() {
-    override fun onCreate(arguments: Bundle?) { super.onCreate(arguments); start() }
+    private var signedStage: String? = null
+    override fun onCreate(arguments: Bundle?) { signedStage = arguments?.getString("signedStage"); super.onCreate(arguments); start() }
     override fun onStart() {
         val observations = mutableListOf<String>()
         var passed = 0
         var code = 0
         var phase = "lifecycle"
+        var isolatedRules: java.io.File? = null
         fun record(message: String) { observations += message; println(message) }
         try {
+            signedStage?.let { run ->
+                phase = "pinned-stage"
+                check(run.matches(Regex("[0-9]+")))
+                val input = java.io.File(targetContext.cacheDir, "mangaro-novel-staging-$run")
+                fun read(name: String, limit: Int): ByteArray = java.io.File(input, name).let { file ->
+                    check(file.canonicalFile.parentFile == input.canonicalFile && file.length() in 1..limit.toLong())
+                    file.readBytes()
+                }
+                val manifest = read("manifest.json", 8192)
+                val envelope = read("envelope.json", 96 * 1024)
+                val key = targetContext.assets.open("novels/rules-public.der").use { it.readBytes() }
+                val payload = NovelRuleManifest.verify(manifest, key).verifyEnvelope(envelope, key)
+                val decoded = NovelRules.decode(payload)
+                check(decoded.mode == "PARTIAL" && decoded.selectors.keys == setOf("novel.kolnovel", "novel.cenele", "novel.seanovel"))
+                val directory = java.io.File.createTempFile("novel-signed-stage-", "", targetContext.cacheDir).apply { delete(); check(mkdir()) }
+                isolatedRules = directory
+                val isolated = object : android.content.ContextWrapper(targetContext) {
+                    override fun getApplicationContext(): android.content.Context = this
+                    override fun getFilesDir(): java.io.File = directory
+                }
+                val store = NovelRuleStore(isolated)
+                store.load(); val base = NovelRules.snapshot()
+                store.install(manifest, envelope)
+                val accepted = NovelRules.snapshot()
+                check(accepted.keys == NovelRules.domains.keys && accepted["novel.sunovels"] == base["novel.sunovels"])
+                decoded.selectors.forEach { (id, selectors) -> check(accepted[id] == selectors) }
+                passed++; record("PASS productionPinnedPartial revision=${decoded.revision} sources=3 effectiveSources=4 sunovelsUnchanged=true")
+                record("EVIDENCE manifestSha256=${NovelRuleSignature.sha256(manifest)} envelopeSha256=${NovelRuleSignature.sha256(envelope)} keySha256=${NovelRuleSignature.sha256(key)}")
+                val damaged = envelope.copyOf().also { it[it.size / 2] = (it[it.size / 2].toInt() xor 1).toByte() }
+                check(runCatching { store.install(manifest, damaged) }.isFailure)
+                check(runCatching { store.install(manifest.copyOf(30), envelope) }.isFailure)
+                val fixtureKey = context.assets.open("novels-partial/public.der").use { it.readBytes() }
+                check(runCatching { NovelRuleManifest.verify(manifest, fixtureKey) }.isFailure)
+                val legacy = targetContext.assets.open("novels/rules-envelope.json").use { it.readBytes() }
+                check(runCatching { store.install(legacy) }.isFailure)
+                check(NovelRules.snapshot() == accepted)
+                passed++; record("PASS pinnedTamperingWrongKeyAndDowngradeRejectedAtomically")
+                val atomic = android.util.AtomicFile(java.io.File(directory, "novels-local/rules/updates-v2.json"))
+                val stream = atomic.startWrite(); stream.write(byteArrayOf(1, 2, 3)); atomic.failWrite(stream)
+                NovelRuleStore(isolated).load(); check(NovelRules.snapshot() == accepted)
+                var writeFailure: Throwable? = null
+                val writer = Thread { try { store.install(manifest, envelope) } catch (error: Throwable) { writeFailure = error } }.apply { start() }
+                repeat(500) { check(NovelRules.snapshot() == accepted) }
+                writer.join()
+                writeFailure?.let { throw it }
+                passed++; record("PASS pinnedCacheInterruptionRestartAndConcurrentReads")
+            }
             runBlocking {
                 val activity = startActivitySync(android.content.Intent(targetContext, eu.kanade.tachiyomi.ui.main.MainActivity::class.java)
                     .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -210,6 +259,8 @@ class NovelReaderScopeInstrumentation : Instrumentation() {
             }
         } catch (error: Throwable) {
             code = 1; record("FAIL phase=$phase ${error.javaClass.simpleName}: ${error.message?.take(140)}")
+        } finally {
+            isolatedRules?.let { NovelRuleStore(targetContext).load(); it.deleteRecursively() }
         }
         record("TOTAL passed=$passed failed=${if (code == 0) 0 else 1}")
         finish(code, Bundle().apply { putString("stream", observations.joinToString("\n")) })
