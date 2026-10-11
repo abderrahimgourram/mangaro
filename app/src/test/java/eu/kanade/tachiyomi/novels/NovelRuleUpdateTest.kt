@@ -37,8 +37,17 @@ class NovelRuleUpdateTest {
     fun actualPublicGitHubArtifactsAreCompatible() {
         val directory = Path.of(System.getenv("MANGARO_NOVEL_UPDATE_PROOF_DIR"))
         val manifest = NovelRuleManifest.verify(Files.readAllBytes(directory.resolve("manifest.json")), key)
-        val payload = manifest.verifyEnvelope(Files.readAllBytes(directory.resolve("rules-${manifest.revision}.json")), key)
-        NovelRules.validate(payload).second.size shouldBe 4
+        val envelope = Files.readAllBytes(directory.resolve("rules-${manifest.revision}.json"))
+        val payload = manifest.verifyEnvelope(envelope, key)
+        val decoded = NovelRules.decode(payload)
+        val bundled = Files.readAllBytes(assets.resolve("rules-envelope.json"))
+        val base = NovelRuleSnapshot(key, bundled)
+        val updated = base.updated(envelope)
+        updated.effective.keys shouldBe NovelRules.domains.keys
+        decoded.selectors.forEach { (id, selectors) -> updated.effective[id] shouldBe selectors }
+        (NovelRules.domains.keys - decoded.selectors.keys).forEach { id ->
+            updated.effective[id] shouldBe base.effective[id]
+        }
         println("Public novel rules verified by Android: engine=${manifest.engineVersion} revision=${manifest.revision}")
     }
 }
