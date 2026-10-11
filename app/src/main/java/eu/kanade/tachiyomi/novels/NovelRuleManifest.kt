@@ -9,6 +9,7 @@ internal data class NovelRuleManifest(val engineVersion: Int, val revision: Int,
         require(NovelRuleSignature.sha256(envelope) == sha256) { "Envelope hash mismatch" }
         val payload = NovelRuleProtocol.verifyEnvelope(envelope, key)
         val root = Json.parseToJsonElement(payload.decodeToString()).jsonObject
+        require(root["schemaVersion"]!!.jsonPrimitive.int == if(engineVersion==3) 2 else 1)
         require(root["engineVersion"]!!.jsonPrimitive.int == engineVersion && NovelRules.validate(payload).first == revision) {
             "Signed manifest and rules disagree"
         }
@@ -22,12 +23,12 @@ internal data class NovelRuleManifest(val engineVersion: Int, val revision: Int,
             require(data.keys == setOf("schemaVersion", "engineVersion", "revision", "envelopePath", "sha256", "signature"))
             fun number(name: String): Int = data[name]!!.jsonPrimitive.let { require(!it.isString); it.int }
             fun text(name: String): String = data[name]!!.jsonPrimitive.let { require(it.isString); it.content }
-            require(number("schemaVersion") == 1)
-            val engine = number("engineVersion").also { require(it in 1..2) }
+            val schema=number("schemaVersion").also {require(it in 1..2)}
+            val engine = number("engineVersion").also {require(it in if(schema==1) 1..2 else 3..3)}
             val revision = number("revision").also { require(it > 0) }
-            val path = text("envelopePath").also { require(it == "published/rules-$revision.json") }
+            val path = text("envelopePath").also {require(it == "published/${if(schema==2) "v2/" else ""}rules-$revision.json")}
             val hash = text("sha256").also { require(Regex("[0-9a-f]{64}").matches(it)) }
-            val signed = "MangaroNovelManifestV1\n1\n$engine\n$revision\n$path\n$hash\n".toByteArray(Charsets.US_ASCII)
+            val signed = "MangaroNovelManifestV$schema\n$schema\n$engine\n$revision\n$path\n$hash\n".toByteArray(Charsets.US_ASCII)
             require(NovelRuleSignature.verify(signed, text("signature"), key)) { "Invalid manifest signature" }
             return NovelRuleManifest(engine, revision, path, hash)
         }

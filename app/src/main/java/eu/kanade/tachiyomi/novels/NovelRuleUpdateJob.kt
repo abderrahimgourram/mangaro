@@ -18,10 +18,11 @@ class NovelRuleUpdateJob(context: Context, parameters: WorkerParameters) : Corou
         try {
             val client=OkHttpClient.Builder().cookieJar(okhttp3.CookieJar.NO_COOKIES).followRedirects(false)
                 .connectTimeout(10,TimeUnit.SECONDS).callTimeout(20,TimeUnit.SECONDS).build()
-            suspend fun get(path: String,max: Int): ByteArray {
+            suspend fun get(path: String,max: Int,optional: Boolean=false): ByteArray? {
                 currentCoroutineContext().ensureActive()
                 require(path.startsWith(ROOT) && path.toHttpUrl().host=="raw.githubusercontent.com")
                 client.newCall(Request.Builder().url(path).build()).execute().use { response ->
+                    if(optional && response.code in listOf(404,410)) return null
                     check(response.isSuccessful)
                     response.body.byteStream().use { stream ->
                         val output=java.io.ByteArrayOutputStream()
@@ -32,11 +33,13 @@ class NovelRuleUpdateJob(context: Context, parameters: WorkerParameters) : Corou
                 }
             }
             val key=applicationContext.assets.open("novels/rules-public.der").use {it.readBytes()}
-            val manifest=NovelRuleManifest.verify(get(ROOT+"published/manifest.json",8192),key)
-            val envelope=get(ROOT+manifest.envelopePath,96*1024)
+            val manifestBytes=get(ROOT+"published/v2/manifest.json",8192,true)
+                ?: get(ROOT+"published/manifest.json",8192)!!
+            val manifest=NovelRuleManifest.verify(manifestBytes,key)
+            val envelope=get(ROOT+manifest.envelopePath,96*1024)!!
             manifest.verifyEnvelope(envelope,key)
             currentCoroutineContext().ensureActive()
-            NovelRuleStore(applicationContext).apply {load();install(envelope)}
+            NovelRuleStore(applicationContext).install(manifestBytes,envelope)
             Result.success()
         } catch(e: Exception) {
             if(e is kotlinx.coroutines.CancellationException) throw e
