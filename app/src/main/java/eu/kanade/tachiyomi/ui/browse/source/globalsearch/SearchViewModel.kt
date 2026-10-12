@@ -7,7 +7,9 @@ import androidx.lifecycle.viewModelScope
 import eu.kanade.domain.source.service.SourcePreferences
 import eu.kanade.tachiyomi.extension.ExtensionManager
 import eu.kanade.tachiyomi.source.Source
-import eu.kanade.tachiyomi.source.internal.util.DiscoveryChapterGate
+import eu.kanade.tachiyomi.search.MangaSearchEvidence
+import eu.kanade.tachiyomi.search.SearchWorkSelection
+import eu.kanade.tachiyomi.search.SearchWorkIdentity
 import eu.kanade.tachiyomi.ui.home.PreferredMangaVariants
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.Dispatchers
@@ -48,6 +50,7 @@ abstract class SearchViewModel(
     private val networkToLocalManga: NetworkToLocalManga = Injekt.get(),
     private val getManga: GetManga = Injekt.get(),
     private val preferences: SourcePreferences = Injekt.get(),
+    chapterLookup: suspend (Long) -> List<tachiyomi.domain.chapter.model.Chapter> = { id -> Injekt.get<tachiyomi.domain.chapter.interactor.GetChaptersByMangaId>().await(id) },
 ) : StateViewModel<SearchViewModel.State>(initialState) {
 
     private val sourceSlots = Semaphore(4)
@@ -56,8 +59,43 @@ abstract class SearchViewModel(
     private var searchJob: Job? = null
     private var debounceJob: Job? = null
     private var paginationJob: Job? = null
+    private var enrichmentJob: Job? = null
+    private var workSelection = SearchWorkSelection()
+    internal fun workGroups() = workSelection.snapshot()
+    private val searchEvidence = MangaSearchEvidence(getManga, chapterLookup)
+    private fun rankResults(items: Map<Source, SearchItemResult>, order: Map<Long, Int>, relevance: SearchRelevance, selector: SearchWorkSelection): List<RankedSearchResult> {
+        val raw = relevance.rank(items, order)
+        if (!liveSearch || extensionFilter != null) return raw
+        val groups = selector.select(raw.map { searchEvidence.candidate(it, order[it.source.id] ?: Int.MAX_VALUE) })
+        val byId = raw.associateBy { searchEvidence.key(it.manga) }
+        return groups.mapNotNull { group -> byId[group.winner.id]?.copy(workKey = group.key,
+            verifiedDistinctChapters = group.winner.chapters.distinct, indexComplete = group.winner.chapters.complete,
+            provisional = group.provisional && group.members.size > 1) }
+    }
+    private fun enrichResults(request: Long = generation.get()) {
+        if (!liveSearch || extensionFilter != null || state.value.isSearching) return
+        enrichmentJob?.cancel()
+        val selector = workSelection
+        enrichmentJob = viewModelScope.launchIO {
+            val snapshot = state.value
+            if (snapshot.resultQuery != snapshot.activeQuery) return@launchIO
+            val order = getSelectedSources().mapIndexed { i, s -> s.id to i }.toMap()
+            val raw = SearchRelevance(snapshot.activeQuery.orEmpty()).rank(snapshot.items, order)
+            if (raw.isEmpty()) return@launchIO
+            val targets = withContext(Dispatchers.Default) { SearchWorkIdentity.enrichmentCandidates(raw.map { searchEvidence.candidate(it, order[it.source.id] ?: Int.MAX_VALUE) }) }
+            searchEvidence.refresh(raw.filter { searchEvidence.key(it.manga) in targets })
+            resultMutex.withLock {
+                if (!isActive || generation.get() != request || state.value.activeQuery != snapshot.activeQuery) return@withLock
+                val ranked = withContext(Dispatchers.Default) { rankResults(state.value.items, order, SearchRelevance(snapshot.activeQuery.orEmpty()), selector) }
+                mutableState.update { if (generation.get() == request) it.copy(rankedResults = ranked) else it }
+                synchronized(queryCache) { queryCache.entries.forEach { (_, value) ->
+                    if (value.items == state.value.items) { value.ranked = ranked; value.groups = selector.snapshot() }
+                } }
+            }
+        }
+    }
     private data class CacheKey(val query: String, val filter: SourceFilter, val sources: List<Long>)
-    private data class CachedQuery(val at: Long, val items: Map<Source, SearchItemResult>, val ranked: List<RankedSearchResult>, val pages: Map<Source, SearchPage>)
+    private data class CachedQuery(val at: Long, val items: Map<Source, SearchItemResult>, var ranked: List<RankedSearchResult>, val pages: Map<Source, SearchPage>, var groups: List<eu.kanade.tachiyomi.search.SearchWorkGroup>)
     private val queryCache = LinkedHashMap<CacheKey, CachedQuery>(12, 0.75f, true)
     private fun cacheKey(query: String) = CacheKey(query.trim(), state.value.sourceFilter, getSelectedSources().map { it.id })
     private fun cached(key: CacheKey): CachedQuery? = synchronized(queryCache) {
@@ -88,6 +126,7 @@ abstract class SearchViewModel(
                 eu.kanade.tachiyomi.ui.home.PreferredMangaVariants.changes,
             ).collectLatest {
                 mutableState.update { current -> current.copy(healthRevision = current.healthRevision + 1) }
+                enrichResults()
             }
         }
         viewModelScope.launch {
@@ -129,8 +168,12 @@ abstract class SearchViewModel(
         searchJob?.cancel()
         debounceJob?.cancel()
         paginationJob?.cancel()
+        enrichmentJob?.cancel()
+        workSelection = SearchWorkSelection()
+        searchEvidence.resetBudget()
         lastQuery = null
         val recent = if (liveSearch && !query.isNullOrBlank()) cached(cacheKey(query)) else null
+        recent?.let { workSelection.restore(it.groups) }
         mutableState.update { current ->
             when {
                 query.isNullOrBlank() -> current.copy(searchQuery = query, items = emptyMap(), rankedResults = emptyList(), resultQuery = null, activeQuery = null, isSearching = false, pages = emptyMap(), isLoadingMore = false, paginationFailed = false)
@@ -144,6 +187,7 @@ abstract class SearchViewModel(
                 search()
             }
         }
+        if (recent != null) enrichResults()
     }
 
     fun setSourceFilter(filter: SourceFilter) {
@@ -173,23 +217,29 @@ abstract class SearchViewModel(
             mutableState.update { it.copy(items = emptyMap(), rankedResults = emptyList(), resultQuery = null, activeQuery = null, isSearching = false, pages = emptyMap(), isLoadingMore = false, paginationFailed = false) }
             return
         }
-        if (lastQuery == query && lastSourceFilter == sourceFilter && searchJob?.isActive == true) return
+        if (!force && lastQuery == query && lastSourceFilter == sourceFilter && searchJob?.isActive == true) return
         onQueryAccepted(query)
         lastQuery = query
         lastSourceFilter = sourceFilter
         searchJob?.cancel()
+        enrichmentJob?.cancel()
+        workSelection = SearchWorkSelection()
+        searchEvidence.resetBudget()
         val request = generation.incrementAndGet()
+        val selector = workSelection
         val sources = getSelectedSources()
         if (force) sources.forEach { mihon.domain.source.health.SourceHealthMonitor.shared.requestProbe(it.id) }
         val key = CacheKey(query, sourceFilter, sources.map { it.id })
         val recent = if (liveSearch && !force) cached(key) else null
         if (recent != null) {
+            workSelection.restore(recent.groups)
             mutableState.update { it.copy(items = recent.items, rankedResults = recent.ranked, resultQuery = query, activeQuery = query, isSearching = false, pages = recent.pages, isLoadingMore = false, paginationFailed = false) }
+            enrichResults(request)
             return
         }
         val sourceOrder = sources.mapIndexed { index, source -> source.id to index }.toMap()
         val relevance = SearchRelevance(query)
-        mutableState.update { it.copy(items = sources.associateWith { SearchItemResult.Loading }, activeQuery = query, isSearching = true, generation = request, pages = emptyMap(), isLoadingMore = false, paginationFailed = false) }
+        mutableState.update { it.copy(items = sources.associateWith { SearchItemResult.Loading }, activeQuery = query, isSearching = true, generation = request, pages = emptyMap(), isLoadingMore = false, paginationFailed = false, useWorkSelection = liveSearch && extensionFilter == null) }
 
         searchJob = viewModelScope.launchIO {
             try {
@@ -206,7 +256,7 @@ abstract class SearchViewModel(
                                         .map { it.toDomainManga(source.id) }
                                         .distinctBy { it.url }
                                         .let { networkToLocalManga(it) }
-                                        .let { DiscoveryChapterGate.filter(it) }
+                                        .filter { tachiyomi.domain.manga.model.DiscoveryEligibility.valid(it.title, it.url) }
                                     nextPage = SearchPage(2, page.hasNextPage)
                                     SearchItemResult.Success(titles)
                                 } catch (e: CancellationException) {
@@ -220,7 +270,7 @@ abstract class SearchViewModel(
                                     if (!isActive || generation.get() != request) return@withLock
                                     if (result is SearchItemResult.Success) result.result.forEach(PreferredMangaVariants::remember)
                                     val items = state.value.items + (source to result)
-                                    val ranked = withContext(Dispatchers.Default) { relevance.rank(items, sourceOrder) }
+                                    val ranked = withContext(Dispatchers.Default) { rankResults(items, sourceOrder, relevance, selector) }
                                     mutableState.update { current ->
                                         if (generation.get() != request) current else current.copy(
                                             items = items.toSortedMap(sortComparator(items)),
@@ -239,7 +289,7 @@ abstract class SearchViewModel(
                 resultMutex.withLock {
                     if (!isActive || generation.get() != request) return@withLock
                     val items = state.value.items
-                    val ranked = withContext(Dispatchers.Default) { relevance.rank(items, sourceOrder) }
+                    val ranked = withContext(Dispatchers.Default) { rankResults(items, sourceOrder, relevance, selector) }
                     mutableState.update { current ->
                         if (generation.get() != request) current else {
                             val allFailed = items.isNotEmpty() && items.values.all { it is SearchItemResult.Error }
@@ -249,7 +299,7 @@ abstract class SearchViewModel(
                     }
                     if (generation.get() == request && items.values.all { it is SearchItemResult.Success }) {
                         synchronized(queryCache) {
-                            queryCache[key] = CachedQuery(System.nanoTime(), items, ranked, state.value.pages)
+                            queryCache[key] = CachedQuery(System.nanoTime(), items, ranked, state.value.pages, selector.snapshot())
                             while (queryCache.size > 12) queryCache.remove(queryCache.keys.first())
                         }
                     }
@@ -257,6 +307,7 @@ abstract class SearchViewModel(
             } finally {
                 if (generation.get() == request) {
                     mutableState.update { if (it.generation == request) it.copy(isSearching = false) else it }
+                    enrichResults(request)
                 }
             }
         }
@@ -270,6 +321,7 @@ abstract class SearchViewModel(
         val pending = current.pages.filterValues { it.hasMore }
         if (pending.isEmpty()) return
         val request = generation.get()
+        val selector = workSelection
         if (current.paginationFailed) pending.keys.forEach { mihon.domain.source.health.SourceHealthMonitor.shared.requestProbe(it.id) }
         mutableState.update { it.copy(isLoadingMore = true, paginationFailed = false) }
         paginationJob = viewModelScope.launchIO {
@@ -281,9 +333,8 @@ abstract class SearchViewModel(
                                 val page = mihon.domain.source.health.SourceHealthMonitor.shared.run(source.id, 30_000) {
                                     source.getSearchManga(progress.next, query, source.getFilterList())
                                 }
-                                val titles = eu.kanade.tachiyomi.source.internal.util.DiscoveryChapterGate.filter(
-                                    networkToLocalManga(page.mangas.map { it.toDomainManga(source.id) }.distinctBy { it.url }),
-                                )
+                                val titles = networkToLocalManga(page.mangas.map { it.toDomainManga(source.id) }.distinctBy { it.url })
+                                    .filter { tachiyomi.domain.manga.model.DiscoveryEligibility.valid(it.title, it.url) }
                                 resultMutex.withLock {
                                     if (!isActive || generation.get() != request) return@withLock
                                     val latest = state.value
@@ -291,12 +342,10 @@ abstract class SearchViewModel(
                                     val combined = (previous + titles).distinctBy { it.source to it.url }
                                     val items = latest.items + (source to SearchItemResult.Success(combined))
                                     val ranked = withContext(Dispatchers.Default) {
-                                        SearchRelevance(query).rank(items, getSelectedSources().mapIndexed { i, s -> s.id to i }.toMap())
+                                        rankResults(items, getSelectedSources().mapIndexed { i, s -> s.id to i }.toMap(), SearchRelevance(query), selector)
                                     }
-                                    // Preserve existing card positions; append new source-scoped identities only.
-                                    val existing = latest.rankedResults.map { it.manga.source to it.manga.url }.toSet()
                                     mutableState.update { value -> if (generation.get() != request) value else value.copy(
-                                        items = items, rankedResults = latest.rankedResults + ranked.filter { (it.manga.source to it.manga.url) !in existing },
+                                        items = items, rankedResults = ranked,
                                         pages = latest.pages + (source to SearchPage(progress.next + 1, page.hasNextPage)),
                                     ) }
                                 }
@@ -309,6 +358,13 @@ abstract class SearchViewModel(
                 }
             } finally {
                 mutableState.update { if (generation.get() == request) it.copy(isLoadingMore = false) else it }
+                if (generation.get() == request) {
+                    val latest = state.value
+                    if (latest.items.values.all { it is SearchItemResult.Success }) synchronized(queryCache) {
+                        queryCache[cacheKey(query)] = CachedQuery(System.nanoTime(), latest.items, latest.rankedResults, latest.pages, selector.snapshot())
+                    }
+                    enrichResults(request)
+                }
             }
         }
     }
@@ -317,6 +373,7 @@ abstract class SearchViewModel(
         debounceJob?.cancel()
         searchJob?.cancel()
         paginationJob?.cancel()
+        enrichmentJob?.cancel()
         synchronized(queryCache) { queryCache.clear() }
         super.onCleared()
     }
@@ -350,12 +407,14 @@ abstract class SearchViewModel(
         val onlyShowHasResults: Boolean = false,
         val items: Map<Source, SearchItemResult> = mapOf(),
         val dialog: Dialog? = null,
+        val useWorkSelection: Boolean = false,
     ) {
         val hasMore: Boolean get() = pages.values.any { it.hasMore }
         val progress: Int = items.count { it.value !is SearchItemResult.Loading }
         val total: Int = items.size
         val filteredItems: Map<Source, SearchItemResult> get() {
-            val winners = eu.kanade.tachiyomi.ui.home.PreferredMangaVariants.preferred(items.values.filterIsInstance<SearchItemResult.Success>().flatMap { it.result })
+            val winners = if (useWorkSelection && resultQuery == activeQuery) rankedResults.map {it.manga.id}.toSet()
+                else eu.kanade.tachiyomi.ui.home.PreferredMangaVariants.preferred(items.values.filterIsInstance<SearchItemResult.Success>().flatMap { it.result })
             return items.mapValues { (_, result) ->
                 if (result is SearchItemResult.Success) SearchItemResult.Success(result.result.filter { it.id in winners }) else result
             }.filter { (source, result) -> mihon.domain.source.health.SourceHealthMonitor.shared.discoverable(source.id) && result.isVisible(onlyShowHasResults) }

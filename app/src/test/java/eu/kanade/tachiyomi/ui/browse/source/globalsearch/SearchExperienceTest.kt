@@ -20,6 +20,9 @@ import tachiyomi.core.common.preference.PreferenceStore
 import tachiyomi.domain.manga.interactor.NetworkToLocalManga
 import tachiyomi.domain.manga.model.Manga
 import java.util.concurrent.atomic.AtomicInteger
+import tachiyomi.domain.chapter.model.Chapter
+import tachiyomi.domain.chapter.service.ChapterListIntegrity
+import tachiyomi.domain.manga.interactor.GetManga
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SearchExperienceTest {
@@ -38,19 +41,53 @@ class SearchExperienceTest {
     private fun page(vararg urls: String, more: Boolean = false) = MangasPage(urls.map {
         SManga.create().apply { url = it; title = "ناروتو Naruto" }
     }, more)
-    private fun model(vararg sources: Source): SearchViewModel {
+    private fun model(vararg sources: Source, fixtures: Map<Long,Pair<Manga,List<Chapter>>> = emptyMap()): SearchViewModel {
         val preferences = SourcePreferences(InMemoryPreferenceStore())
         val network = mockk<NetworkToLocalManga>()
         coEvery { network.invoke(any<List<Manga>>()) } answers {
-            firstArg<List<Manga>>().map { it.copy(id = it.source * 1_000_000 + (it.url.hashCode().toLong() and 0xfffff)) }
+            firstArg<List<Manga>>().map { it.copy(id = it.source * 1_000_000 + (it.url.hashCode().toLong() and 0xfffff)) }.map { fixtures[it.id]?.first ?: it }
         }
+        val local=mockk<GetManga>(relaxed=true)
+        coEvery { local.await(any<Long>()) } answers { fixtures[firstArg<Long>()]?.first }
         val model = object : SearchViewModel(liveSearch = true, sourcePreferences = preferences,
             sourceManager = mockk(relaxed = true), extensionManager = mockk(relaxed = true),
-            networkToLocalManga = network, getManga = mockk(relaxed = true), preferences = preferences) {
+            networkToLocalManga = network, getManga = local, preferences = preferences,
+            chapterLookup = {fixtures[it]?.second.orEmpty()}) {
             override fun getEnabledSources() = sources.toList()
         }
         store.put("search", model)
         return model
+    }
+    private fun proof(source:Long,url:String,count:Int,lastNumber:Double):Pair<Manga,List<Chapter>> {
+        val m=Manga.create().copy(id=source*1_000_000+(url.hashCode().toLong() and 0xfffff),source=source,url=url,title="ناروتو Naruto",initialized=true)
+        val rows=(1..count).map {Chapter.create().copy(id=it.toLong(),mangaId=m.id,url="$url/chapter/$it",name="Chapter $it",
+            chapterNumber=if(it==count)lastNumber else it.toDouble())}
+        return m.copy(memo=ChapterListIntegrity.memo(m,"COMPLETE",rows)) to rows
+    }
+    @Test fun `real search pipeline ranks verified SQL rows instead of maximum chapter number`() = runTest(dispatcher) {
+        val a=proof(130,"/a",84,3333.0);val b=proof(131,"/b",205,205.0);val c=proof(132,"/c",199,9999.0)
+        val model=model(source(130){_,_->page("/a")},source(131){_,_->page("/b")},source(132){_,_->page("/c")},
+            fixtures=listOf(a,b,c).associateBy{it.first.id})
+        model.updateSearchQuery("Naruto");model.search();model.finished("Naruto")
+        val selected=withContext(Dispatchers.Default){withTimeout(5000){model.state.first{it.rankedResults.singleOrNull()?.verifiedDistinctChapters==205}}}
+        selected.rankedResults.single().manga.source shouldBe 131L
+        selected.rankedResults.single().indexComplete shouldBe true
+        selected.rankedResults.single().provisional shouldBe false
+    }
+    @Test fun `ordinary search enrichment never fetches chapter indexes`() = runTest(dispatcher) {
+        val a=source(133){_,_->page("/a")};val b=source(134){_,_->page("/b")}
+        coEvery{a.getMangaUpdate(any(),any(),any(),any())} answers{eu.kanade.tachiyomi.source.model.SMangaUpdate(firstArg(),emptyList())}
+        coEvery{b.getMangaUpdate(any(),any(),any(),any())} answers{eu.kanade.tachiyomi.source.model.SMangaUpdate(firstArg(),emptyList())}
+        val model=model(a,b);model.updateSearchQuery("Naruto");model.search();model.finished("Naruto");advanceUntilIdle()
+        coVerify(exactly=0){a.getMangaUpdate(any(),any(),any(),true)}
+        coVerify(exactly=0){b.getMangaUpdate(any(),any(),any(),true)}
+    }
+    @Test fun `warm query restoration preserves canonical card keys`() = runTest(dispatcher) {
+        val model=model(source(135){_,q->page("/$q")},source(136){_,q->page("/$q")})
+        model.updateSearchQuery("one");model.search();val first=model.finished("one").rankedResults.single().workKey
+        model.updateSearchQuery("two");model.search();model.finished("two")
+        model.updateSearchQuery("one")
+        model.state.value.rankedResults.single().workKey shouldBe first
     }
     private suspend fun SearchViewModel.finished(query: String, expectedGen: Long? = null): SearchViewModel.State {
         return state.first {
@@ -96,13 +133,13 @@ class SearchExperienceTest {
         state.resultQuery shouldBe "new"
         state.rankedResults.map { it.manga.url } shouldBe listOf("/new")
     }
-    @Test fun `partial failures retain successful identities including same titles across sources`() = runTest(dispatcher) {
+    @Test fun `partial failures keep variants internally but show one confidently matched work`() = runTest(dispatcher) {
         val model = model(source(103) { _, _ -> page("/one") }, source(104) { _, _ -> page("/two") },
             source(105) { _, _ -> throw java.io.IOException("private provider failure") })
         model.updateSearchQuery("Naruto"); model.search()
         val result = model.finished("Naruto")
-        result.rankedResults.map { it.manga.source }.toSet() shouldBe setOf(103L, 104L)
-        result.rankedResults.map { it.manga.id }.distinct().size shouldBe 2
+        result.items.values.filterIsInstance<SearchItemResult.Success>().flatMap {it.result}.map {it.source}.toSet() shouldBe setOf(103L,104L)
+        result.rankedResults.size shouldBe 1
         result.items.values.count { it is SearchItemResult.Error } shouldBe 1
     }
     @Test fun `failed next page preserves content and retry deduplicates repeated rows`() = runTest(dispatcher) {

@@ -132,7 +132,7 @@ fun MangaroSearchScreen(
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
-    // Keep real source-scoped variants; equal titles are not the same manga.
+    // Matched work cards retain the selected source's actual identity and route.
     val context = LocalContext.current
     val results = state.rankedResults
     val mangaStarzId = 6058166507489091982L
@@ -282,9 +282,9 @@ fun MangaroSearchScreen(
                             TextButton(enabled = !loading, onClick = onRetry) { Text("إعادة المحاولة") }
                         }
                     }
-                    items(results, key = { "${it.manga.source}:${it.manga.url}" }) { initial ->
+                    items(results, key = { it.workKey }) { initial ->
                         val manga by getManga(initial.manga)
-                        SearchMangaCard(manga, onClick = { keyboard?.hide(); focusManager.clearFocus(); onClickManga(manga) })
+                        SearchMangaCard(manga, initial, onClick = { keyboard?.hide(); focusManager.clearFocus(); onClickManga(manga) })
                     }
                     item(key = "searchPaging", span = { GridItemSpan(maxLineSpan) }) {
                         Box(Modifier.fillMaxWidth().heightIn(min = 48.dp), contentAlignment = Alignment.Center) {
@@ -305,7 +305,7 @@ fun MangaroSearchScreen(
 }
 
 @Composable
-private fun SearchMangaCard(manga: Manga, onClick: () -> Unit) {
+private fun SearchMangaCard(manga: Manga, result: eu.kanade.tachiyomi.ui.browse.source.globalsearch.RankedSearchResult, onClick: () -> Unit) {
     val sourceName = remember(manga.source) {
         try {
             Injekt.get<SourceManager>()
@@ -328,6 +328,11 @@ private fun SearchMangaCard(manga: Manga, onClick: () -> Unit) {
         },
         metadata = {
             Text("المصدر: $sourceName", color = MangaroDesignSystem.GoldPrimary, style = MaterialTheme.typography.labelSmall.copy(textDirection = TextDirection.ContentOrRtl), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            result.verifiedDistinctChapters?.let { count ->
+                Text(if (result.indexComplete) "$count فصل موثّق" else "$count فصل مفهرس على الأقل",
+                    color = MangaroDesignSystem.TextSecondary, style = MaterialTheme.typography.labelSmall)
+            }
+            if (result.provisional) Text("اختيار مؤقت", color = MangaroDesignSystem.TextSecondary, style = MaterialTheme.typography.labelSmall)
             manga.author?.takeIf { it.isNotBlank() }?.let {
                 Text(it, color = MangaroDesignSystem.TextSecondary, style = MaterialTheme.typography.labelSmall.copy(textDirection = TextDirection.Content), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }

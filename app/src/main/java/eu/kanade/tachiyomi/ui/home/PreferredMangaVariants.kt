@@ -34,6 +34,7 @@ object PreferredMangaVariants {
         if (replaced) changes.update { it + 1 }
     }
     fun reader(mangaId: Long, usable: Boolean) { if (readers.put(mangaId, usable) != usable) changes.update { it + 1 } }
+    fun readerUsable(mangaId: Long): Boolean? = readers[mangaId]
     private fun health(sourceId: Long) = when (SourceHealthMonitor.shared.health(sourceId).state) {
         SourceHealthMonitor.State.HEALTHY -> 2
         SourceHealthMonitor.State.DEGRADED -> 1

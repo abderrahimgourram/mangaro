@@ -30,6 +30,10 @@ object ChapterListIntegrity {
         ((proof(manga)?.get("lastSuccessful") as? JsonObject)?.get("at") as? JsonPrimitive)?.content?.toLongOrNull() ?: 0L
 
     fun verified(manga: Manga, chapters: List<Chapter>): Boolean = complete(manga) &&
+        verifiedRows(manga, chapters)
+    /** A partial reconciliation proves a lower bound only, never a complete index. */
+    fun verifiedRows(manga: Manga, chapters: List<Chapter>): Boolean =
+        (proof(manga)?.get("state") as? JsonPrimitive)?.content in setOf("COMPLETE", "PARTIAL") &&
         chapters.all { it.mangaId == manga.id } && count(manga) == chapters.size &&
         (proof(manga)?.get("digest") as? JsonPrimitive)?.content == digest(chapters)
     fun memo(manga: Manga, state: String, chapters: List<Chapter>): JsonObject = JsonObject(manga.memo + (KEY to buildJsonObject {

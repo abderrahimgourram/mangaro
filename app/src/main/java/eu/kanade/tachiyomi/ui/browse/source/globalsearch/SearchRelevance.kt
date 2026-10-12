@@ -6,7 +6,9 @@ import java.text.Normalizer
 import java.util.Locale
 
 /** Comparison only: source titles and identities are never rewritten. */
-data class RankedSearchResult(val source: Source, val manga: Manga)
+data class RankedSearchResult(val source: Source, val manga: Manga,
+    val workKey: String = "${manga.source}:${manga.url}", val verifiedDistinctChapters: Int? = null,
+    val indexComplete: Boolean = false, val provisional: Boolean = false)
 
 internal class SearchRelevance(query: String) {
     private val query = normalize(query)

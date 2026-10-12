@@ -92,6 +92,8 @@ android {
             "eu.kanade.tachiyomi.novels.NovelPartialRuleInstrumentation"
         } else if (providers.gradleProperty("novelReliabilityAudit").orNull == "true") {
             "eu.kanade.tachiyomi.novels.NovelReliabilityInstrumentation"
+        } else if (providers.gradleProperty("searchDedupAudit").orNull == "true") {
+            "eu.kanade.tachiyomi.ui.browse.source.globalsearch.SearchDedupInstrumentation"
         } else if (providers.gradleProperty("novelOfflineRecoveryAudit").orNull == "true") {
             "eu.kanade.tachiyomi.novels.NovelOfflineRecoveryInstrumentation"
         } else if (providers.gradleProperty("novelReaderScopeAudit").orNull == "true") {

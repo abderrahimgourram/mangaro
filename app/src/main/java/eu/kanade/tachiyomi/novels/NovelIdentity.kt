@@ -25,6 +25,7 @@ object NovelIdentity {
         "gu zhen ren", "guzhenren", "غو زين رن" -> "gu zhen ren"
         else -> key
     }
+    internal fun searchAuthorKey(value: String): String = authorKey(value)
     private fun originalNames(novel: Novel) = novel.originalTitle.orEmpty().split('|').map(::titleKey).filter {it.isNotBlank()}.toSet()
     private fun names(novel: Novel) = (listOf(novel.title) + novel.alternativeTitles + listOfNotNull(novel.originalTitle) + novel.originalTitle.orEmpty().split('|'))
         .map(::titleKey).filter { it.length >= 6 }.toSet()
