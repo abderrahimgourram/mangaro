@@ -370,14 +370,7 @@ class NovelHomeScreen(private val initialGenre: String? = null) : Screen() {
                     }
                     items(works, key = { it.id }) { work ->
                         val group = presentation.groups.firstOrNull {it.key==work.id}
-                        val provider = when(work.primary.sourceId) {
-                            "novel.kolnovel" -> "Kolnovel"
-                            "novel.cenele" -> "Cenele"
-                            "novel.seanovel" -> "SeaNovel"
-                            else -> repository.source(work.primary.sourceId).name
-                        }
-                        val info = group?.let { g -> listOfNotNull("المصدر: " + provider,
-                            g.winner.chapters.label(), if (g.provisional && g.members.size>1) "اختيار مؤقت" else null).joinToString(" · ") }
+                        val info = group?.winner?.chapters?.label()
                         NovelCard(work.primary, info) { navigator.push(NovelDetailsScreen(work.primary)) }
                     }
                     if (pages.values.any { it != null }) item(key = "more", span = { GridItemSpan(maxLineSpan) }) {

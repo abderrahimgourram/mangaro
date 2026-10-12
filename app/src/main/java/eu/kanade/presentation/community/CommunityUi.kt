@@ -278,7 +278,6 @@ private fun CommunityContent(
                 if (!snapshot.loading && !snapshot.refreshing && snapshot.error == null && snapshot.comments.isEmpty()) {
                     Column(Modifier.fillMaxWidth().padding(vertical = 22.dp), horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Icon(Icons.AutoMirrored.Outlined.Reply, null, Modifier.size(26.dp), tint = Color(0xFFC5ACDD))
                         Text("لا توجد تعليقات بعد", style = MaterialTheme.typography.titleSmall, color = Color(0xFFDDD3E7))
                         Text("كن أول من يشارك رأيه.", style = MaterialTheme.typography.bodySmall, color = Color(0xFF9F90AC))
                     }

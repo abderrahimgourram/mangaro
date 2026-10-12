@@ -41,6 +41,9 @@ class SearchExperienceTest {
     private fun page(vararg urls: String, more: Boolean = false) = MangasPage(urls.map {
         SManga.create().apply { url = it; title = "ناروتو Naruto" }
     }, more)
+    private fun distinctWorksPage(vararg urls:String,more:Boolean=false)=page(*urls,more=more).also{p->
+        p.mangas.forEach{it.title=if(it.url=="/one")"Naruto Original Story" else "Naruto Separate Adventure"}
+    }
     private fun model(vararg sources: Source, fixtures: Map<Long,Pair<Manga,List<Chapter>>> = emptyMap()): SearchViewModel {
         val preferences = SourcePreferences(InMemoryPreferenceStore())
         val network = mockk<NetworkToLocalManga>()
@@ -81,6 +84,19 @@ class SearchExperienceTest {
         val model=model(a,b);model.updateSearchQuery("Naruto");model.search();model.finished("Naruto");advanceUntilIdle()
         coVerify(exactly=0){a.getMangaUpdate(any(),any(),any(),true)}
         coVerify(exactly=0){b.getMangaUpdate(any(),any(),any(),true)}
+    }
+    @Test fun `verification health events cannot cancel their own metadata enrichment`() = runTest(dispatcher) {
+        val a=source(137){_,_->page("/a")};val b=source(138){_,_->page("/b")}
+        coEvery{a.getMangaUpdate(any(),any(),any(),any())} coAnswers {
+            eu.kanade.tachiyomi.ui.home.PreferredMangaVariants.reader(137L,true)
+            delay(25)
+            eu.kanade.tachiyomi.source.model.SMangaUpdate(firstArg<SManga>().apply{author="Verified Creator"},emptyList())
+        }
+        coEvery{b.getMangaUpdate(any(),any(),any(),any())} answers{eu.kanade.tachiyomi.source.model.SMangaUpdate(firstArg(),emptyList())}
+        val model=model(a,b);model.updateSearchQuery("Naruto");model.search();model.finished("Naruto")
+        // Metadata can change matching evidence without changing the visible card;
+        // StateFlow correctly suppresses that identical presentation emission.
+        withContext(Dispatchers.Default){withTimeout(5000){while(model.workGroups().flatMap{g->g.members}.none{it.author=="Verified Creator"})delay(10)}}
     }
     @Test fun `warm query restoration preserves canonical card keys`() = runTest(dispatcher) {
         val model=model(source(135){_,q->page("/$q")},source(136){_,q->page("/$q")})
@@ -145,9 +161,9 @@ class SearchExperienceTest {
     @Test fun `failed next page preserves content and retry deduplicates repeated rows`() = runTest(dispatcher) {
         var failed = true
         val model = model(source(106) { number, _ -> when {
-            number == 1 -> page("/one", more = true)
+            number == 1 -> distinctWorksPage("/one", more = true)
             failed -> throw java.io.IOException("offline")
-            else -> page("/one", "/two")
+            else -> distinctWorksPage("/one", "/two")
         } })
         model.updateSearchQuery("Naruto"); model.search(); model.finished("Naruto")
         model.loadMore(); model.finishedPage()
@@ -184,7 +200,7 @@ class SearchExperienceTest {
         model.finished("Naruto").rankedResults.single().manga.url shouldBe "/one"
     }
     @Test fun `overlapping source pages deduplicate without overriding real hasNextPage`() = runTest(dispatcher) {
-        val model = model(source(109) { number, _ -> if (number < 3) page("/one", more = true) else page("/two") })
+        val model = model(source(109) { number, _ -> if (number < 3) distinctWorksPage("/one", more = true) else distinctWorksPage("/two") })
         model.updateSearchQuery("Naruto"); model.search(); model.finished("Naruto")
         model.loadMore(); val second = model.finishedPage()
         second.rankedResults.map { it.manga.url } shouldBe listOf("/one")

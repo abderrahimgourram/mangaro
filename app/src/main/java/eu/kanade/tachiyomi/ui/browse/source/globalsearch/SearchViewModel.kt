@@ -60,12 +60,13 @@ abstract class SearchViewModel(
     private var debounceJob: Job? = null
     private var paginationJob: Job? = null
     private var enrichmentJob: Job? = null
+    private var enrichmentGeneration = Long.MIN_VALUE
     private var workSelection = SearchWorkSelection()
     internal fun workGroups() = workSelection.snapshot()
     private val searchEvidence = MangaSearchEvidence(getManga, chapterLookup)
     private fun rankResults(items: Map<Source, SearchItemResult>, order: Map<Long, Int>, relevance: SearchRelevance, selector: SearchWorkSelection): List<RankedSearchResult> {
         val raw = relevance.rank(items, order)
-        if (!liveSearch || extensionFilter != null) return raw
+        if (!liveSearch) return raw
         val groups = selector.select(raw.map { searchEvidence.candidate(it, order[it.source.id] ?: Int.MAX_VALUE) })
         val byId = raw.associateBy { searchEvidence.key(it.manga) }
         return groups.mapNotNull { group -> byId[group.winner.id]?.copy(workKey = group.key,
@@ -73,8 +74,12 @@ abstract class SearchViewModel(
             provisional = group.provisional && group.members.size > 1) }
     }
     private fun enrichResults(request: Long = generation.get()) {
-        if (!liveSearch || extensionFilter != null || state.value.isSearching) return
+        if (!liveSearch || state.value.isSearching) return
+        // Metadata checks emit health events themselves. Coalesce the same query's
+        // events instead of cancelling its own bounded verification halfway through.
+        if (enrichmentJob?.isActive == true && enrichmentGeneration == request) return
         enrichmentJob?.cancel()
+        enrichmentGeneration = request
         val selector = workSelection
         enrichmentJob = viewModelScope.launchIO {
             val snapshot = state.value
@@ -224,7 +229,7 @@ abstract class SearchViewModel(
         searchJob?.cancel()
         enrichmentJob?.cancel()
         workSelection = SearchWorkSelection()
-        searchEvidence.resetBudget()
+        searchEvidence.resetBudget(force)
         val request = generation.incrementAndGet()
         val selector = workSelection
         val sources = getSelectedSources()
@@ -239,7 +244,7 @@ abstract class SearchViewModel(
         }
         val sourceOrder = sources.mapIndexed { index, source -> source.id to index }.toMap()
         val relevance = SearchRelevance(query)
-        mutableState.update { it.copy(items = sources.associateWith { SearchItemResult.Loading }, activeQuery = query, isSearching = true, generation = request, pages = emptyMap(), isLoadingMore = false, paginationFailed = false, useWorkSelection = liveSearch && extensionFilter == null) }
+        mutableState.update { it.copy(items = sources.associateWith { SearchItemResult.Loading }, activeQuery = query, isSearching = true, generation = request, pages = emptyMap(), isLoadingMore = false, paginationFailed = false, useWorkSelection = liveSearch) }
 
         searchJob = viewModelScope.launchIO {
             try {

@@ -52,7 +52,9 @@ class SearchDedupInstrumentation : Instrumentation() {
         var code = 0
         try { runBlocking {
             val began = System.nanoTime()
-            if (kind == "manga") {
+            if (mode == "series") {
+                eu.kanade.tachiyomi.source.audit.SeriesRepairAcceptance.run(this@SearchDedupInstrumentation,activity as eu.kanade.tachiyomi.ui.main.MainActivity,kind,query,::record)
+            } else if (kind == "manga") {
                 withTimeout(15_000) { Injekt.get<SourceManager>().isInitialized.first { it } }
                 val model = GlobalSearchViewModel(query, null); mangaModel=model; store.put("audit", model)
                 runOnMainSync { view.setContent { TachiyomiTheme { Box(Modifier.fillMaxSize().background(eu.kanade.presentation.theme.MangaroDesignSystem.BackgroundDark)
@@ -99,6 +101,9 @@ class SearchDedupInstrumentation : Instrumentation() {
                 state.rankedResults.take(10).forEach { record("ROW manga source=${it.source.name} title=${it.manga.title}") }
                 if (mode != "baseline") {
                     val groups=model.workGroups();check(groups.isNotEmpty())
+                    groups.flatMap{it.members}.filter{it.title.contains("Sword King",true)}.forEach {
+                        record("IDENTITY title=${it.title} format=${it.format} coverByteProof=${it.coverDigest!=null} indexUsable=${it.chapters.indexUsable} uncertain=${it.chapters.indexUncertain} aliases=${it.aliases.size}")
+                    }
                     check(groups.map{it.key}.toSet()==state.rankedResults.map{it.workKey}.toSet())
                     verifyGroups(groups)
                 }
@@ -145,6 +150,10 @@ class SearchDedupInstrumentation : Instrumentation() {
                 }
             }
             skipPresentation(); delay(1000)
+            if(mode!="baseline" && mode!="series") check(!find(uiAutomation.rootInActiveWindow) {
+                val label=it.text?.toString().orEmpty()
+                label.startsWith("المصدر:") || label=="اختيار مؤقت"
+            }) { "Resolver diagnostics leaked into ordinary UI" }
             uiAutomation.takeScreenshot()?.let { b -> try { File(targetContext.cacheDir,"search-dedup-$mode-$kind.png").outputStream().use { b.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it) } } finally {b.recycle()} }
             record("ELAPSED kind=$kind seconds=${(System.nanoTime()-began)/1_000_000_000.0}")
         } } catch(t: Throwable) {

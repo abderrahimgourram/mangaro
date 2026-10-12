@@ -40,7 +40,7 @@ fun MangaroSourceChooserSheet(
         shape = RoundedCornerShape(20.dp),
         title = {
             Text(
-                text = "اختر المصدر للقراءة",
+                text = "اختر نسخة للقراءة",
                 style = MaterialTheme.typography.titleMedium.copy(
                     fontWeight = FontWeight.Bold,
                     fontSize = 17.sp,

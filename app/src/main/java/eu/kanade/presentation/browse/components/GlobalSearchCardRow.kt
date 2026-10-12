@@ -70,14 +70,6 @@ private fun MangaItem(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
-    val sourceName = remember(sourceId) {
-        try {
-            val sm: SourceManager = Injekt.get()
-            sm.getOrStub(sourceId).name.ifBlank { "مصدر غير معروف" }
-        } catch (_: Exception) {
-            "مصدر غير معروف"
-        }
-    }
     Box(modifier = Modifier.width(96.dp)) {
         Column {
             MangaComfortableGridItem(
@@ -90,14 +82,6 @@ private fun MangaItem(
                 coverAlpha = if (isFavorite) CommonMangaItemDefaults.BrowseFavoriteCoverAlpha else 1f,
                 onClick = onClick,
                 onLongClick = onLongClick,
-            )
-            Text(
-                text = "المصدر: $sourceName",
-                color = MangaroDesignSystem.GoldPrimary,
-                style = MaterialTheme.typography.labelSmall.copy(textDirection = TextDirection.ContentOrRtl),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(horizontal = 4.dp),
             )
         }
     }

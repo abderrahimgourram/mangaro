@@ -16,6 +16,13 @@ import java.io.IOException
 class MangaStarzParserTest {
 
     private val source = MangaStarz()
+    @Test fun `native cover and reader requests retain legitimate origin headers`() {
+        val image=source.repairImageRequest(eu.kanade.tachiyomi.source.model.Page(0,imageUrl="https://starz.starzmanga.com/fixture-only/image.jpg"))
+        image.header("Referer") shouldBe "https://starzmanga.com/"
+        image.header("User-Agent").isNullOrBlank() shouldBe false
+        val chapter=eu.kanade.tachiyomi.source.model.SChapter.create().apply{url="/manga/fixture-only/chapter-1/"}
+        source.pageListRequest(chapter).header("Referer") shouldBe "https://starzmanga.com/manga/fixture-only/chapter-1/"
+    }
 
     private val sampleCatalogueHtml = """
         <!DOCTYPE html>

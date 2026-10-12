@@ -10,6 +10,40 @@ class SearchWorkSelectionTest {
         aliases,author=author,priority=priority,chapters=SearchChapterEvidence(count,complete,readable,10))
     @Test fun sameMangaAcrossSourcesProducesOneCard(){SearchWorkSelection().select(listOf(c("a"),c("b"),c("c"))).size shouldBe 1}
     @Test fun sameNovelAcrossSourcesProducesOneCard(){SearchWorkSelection().select(listOf(c("a",kind=SearchWorkKind.NOVEL),c("b",kind=SearchWorkKind.NOVEL))).size shouldBe 1}
+    @Test fun sameSourceAliasesRetainBothRoutesInternallyAndSelectActualCount(){
+        val a=c("old",source="provider",count=84,aliases=setOf("سولو ليفلينج"))
+        val b=c("current",source="provider",title="سولو ليفلينج",count=205)
+        val group=SearchWorkSelection().select(listOf(a,b)).single()
+        group.members.map{it.id}.toSet() shouldBe setOf("old","current");group.winner.id shouldBe "current"
+    }
+    @Test fun sameProviderTitleAloneCannotHideAnUncorroboratedEdition(){
+        val a=c("a",source="provider");val b=c("b",source="provider")
+        SearchWorkSelection().select(listOf(a,b)).size shouldBe 2
+        SearchWorkSelection().select(listOf(a.copy(format="manhwa",coverDigest="same-image-url"),b.copy(format="manhwa",coverDigest="same-image-url"))).size shouldBe 2
+        SearchWorkSelection().select(listOf(a.copy(author="Same Creator"),b.copy(author="Same Creator"))).size shouldBe 1
+    }
+    @Test fun longSameSourceTitleVariationNeedsIndependentByteVerifiedCoverAndFormat(){
+        val digest="2b8af14e4e706b4041beb9072b06cfc4a16984bd3a9079e38eb6b32f357b75c7"
+        val a=c("a",source="provider",title="Survival Story of a Sword King in a Fantasy World").copy(format="manhwa",coverDigest=digest)
+        val b=c("b",source="provider",title="Survival Diary of the Sword King in a Fantasy World").copy(format="manhwa",coverDigest=digest)
+        SearchWorkIdentity.matches(a,b) shouldBe true
+        SearchWorkIdentity.matches(a,b.copy(coverDigest=null)) shouldBe false
+        SearchWorkIdentity.matches(a,b.copy(title="Survival Story of a Sword King in a Fantasy World Remake")) shouldBe false
+        SearchWorkIdentity.matches(a,b.copy(title="The Dark Fantasy Knight")) shouldBe false
+        SearchWorkIdentity.matches(a.copy(author="One Creator"),b.copy(author="Other Creator")) shouldBe false
+    }
+    @Test fun confirmedEmptyIndexCannotWinUsingAStaleCachedCount(){
+        val broken=c("a",count=999,readable=true).copy(chapters=SearchChapterEvidence(999,true,true,indexUsable=false))
+        val working=c("b",count=304,readable=true).copy(chapters=SearchChapterEvidence(304,true,true,indexUsable=true))
+        SearchWorkSelection().select(listOf(broken,working)).single().winner.id shouldBe "b"
+    }
+    @Test fun transientProbeFailureIsProvisionalAndRetainsTheRecoverableVariant(){
+        val uncertain=c("a",count=999).copy(chapters=SearchChapterEvidence(999,true,indexUncertain=true))
+        val working=c("b",count=304).copy(chapters=SearchChapterEvidence(304,true,indexUsable=true))
+        val session=SearchWorkSelection();val group=session.select(listOf(uncertain,working)).single()
+        group.winner.id shouldBe "b";group.provisional shouldBe true;group.members.size shouldBe 2
+        session.select(listOf(uncertain.copy(chapters=SearchChapterEvidence(999,true,indexUsable=true)),working)).single().winner.id shouldBe "a"
+    }
     @Test fun arabicEnglishRequiresAnActualAlias(){
         val a=c("a",title="سولو ليفلينج",aliases=setOf("Solo Leveling"))
         SearchWorkIdentity.matches(a,c("b")) shouldBe true

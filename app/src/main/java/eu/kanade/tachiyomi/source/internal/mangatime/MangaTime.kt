@@ -138,6 +138,8 @@ class MangaTime(
                 url = "/$type/$slug#$id"
                 this.title = title
                 this.thumbnail_url = cover?.let { if (it.startsWith("http")) it else "$baseUrl$it" }
+                author = obj["author"]?.jsonPrimitiveOrNull?.contentOrNull
+                artist = obj["artist"]?.jsonPrimitiveOrNull?.contentOrNull
             }
         }
 
@@ -186,18 +188,24 @@ class MangaTime(
                 if (body.contains(""""error":""")) {
                     throw IOException("MangaTime tRPC chapters error for series $effectiveSeriesId")
                 }
-                updatedChapters = parseChaptersResponse(body, type, slug)
+                updatedChapters = parseChaptersResponse(body, type, slug, effectiveSeriesId)
                 val envelope = json.parseToJsonElement(body)
                 val root = if (envelope is JsonArray) envelope.firstOrNull()?.jsonObjectOrNull ?: throw IOException("MangaTime empty envelope") else envelope.requireObject("MangaTime response")
                 val data = root["result"]?.jsonObjectOrNull?.get("data")?.jsonObjectOrNull?.get("json")?.jsonObjectOrNull
                     ?: throw IOException("MangaTime chapters missing result")
                 declaredCount = data["totalChapterCount"]?.jsonPrimitiveOrNull?.intOrNull
                 if (declaredCount != null && declaredCount != updatedChapters.size) throw IOException("MangaTime chapter total mismatch")
+                if (data["nextCursor"] is kotlinx.serialization.json.JsonObject || data["nextCursor"] is JsonArray) {
+                    throw IOException("MangaTime invalid chapter continuation")
+                }
                 if (data["hasMore"]?.jsonPrimitiveOrNull?.booleanOrNull == true || !data["nextCursor"]?.jsonPrimitiveOrNull?.contentOrNull.isNullOrEmpty()) {
                     throw IOException("MangaTime unlimited chapter request returned a partial result")
                 }
-                if (data["hasMore"]?.jsonPrimitiveOrNull?.booleanOrNull == false && "nextCursor" in data) {
+                if (data["hasMore"]?.jsonPrimitiveOrNull?.booleanOrNull == false && data["nextCursor"] == kotlinx.serialization.json.JsonNull) {
                     completeness = ChapterFetchCompleteness.COMPLETE
+                    // The authoritative terminal array proves zero published entries. It is
+                    // not the catalogue's advertised total; reconciliation retains old rows.
+                    if (updatedChapters.isEmpty()) declaredCount = 0
                 }
             }
         }
@@ -223,6 +231,7 @@ class MangaTime(
         val coverUrl = seriesData?.get("coverUrl")?.jsonPrimitiveOrNull?.contentOrNull
             ?: seriesData?.get("cover")?.jsonPrimitiveOrNull?.contentOrNull
         val realSeriesId = seriesData?.get("id")?.jsonPrimitiveOrNull?.contentOrNull ?: existingSeriesId
+        if (existingSeriesId.isNotBlank() && realSeriesId != existingSeriesId) throw IOException("MangaTime series identity mismatch")
         val statusText = seriesData?.get("status")?.jsonPrimitiveOrNull?.contentOrNull
 
         return manga.apply {
@@ -231,6 +240,15 @@ class MangaTime(
                 ("mangatime.seriesId" to kotlinx.serialization.json.JsonPrimitive(realSeriesId)))
             title = titleText
             description = descriptionText
+            author = seriesData["author"]?.jsonPrimitiveOrNull?.contentOrNull ?: author
+            artist = seriesData["artist"]?.jsonPrimitiveOrNull?.contentOrNull ?: artist
+            memo = kotlinx.serialization.json.JsonObject(memo + (tachiyomi.domain.manga.service.WorkMetadata.MEMO_KEY to buildJsonObject {
+                put("format", seriesData["type"]?.jsonPrimitiveOrNull?.contentOrNull ?: type)
+                seriesData["year"]?.jsonPrimitiveOrNull?.intOrNull?.let { put("year", it) }
+                put("aliases", kotlinx.serialization.json.JsonArray(seriesData["alternativeTitles"]?.jsonArrayOrNull.orEmpty().mapNotNull {
+                    it.jsonObjectOrNull?.get("title")?.jsonPrimitiveOrNull?.contentOrNull?.takeIf(String::isNotBlank)?.let(::JsonPrimitive)
+                }))
+            }))
             coverUrl?.let { thumbnail_url = if (it.startsWith("http")) it else "$baseUrl$it" }
             status = when {
                 statusText?.contains("ONGOING", ignoreCase = true) == true || statusText?.contains("مستمر") == true -> SManga.ONGOING
@@ -241,7 +259,7 @@ class MangaTime(
         }
     }
 
-    fun parseChaptersResponse(responseBody: String, type: String, slug: String): List<SChapter> {
+    fun parseChaptersResponse(responseBody: String, type: String, slug: String, expectedSeriesId: String? = null): List<SChapter> {
         val jsonElement = json.parseToJsonElement(responseBody)
         val rootObj = if (jsonElement is JsonArray) jsonElement.firstOrNull()?.jsonObjectOrNull else jsonElement.requireObject("MangaTime response")
         val chaptersArray = rootObj?.get("result")?.jsonObjectOrNull?.get("data")?.jsonObjectOrNull?.get("json")?.jsonObjectOrNull?.get("chapters")?.jsonArrayOrNull
@@ -250,6 +268,9 @@ class MangaTime(
 
         val parsed = chaptersArray.map { element ->
             val obj = element.requireObject("MangaTime entry")
+            if (expectedSeriesId != null && obj["seriesId"]?.jsonPrimitiveOrNull?.contentOrNull?.let { it != expectedSeriesId } == true) {
+                throw IOException("MangaTime chapter ownership mismatch")
+            }
             val number = obj["number"]?.jsonPrimitiveOrNull?.doubleOrNull
                 ?: obj["number"]?.jsonPrimitiveOrNull?.intOrNull?.toDouble()
                 ?: obj["number"]?.jsonPrimitiveOrNull?.contentOrNull?.toDoubleOrNull()
@@ -278,6 +299,23 @@ class MangaTime(
         }.sortedByDescending { it.chapter_number }
         if (parsed.distinctBy { it.url }.size != parsed.size) throw IOException("MangaTime empty or ambiguous chapter list")
         return parsed
+    }
+
+    /** One metadata row only. A transient failure never proves that an index is empty. */
+    internal suspend fun hasPublishedChapters(manga: SManga): Boolean? {
+        val (type, slug, id) = parseMangaUrl(manga.url)
+        if (id.isBlank()) return null
+        val input = buildJsonObject { put("json", buildJsonObject { put("seriesId", id); put("limit", 1) }) }
+        val request = GET("$baseUrl/api/trpc/content.getChapters?input=${URLEncoder.encode(input.toString(), "UTF-8")}", headers)
+            .newBuilder().cacheControl(okhttp3.CacheControl.FORCE_NETWORK).build()
+        val body = client.newCall(request).awaitSuccess().use { it.body.string() }
+        val entries = parseChaptersResponse(body, type, slug, id)
+        val data = json.parseToJsonElement(body).requireObject("MangaTime response")["result"]?.jsonObjectOrNull
+            ?.get("data")?.jsonObjectOrNull?.get("json")?.jsonObjectOrNull ?: throw IOException("MangaTime probe missing result")
+        if (data["nextCursor"] is kotlinx.serialization.json.JsonObject || data["nextCursor"] is JsonArray) throw IOException("MangaTime invalid chapter continuation")
+        if (entries.isNotEmpty()) return true
+        return if (data["hasMore"]?.jsonPrimitiveOrNull?.booleanOrNull == false &&
+            data["nextCursor"] == kotlinx.serialization.json.JsonNull) false else null
     }
 
     override suspend fun getPageList(chapter: SChapter): List<Page> {

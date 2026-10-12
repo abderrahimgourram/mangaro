@@ -140,8 +140,8 @@ fun MangaroMangaHero(
                             lineHeight = if (narrow) 26.sp else 28.sp,
                             textDirection = TextDirection.Content,
                         ),
-                        maxLines = 3,
-                        overflow = TextOverflow.Ellipsis,
+                        // The details title is the work identity, not a truncated card label.
+                        softWrap = true,
                     )
                     manga.author?.takeIf { it.isNotBlank() }?.let {
                         MetadataLine(it)

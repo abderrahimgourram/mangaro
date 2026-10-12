@@ -214,4 +214,50 @@ class MangaTimeParserTest {
         result.chapterCompleteness shouldBe eu.kanade.tachiyomi.source.model.ChapterFetchCompleteness.COMPLETE
     }
 
+    @Test fun `published metadata carries actual aliases creators and format without remapping identity`() {
+        val original=SManga.create().apply {url="/manhwa/sample#42";title="Sample Story"}
+        val result=mangaTime.parseMangaDetailsResponse("""{"result":{"data":{"json":{"id":"42","title":"Sample Story","type":"manhwa","author":"Creator","artist":"Artist","alternativeTitles":[{"title":"Sample Diary"}]}}}}""",original,"manhwa","sample","42")
+        result.url shouldBe "/manhwa/sample#42";result.author shouldBe "Creator"
+        val identity=result.memo[tachiyomi.domain.manga.service.WorkMetadata.MEMO_KEY]!!.jsonObject
+        identity["format"]!!.jsonPrimitive.content shouldBe "manhwa"
+        identity["aliases"].toString().contains("Sample Diary") shouldBe true
+    }
+    private fun client(body:String,status:Int=200)=okhttp3.OkHttpClient.Builder().addInterceptor {chain->
+        chain.request().header("Referer") shouldBe "https://mangatime.org/"
+        okhttp3.Response.Builder().request(chain.request()).protocol(okhttp3.Protocol.HTTP_1_1).code(status).message("fixture")
+            .body(body.toResponseBody()).build()
+    }.build()
+    @Test fun `terminal empty chapter index proves zero without inventing catalogue totals`() = kotlinx.coroutines.test.runTest {
+        val m=SManga.create().apply{url="/manga/empty#42";title="Empty"}
+        val source=MangaTime(client("""{"result":{"data":{"json":{"chapters":[],"hasMore":false,"nextCursor":null}}}}"""))
+        val result=source.getMangaUpdate(m,emptyList(),false,true)
+        result.chapterCompleteness shouldBe eu.kanade.tachiyomi.source.model.ChapterFetchCompleteness.COMPLETE
+        result.declaredChapterCount shouldBe 0;source.hasPublishedChapters(m) shouldBe false
+    }
+    @Test fun `transient HTTP errors and invalid HTTP 200 responses cannot prove empty chapters`() = kotlinx.coroutines.test.runTest {
+        val m=SManga.create().apply{url="/manhwa/sample#42";title="Sample"}
+        org.junit.jupiter.api.assertThrows<eu.kanade.tachiyomi.network.HttpException>{MangaTime(client("Unavailable",503)).hasPublishedChapters(m)}.code shouldBe 503
+        org.junit.jupiter.api.assertThrows<Exception>{MangaTime(client("<html>Error</html>")).hasPublishedChapters(m)}
+        MangaTime(client("""{"result":{"data":{"json":{"chapters":[],"hasMore":true,"nextCursor":"continue"}}}}""")).hasPublishedChapters(m) shouldBe null
+    }
+    @Test fun `bounded index probe requests one metadata row and checks chapter ownership`() = kotlinx.coroutines.test.runTest {
+        var limit:Int?=null
+        val c=okhttp3.OkHttpClient.Builder().addInterceptor {chain->
+            limit=Json.parseToJsonElement(chain.request().url.queryParameter("input")!!).jsonObject["json"]!!.jsonObject["limit"]!!.jsonPrimitive.content.toInt()
+            okhttp3.Response.Builder().request(chain.request()).protocol(okhttp3.Protocol.HTTP_1_1).code(200).message("fixture")
+                .body("""{"result":{"data":{"json":{"chapters":[{"id":"ch1","seriesId":"42","number":3333}],"hasMore":true,"nextCursor":"ch1"}}}}""".toResponseBody()).build()
+        }.build()
+        MangaTime(c).hasPublishedChapters(SManga.create().apply{url="/manhwa/sample#42";title="Sample"}) shouldBe true
+        limit shouldBe 1
+        org.junit.jupiter.api.assertThrows<java.io.IOException>{mangaTime.parseChaptersResponse("""{"result":{"data":{"json":{"chapters":[{"id":"ch1","seriesId":"other","number":1}]}}}}""","manhwa","sample","42")}
+    }
+    @Test fun `malformed continuation cannot masquerade as a confirmed empty index`() = kotlinx.coroutines.test.runTest {
+        val source=MangaTime(client("""{"result":{"data":{"json":{"chapters":[],"hasMore":false,"nextCursor":{"page":2}}}}}"""))
+        val m=SManga.create().apply{url="/manhwa/sample#42";title="Sample"}
+        org.junit.jupiter.api.assertThrows<java.io.IOException>{source.hasPublishedChapters(m)}
+        org.junit.jupiter.api.assertThrows<java.io.IOException>{source.getMangaUpdate(m,emptyList(),false,true)}
+        val malformedNonempty=MangaTime(client("""{"result":{"data":{"json":{"chapters":[{"id":"ch1","seriesId":"42","number":1}],"hasMore":false,"nextCursor":{"page":2}}}}}"""))
+        org.junit.jupiter.api.assertThrows<java.io.IOException>{malformedNonempty.hasPublishedChapters(m)}
+    }
+
 }

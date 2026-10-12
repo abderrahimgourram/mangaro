@@ -257,13 +257,13 @@ fun MangaroSearchScreen(
                             ) {
                                 Column(Modifier.weight(1f)) {
                                     Text(
-                                        "Manga Starz: ${if (isCloudflare) "يتطلب إكمال التحقق الأمني" else "تعذّر الاتصال بالمصدر"}",
+                                        if (isCloudflare) "بعض النتائج تتطلب إكمال التحقق الأمني" else "تعذّر تحميل بعض النتائج",
                                         color = Color(0xFFE5B5AB),
                                         style = MaterialTheme.typography.bodySmall,
                                     )
                                 }
                                 TextButton(onClick = {
-                                    val intent = WebViewActivity.newIntent(context, "https://starzmanga.com", mangaStarzId, "Manga Starz")
+                                    val intent = WebViewActivity.newIntent(context, "https://starzmanga.com", mangaStarzId, "التحقق الأمني")
                                     context.startActivity(intent)
                                 }) {
                                     Text("التحقق الأمني", color = MangaroDesignSystem.GoldPrimary)
@@ -306,14 +306,6 @@ fun MangaroSearchScreen(
 
 @Composable
 private fun SearchMangaCard(manga: Manga, result: eu.kanade.tachiyomi.ui.browse.source.globalsearch.RankedSearchResult, onClick: () -> Unit) {
-    val sourceName = remember(manga.source) {
-        try {
-            Injekt.get<SourceManager>()
-                .getOrStub(manga.source).name.ifBlank { "مصدر غير معروف" }
-        } catch (_: Exception) {
-            "مصدر غير معروف"
-        }
-    }
     eu.kanade.presentation.components.MangaroWorkCard(
         title = manga.title,
         onClick = onClick,
@@ -327,12 +319,10 @@ private fun SearchMangaCard(manga: Manga, result: eu.kanade.tachiyomi.ui.browse.
             }
         },
         metadata = {
-            Text("المصدر: $sourceName", color = MangaroDesignSystem.GoldPrimary, style = MaterialTheme.typography.labelSmall.copy(textDirection = TextDirection.ContentOrRtl), maxLines = 1, overflow = TextOverflow.Ellipsis)
             result.verifiedDistinctChapters?.let { count ->
                 Text(if (result.indexComplete) "$count فصل موثّق" else "$count فصل مفهرس على الأقل",
                     color = MangaroDesignSystem.TextSecondary, style = MaterialTheme.typography.labelSmall)
             }
-            if (result.provisional) Text("اختيار مؤقت", color = MangaroDesignSystem.TextSecondary, style = MaterialTheme.typography.labelSmall)
             manga.author?.takeIf { it.isNotBlank() }?.let {
                 Text(it, color = MangaroDesignSystem.TextSecondary, style = MaterialTheme.typography.labelSmall.copy(textDirection = TextDirection.Content), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
