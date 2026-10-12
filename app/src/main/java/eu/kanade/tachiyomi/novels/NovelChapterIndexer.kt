@@ -6,6 +6,23 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 
 /** Every cursor is source supplied. Fifty is a transport page size, never a library limit. */
 internal object NovelChapterIndexer {
+    /** Continue successful bounded batches; stop honestly on a deadline, failure or exhausted session budget. */
+    suspend fun continueBatches(maxBatches: Int = 8, load: suspend () -> NovelChapterIndex): NovelChapterIndex {
+        require(maxBatches > 0)
+        val started = System.nanoTime()
+        val cursors = mutableSetOf<Int>()
+        var latest: NovelChapterIndex? = null
+        repeat(maxBatches) {
+            currentCoroutineContext().ensureActive()
+            val index = load()
+            latest = index
+            if (index.complete || index.nextPage == null) return index
+            check(cursors.add(index.nextPage)) { "Chapter discovery batch did not advance" }
+            if (System.nanoTime() - started >= 120_000_000_000L) return index
+            kotlinx.coroutines.yield()
+        }
+        return checkNotNull(latest)
+    }
     suspend fun collect(source: NovelSource, novel: Novel, initial: NovelChapterIndex = NovelChapterIndex(novel.id),
         stopWhen: (NovelChapterIndex) -> Boolean = { false },
         maxPages: Int = Int.MAX_VALUE,

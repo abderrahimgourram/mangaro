@@ -136,6 +136,7 @@ class NovelRepository private constructor(context: Context) {
         val http = chapterNetwork
         listOf(KolNovelSource(http), CeneleSource(http), SunovelsSource(http), SeaNovelSource(http))
     }
+    val activeSources get() = sources.filter { NovelSourceAvailability.active(it.id) }
     private val rules by lazy { NovelRuleStore(app) }
     private val indexRevision = MutableStateFlow(0L)
     private val indexes = LinkedHashMap<String, NovelChapterIndex>()
@@ -205,7 +206,7 @@ class NovelRepository private constructor(context: Context) {
         }
     }
     suspend fun verifyCandidates(visible: Set<String>) = withContext(Dispatchers.Default) {
-        val all = catalog.value.works.flatMap { it.editions }
+        val all = catalog.value.works.flatMap { it.editions }.filter { NovelSourceAvailability.active(it.sourceId) }
         val groups = all.groupBy { NovelIdentity.titleKey(it.title) }.values.filter { group ->
             group.map { it.sourceId }.distinct().size > 1 && group.any { it.id in visible }
         }
@@ -273,7 +274,18 @@ class NovelRepository private constructor(context: Context) {
         catch (e: Exception) { mutableStorageError.value = "تعذّر استعادة مكتبة الروايات."; android.util.Log.w("MangaroNovels", "Library restore retry failed", e) }
         finally { mutableRestored.value = true }
     }
+    private suspend fun maySave(novel: Novel): Boolean {
+        ready.await()
+        if (NovelSourceAvailability.active(novel.sourceId) || library.value.any { it.novel.id == novel.id } || diskHasEdition(novel)) return true
+        val queue = activeDownloads() ?: if (File(app.filesDir, "novels-local/downloads/queue.db").isFile) downloads else null
+        return try { queue?.awaitReady(); queue?.tasks?.value?.any { it.novel.id == novel.id } == true }
+        catch (c: CancellationException) { throw c }
+        catch (_: Exception) { false }
+    }
+    private val retiredSourceMessage = "Sunovels مستبعد من الاكتشاف والإضافة الجديدة حاليًا. محتوياتك المحفوظة لم تُحذف."
+
     suspend fun setSaved(novel: Novel, saved: Boolean) {
+        if (saved && !maySave(novel)) { mutableStorageError.value = retiredSourceMessage; return }
         val owner = cloudAccount
         try {
             ingest(listOf(novel))
@@ -350,6 +362,8 @@ class NovelRepository private constructor(context: Context) {
         }
     }
     suspend fun updateLibrary(novel: Novel, favorite: Boolean? = null, status: String? = null, bookmark: String? = null, saved: Boolean? = null) {
+        if ((saved == true || favorite == true || status != null) && !maySave(novel))
+            throw NovelSourceFailure(retiredSourceMessage, "Retired novel source cannot create a library entry")
         val owner = cloudAccount
         require(status == null || status in setOf("reading", "completed", "planned"))
         withContext(Dispatchers.IO) {
@@ -548,6 +562,13 @@ class NovelRepository private constructor(context: Context) {
         while (indexes.size > 5) indexes.remove(indexes.keys.first())
         indexRevision.update { it + 1 }
     }
+    suspend fun continueIndex(novel: Novel, refresh: Boolean = false, onPage: suspend (NovelChapterIndex) -> Unit = {}): NovelChapterIndex {
+        var first = true
+        return NovelChapterIndexer.continueBatches {
+            completeIndex(novel, refresh = first && refresh, maxPages = 8, onPage = onPage).also { first = false }
+        }
+    }
+
     suspend fun completeIndex(novel: Novel, refresh: Boolean = false, onPage: suspend (NovelChapterIndex) -> Unit = {}): NovelChapterIndex =
         completeIndex(novel, refresh, Int.MAX_VALUE, onPage)
 
@@ -612,7 +633,7 @@ class NovelRepository private constructor(context: Context) {
             val key = indexKey(novel)
             val checkpointPath = indexPath(novel).removeSuffix(".json") + ".refresh.json"
             val pending = runCatching {
-                indexCache.read(checkpointPath)?.let { json.decodeFromString<NovelChapterIndex>(it) }
+                (metadata.read(checkpointPath) ?: indexCache.read(checkpointPath))?.let { json.decodeFromString<NovelChapterIndex>(it) }
                     ?.takeIf { it.editionId == novel.id && it.parserKey == key && it.updatedAt > (old?.updatedAt ?: 0) }
             }.getOrNull()
             if (old?.complete == true && old.parserKey == key && pending == null && !refresh &&
@@ -628,18 +649,12 @@ class NovelRepository private constructor(context: Context) {
                     check(old!!.chapters.all { it.id in ids }) { "Chapter index unexpectedly decreased" }
                 }
                 latest = index
-                if (preserve && !index.complete) indexCache.write(checkpointPath, json.encodeToString(index))
+                if (preserve && !index.complete) metadata.write(checkpointPath, json.encodeToString(index))
                 else { cacheIndex(index); persistIndex(novel, index) }
             }
             try {
                 suspend fun collect() = NovelChapterIndexer.collect(source(novel.sourceId), novel, initial, maxPages = maxPages) { index ->
-                    if (index.complete && preserve) {
-                        val ids = index.chapters.mapTo(HashSet()) { it.id }
-                        check(old!!.chapters.all { it.id in ids }) { "Chapter index unexpectedly decreased" }
-                    }
-                    latest = index
-                    if (!preserve || index.complete) cacheIndex(index)
-                    if (index.complete || index.fetchedPages.size == 1 || index.fetchedPages.size % 4 == 0) checkpoint(index)
+                    checkpoint(index) // Every verified page survives process death, not just every fourth page.
                 }
                 val result = collect()
                 checkpoint(result)
@@ -651,7 +666,7 @@ class NovelRepository private constructor(context: Context) {
                 // Never overwrite the prior usable index with an unfinished refresh.
                 if (e.message == "Chapter total changed during pagination") {
                     // A changing source invalidates the continuation, not the usable chapters.
-                    indexCache.write(checkpointPath, json.encodeToString(NovelChapterIndex(novel.id,
+                    metadata.write(checkpointPath, json.encodeToString(NovelChapterIndex(novel.id,
                         parserKey = key, updatedAt = System.currentTimeMillis())))
                 } else checkpoint(latest)
                 throw e
@@ -674,7 +689,7 @@ class NovelRepository private constructor(context: Context) {
                     if (latest.complete || latest.chapters.size >= count) return@withContext latest
                     val result = NovelChapterIndexer.collect(source(novel.sourceId), novel, latest,
                         stopWhen = { it.chapters.size >= count },
-                        onPage = { cacheIndex(it); if (it.complete || it.fetchedPages.size % 4 == 0) persistIndex(novel, it) })
+                        onPage = { cacheIndex(it); persistIndex(novel, it) })
                     persistIndex(novel, result)
                     if (result.complete) updateEvidence(novel, NovelEditionEvidence(true, result.availableCount, catalog.value.evidence[novel.id]?.accessWorks, result.updatedAt))
                     return@withContext result
@@ -690,7 +705,8 @@ class NovelRepository private constructor(context: Context) {
     }
     private fun diskHasEdition(novel: Novel) = File(app.filesDir, "novels-local/text-downloads/chapters/" + novelDigest(novel.id)).isDirectory
     private fun persistIndex(novel: Novel, index: NovelChapterIndex) {
-        if (library.value.any { it.novel.id == novel.id && it.saved } || diskHasEdition(novel)) metadata.write(indexPath(novel), json.encodeToString(index))
+        if (!index.complete || metadata.read(indexPath(novel)) != null || library.value.any { it.novel.id == novel.id && it.saved } || diskHasEdition(novel))
+            metadata.write(indexPath(novel), json.encodeToString(index))
         else {
             indexCache.write(indexPath(novel), json.encodeToString(index))
             val directory = File(app.cacheDir, "novels-indexes/indexes")
@@ -798,7 +814,14 @@ class NovelRepository private constructor(context: Context) {
                     offline
                 } else {
                     lastDataOrigin = "network"
-                    source(novel.sourceId).chapter(chapter)
+                    try { source(novel.sourceId).chapter(chapter) }
+                    catch (c: CancellationException) { throw c }
+                    catch (e: Exception) {
+                        if (novel.sourceId == "novel.sunovels") throw NovelSourceFailure(
+                            "تعذّر الوصول إلى هذا الفصل من Sunovels؛ قد يكون مقفلًا أو يتطلب تطبيق المصدر. الفصول المحمّلة تبقى قابلة للقراءة.",
+                            "Retired source chapter unavailable").also { it.initCause(e) }
+                        throw e
+                    }
                 }
                 val result = if (isCenele) CeneleSanitizer.sanitize(rawResult) else rawResult
                 check(result.paragraphs.size >= 3 && result.paragraphs.sumOf { it.length } >= 200) { "Incomplete novel chapter" }

@@ -31,6 +31,7 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.presentation.theme.MangaroDesignSystem as Design
 import eu.kanade.tachiyomi.novels.NovelRepository
+import eu.kanade.tachiyomi.novels.NovelSourceAvailability
 import eu.kanade.tachiyomi.ui.home.HomeScreen
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.coroutineScope
@@ -75,7 +76,7 @@ fun HomeNovelShelf() {
     val repository = remember(context) { NovelRepository.get(context) }
     // Shelf presentation observes only its bounded cards, not every catalogue/evidence mutation.
     val shelf by remember(repository) {
-        repository.catalog.map { state -> state.works.take(12).map { it.primary } }
+        repository.catalog.map { state -> state.works.mapNotNull(NovelSourceAvailability::discoverable).take(12).map { it.primary } }
             .distinctUntilChanged().flowOn(Dispatchers.Default)
     }.collectAsStateWithLifecycle(initialValue = emptyList())
     val navigator = LocalNavigator.currentOrThrow
@@ -95,7 +96,7 @@ fun HomeNovelShelf() {
                 val lanes = Semaphore(2)
                 val seedCached = repository.catalog.value.works.isEmpty()
                 coroutineScope {
-                    repository.sources.forEach { source -> launch {
+                    repository.activeSources.forEach { source -> launch {
                         lanes.withPermit {
                             try {
                                 // Seed the existing persistent cache before deciding a network refresh is needed.

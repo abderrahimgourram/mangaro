@@ -182,8 +182,8 @@ class NovelHomeScreen(private val initialGenre: String? = null) : Screen() {
             if (memory.query != (term to genre)) { slots = emptyMap(); pages = emptyMap() }
             memory.query = term to genre
             failed = emptySet()
-            busy = repository.sources.map { it.id }.toSet()
-            kotlinx.coroutines.coroutineScope { repository.sources.forEach { source -> launch {
+            busy = repository.activeSources.map { it.id }.toSet()
+            kotlinx.coroutines.coroutineScope { repository.activeSources.forEach { source -> launch {
                 try {
                     if (genre == null && slots[source.id].isNullOrEmpty()) {
                         repository.discoverySnapshot(source, term, 1, null)?.let { cached ->
@@ -224,12 +224,13 @@ class NovelHomeScreen(private val initialGenre: String? = null) : Screen() {
         val genreSnapshot = genre
         val presentation by produceState(Triple(emptyList<UnifiedNovelWork>(), emptyList<String>(), emptyList<UnifiedNovelWork>()), catalogSnapshot, slotsSnapshot, routesSnapshot, querySnapshot to genreSnapshot) {
             value = withContext(Dispatchers.Default) {
-                val lists = repository.sources.map { slotsSnapshot[it.id].orEmpty() }
+                val lists = repository.activeSources.map { slotsSnapshot[it.id].orEmpty() }
                 val editions = buildList { for (i in 0 until (lists.maxOfOrNull { it.size } ?: 0)) lists.forEach { it.getOrNull(i)?.let(::add) } }
-                val byEdition = catalogSnapshot.works.flatMap { w -> w.editions.map { it.id to w } }.toMap()
-                val works = if (editions.isEmpty() && querySnapshot.isBlank() && genreSnapshot == null) catalogSnapshot.works.take(64)
+                val activeWorks = catalogSnapshot.works.mapNotNull(NovelSourceAvailability::discoverable)
+                val byEdition = activeWorks.flatMap { w -> w.editions.map { it.id to w } }.toMap()
+                val works = if (editions.isEmpty() && querySnapshot.isBlank() && genreSnapshot == null) activeWorks.take(64)
                     else editions.mapNotNull { byEdition[it.id] }.distinctBy { it.id }
-                val genres = (routesSnapshot.values.flatten().map { it.name } + catalogSnapshot.works.flatMap { it.editions }.flatMap { it.genres })
+                val genres = (routesSnapshot.filterKeys(NovelSourceAvailability::active).values.flatten().map { it.name } + activeWorks.flatMap { it.editions }.flatMap { it.genres })
                     .distinctBy(NovelGenres::key).sortedBy(NovelGenres::key)
                 val recent = (slotsSnapshot["novel.kolnovel"].orEmpty().take(3) + slotsSnapshot["novel.cenele"].orEmpty().take(3))
                     .mapNotNull { byEdition[it.id] }.distinctBy { it.id }
@@ -368,7 +369,7 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
         val work = remember(catalog, initial.id) { catalog.work(initial.id) ?: UnifiedNovelWork(NovelIdentity.initialWorkId(initial.id), listOf(initial), initial.id) }
         val scope = rememberCoroutineScope()
         val downloadAdGate = rememberNovelDownloadAdGate()
-        var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
+        var selectedId by rememberSaveable { mutableStateOf<String?>(initial.id) }
         val novel = work.editions.firstOrNull { it.id == selectedId } ?: work.primary
         val saved = library.any { entry -> entry.saved && work.editions.any { it.id == entry.novel.id } }
         val resume = library.filter { entry -> entry.position != null && work.editions.any { it.id == entry.novel.id } }.maxByOrNull { it.position!!.updatedAt }
@@ -396,7 +397,7 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
         LaunchedEffect(initial.id) { repository.awaitLocal(); repository.ingest(listOf(initial)) }
         LaunchedEffect(work.editions.map { it.id }, retry) {
             val request = ++indexEpoch
-            val editions = if (retryEditionId == null) work.editions else work.editions.filter { it.id == retryEditionId }
+            val editions = work.editions.filter { (NovelSourceAvailability.active(it.sourceId) || it.id == initial.id) && (retryEditionId == null || it.id == retryEditionId) }
             busy = editions.map { it.id }.toSet(); indexErrors = indexErrors - busy
             // Cached indexes and known offline/history rows are available before any HTTP request.
             editions.forEach { edition ->
@@ -406,7 +407,7 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
             editions.forEach { edition -> launch {
                 try {
                     gate.withPermit {
-                        repository.completeIndex(edition, refresh = retry > 0, maxPages = 8) { partial ->
+                        repository.continueIndex(edition, refresh = retry > 0) { partial ->
                             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
                                 if (request == indexEpoch) indexes = indexes + (edition.id to partial)
                             }
@@ -489,6 +490,10 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
             IconButton(onClick = { navigator.push(NovelDownloadsScreen()) }) { Icon(Icons.Outlined.Download, "تنزيلات الروايات", tint = Design.GoldPrimary) }
         }) {
             LazyColumn(Modifier.weight(1f), state = detailScroll, contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (!NovelSourceAvailability.active(novel.sourceId)) item(key = "retired-source") {
+                    Text("Sunovels مستبعد مؤقتًا من الاكتشاف بسبب روابط فصول ملتبسة ومحتوى مقفل. فصولك المحمّلة وسجل القراءة محفوظان.",
+                        color = Design.LavenderPrimary, style = MaterialTheme.typography.bodySmall)
+                }
                 item {
                     Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         NovelCover(novel, Modifier.width(102.dp).height(150.dp))

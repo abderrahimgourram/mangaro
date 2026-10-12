@@ -90,6 +90,8 @@ android {
             "eu.kanade.tachiyomi.novels.NovelPerformanceInstrumentation"
         } else if (providers.gradleProperty("novelPartialAudit").orNull == "true") {
             "eu.kanade.tachiyomi.novels.NovelPartialRuleInstrumentation"
+        } else if (providers.gradleProperty("novelReliabilityAudit").orNull == "true") {
+            "eu.kanade.tachiyomi.novels.NovelReliabilityInstrumentation"
         } else if (providers.gradleProperty("novelOfflineRecoveryAudit").orNull == "true") {
             "eu.kanade.tachiyomi.novels.NovelOfflineRecoveryInstrumentation"
         } else if (providers.gradleProperty("novelReaderScopeAudit").orNull == "true") {

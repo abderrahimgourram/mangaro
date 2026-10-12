@@ -91,4 +91,45 @@ class NovelIndexPerformanceTest {
         source.requests shouldBe emptyList()
     }
 
+    @Test fun visibleSessionContinuesBeyondTheFirstEightPages() = runTest {
+        val source = Source { p -> ChapterPage(((p-1)*100 until p*100).map(::chapter), if (p < 30) p+1 else null, declaredTotal = 3000) }
+        var checkpoint = NovelChapterIndex(novel.id)
+        val result = NovelChapterIndexer.continueBatches {
+            NovelChapterIndexer.collect(source, novel, checkpoint, maxPages = 8) { checkpoint = it }
+        }
+        result.complete shouldBe true
+        result.chapters.size shouldBe 3000
+        source.requests shouldBe (1..30).toList()
+    }
+    @Test fun sessionBudgetReturnsTruthfulPartialIndex() = runTest {
+        val source = Source { p -> ChapterPage(((p-1)*100 until p*100).map(::chapter), p+1) }
+        var checkpoint = NovelChapterIndex(novel.id)
+        val result = NovelChapterIndexer.continueBatches(maxBatches = 1) {
+            NovelChapterIndexer.collect(source, novel, checkpoint, maxPages = 8) { checkpoint = it }
+        }
+        result.complete shouldBe false; result.nextPage shouldBe 9; result.declaredTotal shouldBe null
+        result.chapters.size shouldBe 800
+    }
+    @Test fun nonAdvancingBatchStopsInsteadOfLeavingAnEndlessSpinner() = runTest {
+        var requests = 0
+        runCatching { NovelChapterIndexer.continueBatches {
+            requests++; NovelChapterIndex(novel.id, chapters = listOf(chapter(0)), nextPage = 2)
+        } }.isFailure shouldBe true
+        requests shouldBe 2
+    }
+    @Test fun failedBatchLeavesCheckpointForRetryWithoutPageOneRestart() = runTest {
+        val source = Source { p -> ChapterPage(listOf(chapter(p)), if (p < 12) p+1 else null, declaredTotal = 12) }
+        var checkpoint = NovelChapterIndex(novel.id)
+        var batch = 0
+        runCatching { NovelChapterIndexer.continueBatches {
+            if (++batch == 2) throw java.io.IOException("fixture interruption")
+            NovelChapterIndexer.collect(source, novel, checkpoint, maxPages = 8) { checkpoint = it }
+        } }.isFailure shouldBe true
+        checkpoint.nextPage shouldBe 9
+        NovelChapterIndexer.continueBatches {
+            NovelChapterIndexer.collect(source, novel, checkpoint, maxPages = 8) { checkpoint = it }
+        }.complete shouldBe true
+        source.requests shouldBe (1..12).toList()
+    }
+
 }
