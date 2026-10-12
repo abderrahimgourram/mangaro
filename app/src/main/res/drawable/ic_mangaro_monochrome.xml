@@ -1,1 +1,6 @@
-<inset xmlns:android="http://schemas.android.com/apk/res/android" android:insetLeft="20dp" android:insetTop="20dp" android:insetRight="20dp" android:insetBottom="20dp"><bitmap android:src="@drawable/mangaro_launcher_mono" android:gravity="fill" android:filter="true"/></inset>
+<!-- Original alpha-only brand mark; tinted by Android 13+ themed launchers. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:insetLeft="15%" android:insetTop="15%"
+    android:insetRight="15%" android:insetBottom="15%">
+    <bitmap android:src="@drawable/mangaro_launcher_mono" android:gravity="fill" android:filter="true"/>
+</inset>

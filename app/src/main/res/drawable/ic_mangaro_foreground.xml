@@ -1,1 +1,6 @@
-<inset xmlns:android="http://schemas.android.com/apk/res/android" android:insetLeft="20dp" android:insetTop="20dp" android:insetRight="20dp" android:insetBottom="20dp"><bitmap android:src="@drawable/mangaro_launcher_asset" android:gravity="fill" android:filter="true"/></inset>
+<!-- 108dp adaptive viewport: the extracted mark occupies approximately 56dp. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:insetLeft="23%" android:insetTop="23%"
+    android:insetRight="23%" android:insetBottom="23%">
+    <bitmap android:src="@drawable/mangaro_launcher_foreground" android:gravity="fill" android:filter="true"/>
+</inset>
