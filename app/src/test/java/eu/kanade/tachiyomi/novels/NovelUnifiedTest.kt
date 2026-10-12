@@ -143,6 +143,22 @@ class NovelUnifiedTest {
         disk.cleanTemporary() shouldBe 1;disk.cleanTemporary() shouldBe 0
         fresh.exists() shouldBe true;disk.read("a","1") shouldBe text()
     }
+    @Test fun missingIllustrationDoesNotMakeReadableTextACompleteDownload() {
+        val disk=NovelDownloadDisk(temporary)
+        val rich=text().copy(blocks=listOf(NovelContentBlock(NovelBlockKind.IMAGE,imageUrl="https://cenele.com/fixture.png")))
+        disk.write("a","1",rich)
+        val cached=disk.read("a","1")!!
+        cached shouldBe rich
+        disk.complete(cached) shouldBe false
+        disk.complete("a","1") shouldBe false
+        disk.read("a","1") shouldBe rich
+    }
+    @Test fun legacyTextOnlyDownloadStillCompletesWithoutIllustrationRequests() {
+        val disk=NovelDownloadDisk(temporary)
+        disk.write("a","1",text())
+        disk.complete(disk.read("a","1")!!) shouldBe true
+        disk.complete("a","1") shouldBe true
+    }
     @Test @EnabledIfEnvironmentVariable(named="MANGARO_UNIFIED_INDEX_LIVE",matches="1")
     fun liveCompleteIndexes()=runBlocking<Unit> {
         val http=NovelHttp()

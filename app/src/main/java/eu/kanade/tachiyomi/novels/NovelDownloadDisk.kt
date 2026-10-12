@@ -120,9 +120,9 @@ class NovelDownloadDisk(private val root: File) {
         if (!NovelHttp.allowed(url)) return null
         return asset(novelDigest(url)).takeIf { it.isFile && it.length() > 0 }
     }
-    fun complete(edition: String, chapter: String): Boolean = read(edition, chapter)?.let { text ->
+    fun complete(edition: String, chapter: String): Boolean = read(edition, chapter)?.let(::complete) ?: false
+    internal fun complete(text: NovelText): Boolean =
         text.blocks.filter { it.kind == NovelBlockKind.IMAGE }.all { it.imageUrl?.let(::localIllustration) != null }
-    } ?: false
 
     /** Image work stays in the existing chapter worker, outside its queue mutex. */
     internal suspend fun prepareWithIllustrations(edition: String, chapter: String, text: NovelText,

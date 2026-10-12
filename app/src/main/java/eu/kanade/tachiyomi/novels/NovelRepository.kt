@@ -776,9 +776,23 @@ class NovelRepository private constructor(context: Context) {
                     return@async if (isCenele) CeneleSanitizer.sanitize(it) else it
                 }
                 val offline = disk.read(novel.id, chapter.id)
-                if (offline == null && downloadQueue.isInitialized() && downloads.tasks.value.any {
-                    it.novel.id == novel.id && it.chapter.id == chapter.id && it.state == NovelDownloadState.DONE
-                }) downloads.invalidate(novel, chapter)
+                if (offline == null || !disk.complete(offline)) {
+                    // Restore an existing queue on cold reopen; do not create one for ordinary online reading.
+                    val queue = if (downloadQueue.isInitialized() || File(app.filesDir, "novels-local/downloads/queue.db").isFile) downloads else null
+                    if (queue != null) {
+                        try {
+                            queue.awaitReady()
+                            if (queue.tasks.value.any {
+                                it.novel.id == novel.id && it.chapter.id == chapter.id && it.state == NovelDownloadState.DONE
+                            }) queue.invalidate(novel, chapter)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            // A queue failure must not erase or prevent reading valid cached text.
+                            android.util.Log.w("MangaroNovels", "Novel download integrity recovery unavailable")
+                        }
+                    }
+                }
                 val rawResult = if (offline != null) {
                     lastDataOrigin = "disk"
                     offline
