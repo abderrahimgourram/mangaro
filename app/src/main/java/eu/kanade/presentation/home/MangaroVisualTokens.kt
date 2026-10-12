@@ -35,9 +35,9 @@ object MangaroVisualTokens {
         ),
     )
 
-    val CardBorderColor = Color(0x33A78BFA)
+    val CardBorderColor = eu.kanade.presentation.theme.MangaroDesignSystem.BorderSubtle
     val GoldAccent = Color(0xFFFFB800)
     val PurplePrimary = Color(0xFFA78BFA)
-    val SurfaceDark = Color(0xFF18121D)
-    val SurfaceHigh = Color(0xFF231B2A)
+    val SurfaceDark = eu.kanade.presentation.theme.MangaroDesignSystem.SurfaceDark
+    val SurfaceHigh = eu.kanade.presentation.theme.MangaroDesignSystem.SurfaceHigh
 }

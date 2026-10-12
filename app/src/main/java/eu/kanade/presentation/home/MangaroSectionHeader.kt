@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -39,7 +40,7 @@ fun MangaroSectionHeader(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 5.dp),
+            .padding(horizontal = MangaroDesignSystem.PageInset, vertical = 4.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -65,11 +66,7 @@ fun MangaroSectionHeader(
 
             Text(
                 text = title,
-                style = MaterialTheme.typography.titleMedium.copy(
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
-                    letterSpacing = (-0.2).sp,
-                ),
+                style = MangaroDesignSystem.SectionHeaderStyle,
                 color = Color.White,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -79,7 +76,8 @@ fun MangaroSectionHeader(
         if (actionText != null && onActionClick != null) {
             Row(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(20.dp))
+                    .heightIn(min = MangaroDesignSystem.TouchTarget)
+                    .clip(MangaroDesignSystem.ShapeChip)
                     .background(MangaroDesignSystem.GoldPrimary.copy(alpha = 0.08f))
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
@@ -94,13 +92,13 @@ fun MangaroSectionHeader(
                     text = actionText,
                     style = MaterialTheme.typography.labelMedium.copy(
                         fontWeight = FontWeight.Bold,
-                        fontSize = 11.5.sp,
+                        fontSize = 12.sp,
                     ),
                     color = MangaroDesignSystem.GoldPrimary,
                 )
                 Icon(
                     imageVector = Icons.AutoMirrored.Outlined.ArrowForward,
-                    contentDescription = actionText,
+                    contentDescription = null,
                     tint = MangaroDesignSystem.GoldPrimary,
                     modifier = Modifier.size(13.dp),
                 )

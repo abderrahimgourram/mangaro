@@ -128,9 +128,9 @@ private fun DiscoveryShelf(
 
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
         val cardWidth = when {
-            maxWidth < 340.dp -> 96.dp
-            maxWidth < 430.dp -> 108.dp
-            else -> 116.dp
+            maxWidth < 340.dp -> 112.dp
+            maxWidth < 430.dp -> 120.dp
+            else -> 132.dp
         }
         LazyRow(
             state = listState,
@@ -153,24 +153,7 @@ private fun PopularMangaItem(
     width: Dp,
     onMangaClick: (Long) -> Unit,
 ) {
-    ArtworkFirstItem(item, width, onMangaClick) {
-        Text(
-            text = item.title,
-            style = MaterialTheme.typography.bodySmall.copy(
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 12.sp,
-                lineHeight = 16.sp,
-                textDirection = TextDirection.Content,
-            ),
-            color = Color(0xFFF3EFF7),
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(36.dp)
-                .padding(top = 7.dp),
-        )
-    }
+    ArtworkFirstItem(item, width, onMangaClick)
 }
 
 @Composable
@@ -202,24 +185,7 @@ private fun FreshMangaItem(
                 )
             }
         } else null,
-    ) {
-        Text(
-            text = item.title,
-            style = MaterialTheme.typography.bodySmall.copy(
-                fontWeight = FontWeight.Medium,
-                fontSize = 11.75.sp,
-                lineHeight = 15.5.sp,
-                textDirection = TextDirection.Content,
-            ),
-            color = Color(0xFFE9E2EF),
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(36.dp)
-                .padding(top = 7.dp),
-        )
-    }
+    )
 }
 
 @Composable
@@ -228,36 +194,16 @@ private fun ArtworkFirstItem(
     width: Dp,
     onMangaClick: (Long) -> Unit,
     artworkOverlay: (@Composable BoxScope.() -> Unit)? = null,
-    caption: @Composable () -> Unit,
 ) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val pressed by interactionSource.collectIsPressedAsState()
-    val scale by androidx.compose.animation.core.animateFloatAsState(
-        targetValue = if (pressed) 0.97f else 1f,
-        animationSpec = tween(110),
-        label = "homeArtworkPress",
+    eu.kanade.presentation.components.MangaroWorkCard(
+        title = item.title,
+        onClick = { onMangaClick(item.mangaId) },
+        modifier = Modifier.width(width),
+        cover = { coverModifier ->
+            Box(coverModifier.clip(MangaroDesignSystem.ShapeCover).background(MangaroDesignSystem.SurfaceHigh)) {
+                MangaCover.Book(data = item.coverData, contentDescription = "", modifier = Modifier.fillMaxSize())
+                artworkOverlay?.invoke(this)
+            }
+        },
     )
-    Column(
-        modifier = Modifier
-            .width(width)
-            .graphicsLayer { scaleX = scale; scaleY = scale }
-            .clickable(interactionSource, indication = null) { onMangaClick(item.mangaId) }
-            .semantics { contentDescription = item.title },
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(2f / 3f)
-                .clip(RoundedCornerShape(13.dp))
-                .background(MangaroDesignSystem.SurfaceDark),
-        ) {
-            MangaCover.Book(
-                data = item.coverData,
-                contentDescription = item.title,
-                modifier = Modifier.fillMaxSize(),
-            )
-            artworkOverlay?.invoke(this)
-        }
-        Box(modifier = Modifier.graphicsLayer { alpha = if (pressed) 0.88f else 1f }) { caption() }
-    }
 }

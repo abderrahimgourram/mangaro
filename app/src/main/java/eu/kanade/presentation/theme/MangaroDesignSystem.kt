@@ -13,9 +13,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * Unified Mangaro Design System tokens & visual specs for Phase 05.
- * Provides a single source of truth for color palettes, borders, surface hierarchy,
- * card shapes, typography tokens, and action highlights across Home, Discover, and Navigation.
+ * Mangaro Refined Dark. Shared visual values; content and reading state stay with each feature.
  */
 object MangaroDesignSystem {
 
@@ -36,12 +34,20 @@ object MangaroDesignSystem {
     val BorderSubtle = Color(0x28A78BFA)
     val BorderHighlight = Color(0x55A78BFA)
     val GoldBorder = Color(0x66FFB800)
+    val TextPrimary = Color(0xFFF3ECF8)
+    val TextSecondary = Color(0xFFCBBED5)
+
+    val PageInset = 16.dp
+    val CardGap = 12.dp
+    val TouchTarget = 48.dp
+    const val CoverAspectRatio = 2f / 3f
 
     // Shapes
     val ShapeCard = RoundedCornerShape(14.dp)
     val ShapeBanner = RoundedCornerShape(20.dp)
     val ShapeChip = RoundedCornerShape(10.dp)
     val ShapeButton = RoundedCornerShape(12.dp)
+    val ShapeCover = RoundedCornerShape(10.dp)
 
     // Border Strokes
     val StrokeSubtle = BorderStroke(1.dp, BorderSubtle)
@@ -59,11 +65,11 @@ object MangaroDesignSystem {
 
     val CardTitleStyle: TextStyle
         @Composable get() = MaterialTheme.typography.bodySmall.copy(
-            fontWeight = FontWeight.Bold,
-            fontSize = 11.5.sp,
-            lineHeight = 15.5.sp,
-            color = Color.White,
-            textDirection = TextDirection.Content,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 13.sp,
+            lineHeight = 19.sp,
+            color = TextPrimary,
+            textDirection = TextDirection.ContentOrRtl,
         )
 
     val BadgeTextStyle: TextStyle

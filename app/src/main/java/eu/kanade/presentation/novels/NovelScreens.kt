@@ -70,8 +70,8 @@ internal fun NovelShell(title: String, actions: @Composable RowScope.() -> Unit 
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
         Column(Modifier.fillMaxSize().background(Design.BackgroundDark).safeDrawingPadding()) {
             Row(Modifier.fillMaxWidth().heightIn(min=56.dp).padding(end=12.dp),verticalAlignment=Alignment.CenterVertically) {
-                IconButton(onClick={navigator.pop()}) { Icon(Icons.AutoMirrored.Outlined.ArrowBack,"رجوع") }
-                Text(title,Modifier.weight(1f),style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold,
+                IconButton(onClick={navigator.pop()}) { Icon(Icons.AutoMirrored.Outlined.ArrowBack,"رجوع", tint = Design.TextSecondary) }
+                Text(title,Modifier.weight(1f),style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold,
                     maxLines=1,overflow=TextOverflow.Ellipsis,color=Color.White)
                 actions()
             }
@@ -107,7 +107,7 @@ internal fun NovelCover(novel: Novel, modifier: Modifier) {
         val bounds = coordinates.boundsInWindow()
         visible = bounds.width > 0 && bounds.height > 0 && bounds.bottom > 0 && bounds.right > 0 &&
             bounds.top < view.height && bounds.left < view.width
-    }.clip(RoundedCornerShape(14.dp)).background(Design.SurfaceHigh),contentAlignment=Alignment.Center) {
+    }.clip(Design.ShapeCover).background(Design.SurfaceHigh),contentAlignment=Alignment.Center) {
         Icon(Icons.Outlined.MenuBook,null,Modifier.size(40.dp),tint=Design.GoldPrimary.copy(alpha=.5f))
         val width = with(density) { maxWidth.toPx() }.toInt().coerceIn(1, 960)
         val height = with(density) { maxHeight.toPx() }.toInt().coerceIn(1, 1280)
@@ -123,12 +123,12 @@ internal fun NovelCover(novel: Novel, modifier: Modifier) {
 
 @Composable
 private fun NovelCard(novel: Novel, onOpen: () -> Unit) {
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Design.SurfaceDark).clickable(onClick=onOpen).padding(8.dp),
-        verticalArrangement=Arrangement.spacedBy(8.dp)) {
-        NovelCover(novel,Modifier.fillMaxWidth().aspectRatio(.72f))
-        Text(novel.title,style=MaterialTheme.typography.bodyMedium.copy(textDirection=TextDirection.ContentOrRtl),
-            color=Color.White,fontWeight=FontWeight.SemiBold,maxLines=2,minLines=2,overflow=TextOverflow.Ellipsis)
-    }
+    eu.kanade.presentation.components.MangaroWorkCard(
+        title = novel.title,
+        onClick = onOpen,
+        modifier = Modifier.fillMaxWidth(),
+        cover = { NovelCover(novel, it) },
+    )
 }
 
 @Composable
@@ -276,24 +276,26 @@ class NovelHomeScreen(private val initialGenre: String? = null) : Screen() {
             IconButton(onClick = { navigator.push(NovelDownloadsScreen()) }) { Icon(Icons.Outlined.Download, "تنزيلات الروايات", tint = Design.GoldPrimary) }
             IconButton(onClick = { navigator.push(NovelLibraryScreen()) }) { Icon(Icons.Outlined.Bookmarks, "مكتبة الروايات", tint = Design.GoldPrimary) }
         }) {
-            OutlinedTextField(input, { input = it }, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
-                placeholder = { Text("ابحث عن روايتك القادمة") }, singleLine = true, shape = RoundedCornerShape(16.dp),
-                textStyle = MaterialTheme.typography.bodyMedium.copy(textDirection = TextDirection.Content),
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search), keyboardActions = KeyboardActions(onSearch = { term = input.trim(); if (term.isNotBlank()) genre = null }),
-                trailingIcon = { IconButton(onClick = { term = input.trim(); if (term.isNotBlank()) genre = null }) { Icon(Icons.Outlined.Search, "بحث") } })
+            eu.kanade.presentation.components.MangaroSearchField(
+                value = input,
+                onValueChange = { input = it },
+                onSearch = { term = input.trim(); if (term.isNotBlank()) genre = null },
+                placeholder = "ابحث عن روايتك القادمة",
+                modifier = Modifier.fillMaxWidth().padding(horizontal = Design.PageInset, vertical = 8.dp),
+            )
             if (genres.isNotEmpty()) LazyRow(Modifier.fillMaxWidth(), contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                item { FilterChip(genre == null, onClick = { genre = null }, label = { Text("الكل") }, border = null) }
-                items(genres, key = NovelGenres::key) { name -> FilterChip(genre == NovelGenres.key(name), onClick = { input = ""; term = ""; genre = NovelGenres.key(name) }, label = { Text(NovelGenres.label(name)) }, border = null) }
+                item { eu.kanade.presentation.components.MangaroFilterChip("الكل", genre == null, onClick = { genre = null }) }
+                items(genres, key = NovelGenres::key) { name -> eu.kanade.presentation.components.MangaroFilterChip(NovelGenres.label(name), genre == NovelGenres.key(name), onClick = { input = ""; term = ""; genre = NovelGenres.key(name) }) }
             }
             BoxWithConstraints(Modifier.weight(1f)) {
                 LazyVerticalGrid(columns = if (maxWidth < 600.dp) GridCells.Fixed(2) else GridCells.Adaptive(160.dp),
                     state = gridState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    horizontalArrangement = Arrangement.spacedBy(Design.CardGap), verticalArrangement = Arrangement.spacedBy(Design.CardGap)) {
                     library.firstOrNull { it.position != null }?.let { current -> item(key = "continue", span = { GridItemSpan(maxLineSpan) }) {
                         Surface(Modifier.fillMaxWidth().clickable { navigator.push(NovelReaderScreen(current.novel, current.position!!.chapter)) },
                             shape = RoundedCornerShape(14.dp), color = Design.SurfaceDark) {
                             Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                NovelCover(current.novel, Modifier.size(34.dp, 48.dp))
+                                NovelCover(current.novel, Modifier.size(48.dp, 72.dp))
                                 Column(Modifier.weight(1f)) {
                                     Text("متابعة القراءة", color = Design.GoldPrimary, style = MaterialTheme.typography.labelMedium)
                                     Text(current.novel.title, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -304,15 +306,15 @@ class NovelHomeScreen(private val initialGenre: String? = null) : Screen() {
                     } }
                     if (term.isBlank() && genre == null && recent.isNotEmpty()) item(key = "updates", span = { GridItemSpan(maxLineSpan) }) {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("آخر التحديثات", color = Design.GoldPrimary, style = MaterialTheme.typography.titleSmall)
+                            Text("آخر التحديثات", color = Design.TextPrimary, style = Design.SectionHeaderStyle)
                             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 items(recent, key = { it.id }) { work ->
-                                    Row(Modifier.width(190.dp).clip(RoundedCornerShape(14.dp)).background(Design.SurfaceDark)
+                                    Row(Modifier.width(232.dp).clip(RoundedCornerShape(14.dp)).background(Design.SurfaceDark)
                                         .clickable { navigator.push(NovelDetailsScreen(work.primary)) }.padding(8.dp),
                                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        NovelCover(work.primary, Modifier.size(34.dp, 48.dp))
+                                        NovelCover(work.primary, Modifier.size(48.dp, 72.dp))
                                         Text(work.primary.title, Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis,
-                                            color = Color.White, style = MaterialTheme.typography.labelMedium.copy(textDirection = TextDirection.ContentOrRtl))
+                                            color = Color.White, style = Design.CardTitleStyle)
                                     }
                                 }
                             }
@@ -320,7 +322,7 @@ class NovelHomeScreen(private val initialGenre: String? = null) : Screen() {
                     }
                     item(key = "catalog-title", span = { GridItemSpan(maxLineSpan) }) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            Text(if (genre == null) "اكتشف الروايات" else NovelGenres.label(genre!!), Modifier.weight(1f), color = Color.White, fontWeight = FontWeight.SemiBold)
+                            Text(if (genre == null) "اكتشف الروايات" else NovelGenres.label(genre!!), Modifier.weight(1f), color = Design.TextPrimary, style = Design.SectionHeaderStyle)
                             if (busy.isNotEmpty()) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Design.LavenderPrimary)
                         }
                     }

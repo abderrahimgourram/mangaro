@@ -132,7 +132,6 @@ fun MangaroSearchScreen(
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
-    var focused by remember { mutableStateOf(false) }
     // Keep real source-scoped variants; equal titles are not the same manga.
     val context = LocalContext.current
     val results = state.rankedResults
@@ -144,11 +143,6 @@ fun MangaroSearchScreen(
     val loading = hasSearch && state.isSearching
     val currentResults = state.resultQuery == query.trim()
     val failed = hasSearch && state.activeQuery == query.trim() && state.items.values.any { it is SearchItemResult.Error }
-    val fieldBorder by animateColorAsState(
-        if (focused) MangaroDesignSystem.GoldPrimary.copy(alpha = 0.32f) else Color(0x30A78BFA),
-        animationSpec = tween(150),
-        label = "searchFieldFocus",
-    )
     val submit = {
         onSearch()
         keyboard?.hide()
@@ -173,56 +167,17 @@ fun MangaroSearchScreen(
                 Text("البحث", Modifier.padding(horizontal = 8.dp, vertical = 10.dp), color = Color.White,
                     style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             }
-            Surface(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp),
-                color = MangaroDesignSystem.SurfaceDark,
-                shape = RoundedCornerShape(16.dp),
-                border = BorderStroke(1.dp, fieldBorder),
-            ) {
-                BasicTextField(
-                    value = query,
-                    onValueChange = onChangeQuery,
-                    singleLine = true,
-                    textStyle = MaterialTheme.typography.bodyLarge.copy(
-                        color = Color.White,
-                        textDirection = TextDirection.Content,
-                        textAlign = TextAlign.Start,
-                    ),
-                    cursorBrush = SolidColor(MangaroDesignSystem.GoldPrimary),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(onSearch = { submit() }),
-                    modifier = Modifier.fillMaxWidth().height(56.dp)
-                        .focusRequester(focusRequester)
-                        .onFocusChanged { focused = it.isFocused },
-                    decorationBox = { innerTextField ->
-                        Row(
-                            Modifier.fillMaxSize().padding(horizontal = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            IconButton(onClick = { submit() }, modifier = Modifier.size(48.dp)) {
-                                Icon(Icons.Outlined.Search, "بحث", tint = MangaroDesignSystem.GoldPrimary, modifier = Modifier.size(21.dp))
-                            }
-                            Box(Modifier.weight(1f).padding(horizontal = 6.dp)) {
-                                if (query.isEmpty()) {
-                                    Text("ابحث عن مانجا...", color = Color(0xFF9E95AC), style = MaterialTheme.typography.bodyLarge)
-                                }
-                                innerTextField()
-                            }
-                            if (query.isNotEmpty()) {
-                                IconButton(
-                                    onClick = {
-                                        onChangeQuery("")
-                                        focusRequester.requestFocus()
-                                    },
-                                    modifier = Modifier.size(48.dp),
-                                ) {
-                                    Icon(Icons.Outlined.Close, "مسح البحث", tint = Color(0xFFCBBED5), modifier = Modifier.size(18.dp))
-                                }
-                            }
-                        }
-                    },
-                )
-            }
+            eu.kanade.presentation.components.MangaroSearchField(
+                value = query,
+                onValueChange = { value ->
+                    onChangeQuery(value)
+                    if (value.isEmpty()) focusRequester.requestFocus()
+                },
+                onSearch = { submit() },
+                placeholder = "ابحث عن مانجا...",
+                modifier = Modifier.fillMaxWidth().padding(horizontal = MangaroDesignSystem.PageInset),
+                inputModifier = Modifier.focusRequester(focusRequester),
+            )
             if (hasSearch && currentResults && results.isNotEmpty()) {
                 Text(
                     "${results.size} نتيجة",
@@ -351,9 +306,6 @@ fun MangaroSearchScreen(
 
 @Composable
 private fun SearchMangaCard(manga: Manga, onClick: () -> Unit) {
-    val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
-    val scale by animateFloatAsState(if (pressed) 0.97f else 1f, tween(140), label = "searchCardPress")
     val sourceName = remember(manga.source) {
         try {
             Injekt.get<SourceManager>()
@@ -362,20 +314,24 @@ private fun SearchMangaCard(manga: Manga, onClick: () -> Unit) {
             "مصدر غير معروف"
         }
     }
-    Column(Modifier.fillMaxWidth().graphicsLayer { scaleX = scale; scaleY = scale }
-        .clip(RoundedCornerShape(12.dp)).clickable(interactionSource = interaction, indication = null, onClick = onClick),
-        verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Box {
-            MangaCover.Book(data = manga.asMangaCover(), modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), contentDescription = manga.title)
-            if (manga.favorite) Surface(Modifier.align(Alignment.TopEnd).padding(6.dp), color = MangaroDesignSystem.BackgroundDark.copy(alpha = 0.88f), shape = RoundedCornerShape(8.dp)) {
-                Icon(Icons.Outlined.BookmarkBorder, "في المكتبة", Modifier.padding(5.dp).size(16.dp), tint = MangaroDesignSystem.GoldPrimary)
+    eu.kanade.presentation.components.MangaroWorkCard(
+        title = manga.title,
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        cover = { coverModifier ->
+            Box(coverModifier.clip(MangaroDesignSystem.ShapeCover)) {
+                MangaCover.Book(data = manga.asMangaCover(), modifier = Modifier.fillMaxSize(), contentDescription = "")
+                if (manga.favorite) Surface(Modifier.align(Alignment.TopEnd).padding(6.dp), color = MangaroDesignSystem.BackgroundDark.copy(alpha = 0.88f), shape = MangaroDesignSystem.ShapeChip) {
+                    Icon(Icons.Outlined.BookmarkBorder, "في المكتبة", Modifier.padding(5.dp).size(16.dp), tint = MangaroDesignSystem.GoldPrimary)
+                }
             }
-        }
-        Text(manga.title, color = Color.White, style = MaterialTheme.typography.bodyMedium.copy(textDirection = TextDirection.Content),
-            fontWeight = FontWeight.SemiBold, minLines = 2, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        Text("المصدر: $sourceName", color = MangaroDesignSystem.GoldPrimary, style = MaterialTheme.typography.labelSmall.copy(textDirection = TextDirection.ContentOrRtl), maxLines = 1, overflow = TextOverflow.Ellipsis)
-        manga.author?.takeIf { it.isNotBlank() }?.let {
-            Text(it, color = Color(0xFF9E95AC), style = MaterialTheme.typography.labelSmall.copy(textDirection = TextDirection.Content), maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-    }
+        },
+        metadata = {
+            Text("المصدر: $sourceName", color = MangaroDesignSystem.GoldPrimary, style = MaterialTheme.typography.labelSmall.copy(textDirection = TextDirection.ContentOrRtl), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            manga.author?.takeIf { it.isNotBlank() }?.let {
+                Text(it, color = MangaroDesignSystem.TextSecondary, style = MaterialTheme.typography.labelSmall.copy(textDirection = TextDirection.Content), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            androidx.compose.foundation.layout.Spacer(Modifier.height(4.dp))
+        },
+    )
 }

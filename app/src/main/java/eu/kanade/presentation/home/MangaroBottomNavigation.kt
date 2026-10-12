@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -47,6 +48,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDirection
@@ -78,7 +81,7 @@ fun MangaroNavigationBar(
 ) {
     Surface(
         color = MangaroDesignSystem.SurfaceDark,
-        tonalElevation = 6.dp,
+        tonalElevation = 0.dp,
         shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
         border = BorderStroke(1.dp, Color(0x1DA78BFA)),
         modifier = modifier
@@ -88,7 +91,7 @@ fun MangaroNavigationBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(58.dp)
+                .heightIn(min = 64.dp)
                 .padding(horizontal = 6.dp),
             horizontalArrangement = Arrangement.SpaceAround,
             verticalAlignment = Alignment.CenterVertically,
@@ -116,7 +119,7 @@ private fun RowScope.MangaroNavItem(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
-    val inactiveColor = Color(0xFF8C80A1)
+    val inactiveColor = MangaroDesignSystem.TextSecondary
 
     val animatedIconColor by animateColorAsState(
         targetValue = if (selected) MangaroDesignSystem.GoldPrimary else inactiveColor,
@@ -135,11 +138,9 @@ private fun RowScope.MangaroNavItem(
     Column(
         modifier = Modifier
             .weight(1f)
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick,
-            ),
+            .selectable(selected = selected, role = Role.Tab, onClick = onClick)
+            .heightIn(min = MangaroDesignSystem.TouchTarget)
+            .padding(vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
@@ -197,7 +198,7 @@ private fun RowScope.MangaroNavItem(
         Text(
             text = tab.options.title,
             style = MaterialTheme.typography.labelSmall.copy(
-                fontSize = 10.sp,
+                fontSize = 11.sp,
                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                 textDirection = TextDirection.Content,
             ),

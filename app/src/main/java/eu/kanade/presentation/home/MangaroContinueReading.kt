@@ -92,19 +92,14 @@ fun MangaroContinueReading(
             .clickable(interactionSource, indication = null) { onResumeClick() }
             .semantics { contentDescription = accessibilityLabel },
         colors = CardDefaults.cardColors(containerColor = MangaroDesignSystem.SurfaceDark),
-        border = BorderStroke(1.dp, Color(0x20A78BFA)),
-        shape = RoundedCornerShape(18.dp),
+        border = MangaroDesignSystem.StrokeSubtle,
+        shape = MangaroDesignSystem.ShapeCard,
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
     ) {
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(
-                        Brush.horizontalGradient(
-                            listOf(Color(0xFF21162D), Color(0xFF15101C)),
-                        ),
-                    )
                     .padding(11.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(14.dp),

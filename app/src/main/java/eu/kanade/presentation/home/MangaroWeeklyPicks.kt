@@ -24,7 +24,11 @@ import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import eu.kanade.presentation.manga.components.MangaCover
+import coil3.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.painter.ColorPainter
+import eu.kanade.presentation.util.rememberResourceBitmapPainter
+import eu.kanade.tachiyomi.R
 import eu.kanade.presentation.theme.MangaroDesignSystem
 import eu.kanade.tachiyomi.ui.home.WeeklyPicksState
 import tachiyomi.core.common.util.lang.WesternDigits
@@ -40,7 +44,7 @@ internal fun MangaroWeeklyPicks(state: WeeklyPicksState, onOpen: (Long) -> Unit,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text("اختيارات المجتمع", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text("اختيارات المجتمع", style = MangaroDesignSystem.SectionHeaderStyle)
                 }
                 if (state.failed || (state.cards.isEmpty() && !state.loading)) {
                     TextButton(onClick = onRetry) { Text("إعادة المحاولة") }
@@ -49,8 +53,8 @@ internal fun MangaroWeeklyPicks(state: WeeklyPicksState, onOpen: (Long) -> Unit,
             BoxWithConstraints(Modifier.fillMaxWidth()) {
                 // 20dp leading inset + 12dp gap leaves a deliberate 24dp next-card peek.
                 val cardWidth = (maxWidth - 56.dp).coerceAtMost(380.dp)
-                val cardHeight = cardWidth / 1.5f
-                val shape = RoundedCornerShape(18.dp)
+                val cardHeight = 172.dp * androidx.compose.ui.platform.LocalDensity.current.fontScale.coerceIn(1f, 1.5f)
+                val shape = MangaroDesignSystem.ShapeBanner
                 LazyRow(
                     state = scroll,
                     flingBehavior = rememberSnapFlingBehavior(scroll, snapPosition = SnapPosition.Start),
@@ -61,14 +65,17 @@ internal fun MangaroWeeklyPicks(state: WeeklyPicksState, onOpen: (Long) -> Unit,
                         Row(
                             Modifier.width(cardWidth).height(cardHeight).clip(shape)
                                 .background(MangaroDesignSystem.SurfaceDark)
-                                .border(1.dp, Color(0xFF30263D), shape)
+                                .border(MangaroDesignSystem.StrokeSubtle, shape)
                                 .clickable(role = Role.Button) { onOpen(card.manga.mangaId) },
                         ) {
-                            // Keep the original portrait ratio; artwork is never stretched.
-                            MangaCover.Book(
-                                card.manga.coverData,
-                                Modifier.width(cardHeight * (2f / 3f)).fillMaxHeight(),
-                                shape = RoundedCornerShape(0.dp),
+                            // Crop original artwork to the frame without stretching.
+                            AsyncImage(
+                                model = card.manga.coverData,
+                                contentDescription = null,
+                                modifier = Modifier.width(112.dp).fillMaxHeight(),
+                                contentScale = ContentScale.Crop,
+                                placeholder = ColorPainter(MangaroDesignSystem.SurfaceHigh),
+                                error = rememberResourceBitmapPainter(R.drawable.cover_error),
                             )
                             Column(
                                 Modifier.weight(1f).fillMaxHeight().padding(14.dp),
@@ -85,7 +92,7 @@ internal fun MangaroWeeklyPicks(state: WeeklyPicksState, onOpen: (Long) -> Unit,
                                     card.manga.title,
                                     style = MaterialTheme.typography.titleMedium.copy(textDirection = TextDirection.Content),
                                     color = Color(0xFFF2EDF7), fontWeight = FontWeight.Bold,
-                                    maxLines = 2, overflow = TextOverflow.Ellipsis,
+                                    maxLines = 3, overflow = TextOverflow.Ellipsis,
                                 )
                                 val rating = card.rating
                                 Text(
@@ -103,7 +110,7 @@ internal fun MangaroWeeklyPicks(state: WeeklyPicksState, onOpen: (Long) -> Unit,
                     }
                     if (state.cards.isEmpty() && state.loading) items(2) {
                         Row(Modifier.width(cardWidth).height(cardHeight).clip(shape).background(MangaroDesignSystem.SurfaceDark)) {
-                            Box(Modifier.width(cardHeight * (2f / 3f)).fillMaxHeight().background(Color(0xFF241C34)))
+                            Box(Modifier.width(112.dp).fillMaxHeight().background(Color(0xFF241C34)))
                             Column(Modifier.weight(1f).padding(14.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
                                 Box(Modifier.size(30.dp, 22.dp).background(Color(0xFF33283E), RoundedCornerShape(6.dp)))
                                 Box(Modifier.fillMaxWidth().height(36.dp).background(Color(0xFF33283E), RoundedCornerShape(4.dp)))

@@ -112,20 +112,21 @@ fun HomeNovelShelf() {
         }
     }
     Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("روايات", Modifier.weight(1f), color = Color.White, fontWeight = FontWeight.SemiBold,
-                style = MaterialTheme.typography.titleMedium)
-            TextButton(onClick = { navigator.push(NovelHomeScreen()) }) { Text("استكشف", color = Design.GoldPrimary) }
-        }
+        eu.kanade.presentation.home.MangaroSectionHeader(
+            title = "روايات",
+            icon = Icons.Outlined.MenuBook,
+            actionText = "استكشف",
+            onActionClick = { navigator.push(NovelHomeScreen()) },
+        )
         if (shelf.isNotEmpty()) {
             LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(shelf, key = { it.id }) { novel ->
-                    Column(Modifier.width(96.dp).clickable { navigator.push(NovelDetailsScreen(novel)) },
-                        verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        NovelCover(novel, Modifier.fillMaxWidth().height(136.dp))
-                        Text(novel.title, color = Color(0xFFD7CBE1), maxLines = 2, overflow = TextOverflow.Ellipsis,
-                            style = MaterialTheme.typography.labelMedium.copy(textDirection = TextDirection.ContentOrRtl))
-                    }
+                    eu.kanade.presentation.components.MangaroWorkCard(
+                        title = novel.title,
+                        onClick = { navigator.push(NovelDetailsScreen(novel)) },
+                        modifier = Modifier.width(120.dp),
+                        cover = { NovelCover(novel, it) },
+                    )
                 }
             }
         } else if (loading) {
