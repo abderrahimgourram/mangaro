@@ -48,7 +48,9 @@ class NovelRuleUpdateJob(context: Context, parameters: WorkerParameters) : Corou
         }
     }
     companion object {
-        internal const val PUBLIC_PIPELINE_APPROVED=false
+        // Revision 4's production-pinned partial feed passed isolated debug and minified acceptance.
+        // This enables only the next compatible APK; installed legacy clients remain unchanged.
+        internal const val PUBLIC_PIPELINE_APPROVED=true
         private const val ROOT="https://raw.githubusercontent.com/abderrahimgourram/mangaro-novel-sources/main/"
         @Synchronized
         fun schedule(context: Context) {
