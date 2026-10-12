@@ -190,6 +190,16 @@ android {
     }
 
     sourceSets {
+        // Self-instrument the optimized preview: external test calls may target R8-inlined methods.
+        // This source/manifest is never part of a production release and adds no production keep rules.
+        if (providers.gradleProperty("novelMinifiedScopeAudit").orNull == "true") {
+            getByName("preview").kotlin.srcDir("src/readerScopeAudit/java")
+            // This directory contains only the wrong-key fixture, never a bundled-key override.
+            getByName("preview").assets.srcDir("src/readerScopeAudit/assets")
+            getByName("preview").manifest.srcFile("src/readerScopeAudit/AndroidManifest.xml")
+        } else {
+            getByName("androidTest").kotlin.srcDir("src/readerScopeAudit/java")
+        }
         // Local reward simulation and test artwork are compiled only into Debug.
         listOf("release", "foss", "preview", "benchmark").forEach {
             getByName(it).kotlin.srcDir("src/nonDebug/java")

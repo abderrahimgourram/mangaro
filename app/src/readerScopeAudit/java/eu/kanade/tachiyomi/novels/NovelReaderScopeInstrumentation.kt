@@ -163,11 +163,16 @@ class NovelReaderScopeInstrumentation : Instrumentation() {
                 Injekt.addFactory<AccountFoundation> { readerAccount }
                 check(Injekt.get<AccountFoundation>() === readerAccount)
                 lateinit var readerView: androidx.compose.ui.platform.ComposeView
+                val acceptanceNavigator = java.util.concurrent.atomic.AtomicReference<cafe.adriel.voyager.navigator.Navigator>()
+                var readingButtonBounds: android.graphics.Rect? = null
                 runOnMainSync {
                     readerView = androidx.compose.ui.platform.ComposeView(readerActivity).apply { setContent {
                         Box(Modifier.fillMaxSize().semantics { contentDescription = "reader-scope-acceptance" }) {
                             eu.kanade.presentation.theme.TachiyomiTheme {
-                                cafe.adriel.voyager.navigator.Navigator(eu.kanade.presentation.novels.NovelDetailsScreen(novel))
+                                cafe.adriel.voyager.navigator.Navigator(eu.kanade.presentation.novels.NovelDetailsScreen(novel)) { nav ->
+                                    androidx.compose.runtime.SideEffect { acceptanceNavigator.set(nav) }
+                                    cafe.adriel.voyager.navigator.CurrentScreen()
+                                }
                             }
                         }
                     } }
@@ -178,14 +183,33 @@ class NovelReaderScopeInstrumentation : Instrumentation() {
                     repeat(2) { visit ->
                         phase = if (visit == 0) "completion-path" else "back-reopen"
                         record("INFO readerVisit=$visit opening")
+                        var tappedKnownButton = false
                         withTimeout(20_000) {
                             while (!find(readerRoot()) { node ->
                                 if (node.text?.toString() !in setOf("ابدأ القراءة", "متابعة القراءة")) false else {
                                     var button: AccessibilityNodeInfo? = node
                                     while (button != null && !button.isClickable) button = button.parent
+                                    button?.let { b -> readingButtonBounds = android.graphics.Rect().also { b.getBoundsInScreen(it) } }
                                     button?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true
                                 }
                             }) {
+                                var inReader = false
+                                var inDetails = false
+                                runOnMainSync {
+                                    inReader = acceptanceNavigator.get()?.lastItem is eu.kanade.presentation.novels.NovelReaderScreen
+                                    inDetails = acceptanceNavigator.get()?.lastItem is eu.kanade.presentation.novels.NovelDetailsScreen && readerActivity.hasWindowFocus()
+                                }
+                                if (inReader) break
+                                // Reuse this same screen's previously verified button bounds if accessibility
+                                // retains the pre-pop tree. Reader text and saved position still must verify.
+                                if (visit == 1 && inDetails && !tappedKnownButton) readingButtonBounds?.let { bounds ->
+                                    tappedKnownButton = true
+                                    val now = android.os.SystemClock.uptimeMillis()
+                                    for (action in listOf(android.view.MotionEvent.ACTION_DOWN, android.view.MotionEvent.ACTION_UP)) {
+                                        val event = android.view.MotionEvent.obtain(now, now + 30, action, bounds.centerX().toFloat(), bounds.centerY().toFloat(), 0)
+                                        try { uiAutomation.injectInputEvent(event, true) } finally { event.recycle() }
+                                    }
+                                }
                                 find(uiAutomation.rootInActiveWindow) { node ->
                                     if (node.text?.toString() != "تخطي") false else {
                                         var skip: AccessibilityNodeInfo? = node
@@ -219,24 +243,38 @@ class NovelReaderScopeInstrumentation : Instrumentation() {
                             record("PASS realReaderCompletionPath authenticatedFixture=true serverWrites=0 paragraphs=${text.paragraphs.size}")
                         }
                         phase = "back-reopen"
-                        // The reader's first Back can reveal hidden controls; wait for actual details controls.
-                        repeat(2) {
-                            if (!find(readerRoot()) { it.text?.toString() in setOf("ابدأ القراءة", "متابعة القراءة") }) {
+                        // Observe the real Navigator rather than a stale accessibility caption after a pop.
+                        fun detailsShowing(): Boolean {
+                            var shown = false
+                            runOnMainSync { shown = acceptanceNavigator.get()?.lastItem is eu.kanade.presentation.novels.NovelDetailsScreen }
+                            return shown
+                        }
+                        withTimeout(10_000) {
+                            while (!detailsShowing()) {
                                 val clickedBack = find(readerRoot()) { node ->
-                                    if (node.contentDescription?.toString() != "رجوع") false else {
+                                    if (node.contentDescription?.toString() != "رجوع" || !node.isVisibleToUser) false else {
                                         var button: AccessibilityNodeInfo? = node
                                         while (button != null && !button.isClickable) button = button.parent
                                         button?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true
                                     }
                                 }
                                 if (!clickedBack) {
-                                    uiAutomation.injectInputEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_BACK), true)
-                                    uiAutomation.injectInputEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_BACK), true)
+                                    // A short tap on actual reader text reveals its toolbar; never send global Back.
+                                    find(readerRoot()) { node ->
+                                        if (!node.isVisibleToUser || samples.none { node.text?.contains(it) == true }) false else {
+                                            val bounds = android.graphics.Rect(); node.getBoundsInScreen(bounds)
+                                            val now = android.os.SystemClock.uptimeMillis()
+                                            for (action in listOf(android.view.MotionEvent.ACTION_DOWN, android.view.MotionEvent.ACTION_UP)) {
+                                                val event = android.view.MotionEvent.obtain(now, now + 30, action, bounds.centerX().toFloat(), bounds.centerY().toFloat(), 0)
+                                                try { uiAutomation.injectInputEvent(event, true) } finally { event.recycle() }
+                                            }
+                                            true
+                                        }
+                                    }
                                 }
-                                delay(500)
+                                delay(150)
                             }
                         }
-                        withTimeout(10_000) { while (!find(readerRoot()) { it.text?.toString() in setOf("ابدأ القراءة", "متابعة القراءة") }) delay(150) }
                         record("INFO readerVisit=$visit returnedToDetails")
                         val position = checkNotNull(repository.readingPosition(readingNovel, chapter))
                         check(position.chapter.id == chapter.id && position.paragraph > 0)

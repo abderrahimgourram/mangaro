@@ -1,0 +1,5 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <instrumentation
+        android:name="eu.kanade.tachiyomi.novels.NovelReaderScopeInstrumentation"
+        android:targetPackage="${applicationId}" />
+</manifest>
