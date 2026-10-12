@@ -125,7 +125,7 @@ fun HomeNovelShelf() {
                     eu.kanade.presentation.components.MangaroWorkCard(
                         title = novel.title,
                         onClick = { navigator.push(NovelDetailsScreen(novel)) },
-                        modifier = Modifier.width(120.dp),
+                        modifier = Modifier.width(104.dp),
                         cover = { NovelCover(novel, it) },
                     )
                 }

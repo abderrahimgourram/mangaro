@@ -107,7 +107,7 @@ internal fun NovelCover(novel: Novel, modifier: Modifier) {
         val bounds = coordinates.boundsInWindow()
         visible = bounds.width > 0 && bounds.height > 0 && bounds.bottom > 0 && bounds.right > 0 &&
             bounds.top < view.height && bounds.left < view.width
-    }.clip(Design.ShapeCover).background(Design.SurfaceHigh),contentAlignment=Alignment.Center) {
+    }.clip(RoundedCornerShape(14.dp)).background(Design.SurfaceHigh),contentAlignment=Alignment.Center) {
         Icon(Icons.Outlined.MenuBook,null,Modifier.size(40.dp),tint=Design.GoldPrimary.copy(alpha=.5f))
         val width = with(density) { maxWidth.toPx() }.toInt().coerceIn(1, 960)
         val height = with(density) { maxHeight.toPx() }.toInt().coerceIn(1, 1280)
@@ -123,12 +123,12 @@ internal fun NovelCover(novel: Novel, modifier: Modifier) {
 
 @Composable
 private fun NovelCard(novel: Novel, onOpen: () -> Unit) {
-    eu.kanade.presentation.components.MangaroWorkCard(
-        title = novel.title,
-        onClick = onOpen,
-        modifier = Modifier.fillMaxWidth(),
-        cover = { NovelCover(novel, it) },
-    )
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Design.SurfaceDark).clickable(onClick = onOpen).padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        NovelCover(novel, Modifier.fillMaxWidth().aspectRatio(.72f))
+        Text(novel.title, style = MaterialTheme.typography.bodyMedium.copy(textDirection = TextDirection.ContentOrRtl),
+            color = Color.White, fontWeight = FontWeight.SemiBold, minLines = 2, maxLines = 2, overflow = TextOverflow.Ellipsis)
+    }
 }
 
 @Composable

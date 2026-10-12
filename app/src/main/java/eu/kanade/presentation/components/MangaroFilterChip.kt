@@ -1,6 +1,5 @@
 package eu.kanade.presentation.components
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -17,9 +16,9 @@ fun MangaroFilterChip(label: String, selected: Boolean, onClick: () -> Unit) {
         label = { Text(label, maxLines = 1) },
         modifier = Modifier.heightIn(min = Design.TouchTarget),
         shape = Design.ShapeChip,
-        border = BorderStroke(Design.StrokeSubtle.width, if (selected) Design.GoldBorder else Design.BorderSubtle),
+        border = null,
         colors = FilterChipDefaults.filterChipColors(
-            containerColor = Design.SurfaceDark,
+            containerColor = androidx.compose.ui.graphics.Color.Transparent,
             labelColor = Design.TextSecondary,
             selectedContainerColor = Design.SurfaceHigh,
             selectedLabelColor = Design.GoldPrimary,

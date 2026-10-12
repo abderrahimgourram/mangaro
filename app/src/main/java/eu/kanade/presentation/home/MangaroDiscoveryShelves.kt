@@ -128,9 +128,9 @@ private fun DiscoveryShelf(
 
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
         val cardWidth = when {
-            maxWidth < 340.dp -> 112.dp
-            maxWidth < 430.dp -> 120.dp
-            else -> 132.dp
+            maxWidth < 340.dp -> 96.dp
+            maxWidth < 430.dp -> 108.dp
+            else -> 116.dp
         }
         LazyRow(
             state = listState,
