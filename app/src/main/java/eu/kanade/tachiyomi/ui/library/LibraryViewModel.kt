@@ -93,14 +93,16 @@ class LibraryViewModel(
     private val downloadCache: DownloadCache = Injekt.get(),
     private val trackerManager: TrackerManager = Injekt.get(),
 ) : StateViewModel<LibraryViewModel.State>(State()) {
+    private val accountScope = kotlinx.coroutines.CoroutineScope(viewModelScope.coroutineContext + tachiyomi.core.common.util.lang.LocalAccountScope.context())
+
 
     init {
-        viewModelScope.launch {
+        accountScope.launch {
             MangaroLibraryShelves.bindings.collectLatest { shelves ->
                 mutableState.update { it.copy(shelves = shelves) }
             }
         }
-        viewModelScope.launchIO {
+        accountScope.launchIO {
             try { MangaroLibraryShelves.ensure() }
             catch (cancel: kotlinx.coroutines.CancellationException) { throw cancel }
             catch (error: Exception) { logcat(LogPriority.ERROR, error) }
@@ -108,7 +110,7 @@ class LibraryViewModel(
         mutableState.update { state ->
             state.copy(activeCategoryIndex = libraryPreferences.lastUsedCategory.get())
         }
-        viewModelScope.launchIO {
+        accountScope.launchIO {
             combine(
                 state.map { it.searchQuery }.distinctUntilChanged().debounce(0.25.seconds),
                 getCategories.subscribe(),
@@ -156,7 +158,7 @@ class LibraryViewModel(
                 }
         }
 
-        viewModelScope.launchIO {
+        accountScope.launchIO {
             state
                 .dropWhile { !it.libraryData.isInitialized }
                 .map { it.libraryData }
@@ -177,7 +179,7 @@ class LibraryViewModel(
         }
 
         // History changes must not re-filter/re-sort the entire Library on every page save.
-        viewModelScope.launchIO {
+        accountScope.launchIO {
             combine(
                 state.map { it.libraryData.libraryIds }.distinctUntilChanged(),
                 getHistory.subscribe("").catch { emit(emptyList()) },
@@ -200,7 +202,7 @@ class LibraryViewModel(
                     )
                 }
             }
-            .launchIn(viewModelScope)
+            .launchIn(accountScope)
 
         combine(
             getLibraryItemPreferencesFlow(),
@@ -223,7 +225,7 @@ class LibraryViewModel(
                     state.copy(hasActiveFilters = it)
                 }
             }
-            .launchIn(viewModelScope)
+            .launchIn(accountScope)
     }
 
     private fun List<LibraryItem>.applyFilters(
@@ -531,7 +533,7 @@ class LibraryViewModel(
 
     private fun downloadNextChapters(amount: Int?) {
         val mangas = state.value.selectedManga
-        viewModelScope.launchNonCancellable {
+        accountScope.launchNonCancellable {
             mangas.forEach { manga ->
                 val chapters = getNextChapters.await(manga.id)
                     .fastFilterNot { chapter ->
@@ -553,7 +555,7 @@ class LibraryViewModel(
 
     private fun downloadBookmarkedChapters() {
         val mangas = state.value.selectedManga
-        viewModelScope.launchNonCancellable {
+        accountScope.launchNonCancellable {
             mangas.forEach { manga ->
                 val chapters = getBookmarkedChaptersByMangaId.await(manga.id)
                     .fastFilterNot { chapter ->
@@ -576,7 +578,7 @@ class LibraryViewModel(
      */
     fun markReadSelection(read: Boolean) {
         val selection = state.value.selectedManga
-        viewModelScope.launchNonCancellable {
+        accountScope.launchNonCancellable {
             selection.forEach { manga ->
                 setReadStatus.await(
                     manga = manga,
@@ -595,7 +597,7 @@ class LibraryViewModel(
      * @param deleteChapters whether to delete downloaded chapters.
      */
     fun removeMangas(mangas: List<Manga>, deleteFromLibrary: Boolean, deleteChapters: Boolean) {
-        viewModelScope.launchNonCancellable {
+        accountScope.launchNonCancellable {
             if (deleteFromLibrary) {
                 val toDelete = mangas.map {
                     it.removeCovers(coverCache)
@@ -626,7 +628,7 @@ class LibraryViewModel(
      * @param removeCategories the categories to remove in all mangas.
      */
     fun setMangaCategories(mangaList: List<Manga>, addCategories: List<Long>, removeCategories: List<Long>) {
-        viewModelScope.launchNonCancellable {
+        accountScope.launchNonCancellable {
             mangaList.forEach { manga ->
                 val categoryIds = getCategories.await(manga.id)
                     .map { it.id }
@@ -640,12 +642,12 @@ class LibraryViewModel(
     }
 
     fun getDisplayMode(): PreferenceMutableState<LibraryDisplayMode> {
-        return libraryPreferences.displayMode.asState(viewModelScope)
+        return libraryPreferences.displayMode.asState(accountScope)
     }
 
     fun getColumnsForOrientation(isLandscape: Boolean): PreferenceMutableState<Int> {
         return (if (isLandscape) libraryPreferences.landscapeColumns else libraryPreferences.portraitColumns)
-            .asState(viewModelScope)
+            .asState(accountScope)
     }
 
     fun getRandomLibraryItemForCurrentCategory(): LibraryItem? {
@@ -747,7 +749,7 @@ class LibraryViewModel(
     }
 
     fun openChangeCategoryDialog() {
-        viewModelScope.launchIO {
+        accountScope.launchIO {
             // Create a copy of selected manga
             val mangaList = state.value.selectedManga
 

@@ -3,14 +3,10 @@ package eu.kanade.tachiyomi.util.system
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
-import android.net.wifi.WifiManager
 import android.os.Build
 import androidx.core.content.getSystemService
 
 val Context.connectivityManager: ConnectivityManager
-    get() = getSystemService()!!
-
-val Context.wifiManager: WifiManager
     get() = getSystemService()!!
 
 fun Context.isOnline(): Boolean {
@@ -27,16 +23,7 @@ fun Context.isOnline(): Boolean {
  * Returns true if device is connected to Wifi.
  */
 fun Context.isConnectedToWifi(): Boolean {
-    if (!wifiManager.isWifiEnabled) return false
-
-    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-        val activeNetwork = connectivityManager.activeNetwork ?: return false
-        val networkCapabilities = connectivityManager.getNetworkCapabilities(activeNetwork) ?: return false
-
-        networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) &&
-            networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-    } else {
-        @Suppress("DEPRECATION")
-        wifiManager.connectionInfo.bssid != null
-    }
+    val capabilities = connectivityManager.getNetworkCapabilities(connectivityManager.activeNetwork) ?: return false
+    return capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) &&
+        capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
 }

@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.view.LayoutInflater
 import androidx.core.view.isVisible
+import eu.kanade.presentation.util.mangaroErrorMessage
 import eu.kanade.presentation.util.formattedMessage
 import eu.kanade.tachiyomi.databinding.ReaderErrorBinding
 import eu.kanade.tachiyomi.source.model.Page
@@ -294,8 +295,7 @@ class PagerPageHolder(
             }
         }
 
-        errorLayout?.errorMessage?.text = with(context) { error?.formattedMessage }
-            ?: context.stringResource(MR.strings.decode_image_error)
+        errorLayout?.errorMessage?.text = error?.mangaroErrorMessage("تعذر تحميل الصورة") ?: "تعذر تحميل الصورة"
 
         errorLayout?.root?.isVisible = true
         return errorLayout!!

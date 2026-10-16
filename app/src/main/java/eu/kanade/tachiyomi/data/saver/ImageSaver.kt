@@ -85,7 +85,7 @@ class ImageSaver(
 
         val contentValues = contentValuesOf(
             MediaStore.MediaColumns.RELATIVE_PATH to relativePath,
-            MediaStore.MediaColumns.DISPLAY_NAME to if (isMimeTypeSupported) image.name else filename,
+            MediaStore.MediaColumns.DISPLAY_NAME to filename,
             MediaStore.MediaColumns.MIME_TYPE to type.mime,
             MediaStore.MediaColumns.DATE_MODIFIED to Clock.System.now().epochSeconds,
         )

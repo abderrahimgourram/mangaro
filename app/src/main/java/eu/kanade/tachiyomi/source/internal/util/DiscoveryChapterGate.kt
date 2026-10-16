@@ -26,22 +26,38 @@ object DiscoveryChapterGate {
     private val permits = Semaphore(2)
     fun positive(source: Long, url: String) { evidence[source to url] = Evidence(1, System.currentTimeMillis() + 3_600_000) }
 
-    suspend fun filter(mangas: List<Manga>): List<Manga> = supervisorScope {
+    suspend fun filter(
+        mangas: List<Manga>,
+        onProgress: (suspend (List<Manga>) -> Unit)? = null,
+    ): List<Manga> = supervisorScope {
         val accepted = ConcurrentHashMap.newKeySet<Long>()
+        val publication = Mutex()
+        suspend fun accept(manga: Manga) {
+            if (accepted.add(manga.id) && onProgress != null) publication.withLock {
+                onProgress(mangas.filter { it.id in accepted })
+            }
+        }
+        // Already eligible cards must not wait behind network checks for other cards.
+        mangas.filter { manga ->
+            manga.source !in sources || manga.favorite || tachiyomi.domain.chapter.service.ChapterListIntegrity.count(manga) > 0 ||
+                evidence[manga.source to manga.url]?.let { it.until > System.currentTimeMillis() && (it.count ?: 0) > 0 } == true
+        }.forEach { accepted += it.id }
+        if (accepted.isNotEmpty()) onProgress?.invoke(mangas.filter { it.id in accepted })
         // Every batch has a hard budget; obsolete screen jobs cancel its children normally.
         withTimeoutOrNull(20_000) {
             mangas.map { manga -> async {
-                if (manga.source !in sources || manga.favorite) { accepted += manga.id; return@async }
+                if (manga.id in accepted) return@async
+                if (manga.source !in sources || manga.favorite) { accept(manga); return@async }
                 if (tachiyomi.domain.chapter.service.ChapterListIntegrity.count(manga) > 0) {
                     positive(manga.source, manga.url)
-                    accepted += manga.id
+                    accept(manga)
                     return@async
                 }
                 val key = manga.source to manga.url
                 locks[(key.hashCode() and Int.MAX_VALUE) % locks.size].withLock {
                     val now = System.currentTimeMillis()
                     val known = evidence[key]?.takeIf { it.until > now }
-                    if (known != null) { if ((known.count ?: 0) > 0) accepted += manga.id; return@withLock }
+                    if (known != null) { if ((known.count ?: 0) > 0) accept(manga); return@withLock }
                     if (!mihon.domain.source.health.SourceHealthMonitor.shared.due(manga.source)) return@withLock
                     val result = try {
                         permits.withPermit { withTimeoutOrNull(8_000) {
@@ -56,7 +72,7 @@ object DiscoveryChapterGate {
                         else -> null
                     }
                     evidence[key] = Evidence(count, now + when { count == null -> 30_000; count == 0 -> 300_000; else -> 3_600_000 })
-                    if ((count ?: 0) > 0) accepted += manga.id
+                    if ((count ?: 0) > 0) accept(manga)
                 }
             } }.awaitAll()
         }

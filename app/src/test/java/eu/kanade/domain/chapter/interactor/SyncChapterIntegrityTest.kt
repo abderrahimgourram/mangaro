@@ -118,4 +118,14 @@ class SyncChapterIntegrityTest {
         coVerify(exactly = 0) { repo.applySourceChanges(any(), any(), any()) }
     }
 
+    @Test fun `catalog publication captures raw source date and never stored fetch fallback`() = runTest {
+        val subject=sync()
+        coEvery { repo.getChapterByMangaId(any(),any()) } returns listOf(old.copy(dateUpload=777777))
+        subject.await(listOf(old.copy(dateUpload=0).toSChapter()),manga,source,completeness=ChapterFetchCompleteness.COMPLETE)
+        coVerify { updates.awaitChapterIntegrity(any(),"COMPLETE",any(),null) }
+        clearMocks(updates,answers=false)
+        subject.await(listOf(old.copy(dateUpload=1000).toSChapter()),manga,source,completeness=ChapterFetchCompleteness.COMPLETE)
+        coVerify { updates.awaitChapterIntegrity(any(),"COMPLETE",any(),1000) }
+    }
+
 }

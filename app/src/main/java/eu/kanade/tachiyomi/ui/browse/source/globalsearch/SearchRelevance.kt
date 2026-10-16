@@ -8,7 +8,8 @@ import java.util.Locale
 /** Comparison only: source titles and identities are never rewritten. */
 data class RankedSearchResult(val source: Source, val manga: Manga,
     val workKey: String = "${manga.source}:${manga.url}", val verifiedDistinctChapters: Int? = null,
-    val indexComplete: Boolean = false, val provisional: Boolean = false)
+    val indexComplete: Boolean = false, val provisional: Boolean = false,
+    val alternatives: List<RankedSearchResult> = emptyList())
 
 internal class SearchRelevance(query: String) {
     private val query = normalize(query)

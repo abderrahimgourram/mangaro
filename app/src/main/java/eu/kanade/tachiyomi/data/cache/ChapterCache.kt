@@ -30,20 +30,25 @@ import java.io.IOException
 class ChapterCache(
     private val context: Context,
     private val json: Json,
+    private val owner: String? = null,
+    private val disks: java.util.concurrent.ConcurrentHashMap<String, DiskLruCache> = java.util.concurrent.ConcurrentHashMap(),
 ) {
 
     /** Cache class used for cache management. */
-    private val diskCache = DiskLruCache.open(
-        File(context.cacheDir, "chapter_disk_cache"),
-        PARAMETER_APP_VERSION,
-        PARAMETER_VALUE_COUNT,
-        PARAMETER_CACHE_SIZE,
-    )
+    fun forOwner(owner: String) = ChapterCache(context, json, owner, disks)
+    private val diskCache: DiskLruCache
+        get() {
+            val key = owner ?: tachiyomi.core.common.util.lang.LocalAccountScope.fileOwner()
+            return disks.getOrPut(key) {
+                val segment = tachiyomi.core.common.util.lang.LocalAccountScope.segment(key)
+                DiskLruCache.open(File(context.cacheDir, "chapter_disk_cache" + if (segment.isEmpty()) "" else "_$segment"), PARAMETER_APP_VERSION, PARAMETER_VALUE_COUNT, PARAMETER_CACHE_SIZE)
+            }
+        }
 
     /**
      * Returns directory of cache.
      */
-    private val cacheDir: File = diskCache.directory
+    private val cacheDir: File get() = diskCache.directory
 
     /**
      * Returns real size of directory.

@@ -356,14 +356,16 @@ class MangaCoverFetcher(
         private val sourceManager: SourceManager by injectLazy()
 
         override fun create(data: Manga, options: Options, imageLoader: ImageLoader): Fetcher {
+            val custom = coverCache.getCustomCoverFile(data.id, data.accountToken.fileOwner)
+            val key = imageLoader.components.key(data, options)!!
             return MangaCoverFetcher(
                 mangaId = data.id,
                 url = data.thumbnailUrl,
                 isLibraryManga = data.favorite,
                 options = options,
                 coverFileLazy = lazy { coverCache.getCoverFile(data.thumbnailUrl) },
-                customCoverFileLazy = lazy { coverCache.getCustomCoverFile(data.id) },
-                diskCacheKeyLazy = lazy { imageLoader.components.key(data, options)!! },
+                customCoverFileLazy = lazy { custom },
+                diskCacheKeyLazy = lazy { key },
                 sourceLazy = lazy { sourceManager.get(data.source) as? HttpSource },
                 callFactoryLazy = callFactoryLazy,
                 imageLoader = imageLoader,
@@ -379,14 +381,16 @@ class MangaCoverFetcher(
         private val sourceManager: SourceManager by injectLazy()
 
         override fun create(data: MangaCover, options: Options, imageLoader: ImageLoader): Fetcher {
+            val custom = coverCache.getCustomCoverFile(data.mangaId, data.owner)
+            val key = imageLoader.components.key(data, options)!!
             return MangaCoverFetcher(
                 mangaId = data.mangaId,
                 url = data.url,
                 isLibraryManga = data.isMangaFavorite,
                 options = options,
                 coverFileLazy = lazy { coverCache.getCoverFile(data.url) },
-                customCoverFileLazy = lazy { coverCache.getCustomCoverFile(data.mangaId) },
-                diskCacheKeyLazy = lazy { imageLoader.components.key(data, options)!! },
+                customCoverFileLazy = lazy { custom },
+                diskCacheKeyLazy = lazy { key },
                 sourceLazy = lazy { sourceManager.get(data.sourceId) as? HttpSource },
                 callFactoryLazy = callFactoryLazy,
                 imageLoader = imageLoader,

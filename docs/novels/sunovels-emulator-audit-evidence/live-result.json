@@ -1,0 +1,97 @@
+{
+  "phase": "live",
+  "passed": true,
+  "publicRequests": 4,
+  "simulatedFailures": 1,
+  "gatewayRequests": 0,
+  "results": [
+    {
+      "test": "variant",
+      "status": "PASS",
+      "diagnostic": "debug=false\npackage=app.manhwaar.reader.sunovels.audit\ndirect=true\ngateway=false"
+    },
+    {
+      "test": "phone-resume-Noah",
+      "status": "NOT_REPRODUCIBLE",
+      "diagnostic": "Original phone persisted ID/URL unavailable; no mapping assumed"
+    },
+    {
+      "test": "public-http",
+      "status": "OBSERVED",
+      "diagnostic": "requestedUrl=https://sunovels.com/novel/birth-of-the-demonic-sword/0\nfinalUrl=https://sunovels.com/novel/birth-of-the-demonic-sword/0\nhttp=200\nbytes=111932"
+    },
+    {
+      "test": "public-0",
+      "status": "PASS",
+      "diagnostic": "source=novel.sunovels\nnovelSlug=birth-of-the-demonic-sword\nchapterId=https://sunovels.com/novel/birth-of-the-demonic-sword/0\ndisplayTitle=0 الفصل\npageTitle=0 الفصل\npageNumber=0\nrequestedUrl=https://sunovels.com/novel/birth-of-the-demonic-sword/0\nfinalUrl=https://sunovels.com/novel/birth-of-the-demonic-sword/0\nhttp=200\nbytes=111932\ncontentType=text/html; charset=utf-8\nstrategy=HTML_PARAGRAPHS\ncharacters=2756\nparagraphs=14\noutcome=VERIFIED_READABLE\nfailure=NONE\naccess=VERIFIED_READABLE\nevidence=PUBLIC_READER\ncache=PUBLIC_READER\nattempts=1\nautomaticRetries=0\ncooldownMs=0\ncooldownActive=false\ndownloaded=false"
+    },
+    {
+      "test": "synthetic-Noah-title-fixture",
+      "status": "PASS",
+      "diagnostic": "Known /0 response with synthetic saved subtitle; not phone mapping"
+    },
+    {
+      "test": "public-http",
+      "status": "OBSERVED",
+      "diagnostic": "requestedUrl=https://sunovels.com/novel/reverend-insanity/30\nfinalUrl=https://sunovels.com/novel/reverend-insanity/30\nhttp=200\nbytes=132356"
+    },
+    {
+      "test": "public-30",
+      "status": "PASS",
+      "diagnostic": "source=novel.sunovels\nnovelSlug=reverend-insanity\nchapterId=https://sunovels.com/novel/reverend-insanity/30\ndisplayTitle=30 الفصل\npageTitle=30 الفصل\npageNumber=30\nrequestedUrl=https://sunovels.com/novel/reverend-insanity/30\nfinalUrl=https://sunovels.com/novel/reverend-insanity/30\nhttp=200\nbytes=132356\ncontentType=text/html; charset=utf-8\nstrategy=HTML_PARAGRAPHS\ncharacters=6670\nparagraphs=42\noutcome=VERIFIED_READABLE\nfailure=NONE\naccess=VERIFIED_READABLE\nevidence=PUBLIC_READER\ncache=PUBLIC_READER\nattempts=1\nautomaticRetries=0\ncooldownMs=0\ncooldownActive=false\ndownloaded=false"
+    },
+    {
+      "test": "public-http",
+      "status": "OBSERVED",
+      "diagnostic": "requestedUrl=https://sunovels.com/novel/birth-of-the-demonic-sword/675\nfinalUrl=https://sunovels.com/novel/birth-of-the-demonic-sword/675\nhttp=200\nbytes=80761"
+    },
+    {
+      "test": "web-locked-675",
+      "status": "PASS",
+      "diagnostic": "source=novel.sunovels\nnovelSlug=birth-of-the-demonic-sword\nchapterId=https://sunovels.com/novel/birth-of-the-demonic-sword/675\ndisplayTitle=675 الفصل\npageTitle=675 الفصل\npageNumber=675\nrequestedUrl=https://sunovels.com/novel/birth-of-the-demonic-sword/675\nfinalUrl=https://sunovels.com/novel/birth-of-the-demonic-sword/675\nhttp=200\nbytes=80761\ncontentType=text/html; charset=utf-8\nstrategy=NONE\ncharacters=0\nparagraphs=0\noutcome=EXPLICITLY_LOCKED\nfailure=SUN_LOCKED\naccess=EXPLICITLY_LOCKED\nevidence=PUBLIC_READER\ncache=PUBLIC_READER\nattempts=1\nautomaticRetries=0\ncooldownMs=3599995\ncooldownActive=true\ndownloaded=false\nmemoryCached=false\nindexDeclaredTotal=null\nindexRows=null\nnovelMetadataCount=null"
+    },
+    {
+      "test": "ambiguous-address-guard",
+      "status": "PASS",
+      "diagnostic": "readerRequests=0"
+    },
+    {
+      "test": "cached-during-network-failure",
+      "status": "PASS",
+      "diagnostic": "cacheHits=1\nnetworkCalls=0"
+    },
+    {
+      "test": "injected-transient",
+      "status": "PASS",
+      "diagnostic": "source=novel.sunovels\nnovelSlug=reverend-insanity\nchapterId=https://sunovels.com/novel/reverend-insanity/30\ndisplayTitle=30 الفصل\npageTitle=null\npageNumber=null\nrequestedUrl=https://sunovels.com/novel/reverend-insanity/30\nfinalUrl=https://sunovels.com/novel/reverend-insanity/30\nhttp=null\nbytes=0\ncontentType=null\nstrategy=NONE\ncharacters=0\nparagraphs=0\noutcome=NETWORK_TRANSIENT\nfailure=NETWORK_IO\naccess=TEMPORARILY_UNAVAILABLE\nevidence=TEMPORARY_DIAGNOSTIC\ncache=TEMPORARY_DIAGNOSTIC\nattempts=1\nautomaticRetries=0\ncooldownMs=1499\ncooldownActive=true\ndownloaded=false\nmemoryCached=false\nindexDeclaredTotal=null\nindexRows=null\nnovelMetadataCount=null"
+    },
+    {
+      "test": "public-http",
+      "status": "OBSERVED",
+      "diagnostic": "requestedUrl=https://sunovels.com/novel/reverend-insanity/30\nfinalUrl=https://sunovels.com/novel/reverend-insanity/30\nhttp=200\nbytes=132356"
+    },
+    {
+      "test": "public-30",
+      "status": "PASS",
+      "diagnostic": "source=novel.sunovels\nnovelSlug=reverend-insanity\nchapterId=https://sunovels.com/novel/reverend-insanity/30\ndisplayTitle=30 الفصل\npageTitle=30 الفصل\npageNumber=30\nrequestedUrl=https://sunovels.com/novel/reverend-insanity/30\nfinalUrl=https://sunovels.com/novel/reverend-insanity/30\nhttp=200\nbytes=132356\ncontentType=text/html; charset=utf-8\nstrategy=HTML_PARAGRAPHS\ncharacters=6670\nparagraphs=42\noutcome=VERIFIED_READABLE\nfailure=NONE\naccess=VERIFIED_READABLE\nevidence=PUBLIC_READER\ncache=PUBLIC_READER\nattempts=3\nautomaticRetries=0\ncooldownMs=0\ncooldownActive=false\ndownloaded=false"
+    },
+    {
+      "test": "retry-after-transient",
+      "status": "PASS",
+      "diagnostic": "newPublicGets=1\npriorTextUnchanged=true"
+    },
+    {
+      "test": "real-reader-render",
+      "status": "PASS",
+      "diagnostic": "chapterId=https://sunovels.com/novel/reverend-insanity/30\nrenderedStory=true\nrequestedParagraph=2\nrestoredParagraph=2\nrequestedOffset=17\nrestoredOffset=17"
+    }
+  ],
+  "runtime": "ANDROID_EMULATOR",
+  "device": {
+    "ro.build.version.sdk": "34",
+    "ro.product.cpu.abi": "x86_64",
+    "ro.product.model": "sdk_gphone64_x86_64"
+  },
+  "serial": "emulator-5554",
+  "wallSeconds": 13.009303535000072
+}

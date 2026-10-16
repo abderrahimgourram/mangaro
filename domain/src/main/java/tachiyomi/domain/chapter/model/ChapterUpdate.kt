@@ -18,11 +18,13 @@ data class ChapterUpdate(
     val version: Long? = null,
     val memo: JsonObject? = null,
     val totalPages: Long? = null,
+    val accountToken: tachiyomi.core.common.util.lang.LocalAccountScope.Token = tachiyomi.core.common.util.lang.LocalAccountScope.capture(),
 )
 
 fun Chapter.toChapterUpdate(): ChapterUpdate {
     return ChapterUpdate(
         id = id,
+        accountToken = accountToken,
         mangaId = mangaId,
         read = read,
         bookmark = bookmark,

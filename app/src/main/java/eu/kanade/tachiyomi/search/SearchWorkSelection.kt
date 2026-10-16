@@ -1,5 +1,7 @@
 package eu.kanade.tachiyomi.search
 
+import tachiyomi.domain.manga.service.CatalogIdentity
+import tachiyomi.domain.manga.service.VerifiedCatalogIdentity
 import java.text.Normalizer
 import java.util.Locale
 
@@ -16,7 +18,8 @@ internal data class SearchWorkCandidate(val id: String, val source: String, val 
     val title: String, val aliases: Set<String> = emptySet(), val externalIds: Map<String,String> = emptyMap(),
     val author: String? = null, val artist: String? = null, val format: String? = null,
     val edition: String? = null, val year: Int? = null, val priority: Int = Int.MAX_VALUE,
-    val chapters: SearchChapterEvidence = SearchChapterEvidence(), val coverDigest: String? = null)
+    val chapters: SearchChapterEvidence = SearchChapterEvidence(), val coverDigest: String? = null,
+    val catalogIdentity: CatalogIdentity? = null)
 internal data class SearchWorkGroup(val key: String, val members: List<SearchWorkCandidate>,
     val winner: SearchWorkCandidate, val provisional: Boolean)
 
@@ -53,8 +56,13 @@ internal object SearchWorkIdentity {
     private fun declared(s:String?) = s?.let(::normalize)?.takeIf { it.isNotBlank() && it !in unknown }
     private fun creator(s:String?) = declared(s)?.takeIf {it.length>=3}
     private fun contradictory(a:String?,b:String?) = declared(a)?.let {x -> declared(b)?.let {x!=it} }==true
+    internal fun catalog(c: SearchWorkCandidate) = c.catalogIdentity ?: CatalogIdentity(
+        c.source, c.id, c.id, c.externalIds, format = c.format, edition = c.edition,
+    )
     fun matches(a:SearchWorkCandidate,b:SearchWorkCandidate,t:Thresholds=Thresholds()):Boolean {
-        if(a.id==b.id)return true
+        if(a.kind==SearchWorkKind.COMIC && b.kind==SearchWorkKind.COMIC)
+            return VerifiedCatalogIdentity.matches(catalog(a), catalog(b))
+        if(a.id==b.id && a.source==b.source && a.kind==b.kind)return true
         if(a.kind!=b.kind || a.title.isBlank() || b.title.isBlank())return false
         if(contradictory(a.format,b.format)||contradictory(a.edition,b.edition)||
             a.year!=null&&b.year!=null&&a.year!=b.year)return false
@@ -105,10 +113,14 @@ internal class SearchWorkSelection {
     }
     @Synchronized fun select(input:List<SearchWorkCandidate>):List<SearchWorkGroup> {
         val clusters=mutableListOf<MutableList<SearchWorkCandidate>>()
-        input.distinctBy{it.id}.sortedWith(compareBy({it.priority},{it.source},{it.id})).forEach { c ->
+        input.distinctBy{it.id}.sortedWith(compareBy<SearchWorkCandidate>({ it.kind.ordinal },
+            { if (it.kind == SearchWorkKind.COMIC) 0 else it.priority },
+            { if (it.kind == SearchWorkKind.COMIC) SearchWorkIdentity.catalog(it).editionKey else it.source }, { it.id })).forEach { c ->
             val group=clusters.firstOrNull { g->g.all {SearchWorkIdentity.matches(it,c)} }
             if(group==null)clusters+=mutableListOf(c) else group+=c
         }
+        val comicKeys = clusters.filter { it.first().kind == SearchWorkKind.COMIC }
+            .map { VerifiedCatalogIdentity.key(it.map(SearchWorkIdentity::catalog)) }.groupingBy { it }.eachCount()
         val claimed=mutableSetOf<String>()
         val result=clusters.map { members ->
             val old=previous.firstOrNull { p->p.key !in claimed && members.any{it.id in p.ids} }
@@ -125,8 +137,12 @@ internal class SearchWorkSelection {
                 incumbent.chapters.complete&&(best.chapters.distinct?:-1)>=(incumbent.chapters.distinct?:-1) ||
                 best.chapters.complete&&best.chapters.distinct==incumbent.chapters.distinct
             val winner=if(replace)best else incumbent!!
-            val base=old?.key?:"search:${winner.kind}:${members.first().id}"
-            val key=if(base !in claimed)base else base+":separate:"+members.first().id
+            val base=if (winner.kind == SearchWorkKind.COMIC)
+                VerifiedCatalogIdentity.key(members.map(SearchWorkIdentity::catalog))
+                else old?.key?:"search:${winner.kind}:${members.first().id}"
+            val key=if (winner.kind == SearchWorkKind.COMIC && comicKeys.getValue(base) > 1)
+                base+":separate:"+members.minOf { SearchWorkIdentity.catalog(it).editionKey }
+                else if(base !in claimed)base else base+":separate:"+members.first().id
             claimed+=key
             SearchWorkGroup(key,members,winner,readable.isEmpty()||members.any{it.chapters.indexUncertain}||eligible.any{it.chapters.verifiedCount==null})
         }.sortedWith(compareBy<SearchWorkGroup> { g -> previous.indexOfFirst{it.key==g.key}.takeIf{it>=0}?:Int.MAX_VALUE }

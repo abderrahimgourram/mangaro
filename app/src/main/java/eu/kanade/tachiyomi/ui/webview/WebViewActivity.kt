@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.ui.webview
 
+import eu.kanade.presentation.components.showMangaroErrorSnackbar
 import android.app.assist.AssistContent
 import android.content.Context
 import android.content.Intent
@@ -108,7 +109,8 @@ class WebViewActivity : BaseActivity() {
         try {
             startActivity(url.toUri().toShareIntent(this, type = "text/plain"))
         } catch (e: Exception) {
-            toast(e.message)
+            android.util.Log.w("MangaroUI", "Web page share failed (${e.javaClass.simpleName})")
+            showMangaroErrorSnackbar("تعذر مشاركة الرابط، أعد المحاولة")
         }
     }
 

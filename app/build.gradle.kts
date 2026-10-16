@@ -6,6 +6,7 @@ import mihon.gradle.tasks.ReplaceShortcutsPlaceholderTask
 import java.io.File
 import java.io.FileInputStream
 import java.util.Properties
+import java.net.URI
 import java.util.Base64 as JavaBase64
 import kotlin.io.encoding.Base64
 
@@ -25,6 +26,13 @@ if (false) {
         apply(libs.plugins.firebase.crashlytics.get().pluginId)
     }
 }
+
+// Explicit opt-in for a private, signed Release acceptance APK; published defaults stay unchanged.
+val sunovelsPrivateAcceptance = providers.gradleProperty("sunovelsPrivateAcceptance").orNull == "true"
+val sunovelsAcceptanceHarness = providers.gradleProperty("sunovelsAcceptanceHarness").orNull == "true"
+require(!sunovelsAcceptanceHarness || sunovelsPrivateAcceptance)
+
+val sunovelsRuntimeAudit = providers.gradleProperty("sunovelsRuntimeAudit").orNull == "true"
 
 val keystorePropertiesFile = rootProject.file("keystore.properties")
 // Permanent website-release credentials live outside the repository.
@@ -68,14 +76,22 @@ android {
         buildConfigField("String", "SUPABASE_PUBLISHABLE_KEY", "\"$supabaseKey\"")
         manifestPlaceholders["accountAuthScheme"] = "mangaro"
 
-        versionCode = 21
-        versionName = "2.0.3"
+        versionCode = if (sunovelsPrivateAcceptance) 31 else 22
+        versionName = "2.0.4"
 
         buildConfigField("String", "COMMIT_COUNT", "\"${getLatestCommitCount()}\"")
         buildConfigField("String", "COMMIT_SHA", "\"${getLatestCommitSha()}\"")
         buildConfigField("String", "BUILD_TIME", "\"${getBuildTime(useLatestCommitTime = false)}\"")
         buildConfigField("boolean", "TELEMETRY_INCLUDED", "false")
         buildConfigField("boolean", "UPDATER_ENABLED", "false")
+        // Sunovels metadata gateway is staged in Debug; production remains disabled.
+        buildConfigField("boolean", "SUNOVELS_RUNTIME_AUDIT", "false")
+        buildConfigField("boolean", "SUNOVELS_PRIVATE_ACCEPTANCE", "false")
+        buildConfigField("boolean", "SUNOVELS_OFFLINE_AUTHORIZED", "false")
+        buildConfigField("boolean", "SUNOVELS_GATEWAY_ENABLED", "false")
+        buildConfigField("boolean", "SUNOVELS_GATEWAY_REVIEWED", "false")
+        buildConfigField("String", "SUNOVELS_GATEWAY_URL", "\"\"")
+        buildConfigField("String", "SUNOVELS_GATEWAY_HOST", "\"\"")
         // Independent static signed source-rule feed. No deployment endpoint or private key in the APK.
         val ruleFeed = providers.gradleProperty("sourceRulesUrl").orElse("").get()
         val rulePublicKey = providers.gradleProperty("sourceRulesPublicKey").orElse("").get()
@@ -133,6 +149,12 @@ android {
     }
 
     signingConfigs {
+        if (sunovelsRuntimeAudit) create("sunovelsLocalAudit") {
+            storeFile = File(System.getProperty("user.home"), ".local/share/mangaro/sunovels-runtime-audit/audit.keystore")
+            storePassword = "android"
+            keyAlias = "sunovels-local-audit"
+            keyPassword = "android"
+        }
         create("mangaroRelease") {
             if (mangaroSigningFile.isFile) {
                 storeFile = file(mangaroSigning.getProperty("storeFile"))
@@ -145,11 +167,31 @@ android {
 
     buildTypes {
         val debug = getByName("debug") {
+            // Owner authorization confirmed for Mangaro mobile-reader offline storage and batches.
+            buildConfigField("boolean", "SUNOVELS_OFFLINE_AUTHORIZED", "true")
             applicationIdSuffix = ".dev"
             versionNameSuffix = "-${getLatestCommitCount()}"
             isPseudoLocalesEnabled = true
+            val gatewayEnabled = providers.gradleProperty("sunovelsGatewayStagingEnabled").orElse("false").get() == "true"
+            val gatewayReviewed = providers.gradleProperty("sunovelsGatewayEndpointReviewed").orElse("false").get() == "true"
+            val gatewayUrl = providers.gradleProperty("sunovelsGatewayUrl").orElse("").get()
+            val gatewayHost = providers.gradleProperty("sunovelsGatewayHost").orElse("").get()
+            require(gatewayUrl.none { it == '"' || it == '\\' || it == '\n' || it == '\r' })
+            require(gatewayHost.matches(Regex("[A-Za-z0-9.-]*")))
+            if (gatewayEnabled) {
+                val endpoint = URI(gatewayUrl)
+                require(gatewayReviewed && gatewayHost.isNotBlank() && endpoint.scheme == "https" && endpoint.host == gatewayHost &&
+                    endpoint.userInfo == null && endpoint.query == null && endpoint.fragment == null && endpoint.port in listOf(-1,443) &&
+                    endpoint.path in listOf("","/")) { "Sunovels staging requires a reviewed HTTPS metadata endpoint" }
+            }
+            buildConfigField("boolean", "SUNOVELS_GATEWAY_ENABLED", gatewayEnabled.toString())
+            buildConfigField("boolean", "SUNOVELS_GATEWAY_REVIEWED", gatewayReviewed.toString())
+            buildConfigField("String", "SUNOVELS_GATEWAY_URL", "\"$gatewayUrl\"")
+            buildConfigField("String", "SUNOVELS_GATEWAY_HOST", "\"$gatewayHost\"")
         }
         val release = getByName("release") {
+            buildConfigField("boolean", "SUNOVELS_PRIVATE_ACCEPTANCE", sunovelsPrivateAcceptance.toString())
+            buildConfigField("boolean", "SUNOVELS_OFFLINE_AUTHORIZED", sunovelsPrivateAcceptance.toString())
             isMinifyEnabled = true
             isShrinkResources = true
 
@@ -157,9 +199,34 @@ android {
 
             isProfileable = true
 
-            proguardFiles("proguard-android-optimize.txt", "proguard-rules.pro")
+            // Private acceptance exercises real obfuscation without changing published keep policy.
+            val privateRules = layout.buildDirectory.file("sunovels-private-acceptance/proguard-rules.pro").get().asFile
+            if (sunovelsPrivateAcceptance) {
+                privateRules.parentFile.mkdirs()
+                val legacyClassRoots = setOf("-keep,allowoptimization class eu.kanade.**",
+                    "-keep,allowoptimization class tachiyomi.**", "-keep,allowoptimization class mihon.**")
+                privateRules.writeText(file("proguard-rules.pro").readLines().filterNot {
+                    it.trim() == "-dontobfuscate" || it.trim() in legacyClassRoots
+                }.joinToString("\n") + "\n")
+            }
+            proguardFiles("proguard-android-optimize.txt", if (sunovelsPrivateAcceptance) privateRules else file("proguard-rules.pro"))
+            if (sunovelsPrivateAcceptance) proguardFile("sunovels-private-r8.pro")
 
             buildConfigField("String", "BUILD_TIME", "\"${getBuildTime(useLatestCommitTime = true)}\"")
+        }
+
+        if (sunovelsRuntimeAudit) create("sunovelsAudit") {
+            initWith(release)
+            applicationIdSuffix = ".sunovels.audit"
+            versionNameSuffix = "-sunovels-local-audit"
+            signingConfig = signingConfigs.getByName("sunovelsLocalAudit")
+            isDebuggable = false
+            matchingFallbacks += listOf("release")
+            buildConfigField("boolean", "SUNOVELS_RUNTIME_AUDIT", "true")
+            buildConfigField("String", "SUPABASE_URL", "\"\"")
+            buildConfigField("String", "SUPABASE_PUBLISHABLE_KEY", "\"\"")
+            buildConfigField("String", "SOURCE_RULES_URL", "\"\"")
+            manifestPlaceholders["accountAuthScheme"] = "mangaro-sunovels-audit"
         }
 
         val commonMatchingFallbacks = listOf(release.name)
@@ -196,6 +263,24 @@ android {
     }
 
     sourceSets {
+        if (sunovelsPrivateAcceptance) getByName("release").assets.srcDir("src/debug/assets")
+        if (sunovelsAcceptanceHarness) getByName("release") {
+            kotlin.srcDir("src/sunovelsAcceptance/java")
+            assets.srcDir("src/sunovelsAcceptance/assets")
+            manifest.srcFile("src/sunovelsAcceptance/AndroidManifest.xml")
+        }
+
+        if (sunovelsAcceptanceHarness && providers.gradleProperty("accountIsolationDebugHarness").orNull == "true") getByName("debug") {
+            kotlin.srcDir("src/sunovelsAcceptance/java")
+            assets.srcDir("src/sunovelsAcceptance/assets")
+            manifest.srcFile("src/sunovelsAcceptance/AndroidManifest.xml")
+        }
+
+        if (sunovelsRuntimeAudit) getByName("sunovelsAudit") {
+            kotlin.srcDir("src/sunovelsAudit/java")
+            assets.srcDir("src/debug/assets")
+            manifest.srcFile("src/sunovelsAudit/AndroidManifest.xml")
+        }
         // Self-instrument the optimized preview: external test calls may target R8-inlined methods.
         // This source/manifest is never part of a production release and adds no production keep rules.
         if (providers.gradleProperty("novelMinifiedScopeAudit").orNull == "true") {
@@ -205,10 +290,6 @@ android {
             getByName("preview").manifest.srcFile("src/readerScopeAudit/AndroidManifest.xml")
         } else {
             getByName("androidTest").kotlin.srcDir("src/readerScopeAudit/java")
-        }
-        // Local reward simulation and test artwork are compiled only into Debug.
-        listOf("release", "foss", "preview", "benchmark").forEach {
-            getByName(it).kotlin.srcDir("src/nonDebug/java")
         }
         getByName("preview").res.directories.add("src/debug/res")
         getByName("benchmark").res.directories.add("src/debug/res")
@@ -220,7 +301,8 @@ android {
             isEnable = gradle.startParameter.taskNames.none { it.substringAfterLast(':').startsWith("bundle", ignoreCase = true) }
             isUniversalApk = true
             reset()
-            include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            if (sunovelsRuntimeAudit && gradle.startParameter.taskNames.any { it.contains("SunovelsAudit") }) include("x86_64")
+            else include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
         }
     }
 
@@ -299,7 +381,14 @@ baselineProfile {
 }
 
 dependencies {
-    implementation("com.google.android.libraries.ads.mobile.sdk:ads-mobile-sdk:1.5.0")
+    implementation("com.inmobi.monetization:inmobi-ads-kotlin:11.5.0")
+    // Certified consent UI; no personalized requests before its real IAB signals are available.
+    implementation("com.inmobi:inmobicmp:2.4.3")
+    // CMP POM contains no transitive dependency declarations: vendor-required runtime libraries.
+    implementation("androidx.cardview:cardview:1.0.0")
+    implementation("androidx.lifecycle:lifecycle-livedata-ktx:${libs.versions.androidx.lifecycle.get()}")
+    implementation("com.google.code.gson:gson:2.13.2")
+    implementation("com.iabgpp:iabgpp-encoder:3.2.3")
     // Phase 1 account modules only: no Community, Realtime, Functions or cloud library sync.
     implementation(platform("io.github.jan-tennert.supabase:bom:3.8.0"))
     implementation("io.github.jan-tennert.supabase:auth-kt")

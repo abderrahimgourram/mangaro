@@ -182,7 +182,7 @@ data class BrowseSourceScreen(
                     HorizontalDivider(color = MangaroDesignSystem.BorderSubtle)
                 }
             },
-            snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
+            snackbarHost = { eu.kanade.presentation.components.MangaroSnackbarHost(hostState = snackbarHostState) },
         ) { paddingValues ->
             BrowseSourceContent(
                 source = viewModel.source,

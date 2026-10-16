@@ -23,7 +23,7 @@ class PreferenceBackupCreator(
 ) {
 
     fun createApp(includePrivatePreferences: Boolean): List<BackupPreference> {
-        return preferenceStore.getAll().toBackupPreferences()
+        return tachiyomi.core.common.preference.AccountPreferenceStore(preferenceStore, onlyKnown = true).getAll().toBackupPreferences()
             .withPrivatePreferences(includePrivatePreferences)
     }
 

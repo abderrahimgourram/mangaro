@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.data.download
 
+import eu.kanade.tachiyomi.focus.*
 import android.content.Context
 import com.hippo.unifile.UniFile
 import eu.kanade.domain.chapter.model.toSChapter
@@ -88,6 +89,25 @@ class Downloader(
     /**
      * Queue where active downloads are kept.
      */
+    private val pausedOwners = MutableStateFlow<Set<String>>(emptySet())
+    fun pauseOwner(owner: String) { pausedOwners.value = pausedOwners.value + owner }
+    fun resumeOwner(owner: String) { pausedOwners.value = pausedOwners.value - owner }
+    fun clearOwner(owner: String) { removeFromQueueIf { it.owner == owner }; store.clearOwner(owner) }
+    fun ownerRunning(owner: String) = queueState.value.any { it.owner == owner && it.status == Download.State.DOWNLOADING }
+    fun transferGuestQueue(from: String, to: String) {
+        check(!ownerRunning(from))
+        val rows = queueState.value.filter { it.owner == from }
+        store.removeAll(rows)
+        val replacements = rows.associateWith { previous ->
+            previous.copy(owner = to, manga = previous.manga.copy(accountToken = tachiyomi.core.common.util.lang.LocalAccountScope.capture()), chapter = previous.chapter.copy(accountToken = tachiyomi.core.common.util.lang.LocalAccountScope.capture())).also {
+                it.pages = previous.pages
+                it.status = previous.status
+                it.notificationEventId = previous.notificationEventId
+            }
+        }
+        store.addAll(replacements.values.toList())
+        _queueState.value = _queueState.value.map { replacements[it] ?: it }
+    }
     private val _queueState = MutableStateFlow<List<Download>>(emptyList())
     val queueState = _queueState.asStateFlow()
 
@@ -112,13 +132,20 @@ class Downloader(
     var isPaused: Boolean = false
 
     init {
-        launchNow {
-            val chapters = async(Dispatchers.IO) {
-                // restore() performs blocking local DB lookups; never inherit Main here.
-                sourceManager.isInitialized.first { it }
-                store.restore()
+        // Restoring a durable queue is application-owned, not pinned to the Guest token
+        // that happened to exist while DI was initializing during Auth restoration.
+        scope.launch {
+            sourceManager.isInitialized.first { it }
+            while (true) {
+                val state = tachiyomi.core.common.util.lang.LocalAccountScope.changes.first { it.ready }
+                try {
+                    val restored = kotlinx.coroutines.withContext(tachiyomi.core.common.util.lang.LocalAccountScope.Element(state.token)) { store.restore() }
+                    addAllToQueue(restored, restoring = true)
+                    break
+                } catch (_: tachiyomi.core.common.util.lang.LocalAccountScope.Changed) {
+                    tachiyomi.core.common.util.lang.LocalAccountScope.changes.first { it.ready && it.token != state.token }
+                }
             }
-            addAllToQueue(chapters.await())
         }
     }
 
@@ -141,7 +168,6 @@ class Downloader(
         }
 
         isPaused = false
-        DownloadNotifier.resetBatch()
 
         launchDownloaderJob()
 
@@ -158,6 +184,7 @@ class Downloader(
             .forEach { it.status = Download.State.ERROR }
 
         if (reason != null) {
+            notifier.dismissProgress()
             notifier.onWarning(reason)
             return
         }
@@ -170,7 +197,7 @@ class Downloader(
 
         isPaused = false
 
-        DownloadJob.stop(context)
+        if (eu.kanade.tachiyomi.novels.NovelRepository.peek()?.activeDownloads()?.hasPending() != true) DownloadJob.stop(context)
     }
 
     /**
@@ -204,7 +231,8 @@ class Downloader(
             val activeDownloadsFlow = combine(
                 queueState,
                 downloadPreferences.parallelSourceLimit.changes(),
-            ) { a, b -> a to b }.transformLatest { (queue, parallelCount) ->
+                pausedOwners,
+            ) { a, b, paused -> a.filter { it.owner !in paused } to b }.transformLatest { (queue, parallelCount) ->
                 while (true) {
                     val activeDownloads = queue.asSequence()
                         // Ignore completed downloads, leave them in the queue
@@ -247,6 +275,7 @@ class Downloader(
     }
 
     private fun CoroutineScope.launchDownloadJob(download: Download) = launchIO {
+        kotlinx.coroutines.withContext(tachiyomi.core.common.util.lang.LocalAccountScope.StorageElement(download.owner)) {
         try {
             downloadChapter(download)
 
@@ -263,6 +292,7 @@ class Downloader(
             notifier.onError(e.message)
             stop()
         }
+    }
     }
 
     /**
@@ -291,7 +321,7 @@ class Downloader(
             // Add chapters to queue from the start.
             .sortedByDescending { it.sourceOrder }
             // Filter out those already enqueued.
-            .filter { chapter -> queueState.value.none { it.chapter.id == chapter.id } }
+            .filter { chapter -> queueState.value.none { it.chapter.id == chapter.id && it.owner == tachiyomi.core.common.util.lang.LocalAccountScope.fileOwner() } }
             // Create a download for each one.
             .map { Download(source, manga, it) }
             .toList()
@@ -330,19 +360,37 @@ class Downloader(
      *
      * @param download the chapter to be downloaded.
      */
+    private suspend fun <T> network(download: Download, block: suspend () -> T): T =
+        FocusEngine.network(java.net.URI(download.source.baseUrl).host.orEmpty().removePrefix("www."),
+            FocusTask(WorkPriority.DOWNLOAD, download.source.id.toString(), download.manga.id.toString(), download.chapter.id.toString()), block)
+
+    private suspend fun currentOwnedChapter(download: Download, repository: tachiyomi.domain.chapter.repository.ChapterRepository): Chapter? {
+        val state = tachiyomi.core.common.util.lang.LocalAccountScope.changes.value
+        // The queued identity belongs to this durable task. While another account is visible,
+        // do not read that account's personal chapter projection to continue a public download.
+        if (!state.ready || state.token.fileOwner != download.owner) return download.chapter
+        return try {
+            kotlinx.coroutines.withContext(tachiyomi.core.common.util.lang.LocalAccountScope.Element(state.token)) { repository.getChapterById(download.chapter.id) }
+        } catch (_: tachiyomi.core.common.util.lang.LocalAccountScope.Changed) { download.chapter }
+    }
+
     private suspend fun downloadChapter(download: Download) {
         // Recovery takes the same identity lock: resolve before locking filesystem writes.
         val repository = Injekt.get<tachiyomi.domain.chapter.repository.ChapterRepository>()
-        val before = repository.getChapterById(download.chapter.id) ?: return
+        val before = currentOwnedChapter(download, repository) ?: return
         if (before.url != download.chapter.url || before.memo != download.chapter.memo) download.pages = null
         download.chapter = before
         if (download.pages == null) {
             try {
-                val pages = try { download.source.getPageList(before.toSChapter()) }
+                val pages = try { network(download) { download.source.getPageList(before.toSChapter()) } }
                 catch (error: Exception) {
                     if (error is CancellationException) throw error
-                    val recovered = eu.kanade.domain.chapter.interactor.RecoverStaleChapter(repository, Injekt.get())
-                        .await(download.source, download.manga, before, error) ?: throw error
+                    val state = tachiyomi.core.common.util.lang.LocalAccountScope.changes.value
+                    if (!state.ready || state.token.fileOwner != download.owner) throw error
+                    val recovered = kotlinx.coroutines.withContext(tachiyomi.core.common.util.lang.LocalAccountScope.Element(state.token)) {
+                        eu.kanade.domain.chapter.interactor.RecoverStaleChapter(repository, Injekt.get())
+                            .await(download.source, download.manga.copy(accountToken=state.token), before.copy(accountToken=state.token), error)
+                    } ?: throw error
                     download.chapter = recovered.chapter
                     recovered.pages
                 }
@@ -358,7 +406,7 @@ class Downloader(
         val lock = tachiyomi.domain.chapter.service.ChapterIdentityLocks.forChapter(download.chapter.id)
         lock.lock()
         try {
-            val current = Injekt.get<tachiyomi.domain.chapter.repository.ChapterRepository>().getChapterById(download.chapter.id)
+            val current = currentOwnedChapter(download, repository)
             if (current == null) { download.status = Download.State.ERROR; return }
             if (current.url != download.chapter.url || current.memo != download.chapter.memo) download.pages = null
             download.chapter = current
@@ -367,7 +415,7 @@ class Downloader(
     }
 
     private suspend fun downloadChapterWithIdentityLocked(download: Download) {
-        val sigilOwner = mihon.domain.sigils.SigilEvents.captureOwner?.invoke() ?: "_no_owner"
+        val sigilOwner = download.owner.takeUnless { it.startsWith("guest:") } ?: "_no_owner"
         val mangaDir = provider.getMangaDir(download.manga.title, download.source).getOrElse { e ->
             download.status = Download.State.ERROR
             notifier.onError(e.message, download.chapter.name, download.manga.title, download.manga.id)
@@ -397,7 +445,7 @@ class Downloader(
             // If the page list already exists, start from the file
             val pageList = download.pages ?: run {
                 // Otherwise, pull page list from network and add them to download object
-                val pages = download.source.getPageList(download.chapter.toSChapter())
+                val pages = network(download) { download.source.getPageList(download.chapter.toSChapter()) }
 
                 if (pages.isEmpty()) {
                     throw Exception(context.stringResource(MR.strings.page_list_empty_error))
@@ -411,7 +459,7 @@ class Downloader(
             download.status = Download.State.DOWNLOADING
 
             val imageRefresh = DownloadImageRefresh(pageList) {
-                download.source.getPageList(download.chapter.toSChapter())
+                network(download) { download.source.getPageList(download.chapter.toSChapter()) }
             }
             // Resume inventory is fixed for this attempt; avoid one directory scan per page.
             val existingImages = tmpDir.listFiles().orEmpty().mapNotNull { file ->
@@ -424,7 +472,7 @@ class Downloader(
                     if (page.imageUrl.isNullOrEmpty()) {
                         page.status = Page.State.LoadPage
                         try {
-                            page.imageUrl = download.source.getImageUrl(page)
+                            page.imageUrl = network(download) { download.source.getImageUrl(page) }
                         } catch (e: Throwable) {
                             page.status = Page.State.Error(e)
                         }
@@ -471,7 +519,7 @@ class Downloader(
             DiskUtil.createNoMediaFile(tmpDir, context)
 
             download.status = Download.State.DOWNLOADED
-            DownloadNotifier.incrementSuccessCount(1)
+            DownloadNotifier.recordSuccess(context, eu.kanade.tachiyomi.data.notification.notificationEventKey("manga", download.manga.source.toString(), download.manga.id.toString(), download.chapter.id.toString(), download.notificationEventId))
             try {
                 // The final file/directory must exist; a failed storage rename is not achievement evidence.
                 val completedFile = mangaDir.findFile(chapterDirname) ?: mangaDir.findFile("$chapterDirname.cbz")
@@ -523,7 +571,7 @@ class Downloader(
                 chapterCache.isImageInCache(
                     page.imageUrl!!,
                 ) -> copyImageFromCache(chapterCache.getImageFile(page.imageUrl!!), tmpDir, filename)
-                else -> downloadImage(page, download.source, tmpDir, filename, imageRefresh)
+                else -> downloadImage(page, download, tmpDir, filename, imageRefresh)
             }
 
             // When the page is ready, set page path, progress (just in case) and status
@@ -549,7 +597,8 @@ class Downloader(
      * @param tmpDir the temporary directory of the download.
      * @param filename the filename of the image.
      */
-    private suspend fun downloadImage(page: Page, source: HttpSource, tmpDir: UniFile, filename: String, imageRefresh: DownloadImageRefresh): UniFile {
+    private suspend fun downloadImage(page: Page, download: Download, tmpDir: UniFile, filename: String, imageRefresh: DownloadImageRefresh): UniFile {
+        val source = download.source
         page.status = Page.State.DownloadImage
         page.progress = 0
         return flow {
@@ -557,6 +606,7 @@ class Downloader(
                 ?: tmpDir.createFile("$filename.tmp")!!
 
             try {
+                network(download) {
                 source.getImage(page, file.length()).use {
                     it.body.source().saveTo(
                         // If the server supports partial downloads (HTTP 206),
@@ -566,6 +616,7 @@ class Downloader(
                     )
                     val extension = getImageExtension(it, file)
                     file.renameTo("$filename.$extension")
+                }
                 }
             } catch (e: HttpException) {
                 if (e.code == 416) {
@@ -580,7 +631,7 @@ class Downloader(
                 if (error is CancellationException) throw error
                 if (error is HttpException && error.code in listOf(403, 404, 410) && attempt == 0L) {
                     imageRefresh.refresh()
-                    if (page.imageUrl.isNullOrBlank()) page.imageUrl = source.getImageUrl(page)
+                    if (page.imageUrl.isNullOrBlank()) page.imageUrl = network(download) { source.getImageUrl(page) }
                 }
                 if (attempt < 3) {
                     delay((2L shl attempt.toInt()).seconds)
@@ -610,7 +661,8 @@ class Downloader(
         }
         val extension = ImageUtil.findImageType(cacheFile.inputStream()) ?: return tmpFile
         tmpFile.renameTo("$filename.${extension.extension}")
-        cacheFile.delete()
+        // Copy, never move: a visible ReaderPage may still open this verified cache file.
+        // The existing bounded ChapterCache owns eviction.
         return tmpFile
     }
 
@@ -714,13 +766,20 @@ class Downloader(
         chapter: Chapter,
         source: HttpSource,
     ) {
-        val categories = getCategories.await(manga.id).map { it.name.trim() }.takeUnless { it.isEmpty() }
-        val urls = getTracks.await(manga.id)
-            .mapNotNull { track ->
-                track.remoteUrl.takeUnless { url -> url.isBlank() }?.trim()
+        // Durable downloads retain their file owner when another account is active. Optional
+        // private ComicInfo fields may only be read from the matching SQLite projection.
+        val privateMetadata = try {
+            val token = tachiyomi.core.common.util.lang.LocalAccountScope.capture()
+            tachiyomi.core.common.util.lang.LocalAccountScope.check(token)
+            if (token.fileOwner != tachiyomi.core.common.util.lang.LocalAccountScope.fileOwner()) null else {
+                val categories = getCategories.await(manga.id).map { it.name.trim() }
+                val tracks = getTracks.await(manga.id).mapNotNull { it.remoteUrl.takeUnless(String::isBlank)?.trim() }
+                tachiyomi.core.common.util.lang.LocalAccountScope.check(token)
+                categories to tracks
             }
-            .plus(source.getChapterUrl(chapter.toSChapter()).trim())
-            .distinct()
+        } catch (_: tachiyomi.core.common.util.lang.LocalAccountScope.Changed) { null }
+        val categories = privateMetadata?.first?.takeUnless { it.isEmpty() }
+        val urls = privateMetadata?.second.orEmpty().plus(source.getChapterUrl(chapter.toSChapter()).trim()).distinct()
 
         val comicInfo = getComicInfo(
             manga,
@@ -745,14 +804,15 @@ class Downloader(
         return queueState.value.none { it.status.value <= Download.State.DOWNLOADING.value }
     }
 
-    private fun addAllToQueue(downloads: List<Download>) {
-        _queueState.update {
-            downloads.forEach { download ->
+    private fun addAllToQueue(downloads: List<Download>, restoring: Boolean = false) {
+        _queueState.update { current ->
+            val added = downloads.filter { row -> current.none { it.owner == row.owner && it.chapter.id == row.chapter.id } && (!restoring || store.isCurrent(row)) }
+            added.forEach { download ->
                 if (download.status == Download.State.ERROR) download.pages = null
                 download.status = Download.State.QUEUE
             }
-            store.addAll(downloads)
-            it + downloads
+            if (!restoring) store.addAll(added)
+            current + added
         }
     }
 
@@ -781,11 +841,11 @@ class Downloader(
 
     fun removeFromQueue(chapters: List<Chapter>) {
         val chapterIds = chapters.map { it.id }
-        removeFromQueueIf { it.chapter.id in chapterIds }
+        removeFromQueueIf { it.chapter.id in chapterIds && it.owner == tachiyomi.core.common.util.lang.LocalAccountScope.fileOwner() }
     }
 
     fun removeFromQueue(manga: Manga) {
-        removeFromQueueIf { it.manga.id == manga.id }
+        removeFromQueueIf { it.manga.id == manga.id && it.owner == tachiyomi.core.common.util.lang.LocalAccountScope.fileOwner() }
     }
 
     private fun internalClearQueue() {
@@ -801,21 +861,11 @@ class Downloader(
     }
 
     fun updateQueue(downloads: List<Download>) {
-        val wasRunning = isRunning
-
-        if (downloads.isEmpty()) {
-            clearQueue()
-            stop()
-            return
-        }
-
-        pause()
-        internalClearQueue()
-        addAllToQueue(downloads)
-
-        if (wasRunning) {
-            start()
-        }
+        val removed = queueState.value.filter { it !in downloads }
+        store.removeAll(removed)
+        store.addAll(downloads)
+        _queueState.value = downloads
+        if (downloads.isEmpty()) stop()
     }
 
     companion object {

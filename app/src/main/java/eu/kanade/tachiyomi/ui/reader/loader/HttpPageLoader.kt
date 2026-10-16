@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.ui.reader.loader
 
+import eu.kanade.tachiyomi.focus.*
 import eu.kanade.tachiyomi.data.cache.ChapterCache
 import eu.kanade.tachiyomi.data.database.models.toDomainChapter
 import eu.kanade.tachiyomi.source.MangaDarPageResolver
@@ -32,8 +33,9 @@ import kotlin.math.min
 internal class HttpPageLoader(
     private val chapter: ReaderChapter,
     private val source: HttpSource,
-    private val chapterCache: ChapterCache = Injekt.get(),
+    chapterCache: ChapterCache = Injekt.get(),
 ) : PageLoader() {
+    private val chapterCache = chapterCache.forOwner(tachiyomi.core.common.util.lang.LocalAccountScope.fileOwner())
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -56,12 +58,30 @@ internal class HttpPageLoader(
                     internalLoadPage(
                         page = it.page,
                         force = it.priority == PriorityPage.RETRY,
+                        visible = it.priority >= PriorityPage.DEFAULT,
                     )
                 }
         }
     }
 
     override var isLocal: Boolean = false
+
+    private data class PendingPrefetch(val page: ReaderPage, val task: FocusTask)
+    @Volatile private var pendingPrefetch: PendingPrefetch? = null
+    private fun prioritizeVisible(page: ReaderPage) {
+        pendingPrefetch?.let { pending ->
+            if (FocusEngine.discardPrefetch(pending.task) && pending.page === page) page.status = Page.State.Queue
+        }
+    }
+    private suspend fun <T> network(visible: Boolean = true, operation: FocusOperation = FocusOperation.CONTENT,
+        page: ReaderPage? = null, block: suspend () -> T): T {
+        val task = FocusTask(if (visible) WorkPriority.VISIBLE else WorkPriority.OPTIONAL, source.id.toString(),
+            chapter.chapter.manga_id.toString(), chapter.chapter.id.toString(), operation)
+        if (!visible && page != null) pendingPrefetch = PendingPrefetch(page, task)
+        try {
+            return FocusEngine.network(java.net.URI(source.baseUrl).host.orEmpty().removePrefix("www."), task, block)
+        } finally { if (pendingPrefetch?.task === task) pendingPrefetch = null }
+    }
 
     /**
      * Returns the page list for a chapter. It tries to return the page list from the local cache,
@@ -70,14 +90,14 @@ internal class HttpPageLoader(
     override suspend fun getPages(): List<ReaderPage> {
         val pages = try {
             if (MangaDarPageResolver.supports(source)) {
-                MangaDarPageResolver.getPages(source, chapter.chapter)
+                network { MangaDarPageResolver.getPages(source, chapter.chapter) }
             } else {
                 try {
                     chapterCache.getPageListFromCache(chapter.chapter.toDomainChapter()!!)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (_: Exception) {
-                    source.getPageList(chapter.chapter)
+                    network { source.getPageList(chapter.chapter) }
                 }
             }
         } catch (error: CancellationException) {
@@ -86,8 +106,8 @@ internal class HttpPageLoader(
             val repository = Injekt.get<tachiyomi.domain.chapter.repository.ChapterRepository>()
             val stored = chapter.chapter.toDomainChapter() ?: throw error
             val manga = Injekt.get<tachiyomi.domain.manga.repository.MangaRepository>().getMangaById(stored.mangaId)
-            val recovered = eu.kanade.domain.chapter.interactor.RecoverStaleChapter(repository, Injekt.get())
-                .await(source, manga, stored, error) ?: throw error
+            val recovered = network { eu.kanade.domain.chapter.interactor.RecoverStaleChapter(repository, Injekt.get())
+                .await(source, manga, stored, error) } ?: throw error
             chapter.chapter.url = recovered.chapter.url
             chapter.chapter.memo = recovered.chapter.memo
             recovered.pages
@@ -102,6 +122,7 @@ internal class HttpPageLoader(
      * Loads a page through the queue. Handles re-enqueueing pages if they were evicted from the cache.
      */
     override suspend fun loadPage(page: ReaderPage) = withIOContext {
+        prioritizeVisible(page)
         val imageUrl = page.imageUrl
 
         // Check if the image has been deleted
@@ -116,6 +137,7 @@ internal class HttpPageLoader(
 
         val queuedPages = mutableListOf<PriorityPage>()
         if (page.status == Page.State.Queue) {
+            queue.removeIf { it.page === page } // Promote a queued adjacent page instead of duplicating it.
             queuedPages += PriorityPage(page, PriorityPage.DEFAULT).also { queue.offer(it) }
         }
         queuedPages += preloadNextPages(page, preloadSize)
@@ -135,9 +157,11 @@ internal class HttpPageLoader(
      * Retries a page. This method is only called from user interaction on the viewer.
      */
     override fun retryPage(page: ReaderPage) {
+        prioritizeVisible(page)
         if (page.status is Page.State.Error) {
             page.status = Page.State.Queue
         }
+        queue.removeIf { it.page === page }
         queue.offer(PriorityPage(page, PriorityPage.RETRY))
     }
 
@@ -175,7 +199,7 @@ internal class HttpPageLoader(
         return pages
             .subList(pageIndex + 1, min(pageIndex + 1 + amount, pages.size))
             .mapNotNull {
-                if (it.status == Page.State.Queue) {
+                if (it.status == Page.State.Queue && queue.none { queued -> queued.page === it }) {
                     PriorityPage(it, PriorityPage.ADJACENT).apply { queue.offer(this) }
                 } else {
                     null
@@ -189,11 +213,11 @@ internal class HttpPageLoader(
      *
      * @param page the page whose source image has to be downloaded.
      */
-    private suspend fun internalLoadPage(page: ReaderPage, force: Boolean) {
+    private suspend fun internalLoadPage(page: ReaderPage, force: Boolean, visible: Boolean) {
         try {
             if (page.imageUrl.isNullOrEmpty()) {
                 page.status = Page.State.LoadPage
-                page.imageUrl = source.getImageUrl(page)
+                page.imageUrl = network(visible, if (visible) FocusOperation.VISIBLE_IMAGE else FocusOperation.PREFETCH, page) { source.getImageUrl(page) }
             }
             val imageUrl = page.imageUrl!!
 
@@ -201,8 +225,13 @@ internal class HttpPageLoader(
                 page.status = Page.State.DownloadImage
                 when (val image = PageImageUrl.parse(imageUrl)) {
                     PageImageUrl.Http -> {
-                        val imageResponse = source.getImage(page)
-                        chapterCache.putImageToCache(imageUrl, imageResponse)
+                        network(visible, if (visible) FocusOperation.VISIBLE_IMAGE else FocusOperation.PREFETCH, page) {
+                            // A persistent download or another page may have populated the cache while queued.
+                            if (force || !chapterCache.isImageInCache(imageUrl)) {
+                                val imageResponse = source.getImage(page)
+                                chapterCache.putImageToCache(imageUrl, imageResponse)
+                            }
+                        }
                     }
                     is PageImageUrl.InlineImage -> chapterCache.putImageToCache(imageUrl, image.bytes)
                 }
@@ -211,6 +240,8 @@ internal class HttpPageLoader(
             page.stream = { chapterCache.getImageFile(imageUrl).inputStream() }
             chapter.chapter.manga_id?.let { eu.kanade.tachiyomi.ui.home.PreferredMangaVariants.reader(it, true) }
             page.status = Page.State.Ready
+        } catch (_: FocusPrefetchSuperseded) {
+            if (!isRecycled) page.status = Page.State.Queue
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

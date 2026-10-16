@@ -62,4 +62,13 @@ class SourcePagingReliabilityTest {
         val paging = pager { throw CancellationException("Cancelled") }
         assertThrows<CancellationException> { paging.load(params()) }
     }
+    @Test
+    fun `catalogue identity dedup spans pages refresh resets and distinct works remain`() = runBlocking<Unit> {
+        fun item(url: String) = SManga.create().apply { this.url=url; title="One Piece" }
+        val paging=pager { page -> if(page==1) MangasPage(listOf(item("/one-piece"),item("/one-piece")),true)
+            else MangasPage(listOf(item("/one-piece"),item("/one-piece-strong-world-0")),false) }
+        (paging.load(params()) as PagingSource.LoadResult.Page).data.map {it.url} shouldBe listOf("/one-piece")
+        (paging.load(PagingSource.LoadParams.Append(2L,24,false)) as PagingSource.LoadResult.Page).data.map {it.url} shouldBe listOf("/one-piece-strong-world-0")
+        (paging.load(params()) as PagingSource.LoadResult.Page).data.size shouldBe 1
+    }
 }

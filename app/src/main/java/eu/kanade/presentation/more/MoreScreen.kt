@@ -19,6 +19,8 @@ import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.vectorResource
@@ -49,8 +51,13 @@ fun MoreScreen(
     onClickAbout: () -> Unit,
 ) {
     val uriHandler = LocalUriHandler.current
+    var privacyOpen by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    if (privacyOpen) eu.kanade.tachiyomi.data.ads.AdPrivacyDialog { privacyOpen = false }
     Scaffold(topBar = { AppBar(title = "المزيد")    }) { padding ->
         ScrollbarLazyColumn(contentPadding = padding) {
+            item(key = "advertising-privacy") {
+                TextPreferenceWidget(title = "خصوصية الإعلانات", icon = Icons.Outlined.Shield, onPreferenceClick = { privacyOpen = true })
+            }
             item(key = "website-about") {
                 TextPreferenceWidget(title = "من نحن", icon = Icons.Outlined.PersonOutline, onPreferenceClick = { uriHandler.openUri("https://mangaro-web.vercel.app/about") })
             }

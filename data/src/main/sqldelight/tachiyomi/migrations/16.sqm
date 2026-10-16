@@ -1,0 +1,93 @@
+-- Personal-state archive, in the SAME SQLite database as the stable catalog IDs.
+-- Original tables are the active workspace projection. Switching is one transaction.
+CREATE TABLE local_account_context (
+    id INTEGER NOT NULL PRIMARY KEY CHECK(id = 1),
+    owner TEXT NOT NULL,
+    transitioning INTEGER NOT NULL DEFAULT 0,
+    guest_generation INTEGER NOT NULL DEFAULT 0
+);
+INSERT INTO local_account_context(id, owner) VALUES(1, 'guest');
+CREATE TABLE local_account_snapshots (
+    owner TEXT NOT NULL,
+    table_name TEXT NOT NULL,
+    row_key INTEGER NOT NULL,
+    payload TEXT NOT NULL,
+    PRIMARY KEY(owner, table_name, row_key)
+);
+CREATE TABLE local_account_claims (
+    owner TEXT NOT NULL,
+    guest_generation INTEGER NOT NULL,
+    claimed_at INTEGER NOT NULL,
+    PRIMARY KEY(owner, guest_generation)
+);
+
+CREATE TABLE local_account_file_claims (
+    guest_generation INTEGER NOT NULL PRIMARY KEY,
+    owner TEXT NOT NULL
+);
+CREATE INDEX local_file_claims_owner ON local_account_file_claims(owner);
+
+DROP TRIGGER update_last_favorited_at_mangas;
+CREATE TRIGGER update_last_favorited_at_mangas
+AFTER UPDATE OF favorite ON mangas
+WHEN (SELECT transitioning FROM local_account_context WHERE id=1) = 0
+BEGIN
+  UPDATE mangas
+  SET favorite_modified_at = strftime('%s', 'now')
+  WHERE _id = new._id;
+END;
+DROP TRIGGER update_last_modified_at_mangas;
+CREATE TRIGGER update_last_modified_at_mangas
+AFTER UPDATE ON mangas
+FOR EACH ROW
+WHEN (SELECT transitioning FROM local_account_context WHERE id=1) = 0
+BEGIN
+  UPDATE mangas
+  SET last_modified_at = strftime('%s', 'now')
+  WHERE _id = new._id;
+END;
+DROP TRIGGER update_manga_version;
+CREATE TRIGGER update_manga_version AFTER UPDATE ON mangas
+WHEN (SELECT transitioning FROM local_account_context WHERE id=1) = 0
+BEGIN
+    UPDATE mangas SET version = version + 1
+    WHERE _id = new._id AND new.is_syncing = 0 AND (
+        new.url != old.url OR
+        new.description != old.description OR
+        new.favorite != old.favorite
+    );
+END;
+DROP TRIGGER update_last_modified_at_chapters;
+CREATE TRIGGER update_last_modified_at_chapters
+AFTER UPDATE ON chapters
+FOR EACH ROW
+WHEN (SELECT transitioning FROM local_account_context WHERE id=1) = 0
+BEGIN
+  UPDATE chapters
+  SET last_modified_at = strftime('%s', 'now')
+  WHERE _id = new._id;
+END;
+DROP TRIGGER update_chapter_and_manga_version;
+CREATE TRIGGER update_chapter_and_manga_version AFTER UPDATE ON chapters
+WHEN (SELECT transitioning FROM local_account_context WHERE id=1) = 0 AND new.is_syncing = 0 AND (
+    new.read != old.read OR
+    new.bookmark != old.bookmark OR
+    new.last_page_read != old.last_page_read
+)
+BEGIN
+    -- Update the chapter version
+    UPDATE chapters SET version = version + 1
+    WHERE _id = new._id;
+
+    -- Update the manga version
+    UPDATE mangas SET version = version + 1
+    WHERE _id = new.manga_id AND (SELECT is_syncing FROM mangas WHERE _id = new.manga_id) = 0;
+END;
+DROP TRIGGER insert_manga_category_update_version;
+CREATE TRIGGER insert_manga_category_update_version AFTER INSERT ON mangas_categories
+WHEN (SELECT transitioning FROM local_account_context WHERE id=1) = 0
+BEGIN
+    UPDATE mangas
+    SET version = version + 1
+    WHERE _id = new.manga_id AND (SELECT is_syncing FROM mangas WHERE _id = new.manga_id) = 0;
+END;

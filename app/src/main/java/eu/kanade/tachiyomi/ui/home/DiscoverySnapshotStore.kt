@@ -14,7 +14,7 @@ object DiscoverySnapshotStore {
     }
 
     fun getSnapshot(category: DiscoveryCategory): List<HomeDiscoveryItem> {
-        return GroupDiscoveryItems.group(snapshotMap[category].orEmpty())
+        return GroupDiscoveryItems.group(snapshotMap[category].orEmpty(), category.selectionContext())
     }
 
     fun clear() {

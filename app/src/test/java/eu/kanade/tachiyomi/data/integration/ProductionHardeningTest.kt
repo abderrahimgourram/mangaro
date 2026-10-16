@@ -34,13 +34,20 @@ class ProductionHardeningTest {
         val client: io.github.jan.supabase.SupabaseClient
         val target = CommunityTarget(CommunityTargetType.MANGA,CommunityMangaKey.fromSource(7,"/unit-work"))
         init {
+            // Android's clock is a JVM stub; model monotonic time for SDK capability caching.
+            mockkStatic(android.os.SystemClock::class)
+            every {android.os.SystemClock.elapsedRealtime()} answers {System.nanoTime()/1_000_000}
             every {auth.observeSession()} returns session
             coEvery {auth.refreshProgression()} returns AccountOperation.Completed
             account = AccountFoundation(auth,DisabledAccountCloudSync())
             server.executor = executor
             server.createContext("/") { exchange ->
                 val body = exchange.requestBody.bufferedReader().use {it.readText()}
-                val (code,text)=reply(exchange.requestMethod,exchange.requestURI.path,body)
+                // These legacy mutation fixtures exercise the documented missing-extension path.
+                // A capability outage is deliberately NOT treated as unsupported by production.
+                val (code,text)=if(exchange.requestURI.path.endsWith("/community_work_capabilities"))
+                    404 to "{\"code\":\"PGRST202\",\"message\":\"extension absent in legacy fixture\",\"details\":null,\"hint\":null}"
+                    else reply(exchange.requestMethod,exchange.requestURI.path,body)
                 val data = text.toByteArray()
                 exchange.responseHeaders.add("Content-Type","application/json")
                 exchange.sendResponseHeaders(code,data.size.toLong())
@@ -55,7 +62,7 @@ class ProductionHardeningTest {
         }
         fun page(items:String="[]")="""{"items":$items,"has_more":false,"next_cursor":null,"comment_count":1}"""
         fun comment(id:String="00000000-0000-0000-0000-000000000010")="""{"id":"$id","user_id":"$owner","body":"Real test comment","created_at":"2026-10-01T00:00:00Z","updated_at":"2026-10-01T00:00:00Z","parent_comment_id":null,"display_name":"Reader","username":"reader","avatar_path":null,"google_avatar_url":null,"author_updated_at":null,"like_count":0,"reply_count":0,"liked_by_me":false,"level":1}"""
-        override fun close() {runBlocking {client.close()};server.stop(0);executor.shutdownNow()}
+        override fun close() {runBlocking {client.close()};server.stop(0);executor.shutdownNow();unmockkStatic(android.os.SystemClock::class)}
     }
     @Test fun `spoiler post and flag-only edit reconcile server truth without changing identity`() = runTest {
         Fixture().use { f ->

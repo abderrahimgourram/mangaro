@@ -1,5 +1,6 @@
 package eu.kanade.presentation.novels
 
+import eu.kanade.tachiyomi.focus.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -58,9 +59,12 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import tachiyomi.core.common.util.lang.WesternDigits
 
-internal fun novelError(error: Exception): String {
-    android.util.Log.w("MangaroNovels","Novel operation failed",error)
-    return (error as? NovelSourceFailure)?.publicMessage ?: "تعذّر التحميل حاليًا. حاول مجددًا."
+internal fun novelError(error: Exception, logDetails: Boolean = true): String {
+    if (logDetails) android.util.Log.w("MangaroNovels","Novel operation failed",error)
+    val failure = error as? NovelSourceFailure
+    val message = failure?.publicMessage ?: "تعذّر التحميل حاليًا. حاول مجددًا."
+    val code = failure?.code?.takeIf { it.matches(Regex("[A-Z0-9_]{1,64}")) }
+    return if (SunovelsSource.diagnosticsEnabled && code != null) "$message [$code]" else message
 }
 
 @Composable
@@ -135,11 +139,44 @@ private fun NovelCard(novel: Novel, metadata: String? = null, onOpen: () -> Unit
 @Composable
 internal fun NovelFailure(message: String, url: String, retry: () -> Unit) {
     val browser=LocalUriHandler.current
-    Column(Modifier.fillMaxWidth().padding(20.dp),horizontalAlignment=Alignment.CenterHorizontally,
-        verticalArrangement=Arrangement.spacedBy(8.dp)) {
-        Text(message,color=Color(0xFFD0BEDD),style=MaterialTheme.typography.bodyMedium)
-        TextButton(onClick=retry) { Text("حاول مجددًا",color=Design.GoldPrimary) }
+    Column(Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment=Alignment.CenterHorizontally) {
+        eu.kanade.presentation.components.MangaroErrorState(message, retry)
         TextButton(onClick={runCatching { browser.openUri(url) }}) { Text("فتح الرواية في الموقع",color=Design.LavenderPrimary) }
+    }
+}
+
+/** Debug-only, bounded metadata report; never copies story text, cookies or user/account data. */
+@Composable
+internal fun SunovelsChapterDiagnostic(novel: Novel, chapter: NovelChapter, allowResumeMapping: Boolean = false, seaReport: String? = null) {
+    if (!SunovelsSource.diagnosticsEnabled || novel.sourceId !in setOf(SunovelsSource.SOURCE_ID, SeaNovelSource.SOURCE_ID) && !allowResumeMapping) return
+    val context = LocalContext.current
+    val repository = NovelRepository.get(context)
+    val scope = rememberCoroutineScope()
+    var report by remember(chapter.id) { mutableStateOf<String?>(null) }
+    Text("المصدر: " + when (novel.sourceId) {
+        SeaNovelSource.SOURCE_ID -> "SeaNovel (novel.seanovel)"
+        SunovelsSource.SOURCE_ID -> "Sunovels (novel.sunovels)"
+        else -> novel.sourceId
+    }, color = Design.LavenderPrimary, style = MaterialTheme.typography.labelSmall)
+    SunovelsReaderDiagnostics.get(chapter.id)?.takeIf { it.failureCode != "NONE" }?.let {
+        Text(it.failureTag(), color = Design.LavenderPrimary,
+            style = MaterialTheme.typography.bodySmall.copy(textDirection = TextDirection.Ltr))
+    }
+    seaReport?.lineSequence()?.firstOrNull { it.startsWith("failure=") && it != "failure=NONE" }?.let {
+        Text("REASON: " + it.removePrefix("failure="), color = Design.LavenderPrimary, style = MaterialTheme.typography.bodySmall)
+    }
+    TextButton(onClick = { scope.launch {
+        report = seaReport ?: repository.sunovelsDiagnostic(novel, chapter)
+    } }) { Text("تشخيص الفصل", color = Design.LavenderPrimary) }
+    report?.let { value ->
+        AlertDialog(onDismissRequest = { report = null }, title = { Text("تشخيص الفصل") },
+            text = { androidx.compose.foundation.layout.Box(Modifier.heightIn(max = 420.dp)) {
+                Text(value, Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()),
+                    style = MaterialTheme.typography.bodySmall.copy(textDirection = TextDirection.Ltr))
+            } }, confirmButton = { TextButton(onClick = {
+                val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Novel Chapter Diagnostic", value))
+            }) { Text("Copy Diagnostic Report") } }, dismissButton = { TextButton(onClick = { report = null }) { Text("إغلاق") } })
     }
 }
 
@@ -165,11 +202,13 @@ class NovelHomeScreen(private val initialGenre: String? = null) : Screen() {
         val context = LocalContext.current
         val repository = remember(context) { NovelRepository.get(context) }
         val navigator = LocalNavigator.currentOrThrow
+        val openReader = rememberSunovelsReaderEntry()
         val catalog by repository.catalog.collectAsState()
         val library by repository.library.collectAsState()
         var input by rememberSaveable { mutableStateOf("") }
         var term by rememberSaveable { mutableStateOf("") }
         var genre by rememberSaveable { mutableStateOf(initialGenre) }
+        var sunStatus by rememberSaveable { mutableStateOf<String?>(null) }
         var generation by remember { mutableIntStateOf(0) }
         val memory = remember { browseMemory ?: NovelBrowseMemory().also { browseMemory = it } }
         val selection = remember(term) {
@@ -187,7 +226,7 @@ class NovelHomeScreen(private val initialGenre: String? = null) : Screen() {
         val scope = rememberCoroutineScope()
         var moreJob by remember { mutableStateOf<Job?>(null) }
         LaunchedEffect(input) { kotlinx.coroutines.delay(350); if (input.trim() != term) { term = input.trim(); if (term.isNotBlank()) genre = null } }
-        LaunchedEffect(term, genre, generation) {
+        LaunchedEffect(term, genre, generation, sunStatus) {
             if (memory.loadedKey == (term to genre)) return@LaunchedEffect
             val request = ++epoch
             moreJob?.cancel()
@@ -198,7 +237,8 @@ class NovelHomeScreen(private val initialGenre: String? = null) : Screen() {
             kotlinx.coroutines.coroutineScope { repository.activeSources.forEach { source -> launch {
                 try {
                     if (genre == null && slots[source.id].isNullOrEmpty()) {
-                        repository.discoverySnapshot(source, term, 1, null)?.let { cached ->
+                        repository.discoverySnapshot(source, term, 1,
+                            if (source is SunovelsGatewaySource) SunovelsGatewaySource.filter(null,sunStatus) else null)?.let { cached ->
                             repository.ingest(cached.novels)
                             if (request == epoch) {
                                 slots = slots + (source.id to cached.novels); pages = pages + (source.id to cached.nextPage)
@@ -217,7 +257,8 @@ class NovelHomeScreen(private val initialGenre: String? = null) : Screen() {
                             repository.catalog.value.works.flatMap { it.editions }.filter { it.sourceId == source.id && it.genres.any { g -> NovelGenres.key(g) == genre } && (term.isBlank() || NovelIdentity.normalize(it.title).contains(query)) }
                         }
                         NovelPage(available)
-                    } else repository.discover(source, term, 1, route)
+                    } else repository.discover(source, term, 1,
+                        if (source is SunovelsGatewaySource) SunovelsGatewaySource.filter(route,sunStatus) else route)
                     if (request == epoch) {
                         slots = slots + (source.id to result.novels); pages = pages + (source.id to result.nextPage)
                         if (result.genres.isNotEmpty()) routes = routes + (source.id to result.genres)
@@ -294,7 +335,8 @@ class NovelHomeScreen(private val initialGenre: String? = null) : Screen() {
                     try {
                         val source = repository.source(id)
                         val route = routes[id].orEmpty().firstOrNull { NovelGenres.key(it.name) == genre }?.value
-                        val result = repository.discover(source, term, page!!, route)
+                        val result = repository.discover(source, term, page!!,
+                            if (source is SunovelsGatewaySource) SunovelsGatewaySource.filter(route,sunStatus) else route)
                         if (request == epoch) { slots = slots + (id to (slots[id].orEmpty() + result.novels).distinctBy { it.id }); pages = pages + (id to result.nextPage) }
                     } catch (c: CancellationException) { throw c }
                     catch (e: Exception) { novelError(e); if (request == epoch) failed = failed + id }
@@ -317,12 +359,20 @@ class NovelHomeScreen(private val initialGenre: String? = null) : Screen() {
                 item { eu.kanade.presentation.components.MangaroFilterChip("الكل", genre == null, onClick = { genre = null }) }
                 items(genres, key = NovelGenres::key) { name -> eu.kanade.presentation.components.MangaroFilterChip(NovelGenres.label(name), genre == NovelGenres.key(name), onClick = { input = ""; term = ""; genre = NovelGenres.key(name) }) }
             }
+            if (SunovelsGatewayConfig.enabled && !SunovelsSource.directEnabled) LazyRow(Modifier.fillMaxWidth(), contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                val statuses = listOf(null to "شمس الروايات: كل الحالات", "Ongoing" to "مستمر", "Completed" to "مكتمل", "New" to "جديد (تصنيف المصدر)")
+                items(statuses, key = { it.first.orEmpty() }) { (value,label) ->
+                    eu.kanade.presentation.components.MangaroFilterChip(label, sunStatus == value, onClick = {
+                        if (sunStatus != value) { memory.loadedKey = null; sunStatus = value }
+                    })
+                }
+            }
             BoxWithConstraints(Modifier.weight(1f)) {
                 LazyVerticalGrid(columns = if (maxWidth < 600.dp) GridCells.Fixed(2) else GridCells.Adaptive(160.dp),
                     state = gridState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp),
                     horizontalArrangement = Arrangement.spacedBy(Design.CardGap), verticalArrangement = Arrangement.spacedBy(Design.CardGap)) {
                     library.firstOrNull { it.position != null }?.let { current -> item(key = "continue", span = { GridItemSpan(maxLineSpan) }) {
-                        Surface(Modifier.fillMaxWidth().clickable { navigator.push(NovelReaderScreen(current.novel, current.position!!.chapter)) },
+                        Surface(Modifier.fillMaxWidth().clickable { openReader(current.novel, current.position!!.chapter) },
                             shape = RoundedCornerShape(14.dp), color = Design.SurfaceDark) {
                             Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                 NovelCover(current.novel, Modifier.size(48.dp, 72.dp))
@@ -404,6 +454,7 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
         val downloadAdGate = rememberNovelDownloadAdGate()
         var selectedId by rememberSaveable { mutableStateOf<String?>(initial.id) }
         val novel = work.editions.firstOrNull { it.id == selectedId } ?: work.primary
+        FocusSurface(FocusTarget(FocusContext.NOVEL_DETAILS, novel.sourceId, novel.id))
         val saved = library.any { entry -> entry.saved && work.editions.any { it.id == entry.novel.id } }
         val resume = library.filter { entry -> entry.position != null && work.editions.any { it.id == entry.novel.id } }.maxByOrNull { it.position!!.updatedAt }
         var indexErrors by remember { mutableStateOf(emptyMap<String, String>()) }
@@ -411,6 +462,11 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
         var indexes by remember { mutableStateOf(emptyMap<String, NovelChapterIndex>()) }
         var busy by remember { mutableStateOf(emptySet<String>()) }
         var error by remember { mutableStateOf<String?>(null) }
+        var readerOpening by remember { mutableStateOf(false) }
+        val openReader = rememberSunovelsReaderEntry(onLoading = { readerOpening = it }) { failedNovel, exception ->
+            error = novelError(exception)
+            repository.indexSnapshot(failedNovel)?.let { indexes = indexes + (failedNovel.id to it) }
+        }
         var retry by remember { mutableIntStateOf(0) }
         var descending by rememberSaveable { mutableStateOf(false) }
         var retryEditionId by remember { mutableStateOf<String?>(null) }
@@ -425,9 +481,19 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
         var editionsOpen by rememberSaveable { mutableStateOf(false) }
         var switching by remember { mutableStateOf<Novel?>(null) }
         var switchChapter by remember { mutableStateOf<NovelChapter?>(null) }
+        var revalidatingSun by remember { mutableStateOf<Set<String>>(emptySet()) }
+        var availabilityReport by remember { mutableStateOf<String?>(null) }
+        var restartSunIndex by remember { mutableStateOf(false) }
         var enqueueing by remember { mutableStateOf(false) }
         var notice by remember { mutableStateOf<String?>(null) }
         LaunchedEffect(initial.id) { repository.awaitLocal(); repository.ingest(listOf(initial)) }
+        LaunchedEffect(work.editions.map { it.id }) {
+            work.editions.filter { it.sourceId == SunovelsSource.SOURCE_ID }.forEach { edition -> launch {
+                repository.observeSunIndex(edition).collectLatest { current ->
+                    indexes = indexes + (edition.id to current)
+                }
+            } }
+        }
         LaunchedEffect(work.editions.map { it.id }, retry) {
             val request = ++indexEpoch
             val editions = work.editions.filter { (NovelSourceAvailability.active(it.sourceId) || it.id == initial.id) && (retryEditionId == null || it.id == retryEditionId) }
@@ -440,11 +506,16 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
             editions.forEach { edition -> launch {
                 try {
                     gate.withPermit {
-                        repository.continueIndex(edition, refresh = retry > 0) { partial ->
-                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
-                                if (request == indexEpoch) indexes = indexes + (edition.id to partial)
-                            }
+                        val onPage: suspend (NovelChapterIndex) -> Unit = { partial ->
+                            if (edition.sourceId != SunovelsSource.SOURCE_ID) {
+                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
+                                    if (request == indexEpoch) indexes = indexes + (edition.id to partial)
+                                }
+                            } // Sunovels uses the authoritative repository observer above, including reader proof.
                         }
+                        if (edition.sourceId == SunovelsSource.SOURCE_ID)
+                            repository.completeIndex(edition, refresh = restartSunIndex, maxPages = 2, onPage = onPage)
+                        else repository.continueIndex(edition, refresh = retry > 0, onPage = onPage)
                     }
                 } catch (c: CancellationException) { throw c }
                 catch (e: Exception) {
@@ -455,6 +526,9 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
                 }
                 finally { if (request == indexEpoch) busy = busy - edition.id }
             } }
+            editions.forEach { edition ->
+                repository.detailSnapshot(edition)?.let { repository.ingest(listOf(it)) }
+            }
             // Optional work metadata never keeps chapter selection in a loading state.
             editions.forEach { edition -> launch {
                 try {
@@ -535,17 +609,19 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
                             novel.author?.let { Text(it, color = Color(0xFFC3B1D0), style = MaterialTheme.typography.bodySmall.copy(textDirection = TextDirection.Content)) }
                             novel.status?.let { Text(when (it.lowercase()) { "ongoing" -> "مستمرة"; "completed" -> "مكتملة"; else -> it }, color = Design.LavenderPrimary, style = MaterialTheme.typography.labelSmall) }
                             if (index.complete) Text(numeric(index.chapters.size) + " فصلًا", color = Design.GoldPrimary, style = MaterialTheme.typography.labelLarge)
-                            else Text(chapterCountLabel(index.chapters.size, novel.chapterCount, novel.id in busy), color = Color(0xFFAE99BE), style = MaterialTheme.typography.labelSmall)
+                            else Text(chapterCountLabel(index.chapters.size, index.declaredTotal ?: novel.chapterCount, novel.id in busy), color = Color(0xFFAE99BE), style = MaterialTheme.typography.labelSmall)
                         }
                     }
                 }
                 resume?.let { current -> item {
-                    Button(onClick = { navigator.push(NovelReaderScreen(current.novel, current.position!!.chapter)) }, Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.buttonColors(containerColor = Design.GoldPrimary, contentColor = Design.BackgroundDark)) { Text("متابعة القراءة") }
+                    Button(onClick = { openReader(current.novel, current.position!!.chapter) }, Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.buttonColors(containerColor = Design.GoldPrimary, contentColor = Design.BackgroundDark)) { Text("متابعة القراءة") }
                     Text(current.position!!.chapter.title, color = Color(0xFFAE99BE), style = MaterialTheme.typography.labelSmall.copy(textDirection = TextDirection.ContentOrRtl))
+                    SunovelsChapterDiagnostic(current.novel, current.position!!.chapter, allowResumeMapping = true)
                 } }
+                val firstAvailable = index.chapters.firstOrNull { it.available }
                 if (index.chapters.isNotEmpty()) item {
-                    if (resume == null) Button(onClick = { navigator.push(NovelReaderScreen(novel, index.chapters.first())) }, Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.buttonColors(containerColor = Design.GoldPrimary, contentColor = Design.BackgroundDark)) { Text("ابدأ القراءة") }
-                    else if (resume.novel.id != novel.id) TextButton(onClick = { switchChapter = index.chapters.first(); switching = novel }) { Text("قراءة هذه الطبعة", color = Design.GoldPrimary) }
+                    if (resume == null) Button(onClick = { firstAvailable?.let { openReader(novel, it) } }, enabled = firstAvailable != null && !readerOpening, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.buttonColors(containerColor = Design.GoldPrimary, contentColor = Design.BackgroundDark)) { Text(if (readerOpening) "جاري تحميل الفصل..." else "ابدأ القراءة") }
+                    else if (resume.novel.id != novel.id) TextButton(onClick = { switchChapter = firstAvailable; switching = novel }, enabled = firstAvailable != null) { Text("قراءة هذه الطبعة", color = Design.GoldPrimary) }
                 }
                 item {
                     FilledTonalButton(onClick = { openDownloads() }, enabled = index.chapters.isNotEmpty() && !enqueueing, modifier = Modifier.fillMaxWidth()) {
@@ -585,14 +661,17 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
                     }
                 }
                 if (novel.id !in busy && !index.complete && index.nextPage != null && indexErrors[novel.id] == null) item {
-                    TextButton(onClick = { retryEditionId = novel.id; retry++ }) { Text("تحميل المزيد من الفصول", color = Design.GoldPrimary) }
+                    TextButton(onClick = { restartSunIndex = false; retryEditionId = novel.id; retry++ }) { Text("تحميل المزيد من الفصول", color = Design.GoldPrimary) }
                 }
-                (error ?: indexErrors[novel.id])?.let { message -> item { NovelFailure(message, novel.url) { error = null; retryEditionId = novel.id; retry++ } } }
+                (error ?: indexErrors[novel.id])?.let { message -> item { NovelFailure(message, novel.url) { error = null; restartSunIndex = true; retryEditionId = novel.id; retry++ } } }
                 storageError?.let { message -> item {
                     Text(message, color = Color(0xFFE5B5AB), style = MaterialTheme.typography.bodySmall)
                     if (repository.libraryRestoreFailed) TextButton(onClick = { scope.launch { repository.retryLibraryRestore() } }) { Text("حاول مجددًا") }
                 } }
                 notice?.let { message -> item { Text(message, color = Design.GoldPrimary, style = MaterialTheme.typography.labelSmall) } }
+                index.notice?.let { message -> item(key = "source-index-notice") {
+                    Text(message, color = Color(0xFFE5B5AB), style = MaterialTheme.typography.bodySmall)
+                } }
                 groups.forEach { group ->
                     if (group.title != null) item(key = "group-" + novel.id + "|" + group.id) {
                         Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), color = Color(0xFF241A30)) {
@@ -612,14 +691,42 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
                     if (novel.id + "|" + group.id !in collapsed) items(group.chapters, key = { it.id }, contentType = { "chapter" }) { chapter ->
                         NovelChapterRow(chapter, states[chapter.id], selecting, chapter.id in selected,
                             onSelect = { selected = if (chapter.id in selected) selected - chapter.id else selected + chapter.id },
-                            onRead = { if (resume != null && resume.novel.id != novel.id) { switchChapter = chapter; switching = novel } else navigator.push(NovelReaderScreen(novel, chapter)) },
+                            onRead = { if (resume != null && resume.novel.id != novel.id) { switchChapter = chapter; switching = novel } else openReader(novel, chapter) },
                             onDownload = { download(listOf(chapter)) },
+                            onRevalidate = if (SunovelsSource.diagnosticsEnabled && novel.sourceId == SunovelsSource.SOURCE_ID && SunovelsSource.directEnabled &&
+                                SunovelsAccess.state(chapter) in setOf(SunovelsChapterState.INDEXED_UNVERIFIED, SunovelsChapterState.EXPLICITLY_LOCKED, SunovelsChapterState.TEMPORARILY_UNAVAILABLE, SunovelsChapterState.MISSING) &&
+                                chapter.publishedRows.size <= 1 && chapter.id !in revalidatingSun) ({
+                                val target = novel
+                                revalidatingSun = revalidatingSun + chapter.id
+                                scope.launch {
+                                    try {
+                                        repository.revalidateSunChapter(target, chapter)
+                                        notice = "تم التحقق من المحتوى العام لهذا الفصل."
+                                    } catch (c: CancellationException) { throw c }
+                                    catch (e: Exception) { notice = novelError(e) }
+                                    finally {
+                                        if (SunovelsSource.diagnosticsEnabled) availabilityReport = repository.sunovelsDiagnostic(target, chapter)
+                                        repository.indexSnapshot(target)?.let { indexes = indexes + (target.id to it) }
+                                        revalidatingSun = revalidatingSun - chapter.id
+                                    }
+                                }
+                            }) else null,
                             onCommunity = { selectedId = novel.id; navigator.push(eu.kanade.presentation.community.CommunityCommentsScreen(novelCommunityContext(novel, chapter))) })
                     }
                 }
-                if (index.chapters.isEmpty() && novel.id !in busy && error == null && indexErrors[novel.id] == null) item { Text("لا توجد فصول متاحة حاليًا.", color = Color(0xFFAE99BE)) }
+                if (index.state() == NovelIndexState.VERIFIED_EMPTY && novel.id !in busy && error == null && indexErrors[novel.id] == null) item { Text("لا توجد فصول منشورة في الفهرس المتحقق منه حاليًا.", color = Color(0xFFAE99BE)) }
             }
             if (selecting && selected.isNotEmpty()) Button(onClick = { download(index.chapters.filter { it.id in selected }) }, enabled = !enqueueing, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), colors = ButtonDefaults.buttonColors(containerColor = Design.GoldPrimary, contentColor = Design.BackgroundDark)) { Text("تحميل المحدد · " + numeric(selected.size)) }
+        }
+        availabilityReport?.let { value ->
+            AlertDialog(onDismissRequest = { availabilityReport = null }, title = { Text("تشخيص الفصل · تحقق من الإتاحة") },
+                text = { Text(value, Modifier.heightIn(max = 420.dp).verticalScroll(androidx.compose.foundation.rememberScrollState()),
+                    style = MaterialTheme.typography.bodySmall.copy(textDirection = TextDirection.Ltr)) },
+                confirmButton = { TextButton(onClick = {
+                    val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Sunovels Availability Diagnostic", value))
+                }) { Text("Copy Diagnostic Report") } },
+                dismissButton = { TextButton(onClick = { availabilityReport = null }) { Text("إغلاق") } })
         }
         if (libraryOpen) NovelLibraryShelfSheet(novel, repository, onDismiss = { libraryOpen = false })
         if (rangeOpen) NovelDownloadSelectionSheet(indexes[novel.id] ?: NovelChapterIndex(novel.id),
@@ -647,7 +754,7 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
         }
         switching?.let { target -> AlertDialog(onDismissRequest = { switching = null }, title = { Text("طبعة أخرى") }, text = { Text("قد يختلف ترتيب الفصول والترجمة. سيبقى موضع قراءتك السابق وتنزيلاتك محفوظين.") },
             confirmButton = { TextButton(onClick = { selectedId = target.id; selected = emptySet(); editionsOpen = false; switching = null
-                switchChapter?.let { navigator.push(NovelReaderScreen(target, it)) }; switchChapter = null }) { Text("اختيار الطبعة") } }, dismissButton = { TextButton(onClick = { switching = null }) { Text("رجوع") } }) }
+                switchChapter?.let { openReader(target, it) }; switchChapter = null }) { Text("اختيار الطبعة") } }, dismissButton = { TextButton(onClick = { switching = null }) { Text("رجوع") } }) }
     }
 }
 

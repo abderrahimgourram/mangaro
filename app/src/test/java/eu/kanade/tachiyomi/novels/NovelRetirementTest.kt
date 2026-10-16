@@ -10,10 +10,11 @@ import java.io.File
 class NovelRetirementTest {
     @TempDir lateinit var directory: File
 
-    @Test fun discoveryExcludesSunovelsWithoutChangingTheSignedAllowlist() {
+    @Test fun discoveryFollowsTheBuildPolicyWithoutChangingTheSignedAllowlist() {
         NovelRules.domains.keys shouldBe setOf("novel.kolnovel", "novel.cenele", "novel.sunovels", "novel.seanovel")
         NovelRules.domains.keys.filter(NovelSourceAvailability::active).toSet() shouldBe
-            setOf("novel.kolnovel", "novel.cenele", "novel.seanovel")
+            (setOf("novel.kolnovel", "novel.cenele", "novel.seanovel") +
+                if (SunovelsSource.directEnabled || SunovelsGatewayConfig.enabled) setOf("novel.sunovels") else emptySet())
         NovelSourceAvailability.active("unknown") shouldBe false
     }
     @Test fun cachedRetiredPrimaryCannotLeakIntoDiscoveryOrRemapStoredProgress() {
@@ -23,8 +24,9 @@ class NovelRetirementTest {
         val saved = NovelLibraryItem(retired, saved = true, position = NovelReadingPosition(
             NovelChapter(retired.url + "/chapter/1", "Fixture", 0), paragraph = 11, offset = 7))
         val before = Json.encodeToString(saved)
-        NovelSourceAvailability.discoverable(work)!!.primary.id shouldBe active.id
-        NovelSourceAvailability.discoverable(work.copy(editions = listOf(retired))) shouldBe null
+        val enabled = SunovelsSource.directEnabled || SunovelsGatewayConfig.enabled
+        NovelSourceAvailability.discoverable(work)!!.primary.id shouldBe if (enabled) retired.id else active.id
+        NovelSourceAvailability.discoverable(work.copy(editions = listOf(retired))) shouldBe if (enabled) work.copy(editions = listOf(retired)) else null
         work.primary.id shouldBe retired.id
         Json.encodeToString(saved) shouldBe before
         saved.position!!.paragraph shouldBe 11; saved.position!!.offset shouldBe 7

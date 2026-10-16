@@ -62,9 +62,9 @@ class SyncChaptersWithSource(
     ): List<Chapter> {
         require(source.id == manga.source) { "Chapter source identity mismatch" }
         // Invalidate proof before any write; failure/cancellation cannot leave a falsely verified list.
-        suspend fun recordIntegrity(state: ChapterFetchCompleteness) {
+        suspend fun recordIntegrity(state: ChapterFetchCompleteness, sourcePublishedAt: Long? = null) {
             val rows = chapterRepository.getChapterByMangaId(manga.id)
-            updateManga.awaitChapterIntegrity(manga, state.name, rows)
+            updateManga.awaitChapterIntegrity(manga, state.name, rows, sourcePublishedAt)
         }
         recordIntegrity(if (completeness == ChapterFetchCompleteness.FAILED) completeness else ChapterFetchCompleteness.DEGRADED)
         if (completeness == ChapterFetchCompleteness.FAILED) {
@@ -264,7 +264,11 @@ class SyncChaptersWithSource(
         val finalRows = chapterRepository.getChapterByMangaId(manga.id)
         val verified = effectiveCompleteness == ChapterFetchCompleteness.COMPLETE && !identityPlan.unresolved &&
             !isChapterCountCollapse && finalRows.size == sourceChapters.size
-        recordIntegrity(if (verified) ChapterFetchCompleteness.COMPLETE else if (effectiveCompleteness == ChapterFetchCompleteness.COMPLETE) ChapterFetchCompleteness.DEGRADED else effectiveCompleteness)
+        // Raw adapter dates precede the legacy nowMillis/previous-date fallback above.
+        // Stored dateUpload/dateFetch/lastUpdate must never serve as publication evidence.
+        val publishedAt = sourceChapters.map { it.dateUpload }.filter { it > 0 && it <= nowMillis }.maxOrNull()
+        recordIntegrity(if (verified) ChapterFetchCompleteness.COMPLETE else if (effectiveCompleteness == ChapterFetchCompleteness.COMPLETE) ChapterFetchCompleteness.DEGRADED else effectiveCompleteness,
+            sourcePublishedAt = publishedAt)
         val excludedScanlators = getExcludedScanlators.await(manga.id).toHashSet()
 
         return updatedToAdd.filterNot { it.url in changedOrDuplicateReadUrls || it.scanlator in excludedScanlators }

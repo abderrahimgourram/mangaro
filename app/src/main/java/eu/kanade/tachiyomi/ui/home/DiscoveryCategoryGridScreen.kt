@@ -74,6 +74,7 @@ data class DiscoveryCategoryGridScreen(
             factory = DiscoveryCategoryGridViewModel.Factory(category)
         )
         val state by gridViewModel.state.collectAsState()
+        val renderedItems = remember(state.items, category) { GroupDiscoveryItems.group(state.items, category.selectionContext()) }
         val gridState = rememberLazyGridState()
         var selectedMultiSourceItem by remember { mutableStateOf<HomeDiscoveryItem?>(null) }
 
@@ -173,17 +174,14 @@ data class DiscoveryCategoryGridScreen(
                             verticalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
                             items(
-                                items = state.items,
-                                key = { item -> "${item.sourceId}_${item.mangaId}" },
+                                items = renderedItems,
+                                key = GroupDiscoveryItems::presentationKey,
                             ) { item ->
                                 MangaroMangaCard(
                                     item = item,
+                                    onChooseEdition = if (item.availableVersions.size > 1) ({ selectedMultiSourceItem = item }) else null,
                                     onMangaClick = {
-                                        if (item.availableVersions.size > 1) {
-                                            selectedMultiSourceItem = item
-                                        } else {
-                                            navigator.push(MangaScreen(item.mangaId, true))
-                                        }
+                                        navigator.push(MangaScreen(CatalogEditionOpening.selected(item).mangaId, true))
                                     },
                                     cardWidth = 150.dp,
                                 )
@@ -209,9 +207,10 @@ data class DiscoveryCategoryGridScreen(
                     }
                 }
 
-                if (selectedMultiSourceItem != null) {
+                val currentChoice = GroupDiscoveryItems.findSelectedWork(renderedItems, selectedMultiSourceItem)
+                if (currentChoice != null && currentChoice.availableVersions.size > 1) {
                     MangaroSourceChooserSheet(
-                        item = selectedMultiSourceItem!!,
+                        item = currentChoice,
                         onSelectVersion = { mangaId ->
                             navigator.push(MangaScreen(mangaId, true))
                         },

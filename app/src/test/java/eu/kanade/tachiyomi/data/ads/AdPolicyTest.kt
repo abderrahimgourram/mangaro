@@ -8,22 +8,6 @@ class AdPolicyTest {
     private fun policy() = AdPolicy { time }.also { it.startSession("reader") }
     private fun AdPolicy.complete(count: Int) { (1..count).forEach { chapterCompleted("reader", it.toLong()) } }
 
-    @Test fun `all non-production variants resolve official test units`() {
-        listOf("debug", "preview", "benchmark", "foss", "unknown").forEach { build ->
-            AdIds.forBuild(build) shouldBe AdIds(
-                "ca-app-pub-3940256099942544/2247696110",
-                "ca-app-pub-3940256099942544/1033173712",
-                "ca-app-pub-3940256099942544/5224354917",
-            )
-        }
-        AdIds.forBuild("release") shouldBe AdIds(
-            "ca-app-pub-6220636202579444/1208515081",
-            "ca-app-pub-6220636202579444/2333894491",
-            "ca-app-pub-6220636202579444/5696666840",
-        )
-        AdIds.APP_ID shouldBe "ca-app-pub-6220636202579444~2080855468"
-    }
-
     @Test fun `consent and connectivity gate every request`() {
         val p = policy()
         p.requestsAllowed(false, true) shouldBe false
@@ -33,7 +17,7 @@ class AdPolicyTest {
     }
 
     @Test fun `only deliberate placements exist no page startup or exit`() {
-        AdPlacement.entries.map { it.name } shouldBe listOf("CHAPTER_BOUNDARY_NATIVE", "DOWNLOAD_INTERSTITIAL", "REWARDED_AD_FREE")
+        AdPlacement.entries.map { it.name } shouldBe listOf("CHAPTER_BOUNDARY_NATIVE", "DOWNLOAD_INTERSTITIAL")
     }
 
     @Test fun `early completed chapters are ad free and uncompleted boundary cannot claim`() {
@@ -93,9 +77,9 @@ class AdPolicyTest {
 
     @Test fun `small downloads and reading never admit interstitial`() {
         val p = policy()
-        (0..50).forEach { p.downloadEligible(it, "batch", false) shouldBe false }
+        (0 until 50).forEach { p.downloadEligible(it, "batch", false) shouldBe false }
         p.downloadEligible(100, "batch", true) shouldBe false
-        p.downloadEligible(51, "batch", false) shouldBe true
+        p.downloadEligible(50, "batch", false) shouldBe true
         p.downloadEligible(1000, "batch", false) shouldBe true
     }
 
@@ -123,48 +107,10 @@ class AdPolicyTest {
         time += AdPolicy.FULLSCREEN_GAP
         p.claimDownload(51, "b", false) shouldBe true
         val saved = p.snapshot()
-        val restored = policy().also { it.restore(saved.adFreeUntil, saved.nativeTimes, saved.interstitialTimes, saved.lastFullscreen); it.complete(16) }
+        val restored = policy().also { it.restore(saved.nativeTimes, saved.interstitialTimes, saved.lastFullscreen); it.complete(16) }
         restored.nativeEligible("reader", 16) shouldBe false
         time += AdPolicy.FULLSCREEN_GAP
         restored.downloadEligible(51, "c", false) shouldBe false
-    }
-
-    @Test fun `rewarded needs an explicit action outside Reader and no reward on open or close`() {
-        val p = policy()
-        p.rewardedEligible(false, false) shouldBe false
-        p.rewardedEligible(true, true) shouldBe false
-        p.rewardedEligible(true, false) shouldBe true
-        p.fullscreenStarted()
-        p.adFree() shouldBe false
-        // Closing without Google's earned callback does not invoke rewardEarned().
-        p.fullscreenStarted()
-        p.adFreeUntil shouldBe 0
-    }
-
-    @Test fun `earned callback grants exactly thirty minutes and suppresses both placements`() {
-        val p = policy()
-        p.complete(4)
-        val earnedCallback = OnceAction { p.rewardEarned() }
-        earnedCallback.run()
-        p.adFreeUntil shouldBe time + AdPolicy.REWARD_DURATION
-        p.nativeEligible("reader", 4) shouldBe false
-        p.downloadEligible(100, "batch", false) shouldBe false
-        p.requestsAllowed(true, true) shouldBe false
-        time += 1000
-        earnedCallback.run()
-        p.adFreeUntil shouldBe time - 1000 + AdPolicy.REWARD_DURATION
-        time += AdPolicy.REWARD_DURATION
-        p.nativeEligible("reader", 4) shouldBe true
-        p.downloadEligible(100, "batch", false) shouldBe true
-    }
-
-    @Test fun `persisted reward restores bounded expiration without overriding consent`() {
-        val p = policy()
-        p.restore(time + AdPolicy.REWARD_DURATION * 500, emptyList(), emptyList(), null)
-        p.adFreeUntil shouldBe time + AdPolicy.REWARD_DURATION
-        time += AdPolicy.REWARD_DURATION
-        p.adFree() shouldBe false
-        p.requestsAllowed(false, true) shouldBe false
     }
 
     @Test fun `load failures cannot create a tight retry loop`() {
@@ -187,7 +133,7 @@ class AdPolicyTest {
         proceed.run() // owner destroyed
         downloads shouldBe 1
     }
-    @Test fun `native diagnostics agree with unchanged grace interval and reward policy`() {
+    @Test fun `native diagnostics agree with unchanged grace and interval`() {
         val p = policy()
         (1L..3L).forEach {
             p.chapterCompleted("reader", it)
@@ -200,8 +146,6 @@ class AdPolicyTest {
         p.nativeStatus("reader", 4).eligible shouldBe true
         p.claimNative("reader", 4) shouldBe true
         p.nativeStatus("reader", 4).reason shouldBe "boundary_already_claimed"
-        p.rewardEarned()
-        p.nativeStatus("reader", 4).reason shouldBe "rewarded_ad_free"
     }
 
 
@@ -219,8 +163,6 @@ class AdPolicyTest {
         p.downloadEligible(100, "b", false) shouldBe true
         p.claimDownload(100, "b", false) shouldBe true
         time += AdPolicy.FULLSCREEN_GAP
-        p.downloadEligible(100, "c", false) shouldBe false
-        p.rewardEarned()
         p.downloadEligible(100, "c", false) shouldBe false
     }
 

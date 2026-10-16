@@ -1,0 +1,9 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity android:name="eu.kanade.tachiyomi.novels.SunovelsAcceptanceActivity" android:exported="false" />
+    </application>
+    <instrumentation android:name="eu.kanade.tachiyomi.novels.SunovelsAcceptanceInstrumentation" android:targetPackage="${applicationId}" />
+    <instrumentation android:name="eu.kanade.tachiyomi.novels.NovelRecoveryInstrumentation" android:targetPackage="${applicationId}" />
+    <instrumentation android:name="eu.kanade.tachiyomi.novels.AccountIsolationInstrumentation" android:targetPackage="${applicationId}" />
+    <instrumentation android:name="eu.kanade.tachiyomi.novels.CloudSyncAcceptanceInstrumentation" android:targetPackage="${applicationId}" />
+</manifest>

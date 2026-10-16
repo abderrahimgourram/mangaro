@@ -44,7 +44,6 @@ class DiscoveryWorkDeduplicatorTest {
         every { editor.apply() } returns Unit
 
         DiscoveryWorkDeduplicator.clearForTesting()
-        DiscoveryWorkDeduplicator.notificationPoster = { _, _ -> }
     }
 
     @Test
@@ -60,7 +59,7 @@ class DiscoveryWorkDeduplicatorTest {
     }
 
     @Test
-    fun `subsequent discovery of genuinely new works reports correct count`() {
+    fun `newly observed catalogue entries are bookkeeping only without posting Android alerts`() {
         val initialCatalog = listOf(
             1L to "https://source.com/work/1",
             1L to "https://source.com/work/2",

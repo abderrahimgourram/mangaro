@@ -1,0 +1,20 @@
+{
+  "auditApk": "/home/jalem/Downloads/ManhwaAR_V0.2_Mihon_Fork_Kit/ManhwaAR_V0.2_Kit/ManhwaAR_Android/app/build/outputs/apk/sunovelsAudit/app-x86_64-sunovelsAudit.apk",
+  "auditSha256": "8d8d8afb66d1c25ba75fd35bea8b4c27c5eed2d610982cc8d4ef66a2c7837802",
+  "auditBytes": 37181895,
+  "arm64DebugApk": "/home/jalem/Downloads/ManhwaAR_V0.2_Mihon_Fork_Kit/ManhwaAR_V0.2_Kit/ManhwaAR_Android/app/build/outputs/apk/debug/app-arm64-v8a-debug.apk",
+  "arm64DebugSha256": "6cfa7376e862d362a0a05b1d36574401a66fdb63a224f3e38bf70e14fb8d7fa8",
+  "variant": "sunovelsAudit",
+  "package": "app.manhwaar.reader.sunovels.audit",
+  "debuggable": false,
+  "minifyEnabled": true,
+  "shrinkResources": true,
+  "signing": "Non-production local RSA audit key",
+  "certificateSha256": "7ec62a627ea9c4d713763224bb872f41f71b84c41cbfff28bc88469fe7ee162b",
+  "optimizedBuild": "PASS; final combined build 6m 10s",
+  "debugBuild": "PASS; separate normal build 57s",
+  "hostContracts": 127,
+  "publicHttpRequests": 5,
+  "gatewayRequests": 0,
+  "physicalPhoneAccess": false
+}

@@ -147,6 +147,7 @@ fun NovelLibraryContent(history: Boolean = false) {
     val restored by repository.restored.collectAsState()
     val storageError by repository.storageError.collectAsState()
     val navigator = LocalNavigator.currentOrThrow
+    val openReader = rememberSunovelsReaderEntry()
     val scope = rememberCoroutineScope()
     val sortPreference = remember { Injekt.get<PreferenceStore>().getString("novels_library_sort", "recent") }
     var sort by rememberSaveable { mutableStateOf(sortPreference.get()) }
@@ -214,7 +215,7 @@ fun NovelLibraryContent(history: Boolean = false) {
                         entry.latest?.let { last ->
                             Text(last.position!!.chapter.title, color = Design.LavenderPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                 style = MaterialTheme.typography.labelSmall.copy(textDirection = TextDirection.ContentOrRtl))
-                            TextButton(onClick = { navigator.push(NovelReaderScreen(last.novel, last.position.chapter)) }, contentPadding = PaddingValues(0.dp)) { Text("متابعة القراءة", color = Design.GoldPrimary) }
+                            TextButton(onClick = { openReader(last.novel, last.position.chapter) }, contentPadding = PaddingValues(0.dp)) { Text("متابعة القراءة", color = Design.GoldPrimary) }
                         }
                         var statusOpen by remember { mutableStateOf(false) }
                         Box {

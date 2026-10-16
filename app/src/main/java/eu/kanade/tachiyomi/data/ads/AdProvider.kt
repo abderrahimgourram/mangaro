@@ -10,17 +10,16 @@ internal interface AdProvider {
     fun cancelLoad(placement: AdPlacement) = Unit
     suspend fun initialize(context: Context)
     fun loadInterstitial(loaded: (ProviderFullscreen) -> Unit, failed: (ProviderFailure) -> Unit)
-    fun loadRewarded(loaded: (ProviderFullscreen) -> Unit, failed: (ProviderFailure) -> Unit)
-    fun loadNative(loaded: (ProviderNative) -> Unit, failed: (ProviderFailure) -> Unit)
+    fun loadNative(placement: NativePlacement, loaded: (ProviderNative) -> Unit, failed: (ProviderFailure) -> Unit)
 }
 internal data class ProviderFailure(val network: Boolean = false, val message: String? = null, val placement: String? = null)
 internal interface ProviderAd { fun destroy() }
 internal interface ProviderFullscreen : ProviderAd {
-    fun show(activity: Activity, shown: () -> Unit, finished: () -> Unit, earned: () -> Unit = {})
+    val isReady: Boolean
+    fun show(activity: Activity, shown: () -> Unit, finished: () -> Unit)
 }
 internal interface ProviderNative : ProviderAd {
     fun createView(context: Context, displayed: () -> Unit, failed: () -> Unit): View
     fun detach()
 }
 internal fun ProviderAd.destroySafely() { runCatching { destroy() } }
-internal fun com.google.android.libraries.ads.mobile.sdk.common.Ad.destroySafely() { runCatching { destroy() } }

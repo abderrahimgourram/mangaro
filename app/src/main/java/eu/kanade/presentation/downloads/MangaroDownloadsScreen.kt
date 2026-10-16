@@ -126,7 +126,7 @@ fun MangaroDownloadsScreen(
                 }
             }
         }
-        state.error?.let { message -> item(key = "error") { Text(message, color = Secondary, style = MaterialTheme.typography.bodySmall) } }
+        state.error?.let { message -> item(key = "error") { eu.kanade.presentation.components.MangaroErrorState(message) } }
         if (showQueue) {
             queueSection("active", "جاري التنزيل", active, onRetry, onCancel, onOpenManga)
             queueSection("pending", "في الانتظار", pending, onRetry, onCancel, onOpenManga)

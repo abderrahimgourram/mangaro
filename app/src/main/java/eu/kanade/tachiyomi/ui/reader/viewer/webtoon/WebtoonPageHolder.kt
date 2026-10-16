@@ -10,6 +10,7 @@ import androidx.core.view.isVisible
 import androidx.core.view.updateLayoutParams
 import androidx.core.view.updateMargins
 import com.davemorrissey.labs.subscaleview.SubsamplingScaleImageView
+import eu.kanade.presentation.util.mangaroErrorMessage
 import eu.kanade.presentation.util.formattedMessage
 import eu.kanade.tachiyomi.databinding.ReaderErrorBinding
 import eu.kanade.tachiyomi.source.model.Page
@@ -298,8 +299,7 @@ class WebtoonPageHolder(
             }
         }
 
-        errorLayout?.errorMessage?.text = with(context) { error?.formattedMessage }
-            ?: context.stringResource(MR.strings.decode_image_error)
+        errorLayout?.errorMessage?.text = error?.mangaroErrorMessage("تعذر تحميل الصورة") ?: "تعذر تحميل الصورة"
 
         return errorLayout!!
     }

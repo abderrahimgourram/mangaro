@@ -43,6 +43,8 @@ class MangaCoverViewModel(
 
     val snackbarHostState: SnackbarHostState = SnackbarHostState(),
 ) : StateViewModel<Manga?>(null) {
+    private val accountScope = kotlinx.coroutines.CoroutineScope(viewModelScope.coroutineContext + tachiyomi.core.common.util.lang.LocalAccountScope.context())
+
 
     companion object {
         val MANGA_ID_KEY = CreationExtras.Key<Long>()
@@ -57,20 +59,22 @@ class MangaCoverViewModel(
     }
 
     init {
-        viewModelScope.launchIO {
+        accountScope.launchIO {
             getManga.subscribe(mangaId)
                 .collect { newManga -> mutableState.update { newManga } }
         }
     }
 
     fun saveCover(context: Context) {
-        viewModelScope.launch {
+        accountScope.launch {
             try {
                 saveCoverInternal(context, temp = false)
                 snackbarHostState.showSnackbar(
                     context.stringResource(MR.strings.cover_saved),
                     withDismissAction = true,
                 )
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: Throwable) {
                 logcat(LogPriority.ERROR, e)
                 snackbarHostState.showSnackbar(
@@ -82,12 +86,14 @@ class MangaCoverViewModel(
     }
 
     fun shareCover(context: Context) {
-        viewModelScope.launch {
+        accountScope.launch {
             try {
                 val uri = saveCoverInternal(context, temp = true) ?: return@launch
                 withUIContext {
                     context.startActivity(uri.toShareIntent(context))
                 }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: Throwable) {
                 logcat(LogPriority.ERROR, e)
                 snackbarHostState.showSnackbar(
@@ -105,7 +111,7 @@ class MangaCoverViewModel(
      * @return the uri to saved file
      */
     private suspend fun saveCoverInternal(context: Context, temp: Boolean): Uri? {
-        val manga = state.value ?: return null
+        val manga = state.value ?: throw java.io.IOException("Cover metadata is not loaded")
         val req = ImageRequest.Builder(context)
             .data(manga)
             .size(Size.ORIGINAL)
@@ -115,7 +121,7 @@ class MangaCoverViewModel(
             val result = context.imageLoader.execute(req).image?.asDrawable(context.resources)
 
             // TODO: Handle animated cover
-            val bitmap = result?.getBitmapOrNull() ?: return@withIOContext null
+            val bitmap = result?.getBitmapOrNull() ?: throw java.io.IOException("Cover image could not be decoded")
             imageSaver.save(
                 Image.Cover(
                     bitmap = bitmap,
@@ -134,7 +140,7 @@ class MangaCoverViewModel(
      */
     fun editCover(context: Context, data: Uri) {
         val manga = state.value ?: return
-        viewModelScope.launchIO {
+        accountScope.launchIO {
             context.contentResolver.openInputStream(data)?.use {
                 try {
                     manga.editCover(Injekt.get(), it, updateManga, coverCache)
@@ -148,7 +154,7 @@ class MangaCoverViewModel(
 
     fun deleteCustomCover(context: Context) {
         val mangaId = state.value?.id ?: return
-        viewModelScope.launchIO {
+        accountScope.launchIO {
             try {
                 coverCache.deleteCustomCover(mangaId)
                 updateManga.awaitUpdateCoverLastModified(mangaId)
@@ -160,7 +166,7 @@ class MangaCoverViewModel(
     }
 
     private fun notifyCoverUpdated(context: Context) {
-        viewModelScope.launch {
+        accountScope.launch {
             snackbarHostState.showSnackbar(
                 context.stringResource(MR.strings.cover_updated),
                 withDismissAction = true,
@@ -169,7 +175,7 @@ class MangaCoverViewModel(
     }
 
     private fun notifyFailedCoverUpdate(context: Context, e: Throwable) {
-        viewModelScope.launch {
+        accountScope.launch {
             snackbarHostState.showSnackbar(
                 context.stringResource(MR.strings.notification_cover_update_failed),
                 withDismissAction = true,

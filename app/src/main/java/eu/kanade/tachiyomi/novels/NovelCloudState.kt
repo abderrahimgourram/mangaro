@@ -19,7 +19,9 @@ internal object NovelCloudState {
     }.getOrDefault(false)
     private fun cloudPosition(position: NovelReadingPosition) = position.copy(
         anchor = position.anchor.take(4096), chapter = position.chapter.copy(title = position.chapter.title.take(512),
-            volume = position.chapter.volume?.take(512), volumeId = position.chapter.volumeId?.take(4096)))
+            volume = position.chapter.volume?.take(512), volumeId = position.chapter.volumeId?.take(4096),
+            // Cloud progress is reader identity/position, not a portable access verdict or index dump.
+            publishedRows = emptyList(), unavailableReason = null, sunovelsState = null, sunovelsEvidence = null))
     private fun header(novel: Novel) = buildJsonObject {
         put("edition_key", novelDigest(novel.id)); put("source_id", novel.sourceId); put("edition_id", novel.id)
         put("deleted_at", JsonNull)

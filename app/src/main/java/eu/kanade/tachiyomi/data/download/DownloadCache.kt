@@ -85,7 +85,10 @@ class DownloadCache(
     /**
      * The last time the cache was refreshed.
      */
-    private var lastRenew = 0L
+    private val ownerRenewed = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private var lastRenew: Long
+        get() = ownerRenewed[tachiyomi.core.common.util.lang.LocalAccountScope.fileOwner()] ?: 0L
+        set(value) { ownerRenewed[tachiyomi.core.common.util.lang.LocalAccountScope.fileOwner()] = value }
     private var renewalJob: Job? = null
 
     private val _isInitializing = MutableStateFlow(false)
@@ -94,14 +97,20 @@ class DownloadCache(
         .stateIn(scope, SharingStarted.WhileSubscribed(), false)
 
     private val diskCacheFile: File
-        get() = File(context.cacheDir, "dl_index_cache_v4_app_scoped")
+        get() = File(context.cacheDir, "dl_index_cache_v4_app_scoped" + tachiyomi.core.common.util.lang.LocalAccountScope.segment())
 
     private val rootDownloadsDirMutex = Mutex()
-    private var rootDownloadsDir = RootDirectory(storageManager.getDownloadsDirectory())
+    private val ownerRoots = java.util.concurrent.ConcurrentHashMap<String, RootDirectory>()
+    private var rootDownloadsDir: RootDirectory
+        get() {
+            val owner = tachiyomi.core.common.util.lang.LocalAccountScope.fileOwner()
+            return ownerRoots.getOrPut(owner) { RootDirectory(storageManager.getDownloadsDirectory(owner)) }
+        }
+        set(value) { ownerRoots[tachiyomi.core.common.util.lang.LocalAccountScope.fileOwner()] = value }
 
     init {
         // Attempt to read cache file
-        scope.launch {
+        scope.launchIO {
             rootDownloadsDirMutex.withLock {
                 try {
                     if (diskCacheFile.exists()) {

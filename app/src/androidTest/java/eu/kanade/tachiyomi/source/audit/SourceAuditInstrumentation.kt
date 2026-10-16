@@ -69,8 +69,10 @@ class SourceAuditInstrumentation : Instrumentation() {
     private var productionFeed: String? = null
     private var publisherNative = false
     private var publisherEngine: String? = null
+    private var repairArguments: Bundle? = null
     override fun onCreate(arguments: Bundle?) {
         super.onCreate(arguments)
+        repairArguments = arguments?.takeIf { it.containsKey("sourceRepair") }
         integrity = arguments?.getString("integrity")
         productDownload = arguments?.getString("productDownload")
         selected = arguments?.getString("source")
@@ -739,6 +741,11 @@ class SourceAuditInstrumentation : Instrumentation() {
         runBlocking {
             val manager = Injekt.get<SourceManager>()
             withTimeout(30_000) { manager.isInitialized.first { it } }
+            repairArguments?.let {
+                try { SourceRepairProbe.run(this@SourceAuditInstrumentation, manager, it, ::record) }
+                catch (e: Exception) { failures++; record("Source repair BLOCKED ${e.javaClass.simpleName}: ${e.message}") }
+                return@runBlocking
+            }
             if (integrity != null) {
                 try { withTimeout(600_000) { verifyIntegrity(manager, integrity!!) } }
                 catch (e: Exception) { failures++; record("Integrity ERROR ${e.stackTraceToString()}") }

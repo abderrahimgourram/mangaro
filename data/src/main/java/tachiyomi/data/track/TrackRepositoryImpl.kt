@@ -1,5 +1,6 @@
 package tachiyomi.data.track
 
+import tachiyomi.data.accountOperation
 import app.cash.sqldelight.async.coroutines.awaitAsList
 import app.cash.sqldelight.async.coroutines.awaitAsOneOrNull
 import kotlinx.coroutines.flow.Flow
@@ -13,15 +14,21 @@ class TrackRepositoryImpl(
 ) : TrackRepository {
 
     override suspend fun getTrackById(id: Long): Track? {
-        return database.manga_syncQueries
+        return database.accountOperation {
+        return@accountOperation database.manga_syncQueries
             .getTrackById(id, TrackMapper::mapTrack)
             .awaitAsOneOrNull()
+
+        }
     }
 
     override suspend fun getTracksByMangaId(mangaId: Long): List<Track> {
-        return database.manga_syncQueries
+        return database.accountOperation {
+        return@accountOperation database.manga_syncQueries
             .getTracksByMangaId(mangaId, TrackMapper::mapTrack)
             .awaitAsList()
+
+        }
     }
 
     override fun getTracksAsFlow(): Flow<List<Track>> {
@@ -37,18 +44,27 @@ class TrackRepositoryImpl(
     }
 
     override suspend fun delete(mangaId: Long, trackerId: Long) {
+        return database.accountOperation {
         database.manga_syncQueries.delete(
             mangaId = mangaId,
             syncId = trackerId,
         )
+
+        }
     }
 
     override suspend fun insert(track: Track) {
+        return database.accountOperation {
         insertValues(track)
+
+        }
     }
 
     override suspend fun insertAll(tracks: List<Track>) {
+        return database.accountOperation {
         insertValues(*tracks.toTypedArray())
+
+        }
     }
 
     private suspend fun insertValues(vararg tracks: Track) {

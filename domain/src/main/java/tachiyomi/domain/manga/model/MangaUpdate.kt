@@ -27,11 +27,13 @@ data class MangaUpdate(
     val version: Long? = null,
     val notes: String? = null,
     val memo: JsonObject? = null,
+    val accountToken: tachiyomi.core.common.util.lang.LocalAccountScope.Token = tachiyomi.core.common.util.lang.LocalAccountScope.capture(),
 )
 
 fun Manga.toMangaUpdate(): MangaUpdate {
     return MangaUpdate(
         id = id,
+        accountToken = accountToken,
         source = source,
         favorite = favorite,
         lastUpdate = lastUpdate,

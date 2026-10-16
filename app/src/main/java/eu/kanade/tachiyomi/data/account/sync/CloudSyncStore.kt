@@ -15,9 +15,9 @@ class CloudSyncStore(context: Context) : SQLiteOpenHelper(context, File(context.
     @Synchronized fun put(user: String, key: String, value: String) { writableDatabase.insertWithOnConflict("metadata",null,ContentValues().apply { put("account",user);put("key",key);put("value",value) },SQLiteDatabase.CONFLICT_REPLACE) }
     @Synchronized fun remove(user: String, key: String) { writableDatabase.delete("metadata","account=? AND key=?",arrayOf(user,key)) }
     /** SQLite category row IDs can be reused after deletion; never reuse their cloud UUID. */
-    @Synchronized fun invalidateCategory(id:Long) {
+    @Synchronized fun invalidateCategory(id:Long, owner:String?=tachiyomi.core.common.util.lang.LocalAccountScope.boundOwnerOrNull()) {
         atomic {
-            val mappings=readableDatabase.rawQuery("SELECT account,key FROM metadata WHERE key LIKE 'mapping/%' AND value=?",arrayOf(id.toString())).use {c->buildList {while(c.moveToNext())add(c.getString(0) to c.getString(1))}}
+            val mappings=readableDatabase.rawQuery("SELECT account,key FROM metadata WHERE key LIKE 'mapping/%' AND value=?" + if(owner==null) "" else " AND account=?",if(owner==null) arrayOf(id.toString()) else arrayOf(id.toString(),owner)).use {c->buildList {while(c.moveToNext())add(c.getString(0) to c.getString(1))}}
             mappings.forEach {(user,key)->remove(user,key);remove(user,"category/$id")}
         }
     }

@@ -35,7 +35,7 @@ class PreferenceRestorer(
     ) {
         restorePreferences(
             preferences,
-            preferenceStore,
+            tachiyomi.core.common.preference.AccountPreferenceStore(preferenceStore, onlyKnown = true),
             backupCategories,
         )
 
@@ -60,6 +60,8 @@ class PreferenceRestorer(
         val backupCategoriesById = backupCategories?.associateBy { it.id.toString() }.orEmpty()
         val prefs = preferenceStore.getAll()
         toRestore.forEach { (key, value) ->
+            if (key.contains("local.")) return@forEach // New backups contain canonical keys, never another owner's raw namespace.
+            tachiyomi.core.common.util.lang.LocalAccountScope.check()
             try {
                 when (value) {
                     is IntPreferenceValue -> {

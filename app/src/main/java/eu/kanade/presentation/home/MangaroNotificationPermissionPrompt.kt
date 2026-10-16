@@ -140,11 +140,11 @@ fun MangaroNotificationPermissionPrompt(
                         ) {
                             NotificationFeatureRow(
                                 icon = Icons.Outlined.AutoAwesome,
-                                text = "تنبيهات الأعمال والفصول الجديدة",
+                                text = "تنبيهات الفصول الجديدة والتنزيلات",
                             )
                             NotificationFeatureRow(
                                 icon = Icons.Outlined.ChatBubbleOutline,
-                                text = "إشعارات الردود على تعليقاتك",
+                                text = "الردود تظهر في المركز عند فتح التطبيق",
                             )
                         }
 
@@ -153,6 +153,7 @@ fun MangaroNotificationPermissionPrompt(
                         Button(
                             onClick = {
                                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                    preferences.notificationPromptHandled.set(true)
                                     permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                                 } else {
                                     dismissAction()

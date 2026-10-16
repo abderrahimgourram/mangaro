@@ -22,7 +22,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
-/** Public version checker: mandatory minimum when configured, otherwise one optional notice. */
+/** Public version checker. Only a confirmed minimum-version requirement interrupts reading. */
 internal class MandatoryUpdateController private constructor() :
     DefaultLifecycleObserver, Application.ActivityLifecycleCallbacks {
 
@@ -64,6 +64,8 @@ internal class MandatoryUpdateController private constructor() :
         if (BuildConfig.DEBUG || dialog != null || openingDownload) return
         val config = available ?: return
         val mandatory = config.requiresUpdate(BuildConfig.VERSION_CODE)
+        // Optional release announcements do not interrupt app startup.
+        if (!mandatory) return
         if (!mandatory && noticeShown) return
         val activity = resumedActivity.get() ?: return
         // Optional notices stay on Home; an enforced minimum cannot be bypassed via Reader.

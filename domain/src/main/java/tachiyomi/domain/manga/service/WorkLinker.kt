@@ -4,7 +4,6 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import tachiyomi.domain.manga.model.Manga
-import java.security.MessageDigest
 import java.text.Normalizer
 import java.util.Locale
 
@@ -31,6 +30,8 @@ data class WorkMetadata(
     val year: Int? = null,
     val format: String? = null,
     val edition: String? = null,
+    val reviewedWorkKey: String? = null,
+    val providerId: String? = null,
 ) {
     val titles: Set<String> get() = (aliases + title).map(WorkTitleNormalizer::normalize).filter { it.isNotBlank() }.toSet()
 
@@ -59,63 +60,43 @@ data class WorkMetadata(
 /** Derived relationship over known entries, never a replacement DB or a source search. */
 data class CanonicalWork(val id: String, val members: List<WorkMetadata>)
 
-enum class WorkMatchEvidence { EXTERNAL_ID, EXACT_TITLE_AND_CREATOR, ALIAS_AND_CREATOR }
+enum class WorkMatchEvidence { EXTERNAL_ID, SAME_EDITION, REVIEWED_WORK }
 
 object WorkLinker {
-    // Retain qualifiers/numbers. Parentheses are formatting, not permission to discard edition information.
-    private val editionMarkers = setOf("novel", "remake", "reboot", "sequel", "prequel", "sidestory", "part", "season", "volume",
-        "رواية", "تكملة", "جزء", "الجزء", "موسم", "الموسم", "جانبية", "الجانبية")
-    private fun qualifiers(title: String): Set<String> {
-        val tokens = WorkTitleNormalizer.normalize(title).split(' ')
-        return tokens.filter { it in editionMarkers || it.any(Char::isDigit) ||
-            (it == tokens.lastOrNull() && it in setOf("ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x")) }.toSet() +
-            tokens.zipWithNext().mapNotNull { (a, b) -> if (a == "side" && b in setOf("story", "stories")) "sidestory" else null }
-    }
-    private fun mismatch(a: String?, b: String?): Boolean = !a.isNullOrBlank() && !b.isNullOrBlank() &&
-        WorkTitleNormalizer.normalize(a) != WorkTitleNormalizer.normalize(b)
-
     fun match(a: WorkMetadata, b: WorkMetadata): WorkMatchEvidence? {
-        if (a.title.isBlank() || b.title.isBlank() || a.reference.sourceId == b.reference.sourceId ||
-            a.reference.url.isBlank() || b.reference.url.isBlank()) return null
-        if (mismatch(a.format, b.format) || mismatch(a.edition, b.edition) ||
-            (a.year != null && b.year != null && a.year != b.year) || qualifiers(a.title) != qualifiers(b.title)) return null
-        val commonIds = a.externalIds.keys.intersect(b.externalIds.keys)
-        // Conflicting IDs are stronger than titles, aliases or a shared creator.
-        if (commonIds.any { a.externalIds[it] != b.externalIds[it] }) return null
-        if (commonIds.any { !a.externalIds[it].isNullOrBlank() && a.externalIds[it] == b.externalIds[it] }) return WorkMatchEvidence.EXTERNAL_ID
-        if (a.titles.intersect(b.titles).isEmpty()) return null
-        if (mismatch(a.author, b.author) || mismatch(a.artist, b.artist)) return null
-        val sameCreator = listOf(a.author to b.author, a.artist to b.artist).any { (x, y) ->
-            val normalized = WorkTitleNormalizer.normalize(x.orEmpty())
-            normalized.length >= 3 && normalized !in setOf("unknown", "anonymous", "غير معروف", "مجهول") &&
-                !y.isNullOrBlank() && normalized == WorkTitleNormalizer.normalize(y)
+        if (!VerifiedCatalogIdentity.matches(VerifiedCatalogIdentity.from(a), VerifiedCatalogIdentity.from(b))) return null
+        return when {
+            a.reference.sourceId == b.reference.sourceId && (a.reference.url == b.reference.url ||
+                a.providerId != null && a.providerId == b.providerId) -> WorkMatchEvidence.SAME_EDITION
+            a.reviewedWorkKey != null && a.reviewedWorkKey == b.reviewedWorkKey -> WorkMatchEvidence.REVIEWED_WORK
+            else -> WorkMatchEvidence.EXTERNAL_ID
         }
-        if (!sameCreator) return null
-        return if (WorkTitleNormalizer.normalize(a.title) == WorkTitleNormalizer.normalize(b.title))
-            WorkMatchEvidence.EXACT_TITLE_AND_CREATOR else WorkMatchEvidence.ALIAS_AND_CREATOR
     }
 
     fun group(entries: List<WorkMetadata>): List<CanonicalWork> {
         val groups = mutableListOf<MutableList<WorkMetadata>>()
         val index = mutableMapOf<String, MutableSet<Int>>()
-        val order = compareBy<WorkMetadata>({ it.reference.sourceId }, { it.reference.mangaId }, { it.reference.url })
-        for (entry in entries.distinctBy { it.reference }.sortedWith(order)) {
-            val keys = entry.titles.map { "title:$it" } + entry.externalIds.map { (key, id) -> "id:$key:$id" }
-            val candidates = keys.flatMap { index[it].orEmpty() }.distinct().sorted()
-            // Every pair must have evidence. A vague alias bridge cannot unite conflicting editions.
-            val existing = candidates.firstOrNull { candidate -> groups[candidate].all { match(it, entry) != null } }
-            val target = existing ?: groups.size.also { groups.add(mutableListOf()) }
+        val order = compareBy<WorkMetadata>({ it.reference.sourceId }, { it.reference.url }, { it.reference.mangaId })
+        entries.distinctBy { it.reference }.sortedWith(compareBy({ VerifiedCatalogIdentity.from(it).editionKey }, { it.reference.mangaId })).forEach { entry ->
+            // Complete-link: a third record must not bridge contradictory authorities.
+            val identity = VerifiedCatalogIdentity.from(entry)
+            val keys = listOf("edition:${identity.source}:${identity.route}") +
+                listOfNotNull(identity.reviewedWorkKey?.let { "work:$it" }, identity.providerId?.let { "provider:${identity.source}:$it" }) +
+                identity.externalIds.map { (key, id) -> "external:$key:$id" }
+            val target = keys.flatMap { index[it].orEmpty() }.distinct().sorted()
+                .firstOrNull { candidate -> groups[candidate].all { match(it, entry) != null } }
+                ?: groups.size.also { groups += mutableListOf<WorkMetadata>() }
             groups[target] += entry
             keys.forEach { index.getOrPut(it) { mutableSetOf() }.add(target) }
         }
-        return groups.map { members ->
-            // Snapshot ID, deterministic for these exact members. Never used as a manga/chapter foreign key.
-            val bytes = members.joinToString("") { m ->
-                listOf(m.reference.sourceId.toString(), m.reference.mangaId.toString(), m.reference.url)
-                    .joinToString("") { "${it.length}:$it" }
-            }.toByteArray(Charsets.UTF_8)
-            val id = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it.toInt() and 255) }
-            CanonicalWork(id, members.toList())
+        val keys = groups.map { VerifiedCatalogIdentity.key(it.map(VerifiedCatalogIdentity::from)) }
+        val collisions = keys.groupingBy { it }.eachCount()
+        return groups.mapIndexed { index, members ->
+            val base = keys[index]
+            // Conflicting authorities sharing one ID stay separate, independently of arrival order.
+            val id = if (collisions.getValue(base) == 1) base else
+                "$base:separate:${members.minOf { VerifiedCatalogIdentity.from(it).editionKey }}"
+            CanonicalWork(id, members.sortedWith(order))
         }
     }
 }

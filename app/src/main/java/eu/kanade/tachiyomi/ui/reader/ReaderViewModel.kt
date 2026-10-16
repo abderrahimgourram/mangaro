@@ -1,6 +1,8 @@
 package eu.kanade.tachiyomi.ui.reader
 
+import eu.kanade.tachiyomi.focus.*
 import android.app.Application
+import eu.kanade.tachiyomi.util.system.toast
 import android.net.Uri
 import androidx.annotation.IntRange
 import androidx.compose.runtime.Immutable
@@ -108,6 +110,9 @@ class ReaderViewModel @JvmOverloads constructor(
     private val getIncognitoState: GetIncognitoState = Injekt.get(),
     private val libraryPreferences: LibraryPreferences = Injekt.get(),
 ) : ViewModel() {
+    private val accountToken = tachiyomi.core.common.util.lang.LocalAccountScope.capture()
+    private val accountScope = kotlinx.coroutines.CoroutineScope(viewModelScope.coroutineContext + tachiyomi.core.common.util.lang.LocalAccountScope.Element(accountToken))
+
 
     val adReadingSession = java.util.UUID.randomUUID().toString()
     private val readerAdPolicy = eu.kanade.tachiyomi.data.ads.ReaderWebAdPolicy.get(Injekt.get<Application>()).also { it.startSession(adReadingSession) }
@@ -162,7 +167,17 @@ class ReaderViewModel @JvmOverloads constructor(
      */
     private var chapterReadStartTime: Long? = null
 
-    private var chapterToDownload: Download? = null
+    private var focusLease: FocusCoordinator.Lease? = null
+    fun setFocusActive(active: Boolean) {
+        if (!active) { focusLease?.close(); focusLease = null; return }
+        val manga = state.value.manga
+        val target = FocusTarget(FocusContext.MANGA_READER, manga?.source?.toString(), mangaId.toString(), chapterId.toString())
+        if (focusLease == null) focusLease = FocusEngine.enter(target) else focusLease?.update(target)
+    }
+    private fun focusChapter(chapter: ReaderChapter) {
+        val manga = state.value.manga ?: return
+        focusLease?.update(FocusTarget(FocusContext.MANGA_READER, manga.source.toString(), manga.id.toString(), chapter.chapter.id.toString()))
+    }
 
     private val unfilteredChapterList by lazy {
         val manga = manga!!
@@ -252,8 +267,6 @@ class ReaderViewModel @JvmOverloads constructor(
     private val downloadAheadAmount = downloadPreferences.autoDownloadWhileReading.get()
 
     init {
-        // Begin the isolated, cached ad-config request while the chapter is loading, not at boundary.
-        eu.kanade.tachiyomi.data.ads.WebAdConfigRepository.get(Injekt.get<Application>()).refresh()
         // To save state
         state.map { it.viewerChapters?.currChapter }
             .distinctUntilChanged()
@@ -267,21 +280,19 @@ class ReaderViewModel @JvmOverloads constructor(
                 }
                 chapterId = currentChapter.chapter.id!!
             }
-            .launchIn(viewModelScope)
+            .launchIn(accountScope)
 
         if (hasValidArgs) {
-            viewModelScope.launch { init() }
+            accountScope.launch { init() }
         }
     }
 
     override fun onCleared() {
+        focusLease?.close()
         readerAdPolicy.endSession(adReadingSession)
         val currentChapters = state.value.viewerChapters
         if (currentChapters != null) {
             currentChapters.unref()
-            chapterToDownload?.let {
-                downloadManager.addDownloadsToStartOfQueue(listOf(it))
-            }
         }
     }
 
@@ -298,6 +309,13 @@ class ReaderViewModel @JvmOverloads constructor(
      * with. This method will fetch the manga from the database and initialize the initial chapter.
      * Failures are reported through [State.initError].
      */
+    private var retryInitialJob: kotlinx.coroutines.Job? = null
+    fun retryInitialChapter() {
+        if (retryInitialJob?.isActive == true) return
+        mutableState.update { it.copy(initError = null) }
+        retryInitialJob = accountScope.launch { init() }
+    }
+
     private suspend fun init() {
         withIOContext {
             try {
@@ -328,6 +346,7 @@ class ReaderViewModel @JvmOverloads constructor(
         loader: ChapterLoader,
         chapter: ReaderChapter,
     ): ViewerChapters {
+        focusChapter(chapter)
         loader.loadChapter(chapter)
 
         val chapterPos = chapterList.indexOf(chapter)
@@ -343,7 +362,6 @@ class ReaderViewModel @JvmOverloads constructor(
                 newChapters.ref()
                 it.viewerChapters?.unref()
 
-                chapterToDownload = cancelQueuedDownloads(newChapters.currChapter)
                 it.copy(
                     viewerChapters = newChapters,
                     bookmarked = newChapters.currChapter.chapter.bookmark,
@@ -360,7 +378,7 @@ class ReaderViewModel @JvmOverloads constructor(
     private fun loadNewChapter(chapter: ReaderChapter) {
         val loader = loader ?: return
 
-        viewModelScope.launchIO {
+        accountScope.launchIO {
             logcat { "Loading ${chapter.chapter.url}" }
 
             updateHistory()
@@ -473,12 +491,14 @@ class ReaderViewModel @JvmOverloads constructor(
     }
 
     fun onPageSelected(page: ReaderPage) {
+        if (runCatching { tachiyomi.core.common.util.lang.LocalAccountScope.check(accountToken) }.isFailure) return
         // InsertPage doesn't change page progress
         if (page is InsertPage) {
             return
         }
 
         val selectedChapter = page.chapter
+        focusChapter(selectedChapter)
         val pages = selectedChapter.pages ?: return
         val sigilOwner = mihon.domain.sigils.SigilEvents.captureOwner?.invoke() ?: "_no_owner"
         val sigilSelection = "$sigilOwner:${selectedChapter.chapter.id}"
@@ -489,7 +509,7 @@ class ReaderViewModel @JvmOverloads constructor(
             if (sigilSelections[sigilSelection] == page.index) sigilReadingReceipt(selectedChapter,sigilOwner,false)
         }
         if (page.status is Page.State.Ready) startSigilReading()
-        else if (!incognitoMode) sigilStartObservation = viewModelScope.launch {
+        else if (!incognitoMode) sigilStartObservation = accountScope.launch {
             page.statusFlow.first { it is Page.State.Ready }
             startSigilReading()
         }
@@ -514,7 +534,7 @@ class ReaderViewModel @JvmOverloads constructor(
                 } else if (adPageReadyJobs[chapterId]?.isActive != true) {
                     // Crossing into the following chapter must not cancel a pending end.
                     if (adPageReadyJobs.size >= 8) adPageReadyJobs.remove(adPageReadyJobs.keys.first())?.cancel()
-                    adPageReadyJobs[chapterId] = viewModelScope.launch {
+                    adPageReadyJobs[chapterId] = accountScope.launch {
                         eu.kanade.tachiyomi.data.ads.awaitAdPageReady(page, ::recordReady)
                     }
                 }
@@ -522,7 +542,7 @@ class ReaderViewModel @JvmOverloads constructor(
         }
 
         // Save last page read and mark as read if needed
-        viewModelScope.launchNonCancellable {
+        accountScope.launchNonCancellable {
             updateChapterProgress(selectedChapter, page)
         }
 
@@ -547,7 +567,7 @@ class ReaderViewModel @JvmOverloads constructor(
         if (getCurrentChapter()?.pageLoader !is DownloadPageLoader) return
         val nextChapter = state.value.viewerChapters?.nextChapter?.chapter ?: return
 
-        viewModelScope.launchIO {
+        accountScope.launchIO {
             val isNextChapterDownloaded = downloadManager.isChapterDownloaded(
                 nextChapter.name,
                 nextChapter.scanlator,
@@ -565,20 +585,11 @@ class ReaderViewModel @JvmOverloads constructor(
                 }
             }.take(downloadAheadAmount)
 
-            downloadManager.downloadChapters(
-                manga,
-                chaptersToDownload,
-            )
-        }
-    }
-
-    /**
-     * Removes [currentChapter] from download queue
-     * if setting is enabled and [currentChapter] is queued for download
-     */
-    private fun cancelQueuedDownloads(currentChapter: ReaderChapter): Download? {
-        return downloadManager.getQueuedDownloadOrNull(currentChapter.chapter.id!!)?.also {
-            downloadManager.cancelQueuedDownloads(listOf(it))
+            try {
+                downloadManager.downloadChapters(manga, chaptersToDownload)
+            } catch (_: java.io.IOException) {
+                withUIContext { Injekt.get<Application>().toast("تعذّر حفظ طابور التنزيل؛ تحقق من مساحة التخزين") }
+            }
         }
     }
 
@@ -594,9 +605,6 @@ class ReaderViewModel @JvmOverloads constructor(
         // Determine which chapter should be deleted and enqueue
         val currentChapterPosition = chapterList.indexOf(currentChapter)
         val chapterToDelete = chapterList.getOrNull(currentChapterPosition - removeAfterReadSlots)
-
-        // If chapter is completely read, no need to download it
-        chapterToDownload = null
 
         if (chapterToDelete != null) {
             enqueueDeleteReadChapters(chapterToDelete)
@@ -620,7 +628,7 @@ class ReaderViewModel @JvmOverloads constructor(
         if (account.cloudSync.restoredCompletion(access.userId, key)) return
         val attempt = "${access.userId}:$key"
         if (!progressionClaims.add(attempt)) return
-        viewModelScope.launchIO {
+        accountScope.launchIO {
             try {
                 if (account.auth.claimChapterCompletion(target.mangaKey.value, key) != AccountOperation.Completed) progressionClaims.remove(attempt)
             } catch (cancelled: CancellationException) { progressionClaims.remove(attempt); throw cancelled }
@@ -693,7 +701,8 @@ class ReaderViewModel @JvmOverloads constructor(
     /**
      * Saves the chapter last read history if incognito mode isn't on.
      */
-    suspend fun updateHistory() {
+    suspend fun updateHistory() = kotlinx.coroutines.withContext(tachiyomi.core.common.util.lang.LocalAccountScope.Element(accountToken)) {
+        tachiyomi.core.common.util.lang.LocalAccountScope.check(accountToken)
         getCurrentChapter()?.let { readerChapter ->
             if (incognitoMode) return@let
 
@@ -751,7 +760,7 @@ class ReaderViewModel @JvmOverloads constructor(
         val bookmarked = !chapter.bookmark
         chapter.bookmark = bookmarked
 
-        viewModelScope.launchNonCancellable {
+        accountScope.launchNonCancellable {
             updateChapter.await(
                 ChapterUpdate(
                     id = chapter.id!!,
@@ -825,7 +834,7 @@ class ReaderViewModel @JvmOverloads constructor(
      */
     fun setMangaOrientationType(orientation: ReaderOrientation) {
         val manga = manga ?: return
-        viewModelScope.launchIO {
+        accountScope.launchIO {
             setMangaViewerFlags.awaitSetOrientation(manga.id, orientation.flagValue.toLong())
             val currChapters = state.value.viewerChapters
             if (currChapters != null) {
@@ -919,8 +928,7 @@ class ReaderViewModel @JvmOverloads constructor(
      * Saves the image of the selected page on the pictures directory and notifies the UI of the result.
      * There's also a notification to allow sharing the image somewhere else or deleting it.
      */
-    fun saveImage() {
-        val page = (state.value.dialog as? Dialog.PageActions)?.page
+    fun saveImage(page: ReaderPage? = (state.value.dialog as? Dialog.PageActions)?.page) {
         if (page?.status != Page.State.Ready) return
         val manga = manga ?: return
 
@@ -940,7 +948,7 @@ class ReaderViewModel @JvmOverloads constructor(
         }
 
         // Copy file in background.
-        viewModelScope.launchNonCancellable {
+        accountScope.launchNonCancellable {
             try {
                 val uri = imageSaver.save(
                     image = Image.Page(
@@ -975,7 +983,7 @@ class ReaderViewModel @JvmOverloads constructor(
         val filename = generateFilename(manga, page)
 
         try {
-            viewModelScope.launchNonCancellable {
+            accountScope.launchNonCancellable {
                 val uri = imageSaver.save(
                     image = Image.Page(
                         inputStream = page.stream!!,
@@ -999,7 +1007,7 @@ class ReaderViewModel @JvmOverloads constructor(
         val manga = manga ?: return
         val stream = page.stream ?: return
 
-        viewModelScope.launchNonCancellable {
+        accountScope.launchNonCancellable {
             val result = try {
                 manga.editCover(Injekt.get(), stream())
                 if (manga.isLocal() || manga.favorite) {
@@ -1036,7 +1044,7 @@ class ReaderViewModel @JvmOverloads constructor(
         val manga = manga ?: return
         val context = Injekt.get<Application>()
 
-        viewModelScope.launchNonCancellable {
+        accountScope.launchNonCancellable {
             trackChapter.await(context, manga.id, readerChapter.chapter.chapter_number.toDouble())
         }
     }
@@ -1049,7 +1057,7 @@ class ReaderViewModel @JvmOverloads constructor(
         if (!chapter.chapter.read) return
         val manga = manga ?: return
 
-        viewModelScope.launchNonCancellable {
+        accountScope.launchNonCancellable {
             downloadManager.enqueueChaptersToDelete(listOf(chapter.chapter.toDomainChapter()!!), manga)
         }
     }
@@ -1059,7 +1067,7 @@ class ReaderViewModel @JvmOverloads constructor(
      * are ignored.
      */
     private fun deletePendingChapters() {
-        viewModelScope.launchNonCancellable {
+        accountScope.launchNonCancellable {
             downloadManager.deletePendingChapters()
         }
     }

@@ -37,7 +37,7 @@ fun CloudSyncControls(userId: String, repository: AccountCloudSync) {
     Column(Modifier.fillMaxWidth(),verticalArrangement=Arrangement.spacedBy(2.dp)) {
         Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.SpaceBetween) {
             Text(when {
-                status.needsMerge -> "بيانات هذا الجهاز مرتبطة بحساب آخر"
+                status.needsMerge -> "اختر استعادة الحساب أو ضم بيانات الضيف"
                 status.running || busy -> "تتم المزامنة…"
                 !status.loaded || !status.enabled -> "جارٍ تجهيز المزامنة"
                 status.error!=null || status.pending>0 -> "بانتظار الاتصال"
@@ -54,16 +54,19 @@ fun CloudSyncControls(userId: String, repository: AccountCloudSync) {
             val formatted=remember(time,context) {WesternDigits.normalize(DateUtils.formatDateTime(context,time,DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_SHOW_TIME or DateUtils.FORMAT_ABBREV_ALL))}
             Text("آخر مزامنة: $formatted",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        status.novelError?.let { Text(it,style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant) }
+        status.error?.let { eu.kanade.presentation.components.MangaroErrorState("تعذر مزامنة بياناتك", if (!busy && !status.running && !status.needsMerge) ({ perform { repository.syncNow(userId) } }) else null) }
+        status.novelError?.let { eu.kanade.presentation.components.MangaroErrorState(it) }
+        if (!status.needsMerge && status.loaded) TextButton(enabled=!busy && !status.running,onClick={confirm=true}) { Text("استيراد بيانات الضيف إلى حسابي") }
         if(status.novelConflicts>0) TextButton(enabled=!busy && !status.running,onClick={resolveConflict=true}) { Text("مراجعة تغييرات الروايات") }
-        message?.let {Text(it,style=MaterialTheme.typography.labelSmall)}
+        if (status.needsMerge) TextButton(enabled=!busy && !status.running,onClick={perform {repository.restoreAccount(userId)}}) { Text("استعادة حسابي فقط — دون بيانات الضيف") }
+        message?.let { eu.kanade.presentation.components.MangaroErrorState(it) }
     }
     if(resolveConflict) AlertDialog(onDismissRequest={resolveConflict=false},title={Text("تعارض تغييرات الروايات")},
         text={Text("تغيّرت بعض بيانات الروايات على جهاز آخر. اختر النسخة التي تريد الاحتفاظ بها للتغييرات المتعارضة. لن تُحذف التنزيلات.")},
         confirmButton={TextButton(enabled=!busy,onClick={resolveConflict=false;perform {repository.resolveNovelConflicts(userId,true)}}) {Text("تغييرات هذا الجهاز")}},
         dismissButton={TextButton(enabled=!busy,onClick={resolveConflict=false;perform {repository.resolveNovelConflicts(userId,false)}}) {Text("التغييرات السحابية")}})
     if(confirm) AlertDialog(onDismissRequest={confirm=false},title={Text("دمج بيانات هذا الجهاز")},
-        text={Text("تحتوي مكتبة هذا الجهاز على بيانات حساب آخر. دمجها مع هذا الحساب يحفظ البيانات المحلية والسحابية ولا يحذف التنزيلات.")},
+        text={Text("ادمج فقط البيانات التي تخصك. ستُنقل ملكية بيانات الضيف وملفاته إلى هذا الحساب بعد موافقتك. عند التعارض تبقى مواضع الحساب الحالية، وتُحفظ نسخة الضيف للاسترداد. لا تضم بيانات تخص شخصًا آخر.")},
         confirmButton={TextButton(enabled=!busy,onClick={confirm=false;perform {repository.configure(userId,true)}}) {Text("دمج مع هذا الحساب")}},
         dismissButton={TextButton(onClick={confirm=false}) {Text("لاحقًا")}})
 }

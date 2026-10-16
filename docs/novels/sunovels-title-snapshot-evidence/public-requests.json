@@ -1,0 +1,36 @@
+{
+  "requests": 3,
+  "records": [
+    {
+      "url": "https://sunovels.com/robots.txt",
+      "finalUrl": "https://sunovels.com/robots.txt",
+      "http": 200,
+      "bytes": 71,
+      "sha256": "e59e5363951c538aefd2eb1c8a2efa93f4e09977eecfa28505b1ceb5edffc4a0"
+    },
+    {
+      "url": "https://sunovels.com/novel/birth-of-the-demonic-sword/0",
+      "finalUrl": "https://sunovels.com/novel/birth-of-the-demonic-sword/0",
+      "http": 200,
+      "bytes": 111932,
+      "sha256": "9552ba8a376f85f31b00b9e233c2665fdc1fd2268adbd3772eff0d64d6289d09",
+      "headers": [
+        "0 الفصل"
+      ],
+      "paragraphs": 49,
+      "containerChars": 5756
+    },
+    {
+      "url": "https://sunovels.com/novel/birth-of-the-demonic-sword/1",
+      "finalUrl": "https://sunovels.com/novel/birth-of-the-demonic-sword/1",
+      "http": 200,
+      "bytes": 163806,
+      "sha256": "996071b3f55dfccefee8b67b864b8ae38e0edba5d451bd112d1980cc699e8e1f",
+      "headers": [
+        "1 الفصل"
+      ],
+      "paragraphs": 160,
+      "containerChars": 15356
+    }
+  ]
+}

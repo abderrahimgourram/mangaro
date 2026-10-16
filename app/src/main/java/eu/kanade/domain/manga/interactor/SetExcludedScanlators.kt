@@ -1,5 +1,6 @@
 package eu.kanade.domain.manga.interactor
 
+import tachiyomi.data.accountOperation
 import app.cash.sqldelight.async.coroutines.awaitAsList
 import tachiyomi.data.Database
 
@@ -8,7 +9,7 @@ class SetExcludedScanlators(
 ) {
 
     suspend fun await(mangaId: Long, excludedScanlators: Set<String>) {
-        database.transaction {
+        database.accountOperation {
             val currentExcluded = database.excluded_scanlatorsQueries
                 .getExcludedScanlatorsByMangaId(mangaId)
                 .awaitAsList()

@@ -70,7 +70,7 @@ internal fun MangaroWeeklyPicks(state: WeeklyPicksState, onOpen: (Long) -> Unit,
                         ) {
                             // Crop original artwork to the frame without stretching.
                             AsyncImage(
-                                model = card.manga.coverData,
+                                model = rememberHomeCoverRequest(card.manga.coverData, 112.dp, cardHeight),
                                 contentDescription = null,
                                 modifier = Modifier.width(112.dp).fillMaxHeight(),
                                 contentScale = ContentScale.Crop,

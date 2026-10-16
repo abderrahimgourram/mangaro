@@ -5,6 +5,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.NotificationManagerCompat.IMPORTANCE_DEFAULT
 import androidx.core.app.NotificationManagerCompat.IMPORTANCE_HIGH
 import androidx.core.app.NotificationManagerCompat.IMPORTANCE_LOW
+import eu.kanade.tachiyomi.util.system.notificationManager
 import eu.kanade.tachiyomi.util.system.buildNotificationChannel
 import eu.kanade.tachiyomi.util.system.buildNotificationChannelGroup
 import tachiyomi.core.common.i18n.stringResource
@@ -83,12 +84,18 @@ object Notifications {
         "downloader_complete_channel",
         "backup_restore_complete_channel",
         "library_channel",
-        "library_progress_channel",
         "updates_ext_channel",
         "downloader_cache_renewal",
         "crash_logs_channel",
         "library_skipped_channel",
     )
+
+    /** Clear only optional chapter alerts; required foreground notifications are untouched. */
+    fun clearChapterAlerts(context: Context) {
+        context.notificationManager.activeNotifications.filter {
+            it.id == ID_NEW_CHAPTERS || it.notification.group == GROUP_NEW_CHAPTERS
+        }.forEach { context.notificationManager.cancel(it.tag, it.id) }
+    }
 
     /**
      * Creates the notification channels introduced in Android Oreo.

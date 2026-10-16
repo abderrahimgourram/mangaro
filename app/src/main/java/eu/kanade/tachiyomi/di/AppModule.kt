@@ -99,6 +99,8 @@ class AppModule(val app: Application) : InjektModule {
             )
         }
 
+        addSingletonFactory { tachiyomi.data.LocalAccountWorkspace(get(), get(), java.io.File(app.noBackupFilesDir, "account-upgrade/legacy-v17.sqlite")) }
+
         addSingletonFactory {
             Json {
                 ignoreUnknownKeys = true
@@ -174,10 +176,22 @@ class AppModule(val app: Application) : InjektModule {
             if (backend == null) mihon.domain.account.DisabledAccountCloudSync() else {
                 val store = eu.kanade.tachiyomi.data.account.sync.CloudSyncStore(app)
                 val local = eu.kanade.tachiyomi.data.account.sync.CloudLocalGateway(get(), get(), get(), get(), get(), store, get(), app)
-                eu.kanade.tachiyomi.data.account.sync.SupabaseCloudSync(app, backend.communityClient, auth, store, local)
+                eu.kanade.tachiyomi.data.account.sync.SupabaseCloudSync(app, backend.communityClient, auth, store, local, workspace = get())
             }
         }
-        addSingletonFactory { eu.kanade.tachiyomi.data.inbox.WorkUpdateInbox(app) }
+        addSingletonFactory { eu.kanade.tachiyomi.data.notification.NotificationPreferences(get()) }
+        addSingletonFactory {
+            eu.kanade.tachiyomi.data.inbox.WorkUpdateInbox(app,
+                enabled = { get<eu.kanade.tachiyomi.data.notification.NotificationPreferences>().chapters.get() },
+                owner = { (get<mihon.domain.account.AccountFoundation>().session.value as? mihon.domain.account.AccountSession.Authenticated)?.profile?.userId },
+                onRead = { completed, allRead ->
+                    if (allRead) eu.kanade.tachiyomi.data.notification.Notifications.clearChapterAlerts(app)
+                    else completed.forEach { mangaId ->
+                        eu.kanade.tachiyomi.data.notification.NotificationReceiver.dismissNotification(app, mangaId.hashCode(), eu.kanade.tachiyomi.data.notification.Notifications.ID_NEW_CHAPTERS)
+                    }
+                },
+            )
+        }
         addSingletonFactory { eu.kanade.tachiyomi.data.inbox.ReplyInbox(get<mihon.domain.account.AccountAuth>() as? eu.kanade.tachiyomi.data.account.SupabaseAccountAuth) }
         addSingletonFactory { mihon.domain.account.AccountFoundation(get(), get()) }
         addSingletonFactory { eu.kanade.tachiyomi.data.sigils.SigilRepository(app, get(), get(), get()) }

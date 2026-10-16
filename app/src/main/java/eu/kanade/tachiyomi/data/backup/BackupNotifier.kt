@@ -39,7 +39,8 @@ class BackupNotifier(private val context: Context) {
     ) {
         setLargeIcon(BitmapFactory.decodeResource(context.resources, R.mipmap.ic_launcher))
         setSmallIcon(R.drawable.ic_book_24dp)
-        setAutoCancel(false)
+        setAutoCancel(true)
+        setOnlyAlertOnce(true)
     }
 
     private fun NotificationCompat.Builder.show(id: Int) {
@@ -63,7 +64,9 @@ class BackupNotifier(private val context: Context) {
 
         with(completeNotificationBuilder) {
             setContentTitle(context.stringResource(MR.strings.creating_backup_error))
-            setContentText(error)
+            clearActions()
+            setContentIntent(null)
+            setContentText("تعذر إنشاء النسخة الاحتياطية، أعد المحاولة")
 
             show(Notifications.ID_BACKUP_COMPLETE)
         }
@@ -74,7 +77,7 @@ class BackupNotifier(private val context: Context) {
 
         with(completeNotificationBuilder) {
             setContentTitle(context.stringResource(MR.strings.backup_created))
-            setContentText(file.displayablePath)
+            setContentText(if (preferences.hideNotificationContent.get()) null else file.displayablePath)
 
             clearActions()
             addAction(
@@ -126,7 +129,9 @@ class BackupNotifier(private val context: Context) {
 
         with(completeNotificationBuilder) {
             setContentTitle(context.stringResource(MR.strings.restoring_backup_error))
-            setContentText(error)
+            clearActions()
+            setContentIntent(null)
+            setContentText("تعذر استعادة النسخة الاحتياطية، راجع الملف وأعد المحاولة")
 
             show(Notifications.ID_RESTORE_COMPLETE)
         }

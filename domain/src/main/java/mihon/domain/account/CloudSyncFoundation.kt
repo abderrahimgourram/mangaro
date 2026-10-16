@@ -9,7 +9,7 @@ object LocalCloudChanges {
     data class Change(val kind: Kind, val id: Long = 0, val owner: String? = null)
     private val remote = ThreadLocal.withInitial { false }
     @Volatile var capture: ((Change) -> Unit)? = null
-    fun changed(kind: Kind, id: Long = 0, owner: String? = null) {
+    fun changed(kind: Kind, id: Long = 0, owner: String? = tachiyomi.core.common.util.lang.LocalAccountScope.boundOwnerOrNull()) {
         if (!remote.get()) try { capture?.invoke(Change(kind, id, owner)) } catch (_: Exception) { /* Local data remains authoritative. */ }
     }
     fun isRemoteApplication(): Boolean = remote.get() == true
@@ -27,12 +27,19 @@ object CloudSyncPolicy {
     fun initialRead(local: Boolean, remote: Boolean) = local || remote
     fun initialPage(local: Long, remote: Long) = maxOf(local, remote)
     fun initialLibrary(local: Boolean, remote: Boolean) = local || remote
+    // SQLite triggers use Unix seconds; old clients accidentally formatted those as milliseconds.
+    fun sqliteEventMillis(seconds: Long) = seconds.coerceAtLeast(0) * 1000
+    fun cloudEventMillis(value: Long) = if (value in 1_000_000_000L..4_102_444_800L) value * 1000 else value
+    fun mergeNewerProgress(localRead: Boolean, remoteRead: Boolean, localPage: Long, remotePage: Long,
+        localEventAt: Long, remoteEventAt: Long) = localEventAt > remoteEventAt &&
+        mergeHigherPage(localRead, remoteRead, localPage, remotePage)
     fun mergeHigherPage(localRead: Boolean, remoteRead: Boolean, localPage: Long, remotePage: Long) =
         localRead == remoteRead && localPage > remotePage
 }
 
-/** Device Library is shared: switching its bound account requires an explicit non-destructive merge. */
+/** Unclaimed device data must never be attributed to the next signed-in account automatically. */
 object AutomaticCloudBinding {
     fun requiresMerge(user: String, bound: String?, otherConfiguredAccounts: Set<String>) =
-        (bound != null && bound != user) || (bound == null && otherConfiguredAccounts.any { it != user })
+        (bound != null && bound != user) ||
+            (bound == null && (user !in otherConfiguredAccounts || otherConfiguredAccounts.any { it != user }))
 }

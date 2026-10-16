@@ -1,0 +1,14 @@
+[
+  "app/build.gradle.kts",
+  "app/src/main/java/eu/kanade/presentation/novels/NovelScreens.kt",
+  "app/src/main/java/eu/kanade/tachiyomi/novels/NovelHttp.kt",
+  "app/src/main/java/eu/kanade/tachiyomi/novels/NovelRepository.kt",
+  "app/src/main/java/eu/kanade/tachiyomi/novels/SunovelsDiagnostics.kt",
+  "app/src/main/java/eu/kanade/tachiyomi/novels/SunovelsSource.kt",
+  "app/src/sunovelsAudit/AndroidManifest.xml",
+  "app/src/sunovelsAudit/java/eu/kanade/tachiyomi/novels/SunovelsAuditActivity.kt",
+  "app/src/sunovelsAudit/java/eu/kanade/tachiyomi/novels/SunovelsRuntimeInstrumentation.kt",
+  "tools/sunovels-direct/run-contracts.py",
+  "tools/sunovels-direct/run-emulator-audit.py",
+  "tools/sunovels-direct/validate-integration.py"
+]

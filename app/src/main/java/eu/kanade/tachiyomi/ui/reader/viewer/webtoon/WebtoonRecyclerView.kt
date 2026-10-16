@@ -4,7 +4,6 @@ import android.animation.AnimatorSet
 import android.animation.ValueAnimator
 import android.content.Context
 import android.util.AttributeSet
-import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.ViewConfiguration
 import android.view.animation.DecelerateInterpolator
@@ -50,10 +49,14 @@ class WebtoonRecyclerView @JvmOverloads constructor(
     var doubleTapZoom = true
 
     var tapListener: ((MotionEvent) -> Unit)? = null
-    var longTapListener: ((MotionEvent) -> Boolean)? = null
 
     private var isManuallyScrolling = false
     private var tapDuringManualScroll = false
+
+    override fun onDetachedFromWindow() {
+        detector.cancel()
+        super.onDetachedFromWindow()
+    }
 
     override fun onMeasure(widthSpec: Int, heightSpec: Int) {
         halfWidth = MeasureSpec.getSize(widthSpec) / 2
@@ -254,12 +257,6 @@ class WebtoonRecyclerView @JvmOverloads constructor(
                     val toY = (halfHeight - ev.y) * (toScale - 1)
                     zoom(DEFAULT_RATE, toScale, 0f, toX, 0f, toY)
                 }
-            }
-        }
-
-        override fun onLongTapConfirmed(ev: MotionEvent) {
-            if (longTapListener?.invoke(ev) == true) {
-                performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
             }
         }
     }

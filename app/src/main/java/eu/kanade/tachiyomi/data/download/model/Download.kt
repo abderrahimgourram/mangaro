@@ -23,7 +23,12 @@ data class Download(
     val source: HttpSource,
     val manga: Manga,
     var chapter: Chapter,
+    val owner: String = tachiyomi.core.common.util.lang.LocalAccountScope.fileOwner(),
 ) {
+    override fun toString() = "Download(mangaId=${manga.id}, chapterId=${chapter.id}, status=$status, accountScoped=true)"
+
+    // Outside the data-class constructor so queue equality remains unchanged.
+    var notificationEventId: String = java.util.UUID.randomUUID().toString()
     var pages: List<Page>? = null
 
     val totalProgress: Int

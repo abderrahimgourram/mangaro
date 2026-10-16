@@ -2,9 +2,6 @@ package eu.kanade.tachiyomi.data.notification
 
 import android.content.Context
 import android.content.SharedPreferences
-import androidx.core.app.NotificationCompat
-import eu.kanade.tachiyomi.R
-import eu.kanade.tachiyomi.util.system.notify
 import java.util.concurrent.ConcurrentHashMap
 
 object DiscoveryWorkDeduplicator {
@@ -40,12 +37,12 @@ object DiscoveryWorkDeduplicator {
     /**
      * Process newly discovered works.
      * Establishes a baseline on initial run without posting notifications.
-     * On subsequent runs, notifies only for genuinely NEW works, grouped into a single notification.
+     * Subsequent observations are bookkeeping only: catalogues do not prove publication events.
      */
     fun processDiscoveredWorks(context: Context, works: List<Pair<Long, String>>): Int {
         init(context)
 
-        val keys = works.map { (sourceId, url) -> "$sourceId:$url" }.filter { it.isNotBlank() }
+        val keys = works.map { (sourceId, url) -> "$sourceId:$url" }.filter { it.substringAfter(":").isNotBlank() }
         if (keys.isEmpty()) return 0
 
         if (!baselineEstablished && knownWorks.isEmpty()) {
@@ -60,34 +57,9 @@ object DiscoveryWorkDeduplicator {
         val newKeys = keys.filter { knownWorks.add(it) }
         if (newKeys.isNotEmpty()) {
             persist()
-            notificationPoster(context, newKeys.size)
+            // Newly observed is not newly published: ranking/source changes are silent.
         }
         return newKeys.size
-    }
-
-    var notificationPoster: (Context, Int) -> Unit = { ctx, count ->
-        showNewWorksNotification(ctx, count)
-    }
-
-    private fun showNewWorksNotification(context: Context, count: Int) {
-        val text = when {
-            count == 1 -> "تمت إضافة عمل جديد واحد"
-            count == 2 -> "تمت إضافة عملين جديدين"
-            count in 3..10 -> "تمت إضافة $count أعمال جديدة"
-            else -> "تمت إضافة $count عملًا جديدًا"
-        }
-
-        context.notify(
-            Notifications.ID_NEW_WORKS,
-            Notifications.CHANNEL_NEW_WORKS,
-        ) {
-            setContentTitle("أعمال جديدة")
-            setContentText(text)
-            setStyle(NotificationCompat.BigTextStyle().bigText(text))
-            setSmallIcon(R.drawable.ic_book_24dp)
-            setAutoCancel(true)
-            priority = NotificationCompat.PRIORITY_DEFAULT
-        }
     }
 
     fun isWorkKnown(sourceId: Long, url: String): Boolean {
@@ -103,5 +75,6 @@ object DiscoveryWorkDeduplicator {
         knownWorks.clear()
         baselineEstablished = false
         prefs?.edit()?.clear()?.apply()
+        prefs = null
     }
 }

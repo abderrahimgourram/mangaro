@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.ui.manga
 
+import eu.kanade.tachiyomi.focus.*
 import android.content.Context
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -103,6 +104,7 @@ class MangaScreen(
         }
 
         val successState = state as MangaViewModel.State.Success
+        FocusSurface(FocusTarget(FocusContext.MANGA_DETAILS, successState.manga.source.toString(), successState.manga.id.toString()))
         androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) {viewModel.refreshIfStale()}
         var showLibraryShelves by remember { mutableStateOf(false) }
         val isHttpSource = remember { successState.source is HttpSource }
@@ -142,7 +144,7 @@ class MangaScreen(
             onRefresh = viewModel::fetchAllFromSource,
             onContinueReading = { openChapter(context, it) },
             onCoverClicked = viewModel::showCoverDialog,
-            onShareClicked = { shareManga(context, viewModel.manga, viewModel.source) }.takeIf { isHttpSource },
+            onShareClicked = { shareManga(context, viewModel.manga, viewModel.source)?.let { message -> scope.launch { viewModel.snackbarHostState.showSnackbar(message) } }; Unit }.takeIf { isHttpSource },
             onDownloadActionClicked = { action: eu.kanade.presentation.manga.DownloadAction -> viewModel.runDownloadAction(action, downloadAdGate) }.takeIf { !successState.source.isLocalOrStub() },
             onEditCategoryClicked = viewModel::showChangeCategoryDialog.takeIf { successState.manga.favorite },
             onMigrateClicked = null,
@@ -247,7 +249,10 @@ class MangaScreen(
                         snackbarHostState = sm.snackbarHostState,
                         isCustomCover = remember(manga) { manga!!.hasCustomCover() },
                         onShareClick = { sm.shareCover(context) },
-                        onSaveClick = { sm.saveCover(context) },
+                        onSaveClick = eu.kanade.presentation.util.rememberImageSaveAction(
+                            onGranted = { sm.saveCover(context) },
+                            onDenied = { scope.launch { sm.snackbarHostState.showSnackbar("لم يُمنح إذن حفظ الصورة، يمكنك متابعة القراءة") } },
+                        ),
                         onEditClick = {
                             when (it) {
                                 EditCoverAction.EDIT -> getContent.launch("image/*")
@@ -308,15 +313,16 @@ private fun openChapter(context: Context, chapter: Chapter) {
         }
     }
 
-    private fun shareManga(context: Context, manga_: Manga?, source_: Source?) {
+    private fun shareManga(context: Context, manga_: Manga?, source_: Source?): String? {
         try {
             getMangaUrl(manga_, source_)?.let { url ->
                 val intent = url.toUri().toShareIntent(context, type = "text/plain")
                 context.startActivity(intent)
             }
         } catch (e: Exception) {
-            context.toast(e.message.contentErrorMessage())
+            return "تعذر مشاركة العمل، أعد المحاولة"
         }
+        return null
     }
 
     /**

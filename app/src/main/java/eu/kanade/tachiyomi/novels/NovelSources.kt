@@ -40,7 +40,7 @@ abstract class HtmlNovelSource(protected val http: NovelHttp) : NovelSource {
                 ?: a.text(), index)
         }.filter { it.title.isNotBlank() }
     }
-    protected fun text(doc: Document, selector: String): NovelText {
+    protected fun text(doc: Document, selector: String, allowShortText: Boolean = false): NovelText {
         val content = doc.selectFirst(selector)?.clone()
             ?: throw NovelSourceFailure("هذا الفصل غير متاح حاليًا. يمكنك فتحه في الموقع.", "Missing novel text container")
         content.select("script,style,iframe,form,button,nav,.ads,.adsbygoogle,.advertisement,.ad-container,.ad-wrapper,.sharedaddy,.social-links,.d-none,.sr-only,[hidden],[aria-hidden=true]").remove()
@@ -58,7 +58,7 @@ abstract class HtmlNovelSource(protected val http: NovelHttp) : NovelSource {
         }
         content.select("[style]").filter { Regex("(?:display\\s*:\\s*none|visibility\\s*:\\s*hidden|opacity\\s*:\\s*0(?:\\.0+)?\\s*(?:!important\\s*)?(?:;|$))")
             .containsMatchIn(it.attr("style")) }.forEach(Element::remove)
-        return extractNovelContent(content)
+        return extractNovelContent(content, allowShortText)
 
     }
 }
@@ -69,6 +69,7 @@ internal fun hasNextNovelPage(doc: Document): Boolean = doc.selectFirst(
 ) != null
 
 class KolNovelSource(http: NovelHttp) : HtmlNovelSource(http) {
+    companion object { internal const val INDEX_PARSER_VERSION = "kol-complete-html-v2" }
     override val id = "novel.kolnovel"
     override val name = "ملوك الروايات"
     override val baseUrl = "https://kolnovel.com/"
@@ -100,7 +101,14 @@ class KolNovelSource(http: NovelHttp) : HtmlNovelSource(http) {
             originalTitle=d.selectFirst(selector("originalTitle",".alter"))?.text()?.takeIf {it.isNotBlank()})
     }
     override suspend fun chapters(novel: Novel, page: Int) = withContext(Dispatchers.IO) {
-        val d=doc(http.get(novel.url,cache=true),novel.url)
+        val raw = http.get(novel.url, cache = true)
+        if (!raw.contains("</html>", ignoreCase = true)) {
+            // A repaired DOM containing the first 200 rows is not a complete series index.
+            http.invalidateMetadata(novel.url)
+            throw NovelSourceFailure("لم يكتمل تحميل فهرس الفصول. أعد المحاولة.",
+                "Kolnovel index document interrupted", code = "KOL_INDEX_TRUNCATED")
+        }
+        val d=doc(raw,novel.url)
         ChapterPage(chapterLinks(d,selector("chapterLinks",".eplister li[data-id] > a"),selector("chapterTitle",".epl-title"),reverse=true))
     }
     override suspend fun chapter(chapter: NovelChapter) = withContext(Dispatchers.IO) {
@@ -196,12 +204,25 @@ class CeneleSource(http: NovelHttp) : HtmlNovelSource(http) {
         ChapterPage(chapters,next,volumes=volumes,allowEmpty=!more && chapters.isEmpty(),declaredTotal=total)
     }
     override suspend fun chapter(chapter: NovelChapter) = withContext(Dispatchers.IO) {
-        val d = doc(http.get(chapter.url), chapter.url)
+        val raw = http.get(chapter.url)
+        // Jsoup repairs interrupted HTML into a plausible tree. Do not persist a partial
+        // Cenele response just because its first paragraphs satisfy the ordinary text gate.
+        if (!raw.contains("</html>", ignoreCase = true)) throw NovelSourceFailure(
+            "لم يكتمل تحميل الفصل. أعد المحاولة.", "Cenele reader document interrupted", code = "CENELE_DOCUMENT_TRUNCATED",
+        )
+        val d = doc(raw, chapter.url)
         val content = d.selectFirst(selector("text", ".reading-content"))?.clone()
             ?: throw NovelSourceFailure("هذا الفصل غير متاح حاليًا. يمكنك فتحه في الموقع.", "Missing novel text container")
         content.select(".nhv-reading-chapter-head, .nhv-reading-volume-name, .nhv-reading-meta-strip, .nhv-reading-chapter-progress, .nhv-reading-progress-text, .chapter-warning, .nhv-reader-promo, .nhv-reader-store-promo").remove()
         val parsed = extractNovelContent(content)
         CeneleSanitizer.sanitize(parsed)
+    }
+
+    companion object {
+        /** A legacy empty srcset candidate resolved to this HTML chapter, not an illustration. */
+        internal fun staleIllustration(chapter: NovelChapter, text: NovelText) = text.blocks.any {
+            it.kind == NovelBlockKind.IMAGE && it.imageUrl == chapter.url
+        }
     }
 }
 
@@ -421,102 +442,3 @@ internal fun JsonElement.objects(): Sequence<JsonObject> = sequence {
     }
 }
 internal fun JsonObject.string(key: String): String = (this[key] as? JsonPrimitive)?.contentOrNull.orEmpty()
-
-class SunovelsSource(http: NovelHttp) : HtmlNovelSource(http) {
-    override val id = "novel.sunovels"
-    override val name = "شمس الروايات"
-    override val baseUrl = "https://sunovels.com/"
-    private fun cards(d: Document, page: Int): NovelPage {
-        val structured=flightObjects(d).flatMap { it.objects().toList() }
-        val cards=d.select(selector("catalogCards",".list-item a[href^='/novel/']")).mapNotNull { a ->
-            val title=a.selectFirst("h4,h3")?.text()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
-            val slug=a.attr("href").substringAfterLast('/')
-            val data=structured.firstOrNull { it.string("slug")==slug }
-            val cover=data?.let { obj -> obj.string("cover").ifBlank { obj.string("image") } }?.takeIf { it.isNotBlank() }?.let(::url)
-            val renderedCard=structured.firstOrNull { it.string("href")==a.attr("href") }
-            val renderedImage=renderedCard?.objects()?.firstOrNull { it.string("src").startsWith("/uploads/") }?.string("src")?.let(::url)
-            Novel(id,a.absUrl("href"),title,cover ?: renderedImage ?: image(a.selectFirst("img")))
-        }.distinctBy { it.id }
-        val pageNumbers=d.select("a[aria-label^=Page]").mapNotNull { Regex("\\d+").find(it.attr("aria-label"))?.value?.toIntOrNull() }
-        val genres=d.select("a[href*='category=']").mapNotNull { a ->
-            val value=a.absUrl("href").toHttpUrl().queryParameter("category")
-            if(value.isNullOrBlank() || a.text().isBlank()) null else NovelGenre(a.text(),value)
-        }.distinctBy {it.value}
-        return NovelPage(cards,if((pageNumbers.maxOrNull() ?: page)>page) page+1 else null,genres=genres)
-    }
-    override suspend fun catalog(page: Int, latest: Boolean, genre: String?) = withContext(Dispatchers.IO) {
-        val link=query("library","page" to (page-1).toString(),
-            "category" to genre.orEmpty())
-        cards(doc(http.get(link,cache=true),link),page)
-    }
-    override suspend fun search(query: String, page: Int) = withContext(Dispatchers.IO) {
-        val link=query("search","title" to query,"page" to (page-1).toString())
-        cards(doc(http.get(link,cache=true),link),page)
-    }
-    override suspend fun details(novel: Novel) = withContext(Dispatchers.IO) {
-        val d=doc(http.get(novel.url,cache=true),novel.url)
-        val title=d.selectFirst("meta[property=og:title]")?.attr("content")?.removePrefix("رواية ") ?: novel.title
-        novel.copy(title=title,cover=image(d.selectFirst("meta[property=og:image]")) ?: novel.cover,
-            description=d.selectFirst(selector("description",".description"))?.wholeText()?.trim().orEmpty(),
-            author=d.selectFirst("a[href*='author=']")?.text(),
-            genres=d.select("a[href*='category=']").map { it.text() }.distinct(),
-            status=d.selectFirst(".top.Ongoing, .top.Completed")?.text(),
-            originalTitle=d.selectFirst(selector("originalTitle",".main-head h1"))?.text()?.takeIf {it.isNotBlank()})
-    }
-    override suspend fun chapters(novel: Novel, page: Int) = withContext(Dispatchers.IO) {
-        val link=novel.url.toHttpUrl().newBuilder().addQueryParameter("activeTab","chapters").addQueryParameter("page",(page-1).toString()).build().toString()
-        val d=doc(http.get(link,cache=true),link)
-        val chapters=chapterLinks(d,selector("chapterLinks","ul.chaptersList a"),selector("chapterTitle","strong.chapter-title")).mapIndexed { i,ch -> ch.copy(order=(page-1)*50+i) }
-        val total=d.select("a[aria-label^=Page]").mapNotNull { Regex("\\d+").find(it.attr("aria-label"))?.value?.toIntOrNull() }.maxOrNull() ?: page
-        ChapterPage(chapters,if(total>page) page+1 else null)
-    }
-    override suspend fun chapter(chapter: NovelChapter) = withContext(Dispatchers.IO) {
-        text(doc(http.get(chapter.url),chapter.url),selector("text",".chapter-content"))
-    }
-}
-
-class SeaNovelSource(http: NovelHttp) : HtmlNovelSource(http) {
-    override val id = "novel.seanovel"
-    override val name = "بحر الروايات"
-    override val baseUrl = "https://seanovel.org/"
-    private suspend fun list(): List<Novel> {
-        val data=Json.parseToJsonElement(http.get(url("api/novels?sort=views"),cache=true)).jsonArray
-        if(data.size>1000) throw NovelSourceFailure("تعذّر تحميل الروايات حاليًا.", "Sea catalogue exceeds safe bound")
-        return data.mapNotNull { value ->
-            val item=value.jsonObject;val slug=item.string("slug");val title=item.string("title_ar").ifBlank { item.string("title_original") }
-            if(slug.isBlank() || title.isBlank()) null else Novel(id,url("novels/"+slug),title,url("api/novel/"+slug+"/cover?type=webp"),
-                genres=(item["genres"] as? JsonArray)?.map {it.jsonPrimitive.content}.orEmpty())
-        }
-    }
-    override suspend fun catalog(page: Int, latest: Boolean, genre: String?) = withContext(Dispatchers.IO) {
-        val catalog=list();val all=if(genre!=null) catalog.filter {genre in it.genres} else catalog;val start=(page-1)*24
-        NovelPage(all.drop(start).take(24),if(start+24<all.size) page+1 else null,
-            "الروايات المتاحة في فهرس المصدر.",catalog.flatMap {it.genres}.distinct().map {NovelGenre(it,it)})
-    }
-    override suspend fun search(query: String, page: Int) = withContext(Dispatchers.IO) {
-        val all=list().filter { it.title.contains(query,ignoreCase=true) };val start=(page-1)*24
-        NovelPage(all.drop(start).take(24),if(start+24<all.size) page+1 else null,"البحث ضمن فهرس المصدر المتاح.")
-    }
-    override suspend fun details(novel: Novel) = withContext(Dispatchers.IO) {
-        val slug=novel.url.toHttpUrl().pathSegments.last { it.isNotBlank() }
-        val item=Json.parseToJsonElement(http.get(url("api/novel/"+slug),cache=true)).jsonObject
-        novel.copy(title=item.string("title_ar").ifBlank { novel.title },cover=novel.cover ?: url("api/novel/"+slug+"/cover?type=webp"),description=item.string("description"),
-            author=item.string("author").takeIf { it.isNotBlank() },status=item.string("status"),
-            genres=(item["genres"] as? JsonArray)?.map { it.jsonPrimitive.content }.orEmpty(),
-            chapterCount=item["chapters_count"]?.jsonPrimitive?.intOrNull,
-            originalTitle=item.string("title_original").takeIf {it.isNotBlank()})
-    }
-    override suspend fun chapters(novel: Novel, page: Int) = withContext(Dispatchers.IO) {
-        val slug=novel.url.toHttpUrl().pathSegments.last { it.isNotBlank() }
-        val item=Json.parseToJsonElement(http.get(url("api/novel/"+slug),cache=true)).jsonObject
-        val entries=item["chapters"] as? JsonArray ?: throw NovelSourceFailure("تعذّر تحميل الفصول. حاول مجددًا.", "Sea chapter index missing")
-        val chapters=entries.mapIndexed { index,value ->
-            val ch=value.jsonObject
-            NovelChapter(url("novels/"+slug+"/chapters/"+ch.string("id")),ch.string("title"),index)
-        }
-        ChapterPage(chapters, declaredTotal=item["chapters_count"]?.jsonPrimitive?.intOrNull)
-    }
-    override suspend fun chapter(chapter: NovelChapter) = withContext(Dispatchers.IO) {
-        text(doc(http.get(chapter.url),chapter.url),selector("text","article.reader-content"))
-    }
-}

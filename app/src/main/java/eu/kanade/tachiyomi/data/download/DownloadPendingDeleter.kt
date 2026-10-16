@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.core.content.edit
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import tachiyomi.core.common.util.lang.LocalAccountScope
 import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.manga.model.Manga
 import uy.kohesive.injekt.Injekt
@@ -37,7 +38,10 @@ class DownloadPendingDeleter(
      */
     @Synchronized
     fun addChapters(chapters: List<Chapter>, manga: Manga) {
-        val lastEntry = lastAddedEntry
+        LocalAccountScope.check(manga.accountToken)
+        val owner = LocalAccountScope.fileOwner()
+        val key = "$owner:${manga.id}"
+        val lastEntry = lastAddedEntry?.takeIf { it.owner == owner }
 
         val newEntry = if (lastEntry != null && lastEntry.manga.id == manga.id) {
             // Append new chapters
@@ -49,7 +53,7 @@ class DownloadPendingDeleter(
             // Last entry matches the manga, reuse it to avoid decoding json from preferences
             lastEntry.copy(chapters = newChapters)
         } else {
-            val existingEntry = preferences.getString(manga.id.toString(), null)
+            val existingEntry = preferences.getString(key, null) ?: if (owner == "guest:0") preferences.getString(manga.id.toString(), null) else null
             if (existingEntry != null) {
                 // Existing entry found on preferences, decode json and add the new chapter
                 val savedEntry = json.decodeFromString<Entry>(existingEntry)
@@ -63,14 +67,15 @@ class DownloadPendingDeleter(
                 savedEntry.copy(chapters = newChapters)
             } else {
                 // No entry has been found yet, create a new one
-                Entry(chapters.map { it.toEntry() }, manga.toEntry())
+                Entry(chapters.map { it.toEntry() }, manga.toEntry(), owner)
             }
         }
 
         // Save current state
         val json = json.encodeToString(newEntry)
         preferences.edit {
-            putString(newEntry.manga.id.toString(), json)
+            putString(key, json)
+            if (owner == "guest:0") remove(manga.id.toString())
         }
         lastAddedEntry = newEntry
     }
@@ -83,9 +88,12 @@ class DownloadPendingDeleter(
      */
     @Synchronized
     fun getPendingChapters(): Map<Manga, List<Chapter>> {
-        val entries = decodeAll()
+        LocalAccountScope.check()
+        val owner = LocalAccountScope.fileOwner()
+        val entries = decodeAll().filter { it.owner == owner }
         preferences.edit {
-            clear()
+            entries.forEach { remove("${it.owner}:${it.manga.id}") }
+            if (owner == "guest:0") entries.forEach { remove(it.manga.id.toString()) }
         }
         lastAddedEntry = null
 
@@ -157,6 +165,7 @@ class DownloadPendingDeleter(
     private data class Entry(
         val chapters: List<ChapterEntry>,
         val manga: MangaEntry,
+        val owner: String = "guest:0",
     )
 
     /**

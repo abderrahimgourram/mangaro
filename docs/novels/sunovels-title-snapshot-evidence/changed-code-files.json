@@ -1,0 +1,16 @@
+[
+  "app/src/main/java/eu/kanade/tachiyomi/novels/SunovelsSource.kt",
+  "app/src/main/java/eu/kanade/tachiyomi/novels/SunovelsRequestPolicy.kt",
+  "app/src/main/java/eu/kanade/tachiyomi/novels/NovelHttp.kt",
+  "app/src/main/java/eu/kanade/tachiyomi/novels/NovelModels.kt",
+  "app/src/main/java/eu/kanade/tachiyomi/novels/NovelChapterIndexer.kt",
+  "app/src/main/java/eu/kanade/tachiyomi/novels/NovelRepository.kt",
+  "app/src/main/java/eu/kanade/tachiyomi/novels/SunovelsResolution.kt",
+  "app/src/main/java/eu/kanade/presentation/novels/NovelScreens.kt",
+  "app/src/main/java/eu/kanade/presentation/novels/NovelReaderScreen.kt",
+  "app/src/main/java/eu/kanade/presentation/novels/SunovelsReaderEntry.kt",
+  "tools/sunovels-direct/SourceContract.kt",
+  "tools/sunovels-direct/run-contracts.py",
+  "app/src/main/java/eu/kanade/tachiyomi/novels/SunovelsIndexSnapshots.kt",
+  "tools/sunovels-direct/validate-integration.py"
+]

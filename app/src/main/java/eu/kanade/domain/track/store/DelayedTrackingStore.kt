@@ -12,29 +12,35 @@ class DelayedTrackingStore(context: Context) {
      */
     private val preferences = context.getSharedPreferences("tracking_queue", Context.MODE_PRIVATE)
 
+    private fun key(trackId: Long) = "${tachiyomi.core.common.util.lang.LocalAccountScope.fileOwner()}:$trackId"
+
     fun add(trackId: Long, lastChapterRead: Double) {
-        val previousLastChapterRead = preferences.getFloat(trackId.toString(), 0f)
+        tachiyomi.core.common.util.lang.LocalAccountScope.check()
+        val previousLastChapterRead = preferences.getFloat(key(trackId), 0f)
         if (lastChapterRead > previousLastChapterRead) {
             logcat(LogPriority.DEBUG) { "Queuing track item: $trackId, last chapter read: $lastChapterRead" }
             preferences.edit {
-                putFloat(trackId.toString(), lastChapterRead.toFloat())
+                putFloat(key(trackId), lastChapterRead.toFloat())
             }
         }
     }
 
     fun remove(trackId: Long) {
+        tachiyomi.core.common.util.lang.LocalAccountScope.check()
         preferences.edit {
-            remove(trackId.toString())
+            remove(key(trackId))
+            if (tachiyomi.core.common.util.lang.LocalAccountScope.fileOwner() == "guest:0") remove(trackId.toString())
         }
     }
 
     fun getItems(): List<DelayedTrackingItem> {
-        return preferences.all.mapNotNull {
-            DelayedTrackingItem(
-                trackId = it.key.toLong(),
-                lastChapterRead = it.value.toString().toFloat(),
-            )
-        }
+        tachiyomi.core.common.util.lang.LocalAccountScope.check()
+        val owner = tachiyomi.core.common.util.lang.LocalAccountScope.fileOwner()
+        return preferences.all.mapNotNull { (key, value) ->
+            val id = if (key.startsWith("$owner:")) key.removePrefix("$owner:").toLongOrNull()
+                else if (owner == "guest:0") key.toLongOrNull() else null
+            id?.let { DelayedTrackingItem(it, value.toString().toFloat()) }
+        }.distinctBy { it.trackId }
     }
 
     data class DelayedTrackingItem(

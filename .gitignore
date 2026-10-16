@@ -20,3 +20,22 @@ local.properties
 signing.properties
 *.jks
 *.keystore
+
+# Private/generated local acceptance outputs (retain locally; never source backups)
+/release_staging/
+*.apk
+*.aab
+*.apks
+__pycache__/
+*.py[cod]
+.env
+.env.*
+!.env.example
+*.hprof
+*.sqlite
+*.sqlite3
+*.db
+# Raw runtime/build logs are local evidence, not maintained source documentation.
+/docs/novels/**/*logcat*.txt
+/docs/novels/**/*.log
+/docs/novels/**/*instrumentation.txt

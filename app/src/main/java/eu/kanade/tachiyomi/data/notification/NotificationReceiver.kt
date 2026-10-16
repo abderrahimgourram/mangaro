@@ -82,7 +82,7 @@ class NotificationReceiver : BroadcastReceiver() {
             // Mark updated manga chapters as read
             ACTION_MARK_AS_READ -> {
                 val notificationId = intent.getIntExtra(EXTRA_NOTIFICATION_ID, -1)
-                if (notificationId > -1) {
+                if (intent.hasExtra(EXTRA_NOTIFICATION_ID)) {
                     dismissNotification(context, notificationId, intent.getIntExtra(EXTRA_GROUP_ID, 0))
                 }
                 val urls = intent.getStringArrayExtra(EXTRA_CHAPTER_URL) ?: return
@@ -94,7 +94,7 @@ class NotificationReceiver : BroadcastReceiver() {
             // Download manga chapters
             ACTION_DOWNLOAD_CHAPTER -> {
                 val notificationId = intent.getIntExtra(EXTRA_NOTIFICATION_ID, -1)
-                if (notificationId > -1) {
+                if (intent.hasExtra(EXTRA_NOTIFICATION_ID)) {
                     dismissNotification(context, notificationId, intent.getIntExtra(EXTRA_GROUP_ID, 0))
                 }
                 val urls = intent.getStringArrayExtra(EXTRA_CHAPTER_URL) ?: return
@@ -349,7 +349,6 @@ class NotificationReceiver : BroadcastReceiver() {
 
                 if (notifications.size == 2) {
                     context.cancelNotification(groupId)
-                    return
                 }
             }
 

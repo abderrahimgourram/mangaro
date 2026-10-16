@@ -73,7 +73,15 @@ internal class AccountSessionStorage(context: Context, namespace: String) : Sess
     }
 
     private suspend fun delete(name: String) = withContext(Dispatchers.IO) {
-        mutex.withLock { AtomicFile(File(directory, name)).delete() }
+        mutex.withLock {
+            val file = File(directory, name)
+            AtomicFile(file).delete()
+            // AtomicFile.delete() has no return value. Do not acknowledge logout if
+            // a failed filesystem deletion could restore the old encrypted session.
+            check(listOf(file, File(file.path + ".bak"), File(file.path + ".new")).none { it.exists() }) {
+                "Unable to remove local authentication state"
+            }
+        }
     }
     override suspend fun saveSession(session: UserSession) = write("session", json.encodeToString(session))
     override suspend fun loadSession(): UserSession = read("session")?.let {

@@ -14,8 +14,8 @@ class WorkLinkerTest {
         WorkTitleNormalizer.normalize("أَنَا، وَحْدِي أَرْتَقِي") shouldBe "انا وحدي ارتقي"
         WorkTitleNormalizer.normalize("ｓｏｌｏ   leveling") shouldBe "solo leveling"
     }
-    @Test fun `exact normalized title needs corroborating metadata`() {
-        WorkLinker.match(work(1), work(2, "Solo-Leveling")) shouldBe WorkMatchEvidence.EXACT_TITLE_AND_CREATOR
+    @Test fun `title and creator remain candidates without verified identity`() {
+        WorkLinker.match(work(1), work(2, "Solo-Leveling")) shouldBe null
         WorkLinker.match(work(1, author = null), work(2, author = null)) shouldBe null
         WorkLinker.match(work(1, author = "Unknown"), work(2, author = "Unknown")) shouldBe null
         WorkLinker.match(work(1), work(2, "Solo Level")) shouldBe null
@@ -24,7 +24,7 @@ class WorkLinkerTest {
         val a = work(1)
         val b = work(2, "التسوية المنفردة").copy(aliases = setOf("Solo Leveling"))
         val c = work(3, "Na Honjaman Level Up").copy(aliases = setOf("Solo Leveling", "التسوية المنفردة"))
-        WorkLinker.group(listOf(a, b, c)).single().members.size shouldBe 3
+        WorkLinker.group(listOf(a, b, c)).size shouldBe 3
         WorkLinker.match(a, b.copy(aliases = emptySet())) shouldBe null
     }
     @Test fun `explicit shared catalogue ID supports different titles without inventing translations`() {
@@ -48,7 +48,7 @@ class WorkLinkerTest {
         val bridge = work(2)
         val c = work(3).copy(externalIds = mapOf("anilist" to "2"))
         val groups = WorkLinker.group(listOf(a, bridge, c))
-        groups.size shouldBe 2
+        groups.size shouldBe 3
         groups.none { a in it.members && c in it.members } shouldBe true
         WorkLinker.group(listOf(c, bridge, a)) shouldBe groups
     }
@@ -56,7 +56,7 @@ class WorkLinkerTest {
         val originals = listOf(Manga.create().copy(id=1, source=1, url="/one", title="Story", author="Creator", favorite=true,
             viewerFlags=7, chapterFlags=3, notes="Private"), Manga.create().copy(id=2, source=2, url="/two", title="Story", author="Creator"))
         val before = originals.toList()
-        WorkLinker.group(originals.map(WorkMetadata::from)).single().members.map { it.reference.mangaId } shouldBe listOf(1L, 2L)
+        WorkLinker.group(originals.map { WorkMetadata.from(it).copy(externalIds = mapOf("anilist" to "123")) }).single().members.map { it.reference.mangaId } shouldBe listOf(1L, 2L)
         originals shouldBe before // No database/reader/downloader dependency or ownership mutation.
     }
     @Test fun `structured evidence ignores source local IDs and malformed fields`() {

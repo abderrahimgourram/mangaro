@@ -37,6 +37,13 @@ class BackupCreateJob(private val context: Context, workerParams: WorkerParamete
     private val notifier = BackupNotifier(context)
 
     override suspend fun doWork(): Result {
+        if (!tachiyomi.core.common.util.lang.LocalAccountScope.changes.value.ready) return Result.retry()
+        val current = tachiyomi.core.common.util.lang.LocalAccountScope.capture()
+        val requestedOwner = inputData.getString("local_owner") ?: "guest"
+        if (requestedOwner != current.owner) return Result.failure()
+        return kotlinx.coroutines.withContext(tachiyomi.core.common.util.lang.LocalAccountScope.Element(current)) { performOwnedWork() }
+    }
+    private suspend fun performOwnedWork(): Result {
         val isAutoBackup = inputData.getBoolean(IS_AUTO_BACKUP_KEY, true)
 
         if (isAutoBackup && BackupRestoreJob.isRunning(context)) return Result.retry()
@@ -56,6 +63,8 @@ class BackupCreateJob(private val context: Context, workerParams: WorkerParamete
                 notifier.showBackupComplete(UniFile.fromUri(context, location.toUri())!!)
             }
             Result.success()
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, e)
             if (!isAutoBackup) notifier.showBackupError(e.message)
@@ -104,7 +113,7 @@ class BackupCreateJob(private val context: Context, workerParams: WorkerParamete
                     .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 10, TimeUnit.MINUTES)
                     .addTag(TAG_AUTO)
                     .setConstraints(constraints)
-                    .setInputData(workDataOf(IS_AUTO_BACKUP_KEY to true))
+                    .setInputData(workDataOf(IS_AUTO_BACKUP_KEY to true, "local_owner" to tachiyomi.core.common.util.lang.LocalAccountScope.active().owner))
                     .build()
 
                 context.workManager.enqueueUniquePeriodicWork(TAG_AUTO, ExistingPeriodicWorkPolicy.UPDATE, request)
@@ -115,6 +124,7 @@ class BackupCreateJob(private val context: Context, workerParams: WorkerParamete
 
         fun startNow(context: Context, uri: Uri, options: BackupOptions) {
             val inputData = workDataOf(
+                "local_owner" to tachiyomi.core.common.util.lang.LocalAccountScope.active().owner,
                 IS_AUTO_BACKUP_KEY to false,
                 LOCATION_URI_KEY to uri.toString(),
                 OPTIONS_KEY to options.asBooleanArray(),

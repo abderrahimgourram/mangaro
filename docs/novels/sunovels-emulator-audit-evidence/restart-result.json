@@ -1,0 +1,52 @@
+{
+  "phase": "restart",
+  "passed": true,
+  "publicRequests": 1,
+  "simulatedFailures": 0,
+  "gatewayRequests": 0,
+  "results": [
+    {
+      "test": "variant",
+      "status": "PASS",
+      "diagnostic": "debug=false\npackage=app.manhwaar.reader.sunovels.audit\ndirect=true\ngateway=false"
+    },
+    {
+      "test": "phone-resume-Noah",
+      "status": "NOT_REPRODUCIBLE",
+      "diagnostic": "Original phone persisted ID/URL unavailable; no mapping assumed"
+    },
+    {
+      "test": "cold-restart-offline",
+      "status": "PASS",
+      "diagnostic": "source=novel.sunovels\nnovelSlug=reverend-insanity\nchapterId=https://sunovels.com/novel/reverend-insanity/30\ndisplayTitle=30 الفصل\npageTitle=null\npageNumber=null\nrequestedUrl=https://sunovels.com/novel/reverend-insanity/30\nfinalUrl=null\nhttp=null\nbytes=0\ncontentType=null\nstrategy=OFFLINE_CACHE\ncharacters=6670\nparagraphs=42\noutcome=CACHED_VALID\nfailure=NONE\naccess=VERIFIED_READABLE\nevidence=CHECKSUM_DOWNLOAD\ncache=CHECKSUM_DOWNLOAD\nattempts=0\nautomaticRetries=0\ncooldownMs=0\ncooldownActive=false\ndownloaded=true\nmemoryCached=false\nindexDeclaredTotal=null\nindexRows=null\nnovelMetadataCount=null"
+    },
+    {
+      "test": "real-reader-render",
+      "status": "PASS",
+      "diagnostic": "chapterId=https://sunovels.com/novel/reverend-insanity/30\nrenderedStory=true\nrequestedParagraph=2\nrestoredParagraph=2\nrequestedOffset=17\nrestoredOffset=17"
+    },
+    {
+      "test": "public-http",
+      "status": "OBSERVED",
+      "diagnostic": "requestedUrl=https://sunovels.com/novel/birth-of-the-demonic-sword/0\nfinalUrl=https://sunovels.com/novel/birth-of-the-demonic-sword/0\nhttp=200\nbytes=111932"
+    },
+    {
+      "test": "final-public-zero",
+      "status": "PASS",
+      "diagnostic": "source=novel.sunovels\nnovelSlug=birth-of-the-demonic-sword\nchapterId=https://sunovels.com/novel/birth-of-the-demonic-sword/0\ndisplayTitle=0 الفصل\npageTitle=0 الفصل\npageNumber=0\nrequestedUrl=https://sunovels.com/novel/birth-of-the-demonic-sword/0\nfinalUrl=https://sunovels.com/novel/birth-of-the-demonic-sword/0\nhttp=200\nbytes=111932\ncontentType=text/html; charset=utf-8\nstrategy=HTML_PARAGRAPHS\ncharacters=2756\nparagraphs=14\noutcome=VERIFIED_READABLE\nfailure=NONE\naccess=VERIFIED_READABLE\nevidence=PUBLIC_READER\ncache=PUBLIC_READER\nattempts=1\nautomaticRetries=0\ncooldownMs=0\ncooldownActive=false\ndownloaded=false"
+    },
+    {
+      "test": "real-reader-render",
+      "status": "PASS",
+      "diagnostic": "chapterId=https://sunovels.com/novel/birth-of-the-demonic-sword/0\nrenderedStory=true\nrequestedParagraph=0\nrestoredParagraph=0\nrequestedOffset=0\nrestoredOffset=0"
+    }
+  ],
+  "runtime": "ANDROID_EMULATOR",
+  "device": {
+    "ro.build.version.sdk": "34",
+    "ro.product.cpu.abi": "x86_64",
+    "ro.product.model": "sdk_gphone64_x86_64"
+  },
+  "serial": "emulator-5554",
+  "wallSeconds": 5.805622302999836
+}

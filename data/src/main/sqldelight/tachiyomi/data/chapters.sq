@@ -30,6 +30,7 @@ CREATE INDEX idx_chapters_url ON chapters(url);
 CREATE TRIGGER update_last_modified_at_chapters
 AFTER UPDATE ON chapters
 FOR EACH ROW
+WHEN (SELECT transitioning FROM local_account_context WHERE id=1) = 0
 BEGIN
   UPDATE chapters
   SET last_modified_at = strftime('%s', 'now')
@@ -37,7 +38,7 @@ BEGIN
 END;
 
 CREATE TRIGGER update_chapter_and_manga_version AFTER UPDATE ON chapters
-WHEN new.is_syncing = 0 AND (
+WHEN (SELECT transitioning FROM local_account_context WHERE id=1) = 0 AND new.is_syncing = 0 AND (
     new.read != old.read OR
     new.bookmark != old.bookmark OR
     new.last_page_read != old.last_page_read
@@ -94,7 +95,8 @@ LIMIT 1;
 
 removeChaptersWithIds:
 DELETE FROM chapters
-WHERE _id IN :chapterIds;
+WHERE _id IN :chapterIds
+AND NOT EXISTS(SELECT 1 FROM local_account_snapshots s WHERE (s.table_name='chapters' AND s.row_key=chapters._id) OR (s.table_name='history' AND json_extract(s.payload,'$.chapter_id')=chapters._id));
 
 resetIsSyncing:
 UPDATE chapters

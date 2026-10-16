@@ -46,19 +46,22 @@ import eu.kanade.presentation.manga.components.MangaCover
 import eu.kanade.presentation.theme.MangaroDesignSystem
 import eu.kanade.tachiyomi.ui.home.HOME_DISCOVERY_PREVIEW_LIMIT
 import eu.kanade.tachiyomi.ui.home.HomeDiscoveryItem
+import eu.kanade.tachiyomi.ui.home.GroupDiscoveryItems
+import tachiyomi.domain.manga.service.CatalogSelectionContext
 
 @Composable
 fun MangaroPopularShelf(
     items: List<HomeDiscoveryItem>,
     onMangaClick: (Long) -> Unit,
     modifier: Modifier = Modifier,
+    onChooseEdition: (Long) -> Unit = onMangaClick,
 ) {
     DiscoveryShelf(
         category = "popular",
         items = items,
         modifier = modifier,
     ) { item, width ->
-        PopularMangaItem(item, width, onMangaClick)
+        PopularMangaItem(item, width, onMangaClick, onChooseEdition)
     }
 }
 
@@ -67,13 +70,14 @@ fun MangaroNewShelf(
     items: List<HomeDiscoveryItem>,
     onMangaClick: (Long) -> Unit,
     modifier: Modifier = Modifier,
+    onChooseEdition: (Long) -> Unit = onMangaClick,
 ) {
     DiscoveryShelf(
         category = "new",
         items = items,
         modifier = modifier,
     ) { item, width ->
-        FreshMangaItem(item, width, showNewMark = true, onMangaClick)
+        FreshMangaItem(item, width, showNewMark = true, onMangaClick, onChooseEdition)
     }
 }
 
@@ -82,13 +86,14 @@ fun MangaroLatestShelf(
     items: List<HomeDiscoveryItem>,
     onMangaClick: (Long) -> Unit,
     modifier: Modifier = Modifier,
+    onChooseEdition: (Long) -> Unit = onMangaClick,
 ) {
     DiscoveryShelf(
         category = "latest",
         items = items,
         modifier = modifier,
     ) { item, width ->
-        FreshMangaItem(item, width, showNewMark = false, onMangaClick)
+        FreshMangaItem(item, width, showNewMark = false, onMangaClick, onChooseEdition)
     }
 }
 
@@ -98,9 +103,10 @@ fun MangaroStandardShelf(
     items: List<HomeDiscoveryItem>,
     onMangaClick: (Long) -> Unit,
     modifier: Modifier = Modifier,
+    onChooseEdition: (Long) -> Unit = onMangaClick,
 ) {
     DiscoveryShelf(category, items, modifier) { item, width ->
-        PopularMangaItem(item, width, onMangaClick)
+        PopularMangaItem(item, width, onMangaClick, onChooseEdition)
     }
 }
 
@@ -111,7 +117,10 @@ private fun DiscoveryShelf(
     modifier: Modifier,
     content: @Composable (HomeDiscoveryItem, Dp) -> Unit,
 ) {
-    val previewItems = items.take(HOME_DISCOVERY_PREVIEW_LIMIT)
+    val previewItems = remember(items, category) {
+        val context = when (category) { "popular" -> CatalogSelectionContext.POPULAR; "latest" -> CatalogSelectionContext.LATEST; else -> CatalogSelectionContext.DEFAULT }
+        GroupDiscoveryItems.group(items, context).take(HOME_DISCOVERY_PREVIEW_LIMIT)
+    }
     val firstMangaId = previewItems.firstOrNull()?.mangaId ?: 0L
     val listState = rememberLazyListState()
     var hasUserScrolled by rememberSaveable(category) { mutableStateOf(false) }
@@ -141,7 +150,7 @@ private fun DiscoveryShelf(
         ) {
             items(
                 items = previewItems,
-                key = { item -> "${category}_${item.sourceId}_${item.mangaId}" },
+                key = { item -> "${category}_${GroupDiscoveryItems.presentationKey(item)}" },
             ) { item -> content(item, cardWidth) }
         }
     }
@@ -152,8 +161,9 @@ private fun PopularMangaItem(
     item: HomeDiscoveryItem,
     width: Dp,
     onMangaClick: (Long) -> Unit,
+    onChooseEdition: (Long) -> Unit,
 ) {
-    ArtworkFirstItem(item, width, onMangaClick)
+    ArtworkFirstItem(item, width, onMangaClick, onChooseEdition)
 }
 
 @Composable
@@ -162,11 +172,13 @@ private fun FreshMangaItem(
     width: Dp,
     showNewMark: Boolean,
     onMangaClick: (Long) -> Unit,
+    onChooseEdition: (Long) -> Unit,
 ) {
     ArtworkFirstItem(
         item = item,
         width = width,
         onMangaClick = onMangaClick,
+        onChooseEdition = onChooseEdition,
         artworkOverlay = if (showNewMark) {
             {
                 Text(
@@ -193,15 +205,17 @@ private fun ArtworkFirstItem(
     item: HomeDiscoveryItem,
     width: Dp,
     onMangaClick: (Long) -> Unit,
+    onChooseEdition: (Long) -> Unit,
     artworkOverlay: (@Composable BoxScope.() -> Unit)? = null,
 ) {
     eu.kanade.presentation.components.MangaroWorkCard(
         title = item.title,
-        onClick = { onMangaClick(item.mangaId) },
+        onClick = { onMangaClick(eu.kanade.tachiyomi.ui.home.CatalogEditionOpening.selected(item).mangaId) },
+        onLongClick = if (item.availableVersions.size > 1) ({ onChooseEdition(item.mangaId) }) else null,
         modifier = Modifier.width(width),
         cover = { coverModifier ->
             Box(coverModifier.clip(MangaroDesignSystem.ShapeCover).background(MangaroDesignSystem.SurfaceHigh)) {
-                MangaCover.Book(data = item.coverData, contentDescription = "", modifier = Modifier.fillMaxSize())
+                MangaCover.Book(data = rememberHomeCoverRequest(item.coverData, width, width / MangaCover.Book.ratio), contentDescription = "", modifier = Modifier.fillMaxSize())
                 artworkOverlay?.invoke(this)
             }
         },

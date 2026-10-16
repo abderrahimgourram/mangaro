@@ -10,6 +10,7 @@ import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.LinearLayout
 import androidx.appcompat.widget.AppCompatTextView
 import com.google.android.material.progressindicator.CircularProgressIndicator
+import eu.kanade.presentation.util.mangaroErrorMessage
 import eu.kanade.presentation.util.contentErrorMessage
 import eu.kanade.tachiyomi.ui.reader.model.ChapterTransition
 import eu.kanade.tachiyomi.ui.reader.model.ReaderChapter
@@ -119,7 +120,7 @@ class PagerTransitionHolder(
     private fun setError(error: Throwable) {
         val textView = AppCompatTextView(context).apply {
             wrapContent()
-            text = context.stringResource(MR.strings.transition_pages_error, error.message.contentErrorMessage() ?: "")
+            text = error.mangaroErrorMessage("تعذر تحميل الفصل")
         }
 
         val retryBtn = ReaderButton(context).apply {

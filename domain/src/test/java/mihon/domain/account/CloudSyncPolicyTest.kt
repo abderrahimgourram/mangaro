@@ -25,6 +25,17 @@ class CloudSyncPolicyTest {
         CloudSyncPolicy.mergeHigherPage(false,true,12,3) shouldBe false
         CloudSyncPolicy.mergeHigherPage(false,false,3,12) shouldBe false
     }
+    @Test fun `SQLite seconds and legacy cloud timestamps normalize without altering modern milliseconds`() {
+        CloudSyncPolicy.sqliteEventMillis(1_700_000_000) shouldBe 1_700_000_000_000
+        CloudSyncPolicy.cloudEventMillis(1_700_000_000) shouldBe 1_700_000_000_000
+        CloudSyncPolicy.cloudEventMillis(1_700_000_000_000) shouldBe 1_700_000_000_000
+    }
+    @Test fun `late offline higher page cannot override a newer explicit reset`() {
+        CloudSyncPolicy.mergeNewerProgress(false,false,20,0,100,200) shouldBe false
+        CloudSyncPolicy.mergeNewerProgress(false,false,20,0,200,200) shouldBe false
+        CloudSyncPolicy.mergeNewerProgress(false,false,20,3,300,200) shouldBe true
+        CloudSyncPolicy.mergeNewerProgress(false,true,20,0,300,200) shouldBe false
+    }
     @Test fun `remote application across suspension cannot echo or award local action hooks`() = runTest {
         val changes=mutableListOf<LocalCloudChanges.Change>()
         LocalCloudChanges.capture={changes.add(it)}

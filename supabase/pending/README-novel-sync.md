@@ -1,3 +1,5 @@
+> Update 2026-10-15: the older SQL below is retained as historical review material. Its forward, compatibility-corrected replacement is now deployed as `20261015175820_novel_cloud_metadata_compatibility.sql` to Mangaro. Do not apply the old script. See `docs/account/UNIFIED_WORK_CLOUD_20261015.md` for tested scope and remaining acceptance gaps.
+
 # Private novel sync — approval pending
 
 Target from the Android Release configuration: **pehsxthjetlltlsqcbfa**

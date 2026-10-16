@@ -27,6 +27,7 @@ import eu.kanade.tachiyomi.util.system.createFileInCacheDir
 import eu.kanade.tachiyomi.util.system.isConnectedToWifi
 import eu.kanade.tachiyomi.util.system.isRunning
 import eu.kanade.tachiyomi.util.system.setForegroundSafely
+import eu.kanade.tachiyomi.util.system.cancelNotification
 import eu.kanade.tachiyomi.util.system.workManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
@@ -91,6 +92,14 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
     private var mangaToUpdate: List<LibraryManga> = mutableListOf()
 
     override suspend fun doWork(): Result {
+        val state = tachiyomi.core.common.util.lang.LocalAccountScope.changes.value
+        if (!state.ready) return Result.retry()
+        val expected = inputData.getString("local-account-owner")
+        if (expected != null && expected != state.token.fileOwner) return Result.retry()
+        return kotlinx.coroutines.withContext(tachiyomi.core.common.util.lang.LocalAccountScope.Element(state.token)) { doAccountWork() }
+    }
+
+    private suspend fun doAccountWork(): Result {
         if (tags.contains(WORK_NAME_AUTO)) {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
                 val preferences = Injekt.get<LibraryPreferences>()
@@ -106,10 +115,10 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
             }
         }
 
-        setForegroundSafely()
-
         val categoryId = inputData.getLong(KEY_CATEGORY, -1L)
         addMangaToQueue(categoryId)
+        if (mangaToUpdate.isEmpty()) { notifier.cancelProgressNotification(); return Result.success() }
+        setForegroundSafely()
 
         return withIOContext {
             try {
@@ -319,6 +328,7 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
         }
 
         if (failedUpdates.isEmpty()) {
+            context.cancelNotification(Notifications.ID_LIBRARY_ERROR)
             val successfulAt = Clock.System.now().toEpochMilliseconds()
             if (tags.contains(WORK_NAME_FOREGROUND)) {
                 libraryPreferences.lastForegroundUpdatedTimestamp.set(successfulAt)
@@ -327,11 +337,17 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
             }
         }
         if (failedUpdates.isNotEmpty()) {
+            logcat(LogPriority.WARN) {
+                "Library update completed with ${failedUpdates.size} failed entries: " +
+                    failedUpdates.joinToString { "${it.first.title} (${it.second})" }
+            }
             val errorFile = writeErrorFile(failedUpdates)
-            notifier.showUpdateErrorNotification(
-                failedUpdates.size,
-                errorFile.getUriCompat(context),
-            )
+            if (tags.contains(WORK_NAME_MANUAL)) {
+                notifier.showUpdateErrorNotification(
+                    failedUpdates.size,
+                    errorFile.getUriCompat(context),
+                )
+            }
         }
         return failedUpdates.isEmpty()
     }
@@ -398,7 +414,7 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
     private fun writeErrorFile(errors: List<Pair<Manga, String?>>): File {
         try {
             if (errors.isNotEmpty()) {
-                val file = context.createFileInCacheDir("mihon_update_errors.txt")
+                val file = context.createFileInCacheDir("mangaro_update_errors.txt")
                 file.bufferedWriter().use { out ->
                     out.write(context.stringResource(MR.strings.library_errors_help, ERROR_LOG_HELP_URL) + "\n\n")
                     // This report is opened by the user; technical provider/error details stay internal.
@@ -433,6 +449,7 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
             val request = OneTimeWorkRequestBuilder<LibraryUpdateJob>()
                 .addTag(TAG)
                 .addTag(WORK_NAME_FOREGROUND)
+                .setInputData(workDataOf("local-account-owner" to tachiyomi.core.common.util.lang.LocalAccountScope.fileOwner()))
                 .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
                 .build()
@@ -440,7 +457,7 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
             return true
         }
 
-        private const val ERROR_LOG_HELP_URL = "https://mihon.app/docs/guides/troubleshooting/"
+        private const val ERROR_LOG_HELP_URL = "https://mangaro-web.vercel.app/"
 
         private const val MANGA_PER_SOURCE_QUEUE_WARNING_THRESHOLD = 60
 
@@ -517,6 +534,7 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
 
             val inputData = workDataOf(
                 KEY_CATEGORY to category?.id,
+                "local-account-owner" to tachiyomi.core.common.util.lang.LocalAccountScope.fileOwner(),
             )
             val request = OneTimeWorkRequestBuilder<LibraryUpdateJob>()
                 .addTag(TAG)

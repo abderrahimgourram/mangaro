@@ -31,7 +31,7 @@ class MangaroCatalogComponentTest {
     @Test
     fun `verify Mangaro visual tokens for catalog components`() {
         MangaroVisualTokens.CardCornerRadius shouldBe 14.dp
-        MangaroVisualTokens.SurfaceDark shouldBe Color(0xFF18121D)
-        MangaroVisualTokens.CardBorderColor shouldBe androidx.compose.ui.graphics.Color(0x33A78BFA)
+        MangaroVisualTokens.SurfaceDark shouldBe Color(0xFF140E1B)
+        MangaroVisualTokens.CardBorderColor shouldBe androidx.compose.ui.graphics.Color(0x28A78BFA)
     }
 }

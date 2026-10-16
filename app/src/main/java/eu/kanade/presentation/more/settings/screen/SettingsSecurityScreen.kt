@@ -1,5 +1,6 @@
 package eu.kanade.presentation.more.settings.screen
 
+import eu.kanade.tachiyomi.util.system.cancelNotification
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.getValue
@@ -32,6 +33,27 @@ object SettingsSecurityScreen : SearchableSettings {
         val privacyPreferences = remember { Injekt.get<PrivacyPreferences>() }
         return buildList(2) {
             add(getSecurityGroup(securityPreferences))
+            val context = androidx.compose.ui.platform.LocalContext.current
+            val requestNotifications = eu.kanade.presentation.util.rememberNotificationPermissionAction()
+            val notifications = remember { Injekt.get<eu.kanade.tachiyomi.data.notification.NotificationPreferences>() }
+            add(Preference.PreferenceGroup(
+                title = "الإشعارات",
+                preferenceItems = buildList {
+                    if (android.os.Build.VERSION.SDK_INT >= 33) add(Preference.PreferenceItem.TextPreference(
+                        title = "إذن إشعارات Android",
+                        subtitle = "اختياري؛ يُطلب عند تفعيل التنبيهات. يمكنك تغييره من إعدادات Android",
+                        onClick = requestNotifications,
+                    ))
+                    addAll(listOf(
+                    Preference.PreferenceItem.SwitchPreference(notifications.newWorks, "أعمال جديدة", "يتطلب حدث نشر موثوقًا؛ تحديث قوائم الاستكشاف لا يرسل تنبيهات", onValueChanged = { enabled -> if (enabled) requestNotifications(); true }),
+                    Preference.PreferenceItem.SwitchPreference(notifications.replies, "الردود", "عرض العدد غير المقروء للردود على حسابك في مركز الإشعارات"),
+                    Preference.PreferenceItem.SwitchPreference(notifications.chapters, "الفصول الجديدة", "تحديثات مؤكدة لأعمال مكتبتك، مجمّعة دون تكرار", onValueChanged = { enabled -> if (enabled) requestNotifications(); true }),
+                    Preference.PreferenceItem.SwitchPreference(notifications.downloadCompletion, "اكتمال التنزيلات", "ملخص واحد للتنزيلات المكتملة؛ إشعار العمل في الخلفية يبقى ضروريًا", onValueChanged = { enabled -> if (enabled) requestNotifications() else context.cancelNotification(eu.kanade.tachiyomi.data.notification.Notifications.ID_DOWNLOADS_COMPLETE); true }),
+                    Preference.PreferenceItem.SwitchPreference(notifications.sourceUpdates, "تحديثات الإضافات", "تنبيه واحد عند توفر إصدار جديد لإضافة مثبتة", onValueChanged = { enabled -> if (enabled) requestNotifications() else context.cancelNotification(eu.kanade.tachiyomi.data.notification.Notifications.ID_UPDATES_TO_EXTS); true }),
+                    Preference.PreferenceItem.InfoPreference("الردود تُحدّث عند فتح التطبيق أو مركز الإشعارات؛ لا تتوفر خدمة دفع في الخلفية حاليًا"),
+                    ))
+                },
+            ))
             if (!telemetryIncluded) return@buildList
             add(getFirebaseGroup(privacyPreferences))
         }

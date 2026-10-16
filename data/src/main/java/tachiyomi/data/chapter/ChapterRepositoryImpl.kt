@@ -1,5 +1,7 @@
 package tachiyomi.data.chapter
 
+import tachiyomi.data.accountOperation
+
 import mihon.domain.account.LocalCloudChanges
 
 import app.cash.sqldelight.async.coroutines.awaitAsList
@@ -26,6 +28,7 @@ class ChapterRepositoryImpl(
         updates: List<ChapterUpdate>,
         removals: List<Long>,
     ): List<Chapter> {
+        return database.accountOperation {
         val sigilOwner = mihon.domain.sigils.SigilEvents.captureOwner?.invoke() ?: "_no_owner"
         val inserted = database.transactionWithResult {
             val rows = additions.map { chapter ->
@@ -44,11 +47,14 @@ class ChapterRepositoryImpl(
         // Notify only after commit; remote restore suppression remains owned by LocalCloudChanges.
         inserted.map { it.mangaId }.distinct().forEach { LocalCloudChanges.changed(LocalCloudChanges.Kind.RESOLVE, -it) }
         updates.forEach {notifyChange(it,sigilOwner)}
-        return inserted
+        return@accountOperation inserted
+
+        }
     }
 
     override suspend fun addAll(chapters: List<Chapter>): List<Chapter> {
-        return try {
+        return database.accountOperation {
+        return@accountOperation try {
             database.transactionWithResult {
                 chapters.map { chapter ->
                     val chapterId = database.chaptersQueries.insertReturningId(
@@ -77,18 +83,26 @@ class ChapterRepositoryImpl(
             logcat(LogPriority.ERROR, e)
             emptyList()
         }
+
+        }
     }
 
     override suspend fun update(chapterUpdate: ChapterUpdate) {
+        return database.accountOperation {
         val sigilOwner = mihon.domain.sigils.SigilEvents.captureOwner?.invoke() ?: "_no_owner"
         partialUpdate(chapterUpdate)
         notifyChange(chapterUpdate,sigilOwner)
+
+        }
     }
 
     override suspend fun updateAll(chapterUpdates: List<ChapterUpdate>) {
+        return database.accountOperation {
         val sigilOwner = mihon.domain.sigils.SigilEvents.captureOwner?.invoke() ?: "_no_owner"
         partialUpdate(*chapterUpdates.toTypedArray())
         chapterUpdates.forEach {notifyChange(it,sigilOwner)}
+
+        }
     }
 
     private suspend fun notifyChange(update: ChapterUpdate, sigilOwner: String) {
@@ -108,6 +122,7 @@ class ChapterRepositoryImpl(
     }
 
     private suspend fun partialUpdate(vararg chapterUpdates: ChapterUpdate) {
+        chapterUpdates.forEach { tachiyomi.core.common.util.lang.LocalAccountScope.check(it.accountToken) }
         database.transaction {
             chapterUpdates.forEach { chapterUpdate ->
                 database.chaptersQueries.update(
@@ -133,23 +148,32 @@ class ChapterRepositoryImpl(
     }
 
     override suspend fun removeChaptersWithIds(chapterIds: List<Long>) {
+        return database.accountOperation {
         try {
             database.chaptersQueries.removeChaptersWithIds(chapterIds)
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, e)
         }
+
+        }
     }
 
     override suspend fun getChapterByMangaId(mangaId: Long, applyScanlatorFilter: Boolean): List<Chapter> {
-        return database.chaptersQueries
+        return database.accountOperation {
+        return@accountOperation database.chaptersQueries
             .getChaptersByMangaId(mangaId, applyScanlatorFilter.toLong(), ::mapChapter)
             .awaitAsList()
+
+        }
     }
 
     override suspend fun getScanlatorsByMangaId(mangaId: Long): List<String> {
-        return database.chaptersQueries
+        return database.accountOperation {
+        return@accountOperation database.chaptersQueries
             .getScanlatorsByMangaId(mangaId) { it.orEmpty() }
             .awaitAsList()
+
+        }
     }
 
     override fun getScanlatorsByMangaIdAsFlow(mangaId: Long): Flow<List<String>> {
@@ -159,27 +183,39 @@ class ChapterRepositoryImpl(
     }
 
     override suspend fun getBookmarkedChaptersByMangaId(mangaId: Long): List<Chapter> {
-        return database.chaptersQueries
+        return database.accountOperation {
+        return@accountOperation database.chaptersQueries
             .getBookmarkedChaptersByMangaId(mangaId, ::mapChapter)
             .awaitAsList()
+
+        }
     }
 
     override suspend fun getChapterById(id: Long): Chapter? {
-        return database.chaptersQueries
+        return database.accountOperation {
+        return@accountOperation database.chaptersQueries
             .getChapterById(id, ::mapChapter)
             .awaitAsOneOrNull()
+
+        }
     }
 
     override suspend fun getChapterByMangaIdAsFlow(mangaId: Long, applyScanlatorFilter: Boolean): Flow<List<Chapter>> {
-        return database.chaptersQueries
+        return database.accountOperation {
+        return@accountOperation database.chaptersQueries
             .getChaptersByMangaId(mangaId, applyScanlatorFilter.toLong(), ::mapChapter)
             .subscribeToList()
+
+        }
     }
 
     override suspend fun getChapterByUrlAndMangaId(url: String, mangaId: Long): Chapter? {
-        return database.chaptersQueries
+        return database.accountOperation {
+        return@accountOperation database.chaptersQueries
             .getChapterByUrlAndMangaId(url, mangaId, ::mapChapter)
             .awaitAsOneOrNull()
+
+        }
     }
 
     @Suppress("UNUSED_PARAMETER")

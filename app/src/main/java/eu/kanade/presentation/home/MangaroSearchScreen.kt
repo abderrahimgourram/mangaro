@@ -109,6 +109,25 @@ fun MangaroSearchScreen(
     onClickManga: (Manga) -> Unit,
     onNavigateUp: (() -> Unit)? = null,
 ) {
+    var selectedWorkKey by remember { mutableStateOf<String?>(null) }
+    val selectedWork = state.rankedResults.firstOrNull { it.workKey == selectedWorkKey }
+    if (selectedWork != null && selectedWork.alternatives.isNotEmpty()) {
+        val versions = listOf(selectedWork) + selectedWork.alternatives
+        val item = eu.kanade.tachiyomi.ui.home.HomeDiscoveryItem(
+            selectedWork.manga.id, selectedWork.manga.title,
+            tachiyomi.domain.manga.model.MangaCover(selectedWork.manga.id, selectedWork.manga.source, false, selectedWork.manga.thumbnailUrl, 0L),
+            selectedWork.manga.source, selectedWork.source.name,
+            canonicalWorkId = selectedWork.workKey,
+            availableVersions = versions.map { eu.kanade.tachiyomi.ui.home.HomeSourceVersion(
+                it.manga.id, it.manga.source, it.source.name, it.manga.url, it.manga.title) },
+            url = selectedWork.manga.url,
+            alternatives = selectedWork.alternatives.map { eu.kanade.tachiyomi.ui.home.HomeDiscoveryItem(
+                it.manga.id, it.manga.title, it.manga.asMangaCover(), it.manga.source, it.source.name, it.manga.url) },
+        )
+        MangaroSourceChooserSheet(item, onSelectVersion = { id ->
+            versions.firstOrNull { it.manga.id == id }?.let { onClickManga(it.manga) }
+        }, onDismiss = { selectedWorkKey = null })
+    }
     val query = state.searchQuery.orEmpty()
     val resultsListState = rememberLazyGridState()
     val acceptedQuery = state.activeQuery.orEmpty().trim()
@@ -284,7 +303,7 @@ fun MangaroSearchScreen(
                     }
                     items(results, key = { it.workKey }) { initial ->
                         val manga by getManga(initial.manga)
-                        SearchMangaCard(manga, initial, onClick = { keyboard?.hide(); focusManager.clearFocus(); onClickManga(manga) })
+                        SearchMangaCard(manga, initial, onClick = { keyboard?.hide(); focusManager.clearFocus(); if (initial.alternatives.isNotEmpty()) selectedWorkKey = initial.workKey else onClickManga(manga) })
                     }
                     item(key = "searchPaging", span = { GridItemSpan(maxLineSpan) }) {
                         Box(Modifier.fillMaxWidth().heightIn(min = 48.dp), contentAlignment = Alignment.Center) {

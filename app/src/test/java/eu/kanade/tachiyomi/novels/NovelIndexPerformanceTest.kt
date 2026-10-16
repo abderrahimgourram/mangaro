@@ -7,6 +7,15 @@ import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.Test
 
 class NovelIndexPerformanceTest {
+    @Test fun shortLegacyKolnovelCompletionCannotUseTheSixHourCacheShortcut() {
+        val novel = Novel("novel.kolnovel", "https://kolnovel.com/series/cache-fixture/", "اختبار", chapterCount = 2333)
+        val old = NovelChapterIndex(novel.id, List(200) { chapter(it) }, nextPage = null, complete = true)
+        NovelChapterIndexer.staleKolnovelCompletion(novel, old) shouldBe true
+        NovelChapterIndexer.staleKolnovelCompletion(novel.copy(chapterCount = null), old) shouldBe false
+        NovelChapterIndexer.staleKolnovelCompletion(novel.copy(chapterCount = 200), old) shouldBe false
+        NovelChapterIndexer.staleKolnovelCompletion(novel.copy(sourceId = "novel.cenele"), old) shouldBe false
+        NovelChapterIndexer.staleKolnovelCompletion(novel, old.copy(complete = false, nextPage = 3)) shouldBe false
+    }
     private val novel = Novel("novel.kolnovel", "https://kolnovel.com/series/performance-fixture/", "اختبار")
     private fun chapter(n: Int) = NovelChapter("https://kolnovel.com/chapter/performance-$n/", "الفصل $n", n)
     private class Source(private val page: suspend (Int) -> ChapterPage) : NovelSource {
@@ -132,4 +141,14 @@ class NovelIndexPerformanceTest {
         source.requests shouldBe (1..12).toList()
     }
 
+    @Test fun automaticDiscoveryContinuesPastTheOldSixtyFourPageSessionLimit() = runTest {
+        val source = Source { p -> ChapterPage(listOf(chapter(p)), if(p < 70) p+1 else null, declaredTotal=70) }
+        var checkpoint=NovelChapterIndex(novel.id)
+        val result=NovelChapterIndexer.continueBatches {
+            NovelChapterIndexer.collect(source,novel,checkpoint,maxPages=8) {checkpoint=it}
+        }
+        result.complete shouldBe true
+        result.chapters.size shouldBe 70
+        source.requests shouldBe (1..70).toList()
+    }
 }

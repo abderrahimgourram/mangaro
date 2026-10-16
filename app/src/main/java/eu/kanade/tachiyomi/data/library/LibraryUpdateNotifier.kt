@@ -89,11 +89,12 @@ class LibraryUpdateNotifier(
      * @param total the total progress.
      */
     fun showProgressNotification(manga: List<Manga>, current: Int, total: Int) {
+        if (runCatching { tachiyomi.core.common.util.lang.LocalAccountScope.check() }.isFailure) return
         progressNotificationBuilder
             .setContentTitle(
                 context.stringResource(
                     MR.strings.notification_updating_progress,
-                    percentFormatter.format(current.toFloat() / total),
+                    percentFormatter.format(current.toFloat() / total.coerceAtLeast(1)),
                 ),
             )
 
@@ -114,27 +115,7 @@ class LibraryUpdateNotifier(
      * Warn when excessively checking any single source.
      */
     fun showQueueSizeWarningNotificationIfNeeded(mangaToUpdate: List<LibraryManga>) {
-        val maxUpdatesFromSource = mangaToUpdate
-            .groupBy { it.manga.source }
-            .filterKeys { sourceManager.get(it) !is UnmeteredSource }
-            .maxOfOrNull { it.value.size } ?: 0
-
-        if (maxUpdatesFromSource <= MANGA_PER_SOURCE_QUEUE_WARNING_THRESHOLD) {
-            return
-        }
-
-        context.notify(
-            Notifications.ID_LIBRARY_SIZE_WARNING,
-            Notifications.CHANNEL_LIBRARY_PROGRESS,
-        ) {
-            setContentTitle(context.stringResource(MR.strings.label_warning))
-            setStyle(
-                NotificationCompat.BigTextStyle().bigText(context.stringResource(MR.strings.notification_size_warning)),
-            )
-            setSmallIcon(R.drawable.ic_warning_white_24dp)
-            setTimeoutAfter(Downloader.WARNING_NOTIF_TIMEOUT_MS)
-            setContentIntent(NotificationHandler.openUrl(context, HELP_WARNING_URL))
-        }
+        // Source health/rate limiting already manages this queue. Its size is not an alert event.
     }
 
     /**
@@ -144,6 +125,7 @@ class LibraryUpdateNotifier(
      * @param uri Uri for error log file containing all titles that failed.
      */
     fun showUpdateErrorNotification(failed: Int, uri: Uri) {
+        if (runCatching { tachiyomi.core.common.util.lang.LocalAccountScope.check() }.isFailure) return
         if (failed == 0) {
             return
         }
@@ -153,7 +135,9 @@ class LibraryUpdateNotifier(
             Notifications.CHANNEL_LIBRARY_ERROR,
         ) {
             setContentTitle(context.pluralStringResource(MR.plurals.notification_update_error, failed, failed))
-            setContentText(context.stringResource(MR.strings.action_show_errors))
+            setContentText("راجع الأعمال التي تعذّر تحديثها وأعد المحاولة")
+            setOnlyAlertOnce(true)
+            setAutoCancel(true)
             setSmallIcon(R.drawable.ic_book_24dp)
 
             setContentIntent(NotificationReceiver.openErrorLogPendingActivity(context, uri))
@@ -165,28 +149,37 @@ class LibraryUpdateNotifier(
      *
      * @param updates a list of manga with new updates.
      */
-    fun showUpdateNotifications(updates: List<Pair<Manga, Array<Chapter>>>) {
+    fun showUpdateNotifications(candidates: List<Pair<Manga, Array<Chapter>>>) {
+        if (runCatching { tachiyomi.core.common.util.lang.LocalAccountScope.check() }.isFailure) return
+        val inbox = Injekt.get<eu.kanade.tachiyomi.data.inbox.WorkUpdateInbox>()
+        val updates = inbox.claimSystemUpdates(candidates)
+        if (updates.isEmpty()) return
+        val owner = (Injekt.get<mihon.domain.account.AccountFoundation>().session.value as? mihon.domain.account.AccountSession.Authenticated)?.profile?.userId
+        fun canPublish(): Boolean = Injekt.get<eu.kanade.tachiyomi.data.notification.NotificationPreferences>().chapters.get() &&
+            (Injekt.get<mihon.domain.account.AccountFoundation>().session.value as? mihon.domain.account.AccountSession.Authenticated)?.profile?.userId == owner
+        if (!canPublish()) return
         // Parent group notification
+        inbox.publishUnread(owner, updates) { liveUpdates ->
         context.notify(
             Notifications.ID_NEW_CHAPTERS,
             Notifications.CHANNEL_NEW_CHAPTERS,
         ) {
             setContentTitle(context.stringResource(MR.strings.notification_new_chapters))
-            if (updates.size == 1 && !securityPreferences.hideNotificationContent.get()) {
-                setContentText(updates.first().first.title.chop(NOTIF_TITLE_MAX_LEN))
+            if (liveUpdates.size == 1 && !securityPreferences.hideNotificationContent.get()) {
+                setContentText(liveUpdates.first().first.title.chop(NOTIF_TITLE_MAX_LEN))
             } else {
                 setContentText(
                     context.pluralStringResource(
                         MR.plurals.notification_new_chapters_summary,
-                        updates.size,
-                        updates.size,
+                        liveUpdates.size,
+                        liveUpdates.size,
                     ),
                 )
 
                 if (!securityPreferences.hideNotificationContent.get()) {
                     setStyle(
                         NotificationCompat.BigTextStyle().bigText(
-                            updates.joinToString("\n") {
+                            liveUpdates.joinToString("\n") {
                                 it.first.title.chop(NOTIF_TITLE_MAX_LEN)
                             },
                         ),
@@ -200,23 +193,27 @@ class LibraryUpdateNotifier(
             setGroup(Notifications.GROUP_NEW_CHAPTERS)
             setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_SUMMARY)
             setGroupSummary(true)
-            priority = NotificationCompat.PRIORITY_HIGH
+            setOnlyAlertOnce(true)
+            priority = NotificationCompat.PRIORITY_DEFAULT
 
             setContentIntent(getNotificationIntent())
             setAutoCancel(true)
         }
 
+        }
+
         // Per-manga notification
         if (!securityPreferences.hideNotificationContent.get()) {
             launchUI {
-                context.notify(
-                    updates.map { (manga, chapters) ->
-                        NotificationManagerCompat.NotificationWithIdAndTag(
-                            manga.id.hashCode(),
-                            createNewChaptersNotification(manga, chapters),
-                        )
-                    },
-                )
+                val notices = updates.take(5).associate { (manga, chapters) ->
+                    manga.id to NotificationManagerCompat.NotificationWithIdAndTag(
+                        manga.id.hashCode(), createNewChaptersNotification(manga, chapters),
+                    )
+                }
+                // Cover loading may outlive a sign-out/account switch or preference change.
+                if (canPublish()) inbox.publishUnread(owner, updates.take(5)) { liveUpdates ->
+                    context.notify(liveUpdates.mapNotNull { notices[it.first.id] })
+                }
             }
         }
     }
@@ -238,7 +235,8 @@ class LibraryUpdateNotifier(
 
             setGroup(Notifications.GROUP_NEW_CHAPTERS)
             setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_SUMMARY)
-            priority = NotificationCompat.PRIORITY_HIGH
+            setOnlyAlertOnce(true)
+            priority = NotificationCompat.PRIORITY_DEFAULT
 
             // Open first chapter on tap
             setContentIntent(NotificationReceiver.openChapterPendingActivity(context, manga, chapters.first()))
@@ -287,6 +285,7 @@ class LibraryUpdateNotifier(
      */
     fun cancelProgressNotification() {
         context.cancelNotification(Notifications.ID_LIBRARY_PROGRESS)
+        context.cancelNotification(Notifications.ID_LIBRARY_SIZE_WARNING)
     }
 
     private suspend fun getMangaIcon(manga: Manga): Bitmap? {
@@ -378,7 +377,7 @@ class LibraryUpdateNotifier(
 
     companion object {
         const val HELP_WARNING_URL =
-            "https://mihon.app/docs/faq/library#why-am-i-warned-about-large-bulk-updates-and-downloads"
+            "https://mangaro-web.vercel.app/"
     }
 }
 

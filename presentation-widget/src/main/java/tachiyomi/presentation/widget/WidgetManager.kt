@@ -23,10 +23,11 @@ class WidgetManager(
         combine(
             getUpdates.subscribe(read = false, after = BaseUpdatesGridGlanceWidget.DateLimit.toEpochMilliseconds()),
             securityPreferences.useAuthenticator.changes(),
-            transform = { a, b -> a to b },
+            tachiyomi.core.common.util.lang.LocalAccountScope.changes,
+            transform = { a, b, owner -> Triple(a, b, owner) },
         )
             .distinctUntilChanged { old, new ->
-                old.second == new.second &&
+                old.third == new.third && old.second == new.second &&
                     old.first.map { it.chapterId }.toSet() == new.first.map { it.chapterId }.toSet()
             }
             .onEach {

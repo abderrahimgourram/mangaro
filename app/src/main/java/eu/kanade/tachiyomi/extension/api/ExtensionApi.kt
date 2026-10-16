@@ -28,7 +28,7 @@ internal class ExtensionApi {
             .filterIsInstance<LoadResult.Success>()
             .map { it.extension }
 
-        val extensionsWithUpdate = mutableListOf<Extension.Installed>()
+        val extensionsWithUpdate = mutableListOf<Extension.Available>()
         for (installedExt in installedExtensions) {
             val pkgName = installedExt.pkgName
             val availableExt = extensions.find { it.pkgName == pkgName } ?: continue
@@ -36,12 +36,14 @@ internal class ExtensionApi {
             val hasUpdatedLib = availableExt.libVersion > installedExt.libVersion
             val hasUpdate = hasUpdatedVer || hasUpdatedLib
             if (hasUpdate) {
-                extensionsWithUpdate.add(installedExt)
+                extensionsWithUpdate.add(availableExt)
             }
         }
 
         if (extensionsWithUpdate.isNotEmpty()) {
-            ExtensionUpdateNotifier(context).promptUpdates(extensionsWithUpdate.map { it.name })
+            ExtensionUpdateNotifier(context).promptUpdates(extensionsWithUpdate.map { it.name }, extensionsWithUpdate.map { "${it.pkgName}:${it.versionCode}:${it.libVersion}" }.toSet())
+        } else {
+            ExtensionUpdateNotifier(context).dismiss()
         }
     }
 }

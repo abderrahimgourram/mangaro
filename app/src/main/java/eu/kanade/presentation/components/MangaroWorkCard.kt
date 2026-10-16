@@ -1,6 +1,7 @@
 package eu.kanade.presentation.components
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -18,10 +19,11 @@ fun MangaroWorkCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     metadata: @Composable ColumnScope.() -> Unit = {},
+    onLongClick: (() -> Unit)? = null,
     cover: @Composable (Modifier) -> Unit,
 ) {
     val titleLines = if (LocalDensity.current.fontScale >= 1.3f) 3 else 2
-    Column(modifier.clickable(role = Role.Button, onClick = onClick)) {
+    Column(modifier.combinedClickable(role = Role.Button, onClick = onClick, onLongClick = onLongClick, onLongClickLabel = if (onLongClick != null) "اختيار الطبعة" else null)) {
         cover(Modifier.fillMaxWidth().aspectRatio(Design.CoverAspectRatio))
         Text(
             title,

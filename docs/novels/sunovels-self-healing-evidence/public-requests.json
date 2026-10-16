@@ -1,0 +1,46 @@
+{
+  "requests": [
+    {
+      "url": "https://sunovels.com/novel/birth-of-the-demonic-sword?activeTab=chapters&page=0",
+      "finalUrl": "https://sunovels.com/novel/birth-of-the-demonic-sword?activeTab=chapters&page=0",
+      "status": 200,
+      "bytes": 284495,
+      "seconds": 1.3112219800000275
+    },
+    {
+      "url": "https://sunovels.com/novel/birth-of-the-demonic-sword/0",
+      "finalUrl": "https://sunovels.com/novel/birth-of-the-demonic-sword/0",
+      "status": 200,
+      "bytes": 111932,
+      "seconds": 0.6431760239997857
+    },
+    {
+      "url": "https://sunovels.com/novel/birth-of-the-demonic-sword/1",
+      "finalUrl": "https://sunovels.com/novel/birth-of-the-demonic-sword/1",
+      "status": 200,
+      "bytes": 163806,
+      "seconds": 1.5843877180000163
+    }
+  ],
+  "samples": [
+    {
+      "file": "birth-index.html",
+      "bytes": 284495,
+      "sha256": "e68673c253a652f82f9f3d9e810fce596465482f7a45abb22d74d15e9e4640af"
+    },
+    {
+      "file": "birth-reader0.html",
+      "bytes": 111932,
+      "sha256": "b949b381394e91e1563f0d599616dbf0ec77634617cf69c4f2f221f2023c955a"
+    },
+    {
+      "file": "birth-reader1.html",
+      "bytes": 163806,
+      "sha256": "9530dcbe519316cc234bb5e2c404028808837af5c930439d910d1b3c22df0d21"
+    }
+  ],
+  "requestBudget": 3,
+  "actualRequests": 3,
+  "retryCount": 0,
+  "rawBodiesCopiedIntoReport": false
+}

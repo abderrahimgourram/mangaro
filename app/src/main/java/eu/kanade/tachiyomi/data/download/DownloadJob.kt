@@ -56,9 +56,27 @@ class DownloadJob(context: Context, workerParams: WorkerParameters) : CoroutineW
             setContentIntent(NotificationHandler.openDownloadManagerPendingActivity(applicationContext))
             setOnlyAlertOnce(true)
             NovelRepository.peek()?.activeDownloads()?.tasks?.value?.let { tasks ->
-                val completed = tasks.count { it.state == NovelDownloadState.DONE }
-                val pending = tasks.count { it.state in setOf(NovelDownloadState.PENDING, NovelDownloadState.RUNNING) }
-                if (pending > 0) setContentText("روايات · تم تحميل $completed فصلًا · المتبقي $pending")
+                val activeTask = tasks.firstOrNull { it.state == NovelDownloadState.RUNNING }
+                    ?: tasks.firstOrNull { it.state == NovelDownloadState.PENDING }
+                if (activeTask != null) {
+                    val activeNovel = activeTask.novel
+                    val novelTasks = tasks.filter { it.novel.id == activeNovel.id }
+                    val done = novelTasks.count { it.state == NovelDownloadState.DONE }
+                    val pending = novelTasks.count { it.state in setOf(NovelDownloadState.PENDING, NovelDownloadState.RUNNING) }
+                    val total = novelTasks.size
+                    val otherPendingNovels = tasks.filter { it.state in setOf(NovelDownloadState.PENDING, NovelDownloadState.RUNNING) && it.novel.id != activeNovel.id }
+                        .map { it.novel.id }.distinct().size
+
+                    val hideContent = Injekt.get<eu.kanade.tachiyomi.core.security.SecurityPreferences>().hideNotificationContent.get()
+                    setContentTitle(if (hideContent) "التنزيلات" else activeNovel.title)
+                    val text = if (otherPendingNovels > 0) {
+                        "تم تحميل $done من $total فصلًا (المتبقي $pending) · +$otherPendingNovels في الانتظار"
+                    } else {
+                        "تم تحميل $done من $total فصلًا (المتبقي $pending)"
+                    }
+                    setContentText(text)
+                    setProgress(total, done, false)
+                }
             }
         }.build()
         return ForegroundInfo(
@@ -94,7 +112,9 @@ class DownloadJob(context: Context, workerParams: WorkerParameters) : CoroutineW
             }
         }
         val notification = launch {
-            novels?.tasks?.debounce(1000)?.collect { setForegroundSafely() }
+            novels?.tasks?.debounce(1000)?.collect { tasks ->
+                if (tasks.any { it.state == NovelDownloadState.RUNNING || it.state == NovelDownloadState.PENDING }) setForegroundSafely()
+            }
         }
         try {
             // The monitor is cancelled explicitly; no infinite collector scope or busy-spin loop.
@@ -104,7 +124,14 @@ class DownloadJob(context: Context, workerParams: WorkerParameters) : CoroutineW
                     textDownloads = launch(Dispatchers.IO) { moreNovels.set(novels.runBatch()) }
                 }
             }
-            if (moreNovels.get() || (!networkCheck.get() && novels?.hasPending() == true)) Result.retry() else Result.success()
+            if (moreNovels.get() || (!networkCheck.get() && novels?.hasPending() == true)) {
+                Result.retry()
+            } else {
+                if (networkCheck.get() && !isStopped && !downloadManager.isRunning && novels?.hasPending() != true) {
+                    DownloadNotifier(applicationContext).onComplete()
+                }
+                Result.success()
+            }
         } finally {
             val interrupted = isStopped || !currentCoroutineContext().isActive
             withContext(NonCancellable) {

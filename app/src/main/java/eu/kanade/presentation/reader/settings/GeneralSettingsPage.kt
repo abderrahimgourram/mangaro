@@ -130,11 +130,6 @@ internal fun ColumnScope.GeneralPage(viewModel: ReaderSettingsViewModel) {
     }
 
     CheckboxItem(
-        label = stringResource(MR.strings.pref_read_with_long_tap),
-        pref = viewModel.preferences.readWithLongTap,
-    )
-
-    CheckboxItem(
         label = stringResource(MR.strings.pref_always_show_chapter_transition),
         pref = viewModel.preferences.alwaysShowChapterTransition,
     )

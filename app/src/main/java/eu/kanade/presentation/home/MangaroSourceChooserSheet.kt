@@ -17,6 +17,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -34,6 +35,9 @@ fun MangaroSourceChooserSheet(
     onSelectVersion: (Long) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val owner = androidx.compose.runtime.remember(item) { tachiyomi.core.common.util.lang.LocalAccountScope.capture() }
+    val preferred = eu.kanade.tachiyomi.ui.home.CatalogEditionOpening.selected(item).mangaId
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = MangaroDesignSystem.SurfaceDark,
@@ -62,11 +66,18 @@ fun MangaroSourceChooserSheet(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
 
-                item.availableVersions.forEach { version ->
+                item.availableVersions.sortedBy { it.mangaId != preferred }.forEach { version ->
                     Surface(
                         onClick = {
-                            onSelectVersion(version.mangaId)
-                            onDismiss()
+                            scope.launch(tachiyomi.core.common.util.lang.LocalAccountScope.Element(owner)) {
+                                try {
+                                    eu.kanade.tachiyomi.ui.home.CatalogEditionOpening.remember(item, version.mangaId, owner)
+                                    tachiyomi.core.common.util.lang.LocalAccountScope.check(owner)
+                                    onSelectVersion(version.mangaId)
+                                } catch (_: tachiyomi.core.common.util.lang.LocalAccountScope.Changed) {
+                                    // An old account's chooser cannot write a new account's preference.
+                                } finally { onDismiss() }
+                            }
                         },
                         shape = RoundedCornerShape(12.dp),
                         color = MangaroDesignSystem.SurfaceHigh,
@@ -90,7 +101,7 @@ fun MangaroSourceChooserSheet(
                                     tint = MangaroDesignSystem.GoldPrimary,
                                 )
                                 Text(
-                                    text = "نسخة أخرى",
+                                    text = version.sourceName.ifBlank { "نسخة أخرى" },
                                     style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
                                     color = Color.White,
                                 )

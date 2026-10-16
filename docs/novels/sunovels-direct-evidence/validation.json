@@ -1,0 +1,36 @@
+{
+  "contract": {
+    "checks": 48,
+    "gatewayRequests": 0,
+    "sourceReplayRequests": 20,
+    "bootstrapRecords": 1461,
+    "bootstrapParseMs": 32.990994,
+    "registryIngestMs": 762.353607,
+    "localSearchMeanMs": 0.2131919,
+    "hostJvmMaxHeapBytes": 402653184,
+    "hostJvmUsedHeapBytes": 125337840,
+    "totalMs": 28653.93485,
+    "androidRuntimeTested": false
+  },
+  "integration": {
+    "staticIntegration": "PASS",
+    "apk": "/home/jalem/Downloads/ManhwaAR_V0.2_Mihon_Fork_Kit/ManhwaAR_V0.2_Kit/ManhwaAR_Android/app/build/outputs/apk/debug/app-arm64-v8a-debug.apk",
+    "apkBytes": 85713055,
+    "apkSha256": "688ddc4cb4c56c752faaf589cd4b1e6e795b6adc696cde4feb4bf90028a7ca3f",
+    "applicationId": "app.manhwaar.reader.dev",
+    "androidRuntimeTested": false
+  },
+  "build": "BUILD SUCCESSFUL in 15s",
+  "gitDiffCheck": "PASS",
+  "physicalDeviceAcceptance": "PENDING",
+  "infrastructureChanges": false,
+  "protectedAndroidFilesUnchanged": [
+    "app/build.gradle.kts",
+    "app/src/main/java/eu/kanade/tachiyomi/novels/SeaNovelSource.kt",
+    "app/src/main/java/eu/kanade/tachiyomi/novels/NovelDownloadDisk.kt",
+    "app/src/main/java/eu/kanade/presentation/novels/NovelReaderScreen.kt",
+    "app/src/main/assets/novels/rules-envelope.json",
+    "app/src/main/assets/novels/rules-public.der"
+  ],
+  "mangaroNovelSourcesWorktreeChanged": false
+}

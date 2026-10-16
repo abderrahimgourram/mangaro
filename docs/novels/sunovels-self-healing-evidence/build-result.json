@@ -1,0 +1,7 @@
+{
+  "command": "./gradlew :app:assembleDebug --console=plain",
+  "status": "PASS",
+  "reportedGradleTime": "34s",
+  "androidRuntimeTested": false,
+  "releaseBuildRun": false
+}

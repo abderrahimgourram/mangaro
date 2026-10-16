@@ -60,7 +60,11 @@ class SaveImageNotifier(private val context: Context) {
         // Create notification
         with(notificationBuilder) {
             setContentTitle(context.stringResource(MR.strings.download_notifier_title_error))
-            setContentText(error ?: context.stringResource(MR.strings.unknown_error))
+            setContentText("تعذر حفظ الصورة، أعد المحاولة")
+            setStyle(null)
+            clearActions()
+            setContentIntent(null)
+            setOnlyAlertOnce(true)
             setSmallIcon(android.R.drawable.ic_menu_report_image)
         }
         updateNotification()

@@ -1,0 +1,8 @@
+{
+  "staticIntegration": "PASS",
+  "apk": "/home/jalem/Downloads/ManhwaAR_V0.2_Mihon_Fork_Kit/ManhwaAR_V0.2_Kit/ManhwaAR_Android/app/build/outputs/apk/debug/app-arm64-v8a-debug.apk",
+  "apkBytes": 85713055,
+  "apkSha256": "9a11690bd29ba491785f5eb7ad3316e113f958dddc0f02a58cf00f6c329c90c4",
+  "applicationId": "app.manhwaar.reader.dev",
+  "androidRuntimeTested": false
+}

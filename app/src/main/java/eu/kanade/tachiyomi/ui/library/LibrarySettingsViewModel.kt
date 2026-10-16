@@ -27,10 +27,12 @@ class LibrarySettingsViewModel(
     private val setSortModeForCategory: SetSortModeForCategory = Injekt.get(),
     trackerManager: TrackerManager = Injekt.get(),
 ) : ViewModel() {
+    private val accountScope = kotlinx.coroutines.CoroutineScope(viewModelScope.coroutineContext + tachiyomi.core.common.util.lang.LocalAccountScope.context())
+
 
     val trackersFlow = trackerManager.loggedInTrackersFlow()
         .stateIn(
-            scope = viewModelScope,
+            scope = accountScope,
             started = SharingStarted.WhileSubscribed(5.seconds.inWholeMilliseconds),
             initialValue = trackerManager.loggedInTrackers(),
         )
@@ -50,7 +52,7 @@ class LibrarySettingsViewModel(
     }
 
     fun setSort(category: Category?, mode: LibrarySort.Type, direction: LibrarySort.Direction) {
-        viewModelScope.launchIO {
+        accountScope.launchIO {
             setSortModeForCategory.await(category, mode, direction)
         }
     }

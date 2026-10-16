@@ -29,6 +29,13 @@ class BackupRestoreJob(private val context: Context, workerParams: WorkerParamet
     private val notifier = BackupNotifier(context)
 
     override suspend fun doWork(): Result {
+        if (!tachiyomi.core.common.util.lang.LocalAccountScope.changes.value.ready) return Result.retry()
+        val current = tachiyomi.core.common.util.lang.LocalAccountScope.capture()
+        val requestedOwner = inputData.getString("local_owner") ?: "guest"
+        if (requestedOwner != current.owner) return Result.failure()
+        return kotlinx.coroutines.withContext(tachiyomi.core.common.util.lang.LocalAccountScope.Element(current)) { performOwnedWork() }
+    }
+    private suspend fun performOwnedWork(): Result {
         val uri = inputData.getString(LOCATION_URI_KEY)?.toUri()
         val options = inputData.getBooleanArray(OPTIONS_KEY)?.let { RestoreOptions.fromBooleanArray(it) }
 
@@ -45,8 +52,7 @@ class BackupRestoreJob(private val context: Context, workerParams: WorkerParamet
             Result.success()
         } catch (e: Exception) {
             if (e is CancellationException) {
-                notifier.showRestoreError(context.stringResource(MR.strings.restoring_backup_canceled))
-                Result.success()
+                throw e
             } else {
                 logcat(LogPriority.ERROR, e)
                 notifier.showRestoreError(e.message)
@@ -81,6 +87,7 @@ class BackupRestoreJob(private val context: Context, workerParams: WorkerParamet
             sync: Boolean = false,
         ) {
             val inputData = workDataOf(
+                "local_owner" to tachiyomi.core.common.util.lang.LocalAccountScope.active().owner,
                 LOCATION_URI_KEY to uri.toString(),
                 SYNC_KEY to sync,
                 OPTIONS_KEY to options.asBooleanArray(),

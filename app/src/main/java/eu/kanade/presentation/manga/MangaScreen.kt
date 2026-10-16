@@ -281,7 +281,7 @@ private fun MangaScreenSmallImpl(
                 fillFraction = 1f,
             )
         },
-        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
+        snackbarHost = { eu.kanade.presentation.components.MangaroSnackbarHost(hostState = snackbarHostState) },
     ) { contentPadding ->
         val topPadding = contentPadding.calculateTopPadding()
 
@@ -488,7 +488,7 @@ fun MangaScreenLargeImpl(
                 )
             }
         },
-        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
+        snackbarHost = { eu.kanade.presentation.components.MangaroSnackbarHost(hostState = snackbarHostState) },
     ) { contentPadding ->
         PullRefresh(
             refreshing = state.isRefreshingData,

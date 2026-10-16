@@ -13,6 +13,7 @@ class InboxViewModel(
     private val account: AccountFoundation = Injekt.get(),
     val work: WorkUpdateInbox = Injekt.get(),
     private val replies: ReplyInbox = Injekt.get(),
+    private val notificationPreferences: eu.kanade.tachiyomi.data.notification.NotificationPreferences = Injekt.get(),
 ) : ViewModel() {
     val session = account.session
     private val mutable = MutableStateFlow(InboxState())
@@ -23,9 +24,14 @@ class InboxViewModel(
     private fun actor() = (session.value as? AccountSession.Authenticated)?.profile?.userId
     init {
         viewModelScope.launch {
+            notificationPreferences.replies.changes().collect { enabled ->
+                if (enabled) refreshBadge() else mutable.update { it.copy(unread = 0) }
+            }
+        }
+        viewModelScope.launch {
             replies.unreadCounts.collect { counts ->
                 val user = actor()
-                if (user != null && mutable.value.owner == user) mutable.update { it.copy(unread = counts[user] ?: 0) }
+                if (notificationPreferences.replies.get() && user != null && mutable.value.owner == user) mutable.update { it.copy(unread = counts[user] ?: 0) }
             }
         }
         viewModelScope.launch {
@@ -36,11 +42,12 @@ class InboxViewModel(
         }
     }
     fun refreshBadge() {
+        if (!notificationPreferences.replies.get()) return
         val user = actor() ?: return
         if (request?.isActive == true) return
         val version = generation
         request = viewModelScope.launch {
-            try { val count = replies.unread(user); if (actor() == user && version == generation) mutable.update { it.copy(unread = count) } }
+            try { val count = replies.unread(user); if (notificationPreferences.replies.get() && actor() == user && version == generation) mutable.update { it.copy(unread = count) } }
             catch (c: CancellationException) { throw c } catch (_: Exception) { /* Optional badge never blocks Home. */ }
         }
     }
@@ -72,7 +79,7 @@ class InboxViewModel(
                 if (actor() == user && version == generation) {
                     mutable.update { state ->
                         state.copy(items = state.items.map { if (id == null || it.id == id) it.copy(readAt = it.readAt ?: "read") else it },
-                            unread = replies.unreadCounts.value[user] ?: state.unread, error = null)
+                            unread = if (notificationPreferences.replies.get()) replies.unreadCounts.value[user] ?: state.unread else 0, error = null)
                     }
                 }
             } catch (c: CancellationException) { throw c }

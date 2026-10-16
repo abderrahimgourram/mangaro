@@ -115,6 +115,12 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
         Injekt.importModule(PreferenceModule(this))
         Injekt.importModule(AppModule(this))
         Injekt.importModule(DomainModule())
+        eu.kanade.tachiyomi.data.account.LocalAccountActivities.install(this)
+        tachiyomi.core.common.util.lang.LocalAccountScope.beginTransition()
+        ProcessLifecycleOwner.get().lifecycleScope.launch(Dispatchers.IO) {
+            val auth = Injekt.get<mihon.domain.account.AccountAuth>()
+            if (auth !is eu.kanade.tachiyomi.data.account.SupabaseAccountAuth) Injekt.get<tachiyomi.data.LocalAccountWorkspace>().bind(null)
+        }
 
         // Arabic UI and RTL, with Western digits; never change the device locale.
         AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(eu.kanade.tachiyomi.util.system.MangaroLocale.arabic.toLanguageTag()))
@@ -125,6 +131,7 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
         eu.kanade.tachiyomi.data.updater.MandatoryUpdateController.install(this)
 
         val scope = ProcessLifecycleOwner.get().lifecycleScope
+        eu.kanade.tachiyomi.ui.home.CatalogWorkEvidence.install(this, scope)
         scope.launch(kotlinx.coroutines.Dispatchers.IO) {
             awaitFirstUsableFrame()
             Injekt.get<mihon.domain.account.AccountCloudSync>().start()
@@ -135,6 +142,25 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
         // Signed source rules initialize on each source's first execute/check operation.
         // Do not warm every provider's rule files while the first Activity is starting.
         eu.kanade.tachiyomi.data.library.SourceHealthPersistence.initialize(this, scope)
+
+        // Existing account/state flows only: no polling or new background delivery service.
+        scope.launch(Dispatchers.IO) {
+            awaitFirstUsableFrame()
+            val account = Injekt.get<mihon.domain.account.AccountFoundation>()
+            val preferences = Injekt.get<eu.kanade.tachiyomi.data.notification.NotificationPreferences>()
+            val owners = getSharedPreferences("mangaro_notification_owner", MODE_PRIVATE)
+            kotlinx.coroutines.flow.combine(account.session, preferences.chapters.changes()) { session, enabled -> session to enabled }
+                .collect { (session, enabled) ->
+                    val owner = when (session) {
+                        is mihon.domain.account.AccountSession.Authenticated -> session.profile.userId
+                        mihon.domain.account.AccountSession.Guest -> "device-guest"
+                        else -> return@collect
+                    }
+                    val previousOwner = owners.getString("owner", null)
+                    if (!enabled || previousOwner != owner) Notifications.clearChapterAlerts(this@App)
+                    if (previousOwner != owner) owners.edit().putString("owner", owner).apply()
+                }
+        }
 
         // Show notification to disable Incognito Mode when it's enabled
         basePreferences.incognitoMode.changes()
@@ -149,6 +175,7 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
                         setContentText(stringResource(MR.strings.notification_incognito_text))
                         setSmallIcon(R.drawable.ic_glasses_24dp)
                         setOngoing(true)
+                        setOnlyAlertOnce(true)
 
                         val pendingIntent = PendingIntent.getBroadcast(
                             this@App,
@@ -301,6 +328,7 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
     }
 
     override fun onStart(owner: LifecycleOwner) {
+        eu.kanade.tachiyomi.focus.FocusEngine.background(false)
         SecureActivityDelegate.onApplicationStart()
         ProcessLifecycleOwner.get().lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             Injekt.get<eu.kanade.tachiyomi.data.sigils.SigilRepository>().requestRefresh()
@@ -310,6 +338,7 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
     }
 
     override fun onStop(owner: LifecycleOwner) {
+        eu.kanade.tachiyomi.focus.FocusEngine.background(true)
         SecureActivityDelegate.onApplicationStopped()
         if (usableFrame.isReady) eu.kanade.tachiyomi.source.repair.RuleMaintenanceJob.enqueue(this)
     }

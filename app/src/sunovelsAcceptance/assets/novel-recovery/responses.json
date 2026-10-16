@@ -1,0 +1,256 @@
+[
+  {
+    "url": "https://cenele.com/cont/rene-immortal/%d8%a7%d9%84%d9%83%d8%aa%d8%a7%d8%a8-1-%d8%a7%d9%84%d8%b4%d8%a8%d8%a7%d8%a8-%d8%a7%d9%84%d9%85%d8%aa%d9%88%d8%b3%d8%b7/%d8%a7%d9%84%d9%81%d8%b5%d9%84-1-%d9%85%d8%ba%d8%a7%d8%af%d8%b1%d8%a9-%d8%a7%d9%84%d9%85%d9%86%d8%b2%d9%84/",
+    "method": "GET",
+    "status": 200,
+    "final": "https://cenele.com/cont/rene-immortal/%d8%a7%d9%84%d9%83%d8%aa%d8%a7%d8%a8-1-%d8%a7%d9%84%d8%b4%d8%a8%d8%a7%d8%a8-%d8%a7%d9%84%d9%85%d8%aa%d9%88%d8%b3%d8%b7/%d8%a7%d9%84%d9%81%d8%b5%d9%84-1-%d9%85%d8%ba%d8%a7%d8%af%d8%b1%d8%a9-%d8%a7%d9%84%d9%85%d9%86%d8%b2%d9%84/",
+    "bytes": 373428,
+    "contentType": "text/html; charset=UTF-8",
+    "asset": "fada-chapter0.body.gz"
+  },
+  {
+    "url": "https://cenele.com/cont/rene-immortal/%d8%a7%d9%84%d9%83%d8%aa%d8%a7%d8%a8-1-%d8%a7%d9%84%d8%b4%d8%a8%d8%a7%d8%a8-%d8%a7%d9%84%d9%85%d8%aa%d9%88%d8%b3%d8%b7/%d8%a7%d9%84%d9%81%d8%b5%d9%84-2-%d8%a7%d9%84%d8%ae%d8%a7%d9%84%d8%af%d9%8a%d9%86/",
+    "method": "GET",
+    "status": 200,
+    "final": "https://cenele.com/cont/rene-immortal/%d8%a7%d9%84%d9%83%d8%aa%d8%a7%d8%a8-1-%d8%a7%d9%84%d8%b4%d8%a8%d8%a7%d8%a8-%d8%a7%d9%84%d9%85%d8%aa%d9%88%d8%b3%d8%b7/%d8%a7%d9%84%d9%81%d8%b5%d9%84-2-%d8%a7%d9%84%d8%ae%d8%a7%d9%84%d8%af%d9%8a%d9%86/",
+    "bytes": 339017,
+    "contentType": "text/html; charset=UTF-8",
+    "asset": "fada-chapter1.body.gz"
+  },
+  {
+    "url": "https://cenele.com/cont/rene-immortal/%d8%a7%d9%84%d9%83%d8%aa%d8%a7%d8%a8-1-%d8%a7%d9%84%d8%b4%d8%a8%d8%a7%d8%a8-%d8%a7%d9%84%d9%85%d8%aa%d9%88%d8%b3%d8%b7/%d8%a7%d9%84%d9%81%d8%b5%d9%84-13-%d8%a7%d9%84%d8%b4%d9%8a%d8%ae/",
+    "method": "GET",
+    "status": 200,
+    "final": "https://cenele.com/cont/rene-immortal/%d8%a7%d9%84%d9%83%d8%aa%d8%a7%d8%a8-1-%d8%a7%d9%84%d8%b4%d8%a8%d8%a7%d8%a8-%d8%a7%d9%84%d9%85%d8%aa%d9%88%d8%b3%d8%b7/%d8%a7%d9%84%d9%81%d8%b5%d9%84-13-%d8%a7%d9%84%d8%b4%d9%8a%d8%ae/",
+    "bytes": 332343,
+    "contentType": "text/html; charset=UTF-8",
+    "asset": "fada-chapter12.body.gz"
+  },
+  {
+    "url": "https://cenele.com/wp-admin/admin-ajax.php",
+    "method": "POST",
+    "status": 200,
+    "final": "https://cenele.com/wp-admin/admin-ajax.php",
+    "bytes": 41731,
+    "contentType": "application/json; charset=UTF-8",
+    "asset": "fada-page1.body.gz"
+  },
+  {
+    "url": "https://cenele.com/wp-admin/admin-ajax.php",
+    "method": "POST",
+    "status": 200,
+    "final": "https://cenele.com/wp-admin/admin-ajax.php",
+    "bytes": 2286,
+    "contentType": "application/json; charset=UTF-8",
+    "asset": "fada-volumes.body.gz"
+  },
+  {
+    "url": "https://kolnovel.com/shaag24%d8%a7%d9%84%d9%82%d8%b3-%d8%a7%d9%84%d9%85%d8%ac%d9%86%d9%88%d9%86z435ggye-164168/",
+    "method": "GET",
+    "status": 200,
+    "final": "https://kolnovel.com/shaag24%d8%a7%d9%84%d9%82%d8%b3-%d8%a7%d9%84%d9%85%d8%ac%d9%86%d9%88%d9%86z435ggye-164168/",
+    "bytes": 133881,
+    "contentType": "text/html; charset=UTF-8",
+    "asset": "kol-chapter0.body.gz"
+  },
+  {
+    "url": "https://kolnovel.com/shaag24%d8%a7%d9%84%d9%82%d8%b3-%d8%a7%d9%84%d9%85%d8%ac%d9%86%d9%88%d9%86z435ggye-164167/",
+    "method": "GET",
+    "status": 200,
+    "final": "https://kolnovel.com/shaag24%d8%a7%d9%84%d9%82%d8%b3-%d8%a7%d9%84%d9%85%d8%ac%d9%86%d9%88%d9%86z435ggye-164167/",
+    "bytes": 147822,
+    "contentType": "text/html; charset=UTF-8",
+    "asset": "kol-chapter1.body.gz"
+  },
+  {
+    "url": "https://kolnovel.com/shaag24%d8%a7%d9%84%d9%82%d8%b3-%d8%a7%d9%84%d9%85%d8%ac%d9%86%d9%88%d9%86z435ggye-164324/",
+    "method": "GET",
+    "status": 200,
+    "final": "https://kolnovel.com/shaag24%d8%a7%d9%84%d9%82%d8%b3-%d8%a7%d9%84%d9%85%d8%ac%d9%86%d9%88%d9%86z435ggye-164324/",
+    "bytes": 175187,
+    "contentType": "text/html; charset=UTF-8",
+    "asset": "kol-chapter12.body.gz"
+  },
+  {
+    "url": "https://kolnovel.com/shaag24%d8%a7%d9%84%d9%82%d8%b3-%d8%a7%d9%84%d9%85%d8%ac%d9%86%d9%88%d9%86z435ggye-164312/",
+    "final": "https://kolnovel.com/shaag24%d8%a7%d9%84%d9%82%d8%b3-%d8%a7%d9%84%d9%85%d8%ac%d9%86%d9%88%d9%86z435ggye-164312/",
+    "status": 200,
+    "bytes": 160344,
+    "contentType": "text/html; charset=UTF-8",
+    "asset": "kol-chapter2.body.gz"
+  },
+  {
+    "url": "https://kolnovel.com/shaag24%d8%a7%d9%84%d9%82%d8%b3-%d8%a7%d9%84%d9%85%d8%ac%d9%86%d9%88%d9%86z435ggye-164313/",
+    "final": "https://kolnovel.com/shaag24%d8%a7%d9%84%d9%82%d8%b3-%d8%a7%d9%84%d9%85%d8%ac%d9%86%d9%88%d9%86z435ggye-164313/",
+    "status": 200,
+    "bytes": 154600,
+    "contentType": "text/html; charset=UTF-8",
+    "asset": "kol-chapter3.body.gz"
+  },
+  {
+    "url": "https://seanovel.org/novels/the-birth-of-the-devils-sword/chapters/1",
+    "final": "https://seanovel.org/novels/the-birth-of-the-devils-sword/chapters/1",
+    "status": 200,
+    "bytes": 66058,
+    "contentType": "text/html; charset=utf-8",
+    "asset": "sea-chapter1.body.gz"
+  },
+  {
+    "url": "https://seanovel.org/novels/the-birth-of-the-devils-sword/chapters/13",
+    "final": "https://seanovel.org/novels/the-birth-of-the-devils-sword/chapters/13",
+    "status": 200,
+    "bytes": 69375,
+    "contentType": "text/html; charset=utf-8",
+    "asset": "sea-chapter13.body.gz"
+  },
+  {
+    "url": "https://kolnovel.com/series/%D8%A7%D9%84%D9%82%D8%B3-%D8%A7%D9%84%D9%85%D8%AC%D9%86%D9%88%D9%86/",
+    "final": "https://kolnovel.com/series/%D8%A7%D9%84%D9%82%D8%B3-%D8%A7%D9%84%D9%85%D8%AC%D9%86%D9%88%D9%86/",
+    "status": 200,
+    "bytes": 2311662,
+    "headers": {
+      "Server": "nginx/1.14.1",
+      "Date": "Wed, 14 Oct 2026 20:54:29 GMT",
+      "Content-Type": "text/html; charset=UTF-8",
+      "Transfer-Encoding": "chunked",
+      "Connection": "close",
+      "Vary": "Accept-Encoding",
+      "Link": "<https://kolnovel.com/wp-json/>; rel=\"https://api.w.org/\", <https://kolnovel.com/wp-json/wp/v2/series/38916>; rel=\"alternate\"; title=\"JSON\"; type=\"application/json\", <https://kolnovel.com/?p=38916>; rel=shortlink",
+      "X-Cache": "HIT from Backend",
+      "Strict-Transport-Security": "max-age=31536000",
+      "X-XSS-Protection": "1; mode=block",
+      "X-Content-Type-Options": "nosniff"
+    },
+    "asset": "kol-index.html.gz"
+  },
+  {
+    "url": "https://kolnovel.com/shaag24%d8%a7%d9%84%d9%82%d8%b3-%d8%a7%d9%84%d9%85%d8%ac%d9%86%d9%88%d9%86z435ggye-38923/",
+    "final": "https://kolnovel.com/shaag24%d8%a7%d9%84%d9%82%d8%b3-%d8%a7%d9%84%d9%85%d8%ac%d9%86%d9%88%d9%86z435ggye-38923/",
+    "status": 200,
+    "bytes": 177206,
+    "contentType": "text/html; charset=UTF-8",
+    "asset": "kol-chapter38.body.gz"
+  },
+  {
+    "url": "https://kolnovel.com/shaag24%d8%a7%d9%84%d9%82%d8%b3-%d8%a7%d9%84%d9%85%d8%ac%d9%86%d9%88%d9%86z435ggye-38935/",
+    "final": "https://kolnovel.com/shaag24%d8%a7%d9%84%d9%82%d8%b3-%d8%a7%d9%84%d9%85%d8%ac%d9%86%d9%88%d9%86z435ggye-38935/",
+    "status": 200,
+    "bytes": 168447,
+    "contentType": "text/html; charset=UTF-8",
+    "asset": "kol-chapter39.body.gz"
+  },
+  {
+    "url": "https://kolnovel.com/shaag24%d8%a7%d9%84%d9%82%d8%b3-%d8%a7%d9%84%d9%85%d8%ac%d9%86%d9%88%d9%86z435ggye-38946/",
+    "final": "https://kolnovel.com/shaag24%d8%a7%d9%84%d9%82%d8%b3-%d8%a7%d9%84%d9%85%d8%ac%d9%86%d9%88%d9%86z435ggye-38946/",
+    "status": 200,
+    "bytes": 160591,
+    "contentType": "text/html; charset=UTF-8",
+    "asset": "kol-chapter40.body.gz"
+  },
+  {
+    "url": "https://kolnovel.com/shaag24%d8%a7%d9%84%d9%82%d8%b3-%d8%a7%d9%84%d9%85%d8%ac%d9%86%d9%88%d9%86z435ggye-38949/",
+    "final": "https://kolnovel.com/shaag24%d8%a7%d9%84%d9%82%d8%b3-%d8%a7%d9%84%d9%85%d8%ac%d9%86%d9%88%d9%86z435ggye-38949/",
+    "status": 200,
+    "bytes": 170893,
+    "contentType": "text/html; charset=UTF-8",
+    "asset": "kol-chapter41.body.gz"
+  },
+  {
+    "url": "https://kolnovel.com/shaag24%d8%a7%d9%84%d9%82%d8%b3-%d8%a7%d9%84%d9%85%d8%ac%d9%86%d9%88%d9%86z435ggye-40966/",
+    "final": "https://kolnovel.com/shaag24%d8%a7%d9%84%d9%82%d8%b3-%d8%a7%d9%84%d9%85%d8%ac%d9%86%d9%88%d9%86z435ggye-40966/",
+    "status": 200,
+    "bytes": 178750,
+    "contentType": "text/html; charset=UTF-8",
+    "asset": "kol-chapter200.body.gz"
+  },
+  {
+    "asset": "shadow-slave-index.json.gz",
+    "url": "https://seanovel.org/api/novel/shadow-slave",
+    "contentType": "application/json"
+  },
+  {
+    "asset": "the-birth-of-the-devils-sword-index.json.gz",
+    "url": "https://seanovel.org/api/novel/the-birth-of-the-devils-sword",
+    "contentType": "application/json"
+  },
+  {
+    "asset": "shadow-hack-index.json.gz",
+    "url": "https://seanovel.org/api/novel/shadow-hack",
+    "contentType": "application/json"
+  },
+  {
+    "asset": "kol-main-199.html.gz",
+    "url": "https://kolnovel.com/shaag24%d8%a7%d9%84%d9%82%d8%b3-%d8%a7%d9%84%d9%85%d8%ac%d9%86%d9%88%d9%86z435ggye-41836/",
+    "contentType": "text/html; charset=UTF-8"
+  },
+  {
+    "asset": "kol-main-200.html.gz",
+    "url": "https://kolnovel.com/shaag24%d8%a7%d9%84%d9%82%d8%b3-%d8%a7%d9%84%d9%85%d8%ac%d9%86%d9%88%d9%86z435ggye-41838/",
+    "contentType": "text/html; charset=UTF-8"
+  },
+  {
+    "asset": "kol-main-201.html.gz",
+    "url": "https://kolnovel.com/shaag24%d8%a7%d9%84%d9%82%d8%b3-%d8%a7%d9%84%d9%85%d8%ac%d9%86%d9%88%d9%86z435ggye-41840/",
+    "contentType": "text/html; charset=UTF-8"
+  },
+  {
+    "asset": "kol-main-399.html.gz",
+    "url": "https://kolnovel.com/shaag24%d8%a7%d9%84%d9%82%d8%b3-%d8%a7%d9%84%d9%85%d8%ac%d9%86%d9%88%d9%86z435ggye-42964/",
+    "contentType": "text/html; charset=UTF-8"
+  },
+  {
+    "asset": "kol-main-400.html.gz",
+    "url": "https://kolnovel.com/shaag24%d8%a7%d9%84%d9%82%d8%b3-%d8%a7%d9%84%d9%85%d8%ac%d9%86%d9%88%d9%86z435ggye-42966/",
+    "contentType": "text/html; charset=UTF-8"
+  },
+  {
+    "asset": "kol-main-401.html.gz",
+    "url": "https://kolnovel.com/shaag24%d8%a7%d9%84%d9%82%d8%b3-%d8%a7%d9%84%d9%85%d8%ac%d9%86%d9%88%d9%86z435ggye-42968/",
+    "contentType": "text/html; charset=UTF-8"
+  },
+  {
+    "asset": "kol-main-599.html.gz",
+    "url": "https://kolnovel.com/shaag24%d8%a7%d9%84%d9%82%d8%b3-%d8%a7%d9%84%d9%85%d8%ac%d9%86%d9%88%d9%86z435ggye-43538/",
+    "contentType": "text/html; charset=UTF-8"
+  },
+  {
+    "asset": "kol-main-600.html.gz",
+    "url": "https://kolnovel.com/shaag24%d8%a7%d9%84%d9%82%d8%b3-%d8%a7%d9%84%d9%85%d8%ac%d9%86%d9%88%d9%86z435ggye-43543/",
+    "contentType": "text/html; charset=UTF-8"
+  },
+  {
+    "asset": "kol-main-601.html.gz",
+    "url": "https://kolnovel.com/shaag24%d8%a7%d9%84%d9%82%d8%b3-%d8%a7%d9%84%d9%85%d8%ac%d9%86%d9%88%d9%86z435ggye-43565/",
+    "contentType": "text/html; charset=UTF-8"
+  },
+  {
+    "asset": "kol-main-2000.html.gz",
+    "url": "https://kolnovel.com/shaag24%d8%a7%d9%84%d9%82%d8%b3-%d8%a7%d9%84%d9%85%d8%ac%d9%86%d9%88%d9%86z435ggye-166799/",
+    "contentType": "text/html; charset=UTF-8"
+  },
+  {
+    "asset": "sea-shadow-slave-0.html.gz",
+    "url": "https://seanovel.org/novels/shadow-slave/chapters/0",
+    "contentType": "text/html; charset=utf-8"
+  },
+  {
+    "asset": "sea-shadow-slave-1841.1.html.gz",
+    "url": "https://seanovel.org/novels/shadow-slave/chapters/1841.1",
+    "contentType": "text/html; charset=utf-8"
+  },
+  {
+    "asset": "sea-shadow-hack-1.html.gz",
+    "url": "https://seanovel.org/novels/shadow-hack/chapters/1",
+    "contentType": "text/html; charset=utf-8"
+  },
+  {
+    "asset": "kol-maria-chapter.html.gz",
+    "url": "https://kolnovel.com/shaag24the-empty-box-and-zeroth-mariaz435ggye-181666/",
+    "contentType": "text/html; charset=UTF-8"
+  },
+  {
+    "asset": "kol-maria-index.html.gz",
+    "url": "https://kolnovel.com/series/the-empty-box-and-zeroth-maria/",
+    "contentType": "text/html"
+  }
+]

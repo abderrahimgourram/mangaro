@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.data.backup.restore.restorers
 
+import tachiyomi.data.accountOperation
 import app.cash.sqldelight.async.coroutines.awaitAsList
 import app.cash.sqldelight.async.coroutines.awaitAsOne
 import app.cash.sqldelight.async.coroutines.awaitAsOneOrNull
@@ -61,7 +62,7 @@ class MangaRestorer(
         backupManga: BackupManga,
         backupCategories: List<BackupCategory>,
     ) {
-        database.transaction {
+        database.accountOperation {
             val dbManga = findExistingManga(backupManga)
             val manga = backupManga.getMangaImpl()
             val restoredManga = if (dbManga == null) {
@@ -192,7 +193,7 @@ class MangaRestorer(
         this.copy(id = 0L, mangaId = 0L, dateFetch = 0L, dateUpload = 0L, lastModifiedAt = 0L, version = 0L)
 
     private suspend fun insertNewChapters(chapters: List<Chapter>) {
-        database.transaction {
+        database.accountOperation {
             chapters.forEach { chapter ->
                 database.chaptersQueries.insert(
                     chapter.mangaId,
@@ -215,7 +216,7 @@ class MangaRestorer(
     }
 
     private suspend fun updateExistingChapters(chapters: List<Chapter>) {
-        database.transaction {
+        database.accountOperation {
             chapters.forEach { chapter ->
                 database.chaptersQueries.update(
                     mangaId = null,
@@ -315,7 +316,7 @@ class MangaRestorer(
         }
 
         if (mangaCategoriesToUpdate.isNotEmpty()) {
-            database.transaction {
+            database.accountOperation {
                 database.mangas_categoriesQueries.deleteMangaCategoryByMangaId(manga.id)
                 mangaCategoriesToUpdate.forEach { (mangaId, categoryId) ->
                     database.mangas_categoriesQueries.insert(mangaId, categoryId)
@@ -356,7 +357,7 @@ class MangaRestorer(
         }
 
         if (toUpdate.isEmpty()) return
-        database.transaction {
+        database.accountOperation {
             toUpdate.forEach {
                 database.historyQueries.upsert(
                     it.chapterId,
@@ -399,7 +400,7 @@ class MangaRestorer(
         }
 
         if (existingTracks.isEmpty()) return
-        database.transaction {
+        database.accountOperation {
             existingTracks.forEach { track ->
                 database.manga_syncQueries.update(
                     track.mangaId,

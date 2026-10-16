@@ -63,12 +63,12 @@ class DiscoveryCategoryGridViewModel(
 
     init {
         viewModelScope.launch {
-            PreferredMangaVariants.changes.collectLatest { _state.update { it.copy(items=GroupDiscoveryItems.group(it.items)) } }
+            PreferredMangaVariants.changes.collectLatest { _state.update { it.copy(items=GroupDiscoveryItems.group(it.items, category.selectionContext())) } }
         }
         viewModelScope.launch {
             var failed = emptySet<Long>()
             mihon.domain.source.health.SourceHealthMonitor.shared.states.collectLatest { states ->
-                _state.update { current -> current.copy(items = GroupDiscoveryItems.group(current.items)) }
+                _state.update { current -> current.copy(items = GroupDiscoveryItems.group(current.items, category.selectionContext())) }
                 val nowFailed = states.filterValues { it.failures > 0 || it.state == mihon.domain.source.health.SourceHealthMonitor.State.UNAVAILABLE }.keys
                 if ((failed - nowFailed).isNotEmpty() && sourcesList.isNotEmpty()) loadInitialPage(isRefresh = true, hasSeedItems = _state.value.items.isNotEmpty())
                 failed = nowFailed
@@ -133,7 +133,7 @@ class DiscoveryCategoryGridViewModel(
             val currentItems = if (isRefresh) _state.value.items.filter {
                 mihon.domain.source.health.SourceHealthMonitor.shared.health(it.sourceId).state == mihon.domain.source.health.SourceHealthMonitor.State.DEGRADED
             } else _state.value.items
-            val combinedItems = GroupDiscoveryItems.group(currentItems + batchResult.items).filter { mihon.domain.source.health.SourceHealthMonitor.shared.discoverable(it.sourceId) }
+            val combinedItems = GroupDiscoveryItems.group(currentItems + batchResult.items, category.selectionContext()).filter { mihon.domain.source.health.SourceHealthMonitor.shared.discoverable(it.sourceId) }
             val hasMoreAny = sourceHasMoreMap.values.any { it }
 
             _state.update {
@@ -165,7 +165,7 @@ class DiscoveryCategoryGridViewModel(
             sourcePageMap.putAll(batchResult.pageMap)
             sourceHasMoreMap.putAll(batchResult.hasMoreMap)
 
-            val newCombined = GroupDiscoveryItems.group(_state.value.items + batchResult.items)
+            val newCombined = GroupDiscoveryItems.group(_state.value.items + batchResult.items, category.selectionContext())
             val hasMoreAny = sourceHasMoreMap.values.any { it }
 
             _state.update {
@@ -222,7 +222,7 @@ class DiscoveryCategoryGridViewModel(
                 if (items.isNotEmpty()) perSourceItems.add(items)
             }
 
-            val interleaved = GroupDiscoveryItems.group(interleaveSources(perSourceItems))
+            val interleaved = GroupDiscoveryItems.group(interleaveSources(perSourceItems), category.selectionContext())
 
             CategoryBatchResult(
                 pageMap = newPageMap,

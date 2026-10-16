@@ -50,8 +50,9 @@ class NotificationCenterScreen : Screen() {
         val model = viewModel<InboxViewModel>(key = "notification-center")
         val state by model.state.collectAsState()
         val session by model.session.collectAsState()
-        val work by model.work.notices.collectAsState()
+        val allWork by model.work.notices.collectAsState()
         val actor = (session as? AccountSession.Authenticated)?.profile?.userId
+        val work = allWork.filter { it.owner == actor }
         val privateState = state.takeIf { it.owner == actor }
         var tab by rememberSaveable { mutableIntStateOf(0) }
         var workLimit by rememberSaveable { mutableIntStateOf(20) }
@@ -73,7 +74,7 @@ class NotificationCenterScreen : Screen() {
                 }) { Icon(Icons.Outlined.DoneAll, "تحديد الكل كمقروء", tint = MangaroDesignSystem.GoldPrimary) }
             }
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("تحديثات الأعمال", "الردود").forEachIndexed { index, title ->
+                listOf("الفصول الجديدة", "الردود").forEachIndexed { index, title ->
                     FilterChip(selected = tab == index, onClick = { tab = index }, label = { Text(title) }, modifier = Modifier.weight(1f))
                 }
             }
@@ -98,7 +99,7 @@ class NotificationCenterScreen : Screen() {
                     val inbox = privateState ?: InboxState()
                     if (inbox.loading) item { LinearProgressIndicator(Modifier.fillMaxWidth(), color = MangaroDesignSystem.GoldPrimary) }
                     if (inbox.loaded && inbox.items.isEmpty() && inbox.error == null) item { QuietState("لا توجد ردود جديدة") }
-                    inbox.error?.let { message -> item { QuietState(message); TextButton(onClick = { model.load() }) { Text("إعادة المحاولة") } } }
+                    inbox.error?.let { message -> item { eu.kanade.presentation.components.MangaroErrorState(message, { model.load() }) } }
                     items(inbox.items, key = { it.id }) { notice ->
                         InboxRow(unread = notice.readAt == null, onClick = {
                             if (!navigating) {

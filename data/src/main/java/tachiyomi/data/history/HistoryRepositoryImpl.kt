@@ -1,5 +1,7 @@
 package tachiyomi.data.history
 
+import tachiyomi.data.accountOperation
+
 import mihon.domain.account.LocalCloudChanges
 
 import app.cash.sqldelight.async.coroutines.awaitAsList
@@ -33,43 +35,59 @@ class HistoryRepositoryImpl(
     }
 
     override suspend fun getLastHistory(): HistoryWithRelations? {
-        return database.historyViewQueries
+        return database.accountOperation {
+        return@accountOperation database.historyViewQueries
             .getLatestHistory(HistoryMapper::mapHistoryWithRelations)
             .awaitAsOneOrNull()
+
+        }
     }
 
     override suspend fun getTotalReadDuration(): Long {
-        return database.historyQueries
+        return database.accountOperation {
+        return@accountOperation database.historyQueries
             .getReadDuration()
             .awaitAsOne()
+
+        }
     }
 
     override suspend fun getHistoryByMangaId(mangaId: Long): List<History> {
-        return database.historyQueries
+        return database.accountOperation {
+        return@accountOperation database.historyQueries
             .getHistoryByMangaId(mangaId, HistoryMapper::mapHistory)
             .awaitAsList()
+
+        }
     }
 
     override suspend fun resetHistory(historyId: Long) {
+        return database.accountOperation {
         try {
             database.historyQueries.resetHistoryById(historyId)
             LocalCloudChanges.changed(LocalCloudChanges.Kind.HISTORY_ALL)
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, throwable = e)
         }
+
+        }
     }
 
     override suspend fun resetHistoryByMangaId(mangaId: Long) {
+        return database.accountOperation {
         try {
             database.historyQueries.resetHistoryByMangaId(mangaId)
             LocalCloudChanges.changed(LocalCloudChanges.Kind.HISTORY_MANGA, mangaId)
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, throwable = e)
         }
+
+        }
     }
 
     override suspend fun deleteAllHistory(): Boolean {
-        return try {
+        return database.accountOperation {
+        return@accountOperation try {
             database.historyQueries.removeAllHistory()
             LocalCloudChanges.changed(LocalCloudChanges.Kind.HISTORY_ALL)
             true
@@ -77,9 +95,12 @@ class HistoryRepositoryImpl(
             logcat(LogPriority.ERROR, throwable = e)
             false
         }
+
+        }
     }
 
     override suspend fun upsertHistory(historyUpdate: HistoryUpdate) {
+        return database.accountOperation {
         try {
             database.historyQueries.upsert(
                 historyUpdate.chapterId,
@@ -89,6 +110,8 @@ class HistoryRepositoryImpl(
             LocalCloudChanges.changed(LocalCloudChanges.Kind.HISTORY_CHAPTER, historyUpdate.chapterId)
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, throwable = e)
+        }
+
         }
     }
 }

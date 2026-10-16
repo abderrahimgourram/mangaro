@@ -1,5 +1,12 @@
 # Mangaro Novels — local integrated development
 
+**SeaNovel repair, 2026-10-13:** current source metadata, chapter ownership/index
+validation and safe cache revalidation are described in
+[SOURCE_UPDATES.md](SOURCE_UPDATES.md). This supersedes older title-only search,
+latest-ordering and disabled-feed descriptions below. Source-side fixtures and
+Debug compilation were performed; no Android/device tests were run for this repair.
+The other three adapters, reader UI and existing offline/progress storage remain.
+
 Entries: Home shelf/drawer → الروايات, and the existing Library/Downloads/History content selectors. Available in the R8 Release build for local verification; no APK was published. VersionName/versionCode, manga source identities, publisher, image reader and account/XP/achievement logic are unchanged. Novel providers remain lazy; optional Home discovery starts after a rendered frame and never gates readiness.
 
 ## Implementation

@@ -29,7 +29,7 @@ class ReplyInbox(private val auth: SupabaseAccountAuth?) {
             val response = backend.communityClient.postgrest.rpc("reply_inbox_page", buildJsonObject {
                 put("p_before_created", cursor?.createdAt); put("p_before_id", cursor?.id)
             }).decodeAs<Page>()
-            ReplyPage(response.items.map { row ->
+            ReplyPage(response.items.filter { it.actor_id != user }.distinctBy { it.id }.map { row ->
                 val custom = row.avatar_path?.takeIf { it == "${row.actor_id}/avatar.webp" }?.let {
                     backend.communityClient.storage.from("avatars").publicUrl(it) + "?v=" + row.author_updated_at.orEmpty()
                 }

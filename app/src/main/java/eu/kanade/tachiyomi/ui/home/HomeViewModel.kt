@@ -1,12 +1,10 @@
 package eu.kanade.tachiyomi.ui.home
 
-import android.app.Application
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import eu.kanade.domain.source.interactor.GetEnabledSources
 import eu.kanade.domain.source.service.SourcePreferences
 import eu.kanade.tachiyomi.data.download.DownloadManager
-import eu.kanade.tachiyomi.data.notification.DiscoveryWorkDeduplicator
 import eu.kanade.tachiyomi.source.CatalogueSource
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.online.HttpSource
@@ -14,7 +12,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -28,7 +26,12 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.isActive
+import tachiyomi.core.common.util.system.logcat
+import logcat.LogPriority
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import mihon.domain.manga.model.toDomainManga
@@ -42,6 +45,7 @@ import tachiyomi.domain.history.model.HistoryWithRelations
 import tachiyomi.domain.library.model.LibraryManga
 import tachiyomi.domain.manga.interactor.NetworkToLocalManga
 import tachiyomi.domain.manga.model.Manga
+import tachiyomi.domain.manga.service.CatalogSelectionContext
 import tachiyomi.domain.manga.model.MangaCover
 import tachiyomi.domain.manga.model.asMangaCover
 import tachiyomi.domain.source.service.SourceManager
@@ -59,23 +63,52 @@ class HomeViewModel(
     private val getSourceCapabilities: GetSourceCapabilities = GetSourceCapabilities(),
     private val getSourceDiscovery: GetSourceDiscovery = GetSourceDiscovery(getSourceCapabilities),
 ) : ViewModel() {
+    private val accountScope = kotlinx.coroutines.CoroutineScope(viewModelScope.coroutineContext + tachiyomi.core.common.util.lang.LocalAccountScope.context())
+
 
     // Retain only bounded discovery presentation data across Home instances in this process.
     // History is always resolved by its existing local database subscription.
     private val _state = MutableStateFlow(cachedDiscovery ?: HomeState())
     companion object {
-        @Volatile private var cachedDiscovery: HomeState? = null
+        private val byOwner = java.util.concurrent.ConcurrentHashMap<String, HomeState>()
+        private val atOwner = java.util.concurrent.ConcurrentHashMap<String, Long>()
+        private var cachedDiscovery: HomeState?
+            get() = byOwner[tachiyomi.core.common.util.lang.LocalAccountScope.fileOwner()]
+            set(value) { val owner = tachiyomi.core.common.util.lang.LocalAccountScope.fileOwner(); if (value == null) byOwner.remove(owner) else byOwner[owner] = value }
+        private var cachedDiscoveryAt: Long
+            get() = atOwner[tachiyomi.core.common.util.lang.LocalAccountScope.fileOwner()] ?: 0L
+            set(value) { atOwner[tachiyomi.core.common.util.lang.LocalAccountScope.fileOwner()] = value }
     }
     val state: StateFlow<HomeState> = _state.asStateFlow()
 
     private var allDiscoveryItems = mutableListOf<HomeDiscoveryItem>()
     private val sourcePageMap = mutableMapOf<Long, Int>()
     private val hasMorePagesMap = mutableMapOf<Long, Boolean>()
+    private val discoveryCache = HomeDiscoveryCache(Injekt.get(), Injekt.get())
+    private val cacheReady = CompletableDeferred<Unit>()
+    private var cachedSources = cachedDiscovery?.installedSources?.map { it.id }.orEmpty()
     private var discoveryJob: Job? = null
     private var paginationJob: Job? = null
 
     init {
-        viewModelScope.launch {
+        accountScope.launch(Dispatchers.IO) {
+            try {
+                if (cachedDiscovery == null) discoveryCache.read()?.let { snapshot ->
+                    cachedSources = snapshot.sources
+                    cachedDiscoveryAt = snapshot.freshAt
+                    val popular = snapshot.sections[DiscoveryCategory.POPULAR].orEmpty()
+                    _state.update { it.copy(
+                        discoveryFeatured = popular.firstOrNull(), popularManga = popular.drop(1),
+                        discoveryLatest = popular.drop(1),
+                        latestManga = snapshot.sections[DiscoveryCategory.LATEST].orEmpty(),
+                        newManga = snapshot.sections[DiscoveryCategory.NEW].orEmpty(),
+                        completedManga = snapshot.sections[DiscoveryCategory.COMPLETED].orEmpty(),
+                        popularResolved = true, latestResolved = true, newResolved = true, completedResolved = true,
+                    ) }
+                }
+            } finally { cacheReady.complete(Unit) }
+        }
+        accountScope.launch {
             state.collectLatest { current ->
                 if (current.initialHomeReady) {
                     cachedDiscovery = current.copy(
@@ -86,20 +119,19 @@ class HomeViewModel(
                 }
             }
         }
-        viewModelScope.launch {
+        accountScope.launch {
             PreferredMangaVariants.changes.collectLatest {
                 withContext(Dispatchers.Default) {
                     _state.update { current ->
-                        val combined = GroupDiscoveryItems.group(current.popularManga + listOfNotNull(current.discoveryFeatured))
-                        val featured = GroupDiscoveryItems.findSelectedWork(combined, current.discoveryFeatured) ?: combined.firstOrNull()
-                        current.copy(discoveryFeatured=featured, popularManga=combined.filterNot { it.mangaId == featured?.mangaId },
-                            latestManga=GroupDiscoveryItems.group(current.latestManga), newManga=GroupDiscoveryItems.group(current.newManga),
-                            completedManga=GroupDiscoveryItems.group(current.completedManga), discoveryLatest=GroupDiscoveryItems.group(current.discoveryLatest))
+                        val projection = GroupDiscoveryItems.popularProjection(current.popularManga + listOfNotNull(current.discoveryFeatured), current.discoveryFeatured)
+                        current.copy(discoveryFeatured=projection.featured, popularManga=projection.items,
+                            latestManga=GroupDiscoveryItems.group(current.latestManga, CatalogSelectionContext.LATEST), newManga=GroupDiscoveryItems.group(current.newManga),
+                            completedManga=GroupDiscoveryItems.group(current.completedManga), discoveryLatest=GroupDiscoveryItems.group(current.discoveryLatest, CatalogSelectionContext.LATEST))
                     }
                 }
             }
         }
-        viewModelScope.launch {
+        accountScope.launch {
             var unavailable = emptySet<Long>()
             var previousHealth: Map<Long, mihon.domain.source.health.SourceHealthMonitor.State>? = null
             mihon.domain.source.health.SourceHealthMonitor.shared.states.collectLatest { health ->
@@ -109,14 +141,14 @@ class HomeViewModel(
                 if (statuses != previousHealth) {
                     withContext(Dispatchers.Default) {
                         _state.update { current ->
-                            val featured = GroupDiscoveryItems.group(listOfNotNull(current.discoveryFeatured)).firstOrNull()
+                            val projection = GroupDiscoveryItems.popularProjection(current.popularManga + listOfNotNull(current.discoveryFeatured), current.discoveryFeatured)
                             current.copy(
-                                discoveryFeatured = featured,
-                                popularManga = GroupDiscoveryItems.group(current.popularManga + listOfNotNull(current.discoveryFeatured)).filterNot { it.mangaId == featured?.mangaId },
-                                latestManga = GroupDiscoveryItems.group(current.latestManga),
+                                discoveryFeatured = projection.featured,
+                                popularManga = projection.items,
+                                latestManga = GroupDiscoveryItems.group(current.latestManga, CatalogSelectionContext.LATEST),
                                 newManga = GroupDiscoveryItems.group(current.newManga),
                                 completedManga = GroupDiscoveryItems.group(current.completedManga),
-                                discoveryLatest = GroupDiscoveryItems.group(current.discoveryLatest),
+                                discoveryLatest = GroupDiscoveryItems.group(current.discoveryLatest, CatalogSelectionContext.LATEST),
                             )
                         }
                     }
@@ -124,14 +156,14 @@ class HomeViewModel(
                 }
                 allDiscoveryItems.removeAll { it.sourceId in hidden }
                 val failed = health.filterValues { it.failures > 0 || it.state == mihon.domain.source.health.SourceHealthMonitor.State.UNAVAILABLE }.keys
-                if ((unavailable - failed).isNotEmpty()) {
+                if ((unavailable - failed).isNotEmpty() && discoveryJob?.isActive != true) {
                     loadDiscoveryContent(_state.value.installedSources.mapNotNull { sourceManager.get(it.id) as? CatalogueSource }, isRefresh = true)
                 }
                 unavailable = failed
             }
         }
         // Collect history
-        viewModelScope.launch {
+        accountScope.launch {
             getHistory.subscribe("").map { history -> history.distinctBy { it.mangaId }.take(6) }
                 .distinctUntilChanged().flowOn(Dispatchers.Default).collectLatest { history ->
                 _state.update { it.copy(recentHistory = history, continueReadingResolved = true) }
@@ -139,18 +171,21 @@ class HomeViewModel(
         }
 
         // Collect active downloads
-        viewModelScope.launch {
+        accountScope.launch {
             downloadManager.queueState.collectLatest { queue ->
                 _state.update { it.copy(activeDownloadsCount = queue.size) }
             }
         }
 
         // Bundled sources are available independently of legacy extension filters.
-        viewModelScope.launch {
+        accountScope.launch {
             // An uninitialized source registry's empty emission is not a resolved empty Home.
             sourceManager.sources.combine(sourceManager.isInitialized) { sources, initialized ->
                 sources.takeIf { initialized }
-            }.filterNotNull().collectLatest { sources ->
+            }.filterNotNull().distinctUntilChanged { old, new ->
+                old.map { it.id }.toSet() == new.map { it.id }.toSet()
+            }.collectLatest { sources ->
+                cacheReady.await()
                 val onlineSources = sources
                     .filterIsInstance<HttpSource>()
                     .distinctBy { it.id }
@@ -161,13 +196,12 @@ class HomeViewModel(
 
                 _state.update { it.copy(installedSources = sourceItems) }
 
-                if (discoveryJob == null || (_state.value.popularManga.isEmpty() &&
-                    _state.value.latestManga.isEmpty() &&
-                    _state.value.completedManga.isEmpty() &&
-                    _state.value.newManga.isEmpty())
-                ) {
-                    loadDiscoveryContent(onlineSources)
-                }
+                val sameSources = cachedSources.toSet() == sourceItems.map { it.id }.toSet()
+                val fresh = System.currentTimeMillis() - cachedDiscoveryAt in 0..300_000L
+                val hasCards = _state.value.popularManga.isNotEmpty() || _state.value.discoveryFeatured != null || _state.value.latestManga.isNotEmpty()
+                if (!sameSources || !fresh || !hasCards) loadDiscoveryContent(onlineSources)
+                cachedSources = sourceItems.map { it.id }
+
             }
         }
     }
@@ -176,10 +210,10 @@ class HomeViewModel(
         val previousJob = discoveryJob
         previousJob?.cancel()
         paginationJob?.cancel()
-        discoveryJob = viewModelScope.launch {
+        discoveryJob = accountScope.launch {
             previousJob?.cancelAndJoin()
 
-            val hasExistingContent = _state.value.popularManga.isNotEmpty() ||
+            val hasExistingContent = _state.value.discoveryFeatured != null || _state.value.popularManga.isNotEmpty() ||
                 _state.value.latestManga.isNotEmpty() ||
                 _state.value.completedManga.isNotEmpty() ||
                 _state.value.newManga.isNotEmpty()
@@ -198,212 +232,157 @@ class HomeViewModel(
                         completedManga = emptyList(),
                         discoveryLatest = emptyList(),
                         isDiscoveryLoading = false,
-                        popularResolved = true, latestResolved = true, newResolved = true,
+                        popularResolved = true, latestResolved = true, newResolved = true, completedResolved = true,
                     )
                 }
                 return@launch
             }
 
-            val payload = fetchSourceBatch(eligibleSources)
-            updateDiscoveryState(payload, isFinal = true)
-            _state.update { it.copy(popularResolved = true, latestResolved = true, newResolved = true) }
+            try {
+                val payload = fetchSourceBatch(eligibleSources)
+                updateDiscoveryState(payload, isFinal = true)
+                cachedDiscoveryAt = if (payload.isFresh) System.currentTimeMillis() else 0L
+                try { discoveryCache.write(_state.value, cachedDiscoveryAt) }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (error: Exception) { logcat(LogPriority.WARN, error) { "Home presentation cache unavailable" } }
+            } finally {
+                if (kotlinx.coroutines.currentCoroutineContext().isActive) {
+                    _state.update { it.copy(isDiscoveryLoading = false, popularResolved = true, latestResolved = true, newResolved = true, completedResolved = true) }
+                }
+            }
         }
     }
 
-    private suspend fun fetchSourceBatch(batchSources: List<CatalogueSource>): DiscoveryBatchResultPayload {
-        return withContext(Dispatchers.IO) { kotlinx.coroutines.supervisorScope {
-            // Home's first drawable shell never waits for discovery or competes with it.
+    private suspend fun fetchSourceBatch(batchSources: List<CatalogueSource>): DiscoveryBatchResultPayload =
+        withContext(Dispatchers.IO) { kotlinx.coroutines.supervisorScope {
             (Injekt.get<android.content.Context>().applicationContext as? eu.kanade.tachiyomi.App)?.awaitFirstUsableFrame()
-            val semaphore = Semaphore(2)
-            val capabilitiesBySource = batchSources.associate { it.id to getSourceCapabilities(it) }
-            _state.update { it.copy(
-                latestResolved = it.latestResolved || capabilitiesBySource.values.none { c -> c.supportsLatest == CapabilitySupport.SUPPORTED },
-                newResolved = it.newResolved || capabilitiesBySource.values.none { c -> c.supportsNewFilter == CapabilitySupport.SUPPORTED },
-            ) }
-
-            val pendingInitial = mapOf(
-                DiscoveryCategory.POPULAR to java.util.concurrent.atomic.AtomicInteger(batchSources.size),
-                DiscoveryCategory.LATEST to java.util.concurrent.atomic.AtomicInteger(capabilitiesBySource.values.count { it.supportsLatest == CapabilitySupport.SUPPORTED }),
-                DiscoveryCategory.NEW to java.util.concurrent.atomic.AtomicInteger(capabilitiesBySource.values.count { it.supportsNewFilter == CapabilitySupport.SUPPORTED }),
-            )
-            val results = batchSources.map { source ->
-                async {
-                    try {
-                        semaphore.withPermit {
-                            val capabilities = capabilitiesBySource.getValue(source.id)
-                            val categories = buildList {
-                                add(DiscoveryCategory.POPULAR)
-                                if (capabilities.supportsLatest == CapabilitySupport.SUPPORTED) add(DiscoveryCategory.LATEST)
-                                if (capabilities.supportsNewFilter == CapabilitySupport.SUPPORTED) add(DiscoveryCategory.NEW)
-                                if (capabilities.supportsCompletedFilter == CapabilitySupport.SUPPORTED) add(DiscoveryCategory.COMPLETED)
-                            }
-                            categories.map { category ->
-                                getSourceDiscovery(source, category, page = 1).also {
-                                    if (category != DiscoveryCategory.COMPLETED) {
-                                        val allResolved = pendingInitial.getValue(category).decrementAndGet() == 0
-                                        publishInitialSection(it, allResolved)
-                                    }
-                                }
-                            }
-                        }
-                    } catch (e: CancellationException) { throw e }
-                    catch (_: Exception) { emptyList() }
+            // Limit request work, not entire source pipelines or chapter verification.
+            val requests = Semaphore(3)
+            val publication = Mutex()
+            val fresh = java.util.concurrent.atomic.AtomicBoolean(true)
+            val capabilities = batchSources.associate { it.id to getSourceCapabilities(it) }
+            val categories = DiscoveryCategory.entries.associateWith { category ->
+                batchSources.filter { source ->
+                    val c = capabilities.getValue(source.id)
+                    when (category) {
+                        DiscoveryCategory.POPULAR -> true
+                        DiscoveryCategory.LATEST -> c.supportsLatest == CapabilitySupport.SUPPORTED
+                        DiscoveryCategory.NEW -> c.supportsNewFilter == CapabilitySupport.SUPPORTED
+                        DiscoveryCategory.COMPLETED -> c.supportsCompletedFilter == CapabilitySupport.SUPPORTED
+                    }
                 }
-            }.awaitAll().flatten()
-            val popularResults = results.filter { it.category == DiscoveryCategory.POPULAR }
-            val latestResults = results.filter { it.category == DiscoveryCategory.LATEST }
-            val completedResults = results.filter { it.category == DiscoveryCategory.COMPLETED }
-            val newResults = results.filter { it.category == DiscoveryCategory.NEW }
-
-            val perSourcePopular = mutableListOf<List<HomeDiscoveryItem>>()
+            }
+            val initial = _state.value
+            val sections = mapOf(
+                DiscoveryCategory.POPULAR to (listOfNotNull(initial.discoveryFeatured) + initial.popularManga),
+                DiscoveryCategory.LATEST to initial.latestManga,
+                DiscoveryCategory.NEW to initial.newManga,
+                DiscoveryCategory.COMPLETED to initial.completedManga,
+            ).mapValues { (_, items) ->
+                items.flatMap { listOf(it) + it.alternatives }.distinctBy { it.mangaId }
+                    .groupBy { it.sourceId }.toMutableMap()
+            }
+            val remaining = categories.mapValues { it.value.size }.toMutableMap()
             val pageUpdates = mutableMapOf<Long, Int>()
             val hasMoreUpdates = mutableMapOf<Long, Boolean>()
-
-            for (res in popularResults) {
-                pageUpdates[res.sourceId] = res.page
-                hasMoreUpdates[res.sourceId] = res.hasNextPage
-                if (res.items.isEmpty()) continue
-                val domainMangas = res.items.take(12).map { it.toDomainManga() }
-                val localMangas = networkToLocalManga(domainMangas).let { eu.kanade.tachiyomi.source.internal.util.DiscoveryChapterGate.filter(it) }
-                val items = localMangas.mapIndexed { idx, manga ->
-                    HomeDiscoveryItem(
-                        mangaId = manga.id,
-                        title = manga.title,
-                        coverData = manga.also { PreferredMangaVariants.remember(it) }.asMangaCover(),
-                        sourceId = res.sourceId,
-                        sourceName = res.sourceName,
-                        url = manga.url,
-                    )
-                }
-                if (items.isNotEmpty()) perSourcePopular.add(items)
-            }
-
-            val perSourceLatest = mutableListOf<List<HomeDiscoveryItem>>()
-            for (res in latestResults) {
-                pageUpdates[res.sourceId] = res.page
-                hasMoreUpdates[res.sourceId] = res.hasNextPage
-                if (res.items.isEmpty()) continue
-                val domainMangas = res.items.take(12).map { it.toDomainManga() }
-                val localMangas = networkToLocalManga(domainMangas).let { eu.kanade.tachiyomi.source.internal.util.DiscoveryChapterGate.filter(it) }
-                val items = localMangas.mapIndexed { idx, manga ->
-                    HomeDiscoveryItem(
-                        mangaId = manga.id,
-                        title = manga.title,
-                        coverData = manga.also { PreferredMangaVariants.remember(it) }.asMangaCover(),
-                        sourceId = res.sourceId,
-                        sourceName = res.sourceName,
-                        url = manga.url,
-                    )
-                }
-                if (items.isNotEmpty()) perSourceLatest.add(items)
-            }
-
-            val perSourceCompleted = mutableListOf<List<HomeDiscoveryItem>>()
-            for (res in completedResults) {
-                pageUpdates[res.sourceId] = res.page
-                hasMoreUpdates[res.sourceId] = res.hasNextPage
-                if (res.items.isEmpty()) continue
-                val domainMangas = res.items.take(12).map { it.toDomainManga() }
-                val localMangas = networkToLocalManga(domainMangas).let { eu.kanade.tachiyomi.source.internal.util.DiscoveryChapterGate.filter(it) }
-                val items = localMangas.mapIndexed { idx, manga ->
-                    HomeDiscoveryItem(
-                        mangaId = manga.id,
-                        title = manga.title,
-                        coverData = manga.also { PreferredMangaVariants.remember(it) }.asMangaCover(),
-                        sourceId = res.sourceId,
-                        sourceName = res.sourceName,
-                        url = manga.url,
-                    )
-                }
-                if (items.isNotEmpty()) perSourceCompleted.add(items)
-            }
-
-            val perSourceNew = mutableListOf<List<HomeDiscoveryItem>>()
-            for (res in newResults) {
-                pageUpdates[res.sourceId] = res.page
-                hasMoreUpdates[res.sourceId] = res.hasNextPage
-                if (res.items.isEmpty()) continue
-                val domainMangas = res.items.take(12).map { it.toDomainManga() }
-                val localMangas = networkToLocalManga(domainMangas).let { eu.kanade.tachiyomi.source.internal.util.DiscoveryChapterGate.filter(it) }
-                val items = localMangas.mapIndexed { idx, manga ->
-                    HomeDiscoveryItem(
-                        mangaId = manga.id,
-                        title = manga.title,
-                        coverData = manga.also { PreferredMangaVariants.remember(it) }.asMangaCover(),
-                        sourceId = res.sourceId,
-                        sourceName = res.sourceName,
-                        url = manga.url,
-                    )
-                }
-                if (items.isNotEmpty()) perSourceNew.add(items)
-            }
-
-            val interleavedPopular = interleaveSources(perSourcePopular).distinctBy { "${it.sourceId}_${it.mangaId}" }
-            val interleavedLatest = interleaveSources(perSourceLatest).distinctBy { "${it.sourceId}_${it.mangaId}" }
-            val interleavedNew = interleaveSources(perSourceNew).distinctBy { "${it.sourceId}_${it.mangaId}" }
-            val interleavedCompleted = interleaveSources(perSourceCompleted).distinctBy { "${it.sourceId}_${it.mangaId}" }
-
-            DiscoveryBatchResultPayload(
-                pageMapUpdates = pageUpdates,
-                hasMoreMapUpdates = hasMoreUpdates,
-                popularItems = interleavedPopular,
-                latestItems = interleavedLatest,
-                newItems = interleavedNew,
-                completedItems = interleavedCompleted,
+            fun items(category: DiscoveryCategory): List<HomeDiscoveryItem> = interleaveSources(
+                categories.getValue(category).map { sections.getValue(category)[it.id].orEmpty() },
             )
+            suspend fun publish(category: DiscoveryCategory, sourceId: Long, incoming: List<HomeDiscoveryItem>, complete: Boolean) {
+                publication.withLock {
+                    // A failed source retains its last useful cards; confirmed healthy empties replace them.
+                    val degraded = mihon.domain.source.health.SourceHealthMonitor.shared.health(sourceId).state != mihon.domain.source.health.SourceHealthMonitor.State.HEALTHY
+                    val sourceSection = sections.getValue(category)
+                    if (!complete && incoming.isNotEmpty()) {
+                        // Keep existing cards throughout verification; replace only on a settled result.
+                        val previous = sourceSection[sourceId].orEmpty()
+                        val replacements = incoming.associateBy { it.mangaId }
+                        sourceSection[sourceId] = previous.map { replacements[it.mangaId] ?: it } +
+                            incoming.filterNot { item -> previous.any { it.mangaId == item.mangaId } }
+                    } else if (complete && (incoming.isNotEmpty() || !degraded)) sourceSection[sourceId] = incoming
+                    if (complete) remaining[category] = remaining.getValue(category) - 1
+                    val grouped = GroupDiscoveryItems.group(items(category), category.selectionContext())
+                    _state.update { current ->
+                        val resolved = grouped.isNotEmpty() || remaining.getValue(category) == 0
+                        when (category) {
+                            DiscoveryCategory.POPULAR -> {
+                                val featured = GroupDiscoveryItems.findSelectedWork(grouped, current.discoveryFeatured) ?: grouped.firstOrNull()
+                                val popular = grouped.filterNot { it.mangaId == featured?.mangaId }
+                                current.copy(discoveryFeatured = featured, popularManga = popular, discoveryLatest = popular,
+                                    isDiscoveryLoading = false, popularResolved = resolved)
+                            }
+                            DiscoveryCategory.LATEST -> current.copy(latestManga = grouped, latestResolved = resolved)
+                            DiscoveryCategory.NEW -> current.copy(newManga = grouped, newResolved = resolved)
+                            DiscoveryCategory.COMPLETED -> current.copy(completedManga = grouped, completedResolved = resolved)
+                        }
+                    }
+                    if (complete && incoming.isNotEmpty()) {
+                        // Persist usable partial results even if another source is still waiting.
+                        // Partial/error fallback data never earns the five-minute freshness window.
+                        try { discoveryCache.write(_state.value, freshAt = 0L) }
+                        catch (cancelled: CancellationException) { throw cancelled }
+                        catch (error: Exception) { logcat(LogPriority.WARN, error) { "Home presentation cache unavailable" } }
+                    }
+                }
+            }
+            _state.update { it.copy(
+                latestResolved = it.latestResolved || categories.getValue(DiscoveryCategory.LATEST).isEmpty(),
+                newResolved = it.newResolved || categories.getValue(DiscoveryCategory.NEW).isEmpty(),
+                completedResolved = it.completedResolved || categories.getValue(DiscoveryCategory.COMPLETED).isEmpty(),
+            ) }
+            // Queue each visible category across sources first. A slow source cannot hold a slot
+            // during local conversion or chapter checks, or prevent other sources publishing.
+            listOf(DiscoveryCategory.POPULAR, DiscoveryCategory.LATEST, DiscoveryCategory.NEW, DiscoveryCategory.COMPLETED).flatMap { category ->
+                categories.getValue(category).map { source -> async {
+                    try {
+                        val result = requests.withPermit { getSourceDiscovery(source, category, page = 1) }
+                        if (!result.isFresh) fresh.set(false)
+                        if (category == DiscoveryCategory.LATEST || (category == DiscoveryCategory.POPULAR && !source.supportsLatest)) {
+                            publication.withLock { pageUpdates[source.id] = result.page; hasMoreUpdates[source.id] = result.hasNextPage }
+                        }
+                        val local = networkToLocalManga(result.items.take(12).map { it.toDomainManga() })
+                        fun cards(mangas: List<Manga>): List<HomeDiscoveryItem> {
+                            PreferredMangaVariants.rememberAll(mangas)
+                            return mangas.map { manga ->
+                                HomeDiscoveryItem(manga.id, manga.title, manga.asMangaCover(), source.id, source.name, manga.url)
+                            }
+                        }
+                        val accepted = eu.kanade.tachiyomi.source.internal.util.DiscoveryChapterGate.filter(local) { verified ->
+                            publish(category, source.id, cards(verified), complete = false)
+                        }
+                        publish(category, source.id, cards(accepted), complete = true)
+                    } catch (cancelled: CancellationException) { throw cancelled }
+                    catch (error: Exception) {
+                        fresh.set(false)
+                        logcat(LogPriority.WARN, error) { "Home discovery section unavailable" }
+                        // Local/verification failures also retain existing presentation data.
+                        val retained = publication.withLock { sections.getValue(category)[source.id].orEmpty() }
+                        publish(category, source.id, retained, complete = true)
+                    }
+                } }
+            }.awaitAll()
+            DiscoveryBatchResultPayload(pageUpdates, hasMoreUpdates,
+                items(DiscoveryCategory.POPULAR), items(DiscoveryCategory.LATEST),
+                items(DiscoveryCategory.NEW), items(DiscoveryCategory.COMPLETED), isFresh = fresh.get())
         } }
-    }
-
-    /** Publish each healthy source as soon as it finishes, independent of a hung sibling. */
-    private suspend fun publishInitialSection(
-        result: mihon.domain.source.discovery.model.SourceDiscoveryResult,
-        allResolved: Boolean,
-    ) {
-        val visible = mihon.domain.source.health.SourceHealthMonitor.shared.discoverable(result.sourceId)
-        val local = networkToLocalManga(result.items.take(12).filter { visible }.map { it.toDomainManga() }).let { eu.kanade.tachiyomi.source.internal.util.DiscoveryChapterGate.filter(it) }
-        val incoming = local.map { manga ->
-            HomeDiscoveryItem(mangaId = manga.id, title = manga.title, coverData = manga.also { PreferredMangaVariants.remember(it) }.asMangaCover(),
-                sourceId = result.sourceId, sourceName = result.sourceName, url = manga.url)
-        }
-        if (incoming.isNotEmpty()) {
-            runCatching {
-                DiscoveryWorkDeduplicator.processDiscoveredWorks(
-                    Injekt.get<Application>(),
-                    incoming.map { it.sourceId to it.url },
-                )
-            }
-        }
-        _state.update { current ->
-            if (result.category == DiscoveryCategory.LATEST) return@update current.copy(
-                latestManga = GroupDiscoveryItems.group(current.latestManga + incoming), latestResolved = current.latestResolved || incoming.isNotEmpty() || allResolved,
-            )
-            if (result.category == DiscoveryCategory.NEW) return@update current.copy(
-                newManga = GroupDiscoveryItems.group(current.newManga + incoming), newResolved = current.newResolved || incoming.isNotEmpty() || allResolved,
-            )
-            val combined = GroupDiscoveryItems.group(current.popularManga + listOfNotNull(current.discoveryFeatured) + incoming)
-            val featured = combined.firstOrNull { it.mangaId == current.discoveryFeatured?.mangaId } ?: combined.firstOrNull()
-            val popular = combined.filterNot { it.sourceId == featured?.sourceId && it.mangaId == featured.mangaId }
-            current.copy(discoveryFeatured = featured, popularManga = popular, discoveryLatest = popular, isDiscoveryLoading = false, popularResolved = current.popularResolved || incoming.isNotEmpty() || allResolved)
-        }
-    }
 
     private suspend fun updateDiscoveryState(batchResult: DiscoveryBatchResultPayload, isFinal: Boolean) {
         sourcePageMap.putAll(batchResult.pageMapUpdates)
         hasMorePagesMap.putAll(batchResult.hasMoreMapUpdates)
         allDiscoveryItems = batchResult.popularItems.toMutableList()
 
-        fun preserve(incoming: List<HomeDiscoveryItem>, previous: List<HomeDiscoveryItem>): List<HomeDiscoveryItem> {
+        fun preserve(incoming: List<HomeDiscoveryItem>, previous: List<HomeDiscoveryItem>, context: CatalogSelectionContext = CatalogSelectionContext.DEFAULT): List<HomeDiscoveryItem> {
             val health = mihon.domain.source.health.SourceHealthMonitor.shared
             val present = incoming.map { it.sourceId }.toSet()
             return GroupDiscoveryItems.group(incoming + previous.filter {
                 it.sourceId !in present && health.health(it.sourceId).state == mihon.domain.source.health.SourceHealthMonitor.State.DEGRADED
-            })
+            }, context)
         }
         val old = _state.value
         val lists = withContext(Dispatchers.Default) {
             listOf(
-                preserve(batchResult.popularItems, old.popularManga + listOfNotNull(old.discoveryFeatured)),
-                preserve(batchResult.latestItems, old.latestManga),
+                preserve(batchResult.popularItems, old.popularManga + listOfNotNull(old.discoveryFeatured), CatalogSelectionContext.POPULAR),
+                preserve(batchResult.latestItems, old.latestManga, CatalogSelectionContext.LATEST),
                 preserve(batchResult.newItems, old.newManga),
                 preserve(batchResult.completedItems, old.completedManga),
             )
@@ -411,8 +390,8 @@ class HomeViewModel(
         val (popularList, latestList, newList, completedList) = lists
 
         if (popularList.isNotEmpty()) {
-            val featured = popularList.first()
-            val popularFiltered = popularList.drop(1)
+            val featured = GroupDiscoveryItems.findSelectedWork(popularList, old.discoveryFeatured) ?: popularList.first()
+            val popularFiltered = popularList.filterNot { it.mangaId == featured.mangaId }
 
             _state.update {
                 it.copy(
@@ -428,6 +407,7 @@ class HomeViewModel(
         } else {
             _state.update {
                 it.copy(
+                    discoveryFeatured = null,
                     popularManga = emptyList(),
                     latestManga = latestList,
                     newManga = newList,
@@ -442,7 +422,7 @@ class HomeViewModel(
     fun loadNextPage() {
         if (_state.value.isPaginationLoading || _state.value.isDiscoveryLoading || discoveryJob?.isActive == true) return
 
-        paginationJob = viewModelScope.launch {
+        paginationJob = accountScope.launch {
             _state.update { it.copy(isPaginationLoading = true) }
             val eligibleSources = _state.value.installedSources.mapNotNull {
                 sourceManager.get(it.id) as? CatalogueSource
@@ -511,7 +491,7 @@ class HomeViewModel(
     fun onHomeSwipeRefresh() {
         if (_state.value.isSwipeRefreshing) return
         _state.update { it.copy(isSwipeRefreshing = true) }
-        viewModelScope.launch {
+        accountScope.launch {
             try {
                 refreshDiscovery()
                 discoveryJob?.join()
@@ -581,6 +561,7 @@ private data class DiscoveryBatchResultPayload(
     val latestItems: List<HomeDiscoveryItem>,
     val newItems: List<HomeDiscoveryItem>,
     val completedItems: List<HomeDiscoveryItem>,
+    val isFresh: Boolean,
 )
 
 private fun SourceDiscoveryItem.toDomainManga(): Manga {
@@ -601,6 +582,7 @@ private fun SourceDiscoveryItem.toDomainManga(): Manga {
     )
 }
 
+@androidx.compose.runtime.Immutable
 data class HomeDiscoveryItem(
     val mangaId: Long,
     val title: String,
@@ -612,6 +594,7 @@ data class HomeDiscoveryItem(
     val alternatives: List<HomeDiscoveryItem> = emptyList(),
     val canonicalWorkId: String? = null,
     val actualChapterCount: Int? = null,
+    val chapterPublishedAt: Long? = null,
 )
 
 data class HomeSourceItem(
@@ -625,6 +608,7 @@ data class HomeState(
     val popularResolved: Boolean = false,
     val latestResolved: Boolean = false,
     val newResolved: Boolean = false,
+    val completedResolved: Boolean = false,
     val recentHistory: List<HistoryWithRelations> = emptyList(),
     val recentUpdates: List<UpdatesWithRelations> = emptyList(),
     val libraryManga: List<LibraryManga> = emptyList(),

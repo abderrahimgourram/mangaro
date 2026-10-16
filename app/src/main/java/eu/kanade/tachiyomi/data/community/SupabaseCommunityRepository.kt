@@ -41,7 +41,40 @@ class SupabaseCommunityRepository(private val client: SupabaseClient, private va
     private val emitted = MutableSharedFlow<CommunityEvent>(extraBufferCapacity = 16)
     override val events = emitted.asSharedFlow()
     override val available = true
+    @Serializable
+    private data class CatalogMapping(val edition_key: String, val work_key: String,
+        val revoked_at: String? = null, val community_works: CatalogWork)
+    @Serializable
+    private data class CatalogWork(val kind: String)
+
+    override suspend fun reviewedMangaWorks(editionKeys: Set<String>): Map<String, String> = requests.withPermit {
+        require(editionKeys.size <= 200 && editionKeys.all { it.matches(Regex("[a-f0-9]{64}")) })
+        if (editionKeys.isEmpty() || !sharedWorkSupported()) return@withPermit emptyMap()
+        client.from("community_editions").select(
+            columns = io.github.jan.supabase.postgrest.query.Columns.raw("edition_key,work_key,revoked_at,community_works!inner(kind)"),
+        ) { noRetry(); filter { isIn("edition_key", editionKeys.toList()) }; limit(200) }
+            .decodeList<CatalogMapping>().filter { it.revoked_at == null && it.community_works.kind == "manga" &&
+                it.edition_key in editionKeys && it.work_key.matches(Regex("[a-f0-9]{64}")) }
+            .associate { it.edition_key to it.work_key }
+    }
     private val json = Json { ignoreUnknownKeys = true }
+    private val capabilityLock = Mutex()
+    private var capabilityCheckedAt = 0L
+    private var sharedWorkCommunity = false
+    /** Missing extension keeps the existing path. Transport/auth failures never masquerade as capabilities. */
+    private suspend fun sharedWorkSupported(): Boolean = capabilityLock.withLock {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (capabilityCheckedAt != 0L && now - capabilityCheckedAt < 300_000) return@withLock sharedWorkCommunity
+        sharedWorkCommunity = try {
+            val result = client.postgrest.rpc("community_work_capabilities").decodeAs<JsonObject>()
+            result["schema"]?.jsonPrimitive?.intOrNull == 1 && result["shared_work_community"]?.jsonPrimitive?.booleanOrNull == true
+        } catch (missing: PostgrestRestException) {
+            if (missing.code !in setOf("PGRST202", "42883")) throw missing
+            false
+        }
+        capabilityCheckedAt = now
+        sharedWorkCommunity
+    }
     private fun entry(target: CommunityTarget) = entries.getOrPut(target) { Entry() }
     private fun actor() = (account.session.value as? AccountSession.Authenticated)?.profile?.userId
     override fun observe(target: CommunityTarget) = entry(target).state.asStateFlow()
@@ -97,7 +130,7 @@ class SupabaseCommunityRepository(private val client: SupabaseClient, private va
         // A response authenticated as the previous user must not supply ownership/likes to the next session.
         if (actor() != user) { item.loadedAt = 0; item.state.value = item.state.value.copy(loading = false, refreshing = false); return }
         item.state.value = CommunitySnapshot(
-            order = item.order, rating = CommunityRatingSummary(summary.average, summary.count, summary.current_user_rating.takeIf { user != null }),
+            order = item.order, viewerUserId = user, rating = CommunityRatingSummary(summary.average, summary.count, summary.current_user_rating.takeIf { user != null }),
             commentCount = comments.comment_count, comments = comments.items.map { it.comment(target, user) },
             hasMore = comments.has_more, nextCursor = comments.cursor(),
             // A rating/top-level action must not erase a conversation already open in the UI.
@@ -171,7 +204,7 @@ class SupabaseCommunityRepository(private val client: SupabaseClient, private va
     override suspend fun getRatingSummary(target: CommunityTarget) = read(target) {
         val user = actor(); val summary = rating(target)
         if (user == actor()) {
-            it.state.value = it.state.value.copy(rating = CommunityRatingSummary(summary.average, summary.count, summary.current_user_rating.takeIf { user != null }))
+            it.state.value = it.state.value.copy(viewerUserId = user, rating = CommunityRatingSummary(summary.average, summary.count, summary.current_user_rating.takeIf { user != null }))
             it.actor = user
         }
     }
@@ -217,6 +250,11 @@ class SupabaseCommunityRepository(private val client: SupabaseClient, private va
                     }
                     if (actor() == user) {
                         onConfirmed(item)
+                        // Another edition can already have a cached feed/rating. Invalidate only its
+                        // freshness; the next visible load refreshes it, without eager N+1 requests.
+                        if (target.targetType == CommunityTargetType.MANGA) entries.forEach { (key, value) ->
+                            if (key.targetType == CommunityTargetType.MANGA) value.loadedAt = 0
+                        }
                         mihon.domain.sigils.SigilEvents.emit(mihon.domain.sigils.SigilEvents.Kind.COMMUNITY, 0, owner=user)
                         if (refreshProgression) try { account.auth.refreshProgression() }
                         catch (cancelled: CancellationException) { throw cancelled }
@@ -256,6 +294,14 @@ class SupabaseCommunityRepository(private val client: SupabaseClient, private va
         return write(target, if (parentCommentId == null) AccountFeature.COMMENTS else AccountFeature.REPLIES, parentCommentId, refreshProgression = true) { user ->
             val id = java.util.UUID.fromString(requestId).toString()
             val validatedBody = (input as CommentValidation.Valid).body
+            if (target.targetType == CommunityTargetType.MANGA && sharedWorkSupported()) {
+                client.postgrest.rpc("community_post_work_comment", buildJsonObject {
+                    put("p_manga_key", target.mangaKey.value); put("p_request_id", id); put("p_body", validatedBody)
+                    put("p_parent_id", parentCommentId); put("p_spoiler", spoiler)
+                })
+                return@write if (parentCommentId == null) CommunityEvent.CommentCreated(target, id)
+                    else CommunityEvent.ReplyCreated(target, id, parentCommentId)
+            }
             try {
                 client.from("community_comments").insert(buildJsonObject {
                     put("id", id); put("spoiler", spoiler)

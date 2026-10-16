@@ -1,0 +1,332 @@
+{
+  "requests": 18,
+  "gatewayRequests": 0,
+  "records": [
+    {
+      "name": "robots",
+      "url": "https://sunovels.com/robots.txt",
+      "http": 200,
+      "bytes": 71,
+      "elapsedMs": 297,
+      "etag": "W/\"47-17f18062f5a\"",
+      "lastModified": "Sun, 20 Feb 2022 16:45:32 GMT",
+      "cacheControl": "public, max-age=0",
+      "sha256": "e59e5363951c538aefd2eb1c8a2efa93f4e09977eecfa28505b1ceb5edffc4a0"
+    },
+    {
+      "name": "catalog",
+      "url": "https://sunovels.com/library?page=0",
+      "http": 200,
+      "bytes": 118741,
+      "elapsedMs": 677,
+      "etag": null,
+      "lastModified": null,
+      "cacheControl": "private, no-cache, no-store, max-age=0, must-revalidate",
+      "sha256": "a27d5edc48dcf02872c501440adbf9970ca168f9ea86816f2cb3ccbdc5430d85"
+    },
+    {
+      "name": "search-en",
+      "url": "https://sunovels.com/search?title=Reverend&page=0",
+      "http": 200,
+      "bytes": 64208,
+      "elapsedMs": 523,
+      "etag": null,
+      "lastModified": null,
+      "cacheControl": "private, no-cache, no-store, max-age=0, must-revalidate",
+      "sha256": "f4cbb16777b079b24c891ac5157e606def8e318ee76a2fba2b1c7c9bb72d64d0",
+      "cards": 2,
+      "urls": [
+        "/novel/reverend-insanity",
+        "/novel/reverend-insanity-gg"
+      ]
+    },
+    {
+      "name": "search-ar",
+      "url": "https://sunovels.com/search?title=%D8%A7%D9%84%D9%82%D8%B3&page=0",
+      "http": 200,
+      "bytes": 64225,
+      "elapsedMs": 537,
+      "etag": null,
+      "lastModified": null,
+      "cacheControl": "private, no-cache, no-store, max-age=0, must-revalidate",
+      "sha256": "48a3ad13b058ec24d2ab8d7133c4536aacd4afb699a7518f1d6b673d865a37f8",
+      "cards": 2,
+      "urls": [
+        "/novel/reverend-insanity",
+        "/novel/reverend-insanity-gg"
+      ]
+    },
+    {
+      "name": "birth-of-the-demonic-sword-index1",
+      "url": "https://sunovels.com/novel/birth-of-the-demonic-sword?activeTab=chapters&page=0",
+      "http": 200,
+      "bytes": 284538,
+      "elapsedMs": 885,
+      "etag": null,
+      "lastModified": null,
+      "cacheControl": "private, no-cache, no-store, max-age=0, must-revalidate",
+      "sha256": "fc05cd42f8a6cf8861ebb905b5af079aee98ab9a0a6fb35a9f002ccc2c9b748c",
+      "index": {
+        "officialTotal": 2336,
+        "totalPages": 47,
+        "nextPage": 2
+      },
+      "rows": 50,
+      "locked": 0,
+      "ambiguous": 0,
+      "firstRows": [
+        {
+          "url": "https://sunovels.com/novel/birth-of-the-demonic-sword/0",
+          "title": "0 الفصل",
+          "publishedAt": "2021-09-09T19:35:02.615Z"
+        },
+        {
+          "url": "https://sunovels.com/novel/birth-of-the-demonic-sword/1",
+          "title": "1 الفصل",
+          "publishedAt": "2021-09-09T19:35:03.514Z"
+        }
+      ]
+    },
+    {
+      "name": "reverend-insanity-index1",
+      "url": "https://sunovels.com/novel/reverend-insanity?activeTab=chapters&page=0",
+      "http": 200,
+      "bytes": 292049,
+      "elapsedMs": 1044,
+      "etag": null,
+      "lastModified": null,
+      "cacheControl": "private, no-cache, no-store, max-age=0, must-revalidate",
+      "sha256": "2d2d5c2082e05ff78059092c9550a6fe61d99cf9ca5a94f9534609d908162d93",
+      "index": {
+        "officialTotal": 2343,
+        "totalPages": 47,
+        "nextPage": 2
+      },
+      "rows": 50,
+      "locked": 0,
+      "ambiguous": 0,
+      "firstRows": [
+        {
+          "url": "https://sunovels.com/novel/reverend-insanity/1",
+          "title": "1 الفصل",
+          "publishedAt": "2021-09-08T19:35:47.024Z"
+        },
+        {
+          "url": "https://sunovels.com/novel/reverend-insanity/2",
+          "title": "2 الفصل",
+          "publishedAt": "2021-09-08T19:35:47.384Z"
+        }
+      ]
+    },
+    {
+      "name": "shadow-crown-the-rebirth-of-the-cursed-prince-index1",
+      "url": "https://sunovels.com/novel/shadow-crown-the-rebirth-of-the-cursed-prince?activeTab=chapters&page=0",
+      "http": 200,
+      "bytes": 108851,
+      "elapsedMs": 728,
+      "etag": null,
+      "lastModified": null,
+      "cacheControl": "private, no-cache, no-store, max-age=0, must-revalidate",
+      "sha256": "eb6357efaf6d2295893616644ac279a94c73b2d97ef6d3ff900c7bdfeb070903",
+      "index": {
+        "officialTotal": 2,
+        "totalPages": 1,
+        "nextPage": null
+      },
+      "rows": 2,
+      "locked": 2,
+      "ambiguous": 0,
+      "firstRows": [
+        {
+          "url": "https://sunovels.com/novel/shadow-crown-the-rebirth-of-the-cursed-prince/1",
+          "title": "رماد وقدر",
+          "publishedAt": "2025-04-23T17:54:14.173Z"
+        },
+        {
+          "url": "https://sunovels.com/novel/shadow-crown-the-rebirth-of-the-cursed-prince/2",
+          "title": "خيوط القوة والصمت",
+          "publishedAt": "2025-04-23T19:06:54.593Z"
+        }
+      ]
+    },
+    {
+      "name": "birth-of-the-demonic-sword-index2",
+      "url": "https://sunovels.com/novel/birth-of-the-demonic-sword?activeTab=chapters&page=1",
+      "http": 200,
+      "bytes": 295358,
+      "elapsedMs": 1029,
+      "etag": null,
+      "lastModified": null,
+      "cacheControl": "private, no-cache, no-store, max-age=0, must-revalidate",
+      "sha256": "49b242574735f3abc66de310e3f3076b454ad608b05458f048e90eeb1c3e6a6e",
+      "rows": 50,
+      "locked": 0,
+      "ambiguous": 0,
+      "nextPage": 3
+    },
+    {
+      "name": "reverend-insanity-index24",
+      "url": "https://sunovels.com/novel/reverend-insanity?activeTab=chapters&page=23",
+      "http": 200,
+      "bytes": 289591,
+      "elapsedMs": 740,
+      "etag": null,
+      "lastModified": null,
+      "cacheControl": "private, no-cache, no-store, max-age=0, must-revalidate",
+      "sha256": "966a2e2346994595e0da4dbd8515bdecaa19900d6c33335c9671bc71f716e42e",
+      "rows": 50,
+      "locked": 48,
+      "ambiguous": 2,
+      "nextPage": 25
+    },
+    {
+      "name": "birth-of-the-demonic-sword-reader0",
+      "url": "https://sunovels.com/novel/birth-of-the-demonic-sword/0",
+      "http": 200,
+      "bytes": 111932,
+      "elapsedMs": 791,
+      "etag": null,
+      "lastModified": null,
+      "cacheControl": "private, no-cache, no-store, max-age=0, must-revalidate",
+      "sha256": "45c564db4dc84aaa34af9828977b8752dc4d1d0eafca52944c6d1d8175d2f6d9",
+      "reader": {
+        "state": "READABLE",
+        "readerAvailable": true,
+        "publiclyReadable": true,
+        "ambiguous": false,
+        "paragraphs": 14,
+        "textChars": 2769,
+        "textSha256": "248cd707146bf2e39e602f94923bc3594a2161dec036fa7d364d0ab782b3e7bf"
+      }
+    },
+    {
+      "name": "reverend-insanity-reader1",
+      "url": "https://sunovels.com/novel/reverend-insanity/1",
+      "http": 200,
+      "bytes": 163810,
+      "elapsedMs": 636,
+      "etag": null,
+      "lastModified": null,
+      "cacheControl": "private, no-cache, no-store, max-age=0, must-revalidate",
+      "sha256": "ba155897d3edab6e02e6a3f758b17ac4565dfdf5ba2111fff91e07a54c4a819a",
+      "reader": {
+        "state": "READABLE",
+        "readerAvailable": true,
+        "publiclyReadable": true,
+        "ambiguous": false,
+        "paragraphs": 89,
+        "textChars": 9698,
+        "textSha256": "fbb3218b0f8c4d6e062ffccf8c4bda82dad6d43a9cc8c9b17fa43dc562839e8e"
+      }
+    },
+    {
+      "name": "reverend-insanity-reader1153",
+      "url": "https://sunovels.com/novel/reverend-insanity/1153",
+      "http": 200,
+      "bytes": 80634,
+      "elapsedMs": 644,
+      "etag": null,
+      "lastModified": null,
+      "cacheControl": "private, no-cache, no-store, max-age=0, must-revalidate",
+      "sha256": "99b86f335ed77772edbf40b099d23f72cce9a29fae4560cd88819b139da39a78",
+      "reader": {
+        "state": "LOCKED",
+        "readerAvailable": true,
+        "publiclyReadable": false,
+        "ambiguous": true,
+        "paragraphs": 0
+      }
+    },
+    {
+      "name": "shadow-crown-the-rebirth-of-the-cursed-prince-reader1",
+      "url": "https://sunovels.com/novel/shadow-crown-the-rebirth-of-the-cursed-prince/1",
+      "http": 200,
+      "bytes": 81362,
+      "elapsedMs": 509,
+      "etag": null,
+      "lastModified": null,
+      "cacheControl": "private, no-cache, no-store, max-age=0, must-revalidate",
+      "sha256": "49cfce1f017366a65b7189a153d31b0139b82f73ab5a43bfbe2dd312a456bb52",
+      "reader": {
+        "state": "LOCKED",
+        "readerAvailable": true,
+        "publiclyReadable": false,
+        "ambiguous": false,
+        "paragraphs": 0
+      }
+    },
+    {
+      "name": "search-broad",
+      "url": "https://sunovels.com/search?title=a&page=0",
+      "http": 200,
+      "bytes": 90838,
+      "elapsedMs": 606,
+      "etag": null,
+      "lastModified": null,
+      "cacheControl": "private, no-cache, no-store, max-age=0, must-revalidate",
+      "sha256": "2a343de94df7a4645fffb3ee9bb0ad1fc5c4a9b71e24ac310d11530f6c961c19",
+      "cards": 12
+    },
+    {
+      "name": "search-empty",
+      "url": "https://sunovels.com/search?title=mangaro-no-such-work-20261013&page=0",
+      "http": 200,
+      "bytes": 63073,
+      "elapsedMs": 509,
+      "etag": null,
+      "lastModified": null,
+      "cacheControl": "private, no-cache, no-store, max-age=0, must-revalidate",
+      "sha256": "543c32ce217a81bd7258734a37d7b120341dc9eaa8efa90be5821cbd707b3861",
+      "cards": 0
+    },
+    {
+      "name": "reverend-insanity-reader30",
+      "url": "https://sunovels.com/novel/reverend-insanity/30",
+      "http": 200,
+      "bytes": 132356,
+      "elapsedMs": 792,
+      "sha256": "bd82f5174e057eff972633405d663c5c28af3e5b6505d851f3a59e1ecd8045b9",
+      "reader": {
+        "state": "READABLE",
+        "readerAvailable": true,
+        "publiclyReadable": true,
+        "ambiguous": false,
+        "paragraphs": 42,
+        "textChars": 6711,
+        "textSha256": "11332f3532cd49c1caf5c0e3ee0174c7310de89ec4554394b32a4a4fc6f5a18b"
+      }
+    },
+    {
+      "name": "birth-of-the-demonic-sword-reader135",
+      "url": "https://sunovels.com/novel/birth-of-the-demonic-sword/135",
+      "http": 200,
+      "bytes": 172671,
+      "elapsedMs": 790,
+      "sha256": "2b3be6095e02103361bafefd50621299f4a1c231d58a83e0949243adf13c6d35",
+      "reader": {
+        "state": "READABLE",
+        "readerAvailable": true,
+        "publiclyReadable": true,
+        "ambiguous": false,
+        "paragraphs": 64,
+        "textChars": 4999,
+        "textSha256": "01c4d84425b2e7e024d5ae1035ab9ae43bf82c68393cdc8dd532cbccbeb31130"
+      }
+    },
+    {
+      "name": "birth-of-the-demonic-sword-reader675",
+      "url": "https://sunovels.com/novel/birth-of-the-demonic-sword/675",
+      "http": 200,
+      "bytes": 80761,
+      "elapsedMs": 706,
+      "sha256": "51329f7176b1bb2c2d4492cf398bf266e9abd9f1d4d726fb5bb53c5999068523",
+      "reader": {
+        "state": "LOCKED",
+        "readerAvailable": true,
+        "publiclyReadable": false,
+        "ambiguous": false,
+        "paragraphs": 0
+      }
+    }
+  ]
+}

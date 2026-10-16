@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.ui.download
 
 import android.view.MenuItem
+import eu.kanade.tachiyomi.util.system.toast
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import eu.kanade.tachiyomi.R
@@ -28,6 +29,8 @@ import kotlin.time.Duration.Companion.milliseconds
 class DownloadQueueViewModel(
     private val downloadManager: DownloadManager = Injekt.get(),
 ) : ViewModel() {
+    private val accountScope = kotlinx.coroutines.CoroutineScope(viewModelScope.coroutineContext + tachiyomi.core.common.util.lang.LocalAccountScope.context())
+
 
     private val _state = MutableStateFlow(emptyList<DownloadHeaderItem>())
     val state = _state.asStateFlow()
@@ -117,7 +120,7 @@ class DownloadQueueViewModel(
     }
 
     init {
-        viewModelScope.launch {
+        accountScope.launch {
             downloadManager.queueState
                 .map { downloads ->
                     downloads
@@ -141,7 +144,7 @@ class DownloadQueueViewModel(
     }
 
     val isDownloaderRunning = downloadManager.isDownloaderRunning
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+        .stateIn(accountScope, SharingStarted.WhileSubscribed(5000), false)
 
     fun getDownloadStatusFlow() = downloadManager.statusFlow()
     fun getDownloadProgressFlow() = downloadManager.progressFlow()
@@ -154,16 +157,28 @@ class DownloadQueueViewModel(
         downloadManager.pauseDownloads()
     }
 
+    private fun queueAction(action: () -> Unit) {
+        accountScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try { action() } catch (_: java.io.IOException) {
+                if (runCatching { tachiyomi.core.common.util.lang.LocalAccountScope.check() }.isSuccess) {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        Injekt.get<android.content.Context>().toast("تعذّر حفظ طابور التنزيل؛ تحقق من مساحة التخزين ثم أعد المحاولة")
+                    }
+                }
+            }
+        }
+    }
+
     fun clearQueue() {
-        downloadManager.clearQueue()
+        queueAction { downloadManager.clearQueue() }
     }
 
     fun reorder(downloads: List<Download>) {
-        downloadManager.reorderQueue(downloads)
+        queueAction { downloadManager.reorderQueue(downloads) }
     }
 
     fun cancel(downloads: List<Download>) {
-        downloadManager.cancelQueuedDownloads(downloads)
+        queueAction { downloadManager.cancelQueuedDownloads(downloads) }
     }
 
     fun <R : Comparable<R>> reorderQueue(selector: (DownloadItem) -> R, reverse: Boolean = false) {
@@ -211,7 +226,7 @@ class DownloadQueueViewModel(
      * @param download the download to observe its progress.
      */
     private fun launchProgressJob(download: Download) {
-        val job = viewModelScope.launch {
+        val job = accountScope.launch {
             while (download.pages == null) {
                 delay(50.milliseconds)
             }

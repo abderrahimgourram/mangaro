@@ -52,7 +52,7 @@ class AutomaticCloudSyncTest {
             coVerify(exactly=0) {local.all(any())}
         } finally {scope.cancel();LocalCloudChanges.capture=null;unmockkObject(WorkManager.Companion)}
     }
-    @Test fun `fresh login seeds existing merge automatically and offline progress hints coalesce`()=runBlocking {
+    @Test fun `fresh login waits for explicit guest merge then offline progress hints coalesce`()=runBlocking {
         val context=mockk<Context>();val client=mockk<SupabaseClient>();val auth=mockk<AccountAuth>()
         val store=mockk<CloudSyncStore>(relaxed=true);val local=mockk<CloudLocalGateway>();val work=mockk<WorkManager>(relaxed=true)
         val session=MutableStateFlow<AccountSession>(AccountSession.Guest)
@@ -70,6 +70,10 @@ class AutomaticCloudSyncTest {
         try {
             sync.start()
             session.value=AccountSession.Authenticated(MangaroProfile("A",null,"Reader","reader",null,0,1))
+            withTimeout(3_000) {sync.observe("A").first {it.loaded && it.needsMerge}}
+            coVerify(exactly=0) {local.all("A")}
+            values["A" to "enabled"] shouldBe "false"
+            sync.configure("A",true) shouldBe AccountOperation.Completed
             withTimeout(3_000) {sync.observe("A").first {it.loaded && it.enabled}}
             delay(20)
             values["A" to "seeded"] shouldBe "true"

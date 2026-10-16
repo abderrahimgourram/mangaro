@@ -24,7 +24,7 @@ class SourceRefreshConcurrencyTest {
     private val preferences=mockk<tachiyomi.domain.library.service.LibraryPreferences> { every { updateMangaTitles.get() } returns false; every { newUpdatesCount.get() } returns 0; every { newUpdatesCount.set(any()) } just Runs }
     private val sync=mockk<SyncChaptersWithSource>(relaxed=true)
     private val events=mutableListOf<Long>()
-    private fun updater()=UpdateMangaFromRemote(mockk(relaxed=true),mockk(relaxed=true),repo,sync,mockk(relaxed=true),preferences,mockk(relaxed=true)) {_,chapters->events.addAll(chapters.map {it.id})}
+    private fun updater(chapters:tachiyomi.domain.chapter.repository.ChapterRepository=mockk(relaxed=true))=UpdateMangaFromRemote(mockk(relaxed=true),chapters,repo,sync,mockk(relaxed=true),preferences,mockk(relaxed=true)) {_,chapters->events.addAll(chapters.map {it.id})}
     init {coEvery {repo.getMangaById(manga.id)} returns manga;coEvery {repo.update(any())} returns true;SourceHealthMonitor.shared.success(manga.source)}
     private fun response()=SMangaUpdate(manga.toSManga(),listOf(SChapter.create().apply {url="/chapter/11";name="Chapter 11"}),ChapterFetchCompleteness.COMPLETE).withDeclaredChapterCount(1)
     @Test fun `different refresh options serialize source request and persistence for exact manga`()=runTest {
@@ -44,9 +44,25 @@ class SourceRefreshConcurrencyTest {
     }
     @Test fun `identical rapid manual refreshes share one confirmed result and inbox event`()=runTest {
         val gate=CompletableDeferred<Unit>()
-        coEvery {source.getMangaUpdate(any(),any(),any(),any())} coAnswers {gate.await();response()}
-        coEvery {sync.await(any(),any(),any(),any(),any(),any(),any())} returns listOf(Chapter.create().copy(id=91,mangaId=manga.id,url="/chapter/11",name="11"))
-        val u=updater();val jobs=List(3) {async {u(source,manga,fetchChapters=true,manualFetch=true)}}
+        // Discovery is an increment over a verified existing catalog, not initial-baseline news.
+        val previous=Chapter.create().copy(id=90,mangaId=manga.id,url="/chapter/10",name="10",chapterNumber=10.0)
+        val chapterRepo=mockk<tachiyomi.domain.chapter.repository.ChapterRepository>()
+        coEvery {chapterRepo.getChapterByMangaId(manga.id,any())} returns listOf(previous)
+        coEvery {source.getMangaUpdate(any(),any(),any(),any())} coAnswers {
+            gate.await()
+            SMangaUpdate(manga.toSManga(),listOf(
+                SChapter.create().apply {url="/chapter/10";name="Chapter 10";chapter_number=10f},
+                SChapter.create().apply {url="/chapter/11";name="Chapter 11";chapter_number=11f},
+            ),ChapterFetchCompleteness.COMPLETE).withDeclaredChapterCount(2)
+        }
+        coEvery {sync.await(any(),any(),any(),any(),any(),any(),any())} coAnswers {
+            val rows=listOf(Chapter.create().copy(id=91,mangaId=manga.id,url="/chapter/11",name="11",chapterNumber=11.0))
+            // The real reconciler persists this proof before discovery events are eligible.
+            val reconciled=manga.copy(memo=tachiyomi.domain.chapter.service.ChapterListIntegrity.memo(manga,"COMPLETE",listOf(previous)+rows))
+            coEvery {repo.getMangaById(manga.id)} returns reconciled
+            rows
+        }
+        val u=updater(chapterRepo);val jobs=List(3) {async {u(source,manga,fetchChapters=true,manualFetch=true)}}
         runCurrent();gate.complete(Unit);jobs.awaitAll().forEach { it.getOrThrow() }
         coVerify(exactly=1) {source.getMangaUpdate(any(),any(),any(),any())};events shouldBe listOf(91)
         verify(exactly=1) { preferences.newUpdatesCount.set(1) }

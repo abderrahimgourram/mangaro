@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.data.download
 
+import uy.kohesive.injekt.api.get
 import android.app.PendingIntent
 import android.content.Context
 import android.graphics.BitmapFactory
@@ -40,6 +41,7 @@ internal class DownloadNotifier(private val context: Context) {
     private val errorNotificationBuilder by lazy {
         context.notificationBuilder(Notifications.CHANNEL_DOWNLOADER_ERROR) {
             setAutoCancel(false)
+            setOnlyAlertOnce(true)
         }
     }
 
@@ -54,6 +56,7 @@ internal class DownloadNotifier(private val context: Context) {
      * @param id the id of the notification.
      */
     private fun NotificationCompat.Builder.show(id: Int) {
+        if (tachiyomi.core.common.util.lang.LocalAccountScope.fileOwner() != tachiyomi.core.common.util.lang.LocalAccountScope.activeFileOwner()) return
         context.notify(id, build())
     }
 
@@ -71,6 +74,7 @@ internal class DownloadNotifier(private val context: Context) {
      * @param download download object containing download information.
      */
     fun onProgressChange(download: Download) {
+        if (download.owner != tachiyomi.core.common.util.lang.LocalAccountScope.activeFileOwner()) return
         with(progressNotificationBuilder) {
             if (!isDownloading) {
                 setSmallIcon(android.R.drawable.stat_sys_download)
@@ -155,12 +159,13 @@ internal class DownloadNotifier(private val context: Context) {
      * Resets the state once downloads are completed and shows a single batch summary notification.
      */
     fun onComplete() {
-        dismissProgress()
-
-        val count = batchSuccessCount
-        if (count > 0 && count != lastNotifiedBatchCount) {
-            lastNotifiedBatchCount = count
-            showBatchCompleteNotification(count)
+        val textQueue = eu.kanade.tachiyomi.novels.NovelRepository.peek()?.activeDownloads()
+        if (textQueue?.hasPending() != true) {
+            dismissProgress()
+            val count = journal(context).consume()
+            if (count > 0 && uy.kohesive.injekt.Injekt.get<eu.kanade.tachiyomi.data.notification.NotificationPreferences>().downloadCompletion.get()) {
+                showBatchCompleteNotification(count)
+            }
         }
 
         isDownloading = false
@@ -184,25 +189,25 @@ internal class DownloadNotifier(private val context: Context) {
             setStyle(NotificationCompat.BigTextStyle().bigText(text))
             setSmallIcon(android.R.drawable.stat_sys_download_done)
             setLargeIcon(BitmapFactory.decodeResource(context.resources, R.mipmap.ic_launcher))
+            setOnlyAlertOnce(true)
             setAutoCancel(true)
             setContentIntent(NotificationHandler.openDownloadManagerPendingActivity(context))
         }
     }
 
     companion object {
-        @Volatile private var batchSuccessCount = 0
-        @Volatile private var lastNotifiedBatchCount = -1
-
-        fun incrementSuccessCount(count: Int = 1) {
-            batchSuccessCount += count
+        private val journals = java.util.concurrent.ConcurrentHashMap<String, DownloadCompletionJournal>()
+        @Synchronized private fun journal(context: Context): DownloadCompletionJournal {
+            val segment = tachiyomi.core.common.util.lang.LocalAccountScope.segment()
+            return journals.getOrPut(segment) { DownloadCompletionJournal(context.applicationContext.getSharedPreferences("mangaro_download_completion_events" + segment, Context.MODE_PRIVATE)) }
         }
 
-        fun resetBatch() {
-            batchSuccessCount = 0
-            lastNotifiedBatchCount = -1
+        fun recordSuccess(context: Context, identity: String) {
+            try { journal(context).record(identity) }
+            catch (failure: Exception) { android.util.Log.w("MangaroDownloads", "Could not journal completed download", failure) }
         }
 
-        fun getBatchSuccessCount(): Int = batchSuccessCount
+
     }
 
     /**
@@ -229,7 +234,7 @@ internal class DownloadNotifier(private val context: Context) {
                 )
             }
             setProgress(0, 0, false)
-            timeout?.let { setTimeoutAfter(it) }
+            setTimeoutAfter(timeout ?: 0L)
             contentIntent?.let { setContentIntent(it) }
 
             show(Notifications.ID_DOWNLOAD_CHAPTER_ERROR)
@@ -253,6 +258,8 @@ internal class DownloadNotifier(private val context: Context) {
             setContentTitle(
                 mangaTitle?.plus(": $chapter") ?: context.stringResource(MR.strings.download_notifier_downloader_title),
             )
+            setStyle(null)
+            setTimeoutAfter(0L)
             setContentText(error.contentErrorMessage() ?: context.stringResource(MR.strings.download_notifier_unknown_error))
             setSmallIcon(R.drawable.ic_warning_white_24dp)
             clearActions()

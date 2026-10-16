@@ -5,6 +5,7 @@ import eu.kanade.tachiyomi.data.download.model.Download
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.model.Page
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.emitAll
@@ -56,8 +57,17 @@ class DownloadManager(
      */
     private val pendingDeleter = DownloadPendingDeleter(context)
 
-    val queueState
-        get() = downloader.queueState
+    val queueState: kotlinx.coroutines.flow.StateFlow<List<Download>> = object : kotlinx.coroutines.flow.StateFlow<List<Download>> {
+        private fun visible(rows: List<Download>) = if (!tachiyomi.core.common.util.lang.LocalAccountScope.changes.value.ready) emptyList() else rows.filter { it.owner == tachiyomi.core.common.util.lang.LocalAccountScope.activeFileOwner() }
+        override val value get() = visible(downloader.queueState.value)
+        override val replayCache get() = listOf(value)
+        override suspend fun collect(collector: kotlinx.coroutines.flow.FlowCollector<List<Download>>): Nothing {
+            kotlinx.coroutines.flow.combine(downloader.queueState, tachiyomi.core.common.util.lang.LocalAccountScope.changes) { queue, _ -> visible(queue) }.collect { collector.emit(it) }
+            kotlinx.coroutines.awaitCancellation()
+        }
+    }
+    fun canClaimGuestQueue(owner: String) = !downloader.ownerRunning(owner)
+    fun claimGuestQueue(from: String, to: String) { downloader.transferGuestQueue(from, to); cache.invalidateCache() }
 
     // For use by DownloadService only
     fun downloaderStart() = downloader.start()
@@ -70,6 +80,7 @@ class DownloadManager(
      * Tells the downloader to begin downloads.
      */
     fun startDownloads() {
+        downloader.resumeOwner(tachiyomi.core.common.util.lang.LocalAccountScope.fileOwner())
         if (downloader.isRunning) return
 
         if (DownloadJob.isRunning(context)) {
@@ -83,16 +94,14 @@ class DownloadManager(
      * Tells the downloader to pause downloads.
      */
     fun pauseDownloads() {
-        downloader.pause()
-        downloader.stop()
+        downloader.pauseOwner(tachiyomi.core.common.util.lang.LocalAccountScope.fileOwner())
     }
 
     /**
      * Empties the download queue.
      */
     fun clearQueue() {
-        downloader.clearQueue()
-        downloader.stop()
+        downloader.clearOwner(tachiyomi.core.common.util.lang.LocalAccountScope.fileOwner())
     }
 
     /**
@@ -123,7 +132,7 @@ class DownloadManager(
      * @param downloads value to set the download queue to
      */
     fun reorderQueue(downloads: List<Download>) {
-        downloader.updateQueue(downloads)
+        downloader.updateQueue(downloader.queueState.value.filter { it.owner != tachiyomi.core.common.util.lang.LocalAccountScope.fileOwner() } + downloads.filter { it.owner == tachiyomi.core.common.util.lang.LocalAccountScope.fileOwner() })
     }
 
     /**
@@ -134,6 +143,7 @@ class DownloadManager(
      * @param autoStart whether to start the downloader after enqueing the chapters.
      */
     fun downloadChapters(manga: Manga, chapters: List<Chapter>, autoStart: Boolean = true) {
+        tachiyomi.core.common.util.lang.LocalAccountScope.check(manga.accountToken)
         downloader.queueChapters(manga, chapters, autoStart)
     }
 
@@ -160,6 +170,7 @@ class DownloadManager(
      * @return the list of pages from the chapter.
      */
     fun buildPageList(source: Source, manga: Manga, chapter: Chapter): List<Page> {
+        tachiyomi.core.common.util.lang.LocalAccountScope.check(manga.accountToken)
         val chapterDir = provider.findChapterDir(chapter.name, chapter.scanlator, chapter.url, manga.title, source)
         val files = chapterDir?.listFiles().orEmpty()
             .filter { it.isFile && ImageUtil.isImage(it.name) { it.openInputStream() } }
@@ -211,7 +222,7 @@ class DownloadManager(
     }
 
     fun cancelQueuedDownloads(downloads: List<Download>) {
-        removeFromDownloadQueue(downloads.map { it.chapter })
+        removeFromDownloadQueue(downloads.filter { it.owner == tachiyomi.core.common.util.lang.LocalAccountScope.fileOwner() }.map { it.chapter })
     }
 
     /**
@@ -222,6 +233,7 @@ class DownloadManager(
      * @param source the source of the chapters.
      */
     fun deleteChapters(chapters: List<Chapter>, manga: Manga, source: Source) {
+        tachiyomi.core.common.util.lang.LocalAccountScope.check(manga.accountToken)
         launchIO {
             deleteChaptersAndAwait(chapters, manga, source)
         }
@@ -230,6 +242,7 @@ class DownloadManager(
     /** The same protected deletion, with completion available to the Downloads inventory. */
     suspend fun deleteChaptersAndAwait(chapters: List<Chapter>, manga: Manga, source: Source): Boolean =
         withIOContext {
+            tachiyomi.core.common.util.lang.LocalAccountScope.check(manga.accountToken)
             val filteredChapters = getChaptersToDelete(chapters, manga)
             if (filteredChapters.isEmpty()) {
                 return@withIOContext true
@@ -268,6 +281,7 @@ class DownloadManager(
      * @param removeQueued whether to also remove queued downloads.
      */
     fun deleteManga(manga: Manga, source: Source, removeQueued: Boolean = true) {
+        tachiyomi.core.common.util.lang.LocalAccountScope.check(manga.accountToken)
         launchIO {
             deleteMangaAndAwait(manga, source, removeQueued)
         }
@@ -288,20 +302,11 @@ class DownloadManager(
     }
 
     private fun removeFromDownloadQueue(chapters: List<Chapter>) {
-        val wasRunning = downloader.isRunning
-        if (wasRunning) {
-            downloader.pause()
-        }
-
+        if (chapters.isEmpty()) return
+        // Updating the existing queue cancels only matching jobs. Another owner's downloads
+        // must not be globally paused/stopped because the visible account has an empty queue.
         downloader.removeFromQueue(chapters)
-
-        if (wasRunning) {
-            if (queueState.value.isEmpty()) {
-                downloader.stop()
-            } else if (queueState.value.isNotEmpty()) {
-                downloader.start()
-            }
-        }
+        if (downloader.queueState.value.isEmpty()) downloader.stop()
     }
 
     /**
@@ -311,6 +316,7 @@ class DownloadManager(
      * @param manga the manga of the chapters.
      */
     suspend fun enqueueChaptersToDelete(chapters: List<Chapter>, manga: Manga) {
+        tachiyomi.core.common.util.lang.LocalAccountScope.check(manga.accountToken)
         pendingDeleter.addChapters(getChaptersToDelete(chapters, manga), manga)
     }
 
@@ -358,6 +364,7 @@ class DownloadManager(
      * @param newTitle the new manga title.
      */
     suspend fun renameManga(manga: Manga, newTitle: String) {
+        tachiyomi.core.common.util.lang.LocalAccountScope.check(manga.accountToken)
         val source = sourceManager.getOrStub(manga.source)
         val oldFolders = provider.findMangaDirs(manga.title, source)
         if (oldFolders.isEmpty()) return

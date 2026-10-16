@@ -23,6 +23,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,7 +41,8 @@ import androidx.core.graphics.drawable.toDrawable
 import androidx.core.view.updatePadding
 import coil3.asDrawable
 import coil3.imageLoader
-import coil3.request.CachePolicy
+import coil3.request.Disposable
+import coil3.request.allowHardware
 import coil3.request.ImageRequest
 import coil3.size.Size
 import eu.kanade.presentation.components.AppBar
@@ -156,37 +158,34 @@ fun MangaCoverDialog(
                     .fillMaxSize()
                     .clickableNoIndication(onClick = onDismissRequest),
             ) {
-                AndroidView(
-                    factory = {
-                        ReaderPageImageView(it).apply {
-                            onViewClicked = onDismissRequest
-                            clipToPadding = false
-                            clipChildren = false
-                        }
-                    },
-                    update = { view ->
-                        val request = ImageRequest.Builder(view.context)
-                            .data(manga)
-                            .size(Size.ORIGINAL)
-                            .memoryCachePolicy(CachePolicy.DISABLED)
-                            .target { image ->
-                                val drawable = image.asDrawable(view.context.resources)
-                                // Copy bitmap in case it came from memory cache
-                                // Because SSIV needs to thoroughly read the image
-                                val copy = (drawable as? BitmapDrawable)
-                                    ?.bitmap
-                                    ?.copy(Bitmap.Config.HARDWARE, false)
-                                    ?.toDrawable(view.context.resources)
-                                    ?: drawable
-                                view.setImage(copy, ReaderPageImageView.Config(zoomDuration = 500))
+                // Padding recomposition must not restart the request or reset the cover's zoom.
+                key(manga.id, manga.coverLastModified, manga.thumbnailUrl) {
+                    AndroidView(
+                        factory = { context ->
+                            ReaderPageImageView(context).apply {
+                                onViewClicked = onDismissRequest
+                                clipToPadding = false
+                                clipChildren = false
+                                val view = this
+                                val request = ImageRequest.Builder(context)
+                                    .data(manga)
+                                    .size(Size.ORIGINAL)
+                                    .allowHardware(false)
+                                    .target { image ->
+                                        val drawable = image.asDrawable(context.resources)
+                                        // SSIV owns its copy; recycling must not invalidate Coil's cache.
+                                        val copy = (drawable as? BitmapDrawable)?.bitmap
+                                            ?.copy(Bitmap.Config.ARGB_8888, false)?.toDrawable(context.resources) ?: drawable
+                                        view.setImage(copy, ReaderPageImageView.Config(zoomDuration = 500))
+                                    }.build()
+                                tag = context.imageLoader.enqueue(request)
                             }
-                            .build()
-                        view.context.imageLoader.enqueue(request)
-
-                        view.updatePadding(top = statusBarPaddingPx, bottom = bottomPaddingPx)
-                    },
-                    modifier = Modifier.fillMaxSize(),
-                )
+                        },
+                        onRelease = { view -> (view.tag as? Disposable)?.dispose(); view.recycle() },
+                        update = { view -> view.updatePadding(top = statusBarPaddingPx, bottom = bottomPaddingPx) },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
             }
         }
     }

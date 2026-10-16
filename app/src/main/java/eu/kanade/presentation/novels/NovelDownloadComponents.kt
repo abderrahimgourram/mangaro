@@ -47,17 +47,29 @@ internal fun downloadLabel(state: NovelDownloadState?) = when (state) {
     NovelDownloadState.FAILED -> "تعذّر التحميل"
     NovelDownloadState.CANCELLED -> "أُلغي التحميل"
     NovelDownloadState.DELETING -> "الحذف قيد الإكمال"
+    NovelDownloadState.REMOVED -> null
     null -> null
 }
 
 @Composable
 internal fun NovelChapterRow(chapter: NovelChapter, state: NovelDownloadState?, selecting: Boolean, selected: Boolean,
-    onSelect: () -> Unit, onRead: () -> Unit, onDownload: () -> Unit, onCommunity: (() -> Unit)? = null, onDelete: (() -> Unit)? = null, selectionEnabled: Boolean = chapter.available) {
+    onSelect: () -> Unit, onRead: () -> Unit, onDownload: () -> Unit, onCommunity: (() -> Unit)? = null, onDelete: (() -> Unit)? = null,
+    selectionEnabled: Boolean = chapter.available, failureMessage: String? = null, onRevalidate: (() -> Unit)? = null) {
     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Design.SurfaceDark)
         .clickable(enabled = !selecting || selectionEnabled, onClick = if (selecting) onSelect else onRead).padding(horizontal = 10.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         if (selecting) Checkbox(selected, onCheckedChange = { onSelect() }, enabled = selectionEnabled)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(chapter.title, color = Color(0xFFE5DAED), style = MaterialTheme.typography.bodyMedium.copy(textDirection = TextDirection.ContentOrRtl), maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (chapter.publishedRows.size > 1) chapter.publishedRows.drop(1).forEach { row ->
+                Text(row.title, color = Color(0xFFE5DAED), style = MaterialTheme.typography.bodySmall.copy(textDirection = TextDirection.ContentOrRtl))
+            }
+            chapter.unavailableReason?.let { Text(it, color = Color(0xFFE5B5AB), style = MaterialTheme.typography.labelSmall) }
+            failureMessage?.takeIf { it != chapter.unavailableReason }?.let {
+                Text(it, color = Color(0xFFE5B5AB), style = MaterialTheme.typography.labelSmall)
+            }
+            onRevalidate?.let { action ->
+                TextButton(onClick = action) { Text("تحقق من الإتاحة", color = Design.LavenderPrimary) }
+            }
             downloadLabel(state)?.let { Text(it, color = if (state == NovelDownloadState.DONE) Design.GoldPrimary else Design.LavenderPrimary, style = MaterialTheme.typography.labelSmall) }
         }
         onCommunity?.let { action ->
@@ -196,6 +208,7 @@ fun NovelDownloadsContent() {
         var selectedChapters by remember { mutableStateOf(emptySet<String>()) }
         var pendingDelete by remember { mutableStateOf<Pair<String, Set<String>>?>(null) }
         var error by remember { mutableStateOf<String?>(null) }
+        val openReader = rememberSunovelsReaderEntry { _, exception -> error = novelError(exception) }
         fun control(id: String, action: NovelDownloadState, chapterId: String? = null) {
             error = null
             scope.launch { try { queue.control(id, action, chapterId) } catch (c: CancellationException) { throw c } catch (e: Exception) { error = novelError(e) } }
@@ -256,10 +269,11 @@ fun NovelDownloadsContent() {
                     }
                     if (summary.novel.id in expanded) items(tasks.filter { it.novel.id == summary.novel.id }, key = { it.key }) { task ->
                         NovelChapterRow(task.chapter, task.state, false, false, {},
-                            onRead = { navigator.push(NovelReaderScreen(task.novel, task.chapter)) },
+                            onRead = { openReader(task.novel, task.chapter) },
                             onDownload = { control(task.novel.id, NovelDownloadState.FAILED, task.chapter.id) },
                             onCommunity = { navigator.push(eu.kanade.presentation.community.CommunityCommentsScreen(novelCommunityContext(task.novel, task.chapter))) },
-                            onDelete = { pendingDelete = task.novel.id to setOf(task.chapter.id) })
+                            onDelete = { pendingDelete = task.novel.id to setOf(task.chapter.id) },
+                            failureMessage = task.error.takeIf { task.novel.sourceId == SunovelsSource.SOURCE_ID })
                     }
                 }
             }

@@ -1,24 +1,11 @@
 package eu.kanade.tachiyomi.data.ads
 
 /** Deliberate placements only. Reader pages, startup and exit are not placements. */
-enum class AdPlacement { CHAPTER_BOUNDARY_NATIVE, DOWNLOAD_INTERSTITIAL, REWARDED_AD_FREE }
+enum class AdPlacement { CHAPTER_BOUNDARY_NATIVE, DOWNLOAD_INTERSTITIAL }
 
-data class AdIds(val native: String, val interstitial: String, val rewarded: String) {
-    companion object {
-        const val APP_ID = "ca-app-pub-6220636202579444~2080855468"
-        // Preview/benchmark/foss also use test units even though they inherit release settings.
-        fun forBuild(buildType: String): AdIds = if (buildType == "release") {
-            AdIds("ca-app-pub-6220636202579444/1208515081", "ca-app-pub-6220636202579444/2333894491", "ca-app-pub-6220636202579444/5696666840")
-        } else {
-            AdIds("ca-app-pub-3940256099942544/2247696110", "ca-app-pub-3940256099942544/1033173712", "ca-app-pub-3940256099942544/5224354917")
-        }
-    }
-}
-
-/** Pure, synchronized UX policy; consent itself is always supplied by UMP, never stored here. */
+/** Pure, synchronized UX policy; privacy choices are supplied by the application. */
 class AdPolicy(private val now: () -> Long) {
     companion object {
-        const val REWARD_DURATION = 30 * 60_000L
         const val NATIVE_WINDOW = 60 * 60_000L
         const val INTERSTITIAL_WINDOW = 30 * 60_000L
         const val FULLSCREEN_GAP = 90_000L
@@ -33,11 +20,7 @@ class AdPolicy(private val now: () -> Long) {
     private val nativeTimes = mutableListOf<Long>()
     private val interstitialTimes = mutableListOf<Long>()
     private var lastFullscreen: Long? = null
-    var adFreeUntil: Long = 0
-        private set
-
-    @Synchronized fun restore(adFree: Long, native: List<Long>, interstitial: List<Long>, fullscreen: Long?) {
-        adFreeUntil = adFree.coerceAtMost(now() + REWARD_DURATION)
+    @Synchronized fun restore(native: List<Long>, interstitial: List<Long>, fullscreen: Long?) {
         nativeTimes.addAll(native.filter { it <= now() && now() - it < NATIVE_WINDOW }.takeLast(4))
         interstitialTimes.addAll(interstitial.filter { it <= now() && now() - it < INTERSTITIAL_WINDOW }.takeLast(2))
         lastFullscreen = fullscreen?.takeIf { it <= now() }
@@ -62,15 +45,14 @@ class AdPolicy(private val now: () -> Long) {
         // Preparation does not consume a boundary or a frequency allowance.
         return (chapters[chapterId] ?: chapters.size) >= 3
     }
-    @Synchronized fun adFree() = now() < adFreeUntil
-    @Synchronized fun requestsAllowed(consent: Boolean, online: Boolean) = consent && online && !adFree()
+    @Synchronized fun requestsAllowed(consent: Boolean, online: Boolean) = consent && online
 
     @Synchronized fun nativeEligible(session: String, chapterId: Long): Boolean {
         val chapters = sessions[session] ?: return false
         val count = chapters[chapterId] ?: return false
         val separated = lastNativeCompletion[session]?.let { chapters.size - it >= 3 } ?: true
         nativeTimes.removeAll { now() - it >= NATIVE_WINDOW }
-        return !adFree() && count > 3 && (count - 4) % 3 == 0 &&
+        return count > 3 && (count - 4) % 3 == 0 &&
             nativeTimes.size < 4 && separated && (session to chapterId) !in nativeChapters
     }
     /** Diagnostics only; eligibility and all limits remain in nativeEligible(). */
@@ -81,7 +63,6 @@ class AdPolicy(private val now: () -> Long) {
         val reason = when {
             eligible -> "eligible"
             chapters == null -> "session_missing"
-            adFree() -> "rewarded_ad_free"
             ordinal == null -> "chapter_not_completed"
             ordinal <= 3 -> "first_three_grace"
             (session to chapterId) in nativeChapters -> "boundary_already_claimed"
@@ -116,7 +97,7 @@ class AdPolicy(private val now: () -> Long) {
     }
     @Synchronized fun downloadEligible(count: Int, operation: String, readerActive: Boolean): Boolean {
         interstitialTimes.removeAll { now() - it >= INTERSTITIAL_WINDOW }
-        return count > DOWNLOAD_THRESHOLD && !readerActive && !adFree() && operation !in operations &&
+        return count >= DOWNLOAD_THRESHOLD && !readerActive && operation !in operations &&
             interstitialTimes.size < 2 && fullscreenEligible()
     }
     @Synchronized fun claimDownload(count: Int, operation: String, readerActive: Boolean): Boolean {
@@ -133,13 +114,10 @@ class AdPolicy(private val now: () -> Long) {
         lastFullscreen = now()
     }
     @Synchronized fun fullscreenEligible() = lastFullscreen?.let { now() - it >= FULLSCREEN_GAP } ?: true
-    @Synchronized fun rewardedEligible(explicit: Boolean, readerActive: Boolean) = explicit && !readerActive && !adFree() && fullscreenEligible()
-    @Synchronized fun fullscreenStarted() { lastFullscreen = now() }
-    @Synchronized fun rewardEarned() { adFreeUntil = now() + REWARD_DURATION }
-    @Synchronized fun snapshot() = AdPolicySnapshot(adFreeUntil, nativeTimes.toList(), interstitialTimes.toList(), lastFullscreen)
+    @Synchronized fun snapshot() = AdPolicySnapshot( nativeTimes.toList(), interstitialTimes.toList(), lastFullscreen)
 }
 
-data class AdPolicySnapshot(val adFreeUntil: Long, val nativeTimes: List<Long>, val interstitialTimes: List<Long>, val lastFullscreen: Long?)
+data class AdPolicySnapshot(val nativeTimes: List<Long>, val interstitialTimes: List<Long>, val lastFullscreen: Long?)
 
 /** Independent load gate; the manager schedules a bounded number of recovery attempts. */
 class AdLoadGate(private val now: () -> Long) {

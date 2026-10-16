@@ -46,7 +46,7 @@ class PreferenceModule(val app: Application) : InjektModule {
             PrivacyPreferences(get())
         }
         addSingletonFactory {
-            LibraryPreferences(get())
+            LibraryPreferences(tachiyomi.core.common.preference.AccountPreferenceStore(get()))
         }
         addSingletonFactory {
             UpcomingPreferences(get())
@@ -55,13 +55,13 @@ class PreferenceModule(val app: Application) : InjektModule {
             UpdatesPreferences(get())
         }
         addSingletonFactory {
-            ReaderPreferences(get())
+            ReaderPreferences(tachiyomi.core.common.preference.AccountPreferenceStore(get()))
         }
         addSingletonFactory {
-            TrackPreferences(get())
+            TrackPreferences(tachiyomi.core.common.preference.AccountPreferenceStore(get()))
         }
         addSingletonFactory {
-            DownloadPreferences(get())
+            DownloadPreferences(tachiyomi.core.common.preference.AccountPreferenceStore(get(), onlyKnown = true))
         }
         addSingletonFactory {
             BackupPreferences(get())

@@ -54,21 +54,24 @@ class StorageManager(
     }
 
     fun getAutomaticBackupsDirectory(): UniFile? {
-        return baseDir?.createDirectory(AUTOMATIC_BACKUPS_PATH)
+        val root = baseDir?.createDirectory(AUTOMATIC_BACKUPS_PATH)
+        val owner = tachiyomi.core.common.util.lang.LocalAccountScope.segment()
+        return if (owner.isEmpty()) root else root?.createDirectory("accounts")?.createDirectory(owner)
     }
 
-    fun getDownloadsDirectory(): UniFile? {
+    private fun downloadRoot(owner: String): UniFile? {
         val external = context.getExternalFilesDir(null) ?: return null
-        val directory = File(external, DOWNLOADS_PATH)
+        val segment = tachiyomi.core.common.util.lang.LocalAccountScope.segment(owner)
+        val directory = File(external, if (segment.isEmpty()) DOWNLOADS_PATH else "$DOWNLOADS_PATH/accounts/$segment")
         if (!directory.isDirectory && !directory.mkdirs()) return null
         return UniFile.fromFile(directory).also { DiskUtil.createNoMediaFile(it, context) }
     }
+    fun getDownloadsDirectory(owner: String = tachiyomi.core.common.util.lang.LocalAccountScope.fileOwner()): UniFile? = downloadRoot(owner)
 
-    /** New writes use the first root; old files stay untouched and readable. */
-    fun getDownloadDirectories(): List<UniFile> = listOfNotNull(
-        getDownloadsDirectory(),
-        getBaseDir(legacyDownloadsBase.get())?.findFile(DOWNLOADS_PATH),
-    ).distinctBy { it.uri }
+    /** Only explicit ownership claims expose a retained guest namespace; files never move. */
+    fun getDownloadDirectories(): List<UniFile> = tachiyomi.core.common.util.lang.LocalAccountScope.readableFileOwners().flatMap { owner ->
+        listOfNotNull(downloadRoot(owner), if (owner == "guest:0") getBaseDir(legacyDownloadsBase.get())?.findFile(DOWNLOADS_PATH) else null)
+    }.distinctBy { it.uri }
 
     fun getLocalSourceDirectory(): UniFile? {
         return baseDir?.createDirectory(LOCAL_SOURCE_PATH)

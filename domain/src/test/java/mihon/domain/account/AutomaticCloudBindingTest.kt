@@ -4,8 +4,8 @@ import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Test
 
 class AutomaticCloudBindingTest {
-    @Test fun `fresh sign in and restored same account start without enable decision`() {
-        AutomaticCloudBinding.requiresMerge("A",null,emptySet()) shouldBe false
+    @Test fun `unclaimed guest data requires consent while returning owner resumes`() {
+        AutomaticCloudBinding.requiresMerge("A",null,emptySet()) shouldBe true
         AutomaticCloudBinding.requiresMerge("A","A",setOf("A")) shouldBe false
         AutomaticCloudBinding.requiresMerge("A",null,setOf("A")) shouldBe false
     }

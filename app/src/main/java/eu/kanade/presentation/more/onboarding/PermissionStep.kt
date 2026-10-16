@@ -1,5 +1,6 @@
 package eu.kanade.presentation.more.onboarding
 
+import uy.kohesive.injekt.api.get
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Intent
@@ -26,6 +27,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -82,7 +84,7 @@ internal class PermissionStep : OnboardingStep {
             )
 
             PermissionCheckbox(
-                title = "إذن تثبيت الإضافات (مطلوب)",
+                title = "تثبيت إضافات المصادر (عند الحاجة)",
                 subtitle = "يتيح إمكانية تثبيت مصادر المانوا والإضافات البرمجية الجاهزة.",
                 granted = installGranted,
                 onButtonClick = {
@@ -99,7 +101,10 @@ internal class PermissionStep : OnboardingStep {
                     title = "إذن الإشعارات (اختياري)",
                     subtitle = "لتنبيهك بفصول المانوا الجديدة وإكمال التنزيلات.",
                     granted = notificationGranted,
-                    onButtonClick = { permissionRequester.launch(Manifest.permission.POST_NOTIFICATIONS) },
+                    onButtonClick = {
+                        uy.kohesive.injekt.Injekt.get<eu.kanade.domain.base.BasePreferences>().notificationPromptHandled.set(true)
+                        permissionRequester.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    },
                 )
             }
 
@@ -128,6 +133,7 @@ internal class PermissionStep : OnboardingStep {
         onButtonClick: () -> Unit,
     ) {
         ListItem(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(14.dp)),
             headlineContent = { Text(title) },
             supportingContent = {
                 Text(
@@ -145,11 +151,11 @@ internal class PermissionStep : OnboardingStep {
                     )
                 } else {
                     OutlinedButton(onClick = onButtonClick) {
-                        Text("منح")
+                        Text("السماح", color = eu.kanade.presentation.theme.MangaroDesignSystem.GoldPrimary)
                     }
                 }
             },
-            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            colors = ListItemDefaults.colors(containerColor = eu.kanade.presentation.theme.MangaroDesignSystem.SurfaceDark, headlineColor = eu.kanade.presentation.theme.MangaroDesignSystem.TextPrimary, supportingColor = eu.kanade.presentation.theme.MangaroDesignSystem.TextSecondary),
         )
     }
 }

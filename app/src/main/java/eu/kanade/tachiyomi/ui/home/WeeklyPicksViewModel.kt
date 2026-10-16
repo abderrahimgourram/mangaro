@@ -60,6 +60,16 @@ internal class WeeklyPicksViewModel @JvmOverloads constructor(
     private var job: Job?=null
     private var candidateJob: Job?=null
     private var loadedLocal=false
+    // A cancelled catalogue offer must not restart the same database reads.
+    private var localRead: Deferred<List<Manga>>? = null
+    private fun localCandidates(): Deferred<List<Manga>> = synchronized(this) {
+        localRead?.takeUnless { it.isCancelled }
+            ?: scope.async(io) { ready.await(); localReader() }.also { localRead=it }
+    }
+    private var lastSelection: Triple<List<CommunityRankedWork>, List<String>, String>? = null
+    private var selectedPicks = emptyList<WeeklyPick>()
+    private var persistedCandidates: String? = null
+    private var persistedCards: String? = null
     private fun currentWeek()=WeeklyCommunityPicks.week(day())
     init {scope.launch(io) {
         try {
@@ -73,7 +83,16 @@ internal class WeeklyPicksViewModel @JvmOverloads constructor(
             }}
             ranking=restored.mapNotNull {it.rating}
             if(prefs.getString("week",null)==week) frozenKeys=prefs.getString("pool","")!!.split(',').filter {it.isNotBlank()}
-            if(restored.isNotEmpty()) _state.value=WeeklyPicksState(restored,false)
+            if(restored.isNotEmpty()) {
+                _state.value=WeeklyPicksState(restored,false)
+                if(prefs.getString("ranking-week",null)==week) {
+                    val fullRanking=runCatching {json.decodeFromString<List<RankedDto>>(prefs.getString("ranking","")!!)}.getOrNull()
+                    if(fullRanking!=null) {
+                        ranking=fullRanking.map {CommunityRankedWork(it.manga_key,it.average,it.count,it.score)}
+                        lastFetch=prefs.getLong("ranking-fetched-at",0L)
+                    }
+                }
+            }
         } catch(_:Exception) {_state.update {it.copy(loading=false,failed=true)}}
         finally {ready.complete(Unit)}
         refresh()
@@ -85,7 +104,7 @@ internal class WeeklyPicksViewModel @JvmOverloads constructor(
             try {
             // Existing catalogue models retain exact identities, including available alternatives.
             val known=items.flatMap {listOf(it)+it.alternatives}.filter {it.title.isNotBlank() && it.url.isNotBlank()}
-            val local=if(loadedLocal) emptyList() else localReader().also {loadedLocal=true}
+            val local=if(loadedLocal) emptyList() else localCandidates().await().also {loadedLocal=true}
             local.forEach {m -> candidates[ProfileShowcaseRepository.key(m)]=HomeDiscoveryItem(m.id,m.title,m.asMangaCover(),m.source,"",m.url)}
             known.forEach {m -> val key=CommunityMangaKey.fromSource(m.sourceId,m.url).value; candidates[key]=m;catalogueKeys.add(key)}
             rebuild()
@@ -94,13 +113,15 @@ internal class WeeklyPicksViewModel @JvmOverloads constructor(
         }
     }
     @Synchronized fun refresh(force: Boolean=false) {
-        if(job?.isActive==true || (!force && System.currentTimeMillis()-lastFetch<30*60_000 && week==currentWeek())) return
+        if(job?.isActive==true || (!force && System.currentTimeMillis()-lastFetch in 0 until 30*60_000L && week==currentWeek())) return
         job=scope.launch(io) {
             ready.await()
             if(_state.value.cards.isEmpty()) _state.update {it.copy(loading=true)}
             try {
                 ranking=rankingReader()
                 lastFetch=System.currentTimeMillis()
+                prefs.edit().putLong("ranking-fetched-at",lastFetch).putString("ranking-week",currentWeek())
+                    .putString("ranking",json.encodeToString(ranking.map {RankedDto(it.mangaKey,it.average,it.count,it.score)})).apply()
                 rebuild()
                 _state.update {it.copy(loading=false,failed=false)}
             } catch(_:TimeoutCancellationException) {runCatching {rebuild()};_state.update {it.copy(loading=false,failed=true)}}
@@ -117,11 +138,21 @@ internal class WeeklyPicksViewModel @JvmOverloads constructor(
             prefs.edit().putString("week",week).putString("pool",frozenKeys.joinToString(",")).apply()
         }
         val eligible=(if(frozenKeys.isEmpty()) synchronized(catalogueKeys) {catalogueKeys.toList()} else frozenKeys.filter {candidates.containsKey(it)})+ranking.map {it.mangaKey}.filter {candidates.containsKey(it)}
-        val picks=WeeklyCommunityPicks.select(ranking,eligible,week).mapNotNull {p -> candidates[p.key]?.let {WeeklyMangaCard(p.key,it,p.rating)}}
+        val selection=Triple(ranking,eligible.distinct().sorted(),week)
+        if(selection!=lastSelection) {
+            selectedPicks=WeeklyCommunityPicks.select(selection.first,selection.second,selection.third)
+            lastSelection=selection
+        }
+        val picks=selectedPicks.mapNotNull {p -> candidates[p.key]?.let {WeeklyMangaCard(p.key,it,p.rating)}}
         if(picks.isNotEmpty()) {
             _state.value=WeeklyPicksState(picks,false,_state.value.failed)
             val cachedPool=(frozenKeys+ picks.map {it.key}).distinct().mapNotNull {key -> candidates[key]?.let {m -> CachedCandidate(key,m.mangaId,m.title,m.sourceId,m.url,m.coverData.url,m.coverData.isMangaFavorite,m.coverData.lastModified)}}
-            prefs.edit().putString("candidates",json.encodeToString(cachedPool)).putString("cards",json.encodeToString(picks.map {CachedPick(it.key,it.manga.mangaId,it.rating?.average,it.rating?.count,it.rating?.score)})).apply()
+            val poolJson=json.encodeToString(cachedPool)
+            val cardsJson=json.encodeToString(picks.map {CachedPick(it.key,it.manga.mangaId,it.rating?.average,it.rating?.count,it.rating?.score)})
+            if(poolJson!=persistedCandidates || cardsJson!=persistedCards) {
+                prefs.edit().putString("candidates",poolJson).putString("cards",cardsJson).apply()
+                persistedCandidates=poolJson; persistedCards=cardsJson
+            }
         }
     }
 }

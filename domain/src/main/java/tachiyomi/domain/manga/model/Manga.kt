@@ -42,6 +42,8 @@ data class Manga(
     val version: Long,
     val notes: String,
     val memo: JsonObject,
+    @kotlinx.serialization.Transient
+    val accountToken: tachiyomi.core.common.util.lang.LocalAccountScope.Token = tachiyomi.core.common.util.lang.LocalAccountScope.capture(),
 ) : JavaSerializable {
 
     val expectedNextUpdate: Instant?

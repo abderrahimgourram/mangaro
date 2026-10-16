@@ -24,7 +24,8 @@ import uy.kohesive.injekt.api.get
 @OptIn(kotlinx.coroutines.FlowPreview::class)
 class SupabaseCloudSync(private val context:Context,private val client:SupabaseClient,private val auth:AccountAuth,
     private val store:CloudSyncStore,private val local:CloudLocalGateway,
-    private val scope: CoroutineScope = CoroutineScope(SupervisorJob()+Dispatchers.IO)):AccountCloudSync {
+    private val scope: CoroutineScope = CoroutineScope(SupervisorJob()+Dispatchers.IO),
+    private val workspace: tachiyomi.data.LocalAccountWorkspace? = null):AccountCloudSync {
     private val lock=Mutex()
     private val configuration=Mutex()
     private class InactiveAccount : CancellationException()
@@ -38,7 +39,8 @@ class SupabaseCloudSync(private val context:Context,private val client:SupabaseC
     }
     private suspend fun bindNovels(user:String?,importGuest:Boolean=false):Boolean = try {
         local.bindNovels(user,importGuest);true
-    } catch(cancelled:CancellationException) {throw cancelled}
+    } catch(_:tachiyomi.core.common.util.lang.LocalAccountScope.Changed) { false }
+    catch(cancelled:CancellationException) {throw cancelled}
     catch(_:Exception) {
         user?.let {store.put(it,"novel/available","false");store.put(it,"novel/error","تعذّر استعادة بيانات الروايات — الملفات المحلية محفوظة")}
         false
@@ -79,8 +81,9 @@ class SupabaseCloudSync(private val context:Context,private val client:SupabaseC
         false
     }
     private fun active()=(auth.observeSession().value as? AccountSession.Authenticated)?.profile?.userId
+    private fun requiresDecision(user: String) = if (workspace == null) AutomaticCloudBinding.requiresMerge(user,store.get("_device","bound"),store.configuredAccounts()) else user !in store.configuredAccounts()
     private fun enabled(user:String)=store.get(user,"enabled")=="true"
-    private fun checkOwner(user:String) { if(!CloudSyncPolicy.canSend(user,active(),enabled(user))) throw InactiveAccount() }
+    private fun checkOwner(user:String) { if(!CloudSyncPolicy.canSend(user,active(),enabled(user)) || !tachiyomi.core.common.util.lang.LocalAccountScope.matchesOwner(user)) throw InactiveAccount() }
     private fun state(user:String)=states.getOrPut(user){MutableStateFlow(CloudSyncStatus())}
     override fun observe(userId:String):StateFlow<CloudSyncStatus> {
         val flow=state(userId)
@@ -90,7 +93,7 @@ class SupabaseCloudSync(private val context:Context,private val client:SupabaseC
     private fun publish(user:String,running:Boolean?=null,error:String?=null) {
         val previous=state(user).value
         state(user).value=try {CloudSyncStatus(enabled(user),store.get(user,"decision")!=null,running ?: previous.running,
-            store.count(user,"pending/")+store.count(user,"dirty/"),store.get(user,"success")?.toLongOrNull(),error,needsMerge = AutomaticCloudBinding.requiresMerge(user,store.get("_device","bound"),store.configuredAccounts()), unresolved = store.count(user,"unresolved/"), loaded = true, novelError = store.get(user,"novel/error"), novelConflicts = store.count(user,"conflict/"))}
+            store.count(user,"pending/")+store.count(user,"dirty/"),store.get(user,"success")?.toLongOrNull(),error,needsMerge = requiresDecision(user), unresolved = store.count(user,"unresolved/"), loaded = true, novelError = store.get(user,"novel/error"), novelConflicts = store.count(user,"conflict/"))}
         catch(_:Exception) {previous.copy(running=false,loaded=true,error="تعذر المزامنة — بياناتك المحلية محفوظة")}
     }
     override fun restoredCompletion(userId:String,chapterKey:String)=runCatching {store.get(userId,"restored/$chapterKey")=="true"}.getOrDefault(true)
@@ -98,9 +101,9 @@ class SupabaseCloudSync(private val context:Context,private val client:SupabaseC
     override fun start() {
         if(started)return;started=true
         LocalCloudChanges.capture={ change ->
-            if(change.kind==LocalCloudChanges.Kind.COLLECTION_DELETED) store.invalidateCategory(change.id)
-            val user=active()
-            if(user!=null && enabled(user) && (change.kind!=LocalCloudChanges.Kind.NOVEL || change.owner==user)) {
+            if(change.kind==LocalCloudChanges.Kind.COLLECTION_DELETED) store.invalidateCategory(change.id,change.owner)
+            val user = change.owner?.takeIf { runCatching { java.util.UUID.fromString(it) }.isSuccess && tachiyomi.core.common.util.lang.LocalAccountScope.matchesOwner(it) } ?: active()
+            if(user!=null && enabled(user) && (change.owner==null || change.owner==user)) {
                 // Small durable coalesced hint. Account identity is captured before asynchronous work.
                 store.put(user,"dirty/${change.kind}/${change.id}",UUID.randomUUID().toString())
                 if(change.kind==LocalCloudChanges.Kind.RESOLVE) resolutions.tryEmit(Unit)
@@ -138,12 +141,12 @@ class SupabaseCloudSync(private val context:Context,private val client:SupabaseC
                         if(user==null) bindNovels(null)
                         if(user!=null) {
                             bindNovels(user)
-                            val ambiguous = AutomaticCloudBinding.requiresMerge(user,store.get("_device","bound"),store.configuredAccounts())
+                            val ambiguous = requiresDecision(user)
                             if(ambiguous) {
                                 store.put(user,"enabled","false")
                                 publish(user)
                             } else {
-                                configure(user,true)
+                                configureInternal(user,true,false)
                             }
                         }
                     } catch(cancelled:CancellationException) {throw cancelled}
@@ -152,11 +155,20 @@ class SupabaseCloudSync(private val context:Context,private val client:SupabaseC
             }
         }
     }
-    override suspend fun configure(userId:String,enabled:Boolean):AccountOperation=withContext(Dispatchers.IO) {
+    override suspend fun configure(userId:String,enabled:Boolean):AccountOperation = configureInternal(userId,enabled,true)
+    override suspend fun restoreAccount(userId:String):AccountOperation = configureInternal(userId,true,false)
+    private suspend fun configureInternal(userId:String,enabled:Boolean,importGuest:Boolean):AccountOperation=withContext(Dispatchers.IO + tachiyomi.core.common.util.lang.LocalAccountScope.context()) {
         if(active()!=userId)return@withContext AccountOperation.Failed("سجّل الدخول أولًا")
         if(!configuration.tryLock())return@withContext AccountOperation.Failed("جارٍ تجهيز المزامنة")
         try {
-            if(enabled) bindNovels(userId, importGuest=true)
+            if (enabled && importGuest && workspace != null) {
+                val downloads = uy.kohesive.injekt.Injekt.get<eu.kanade.tachiyomi.data.download.DownloadManager>()
+                val guestFiles = "guest:${tachiyomi.core.common.util.lang.LocalAccountScope.guestGeneration}"
+                if (!downloads.canClaimGuestQueue(guestFiles)) return@withContext AccountOperation.Failed("أوقف تنزيلات الضيف مؤقتًا قبل ضم ملكيتها إلى الحساب")
+                workspace.claimGuest(userId)
+                downloads.claimGuestQueue(guestFiles,userId)
+            }
+            if(enabled) bindNovels(userId, importGuest=importGuest)
             if(enabled && store.get(userId,"baseline")!="true" && store.get(userId,"seeded")==null) {
                 val snapshot=local.all(userId)
                 if(active()!=userId) return@withContext AccountOperation.Failed("تغير الحساب، حاول مجددًا")
@@ -193,7 +205,7 @@ class SupabaseCloudSync(private val context:Context,private val client:SupabaseC
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL,30,TimeUnit.SECONDS).build()
         WorkManager.getInstance(context).enqueueUniqueWork(workName(user),if(append) ExistingWorkPolicy.APPEND_OR_REPLACE else ExistingWorkPolicy.KEEP,request)
     }
-    override suspend fun syncNow(userId:String):AccountOperation=withContext(Dispatchers.IO) {
+    override suspend fun syncNow(userId:String):AccountOperation=withContext(Dispatchers.IO + tachiyomi.core.common.util.lang.LocalAccountScope.context()) {
         if(!lock.tryLock())return@withContext AccountOperation.Completed
         try {
             withTimeout(90_000) {
@@ -236,10 +248,14 @@ class SupabaseCloudSync(private val context:Context,private val client:SupabaseC
         catch(_:Exception) {publish(userId,false,"تعذر المزامنة — سنحاول مرة أخرى");runCatching {schedule(userId)};AccountOperation.Failed("تعذر المزامنة — سنحاول مرة أخرى")}
         finally {lock.unlock()}
     }
-    private fun initialBody(table:String,body:JsonObject,remote:JsonObject?):JsonObject {
-        if(remote==null || remote.text("deleted_at")!=null)return body
+    internal fun initialBody(table:String,body:JsonObject,remote:JsonObject?):JsonObject {
+        if(remote==null)return body
+        // An unobserved device seed cannot resurrect a cloud deletion.
+        if(remote.text("deleted_at")!=null)return clientRow(remote)
         return when(table) {
-            "cloud_chapter_progress" -> JsonObject(body+buildJsonObject {
+            "cloud_chapter_progress" -> if (CloudSyncPolicy.cloudEventMillis(time(remote,"state_changed_at")) > CloudSyncPolicy.cloudEventMillis(time(body,"state_changed_at"))) clientRow(remote)
+            else if (CloudSyncPolicy.cloudEventMillis(time(body,"state_changed_at")) > CloudSyncPolicy.cloudEventMillis(time(remote,"state_changed_at"))) body
+            else JsonObject(body+buildJsonObject {
                 put("is_read",CloudSyncPolicy.initialRead(body.flag("is_read"),remote.flag("is_read")))
                 put("last_page_index",CloudSyncPolicy.initialPage(body.number("last_page_index"),remote.number("last_page_index")))
                 put("total_pages",maxOf(body.number("total_pages"),remote.number("total_pages")).takeIf {it>0})
@@ -268,6 +284,7 @@ class SupabaseCloudSync(private val context:Context,private val client:SupabaseC
             val change=LocalCloudChanges.Change(kind,id)
             val captureKey=local.captureKey(change)
             val rows=captured[captureKey] ?: local.capture(user,change).also {captured[captureKey]=it}
+            checkOwner(user)
             val relevant=when(kind) {
                 LocalCloudChanges.Kind.COLLECTIONS,LocalCloudChanges.Kind.COLLECTION_DELETED -> store.rows(user,"local/cloud_library_collections/")
                 LocalCloudChanges.Kind.HISTORY_ALL -> store.rows(user,"local/cloud_manga_history/")
@@ -384,7 +401,7 @@ class SupabaseCloudSync(private val context:Context,private val client:SupabaseC
                 // A stale offline removal/unread cannot blindly overwrite a newer cloud revision.
                 // Preserve higher completion/progress on conflict; explicit unread succeeds after observing the new baseline.
                 if(!changedDuringFlight && table=="cloud_chapter_progress" && body.text("deleted_at")==null &&
-                    returned.text("deleted_at")==null && CloudSyncPolicy.mergeHigherPage(body.flag("is_read"),returned.flag("is_read"),body.number("last_page_index"),returned.number("last_page_index"))) {
+                    returned.text("deleted_at")==null && CloudSyncPolicy.mergeNewerProgress(body.flag("is_read"),returned.flag("is_read"),body.number("last_page_index"),returned.number("last_page_index"),CloudSyncPolicy.cloudEventMillis(time(body,"state_changed_at")),CloudSyncPolicy.cloudEventMillis(time(returned,"state_changed_at")))) {
                     val merged=JsonObject(body+buildJsonObject {put("is_read",body.flag("is_read")||returned.flag("is_read"));put("last_page_index",maxOf(body.number("last_page_index"),returned.number("last_page_index")))})
                     store.replaceIfCurrent(user,path,value,buildJsonObject {put("body",merged);put("expected",returned.number("revision"));put("generation",UUID.randomUUID().toString())}.toString())
                     continue

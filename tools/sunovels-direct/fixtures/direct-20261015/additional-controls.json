@@ -1,0 +1,26 @@
+[
+  {
+    "url": "https://sunovels.com/novel/birth-of-the-demonic-sword/1",
+    "status": 200,
+    "bytes": 163806,
+    "sha256": "5c0f4299282109bc97d3ded62e9db50da2af78973f620b01e6bdb0630735dd57"
+  },
+  {
+    "url": "https://sunovels.com/novel/birth-of-the-demonic-sword/135",
+    "status": 200,
+    "bytes": 172671,
+    "sha256": "96c017531e703259137458fa7170f5e347b38c6c1bf0809cbaf5b78daf98b50e"
+  },
+  {
+    "url": "https://sunovels.com/novel/birth-of-the-demonic-sword/675",
+    "status": 200,
+    "bytes": 80761,
+    "sha256": "832caca7bff8aac7a851327d00853bc2af75c3d1e21846ecd124a1c55b7088fd"
+  },
+  {
+    "url": "https://sunovels.com/novel/reverend-insanity/30",
+    "status": 200,
+    "bytes": 132356,
+    "sha256": "32a02417535c6a2dab47df9f8db7d2f12add7e7b02f45f3d210ee33731bc70cc"
+  }
+]

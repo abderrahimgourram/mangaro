@@ -26,12 +26,14 @@ class CategoryViewModel(
     private val reorderCategory: ReorderCategory = Injekt.get(),
     private val renameCategory: RenameCategory = Injekt.get(),
 ) : StateViewModel<CategoryScreenState>(CategoryScreenState.Loading) {
+    private val accountScope = kotlinx.coroutines.CoroutineScope(viewModelScope.coroutineContext + tachiyomi.core.common.util.lang.LocalAccountScope.context())
+
 
     private val _events: Channel<CategoryEvent> = Channel()
     val events = _events.receiveAsFlow()
 
     init {
-        viewModelScope.launch {
+        accountScope.launch {
             getCategories.subscribe()
                 .collectLatest { categories ->
                     mutableState.update {
@@ -45,7 +47,7 @@ class CategoryViewModel(
     }
 
     fun createCategory(name: String) {
-        viewModelScope.launch {
+        accountScope.launch {
             when (createCategoryWithName.await(name)) {
                 is CreateCategoryWithName.Result.InternalError -> _events.send(CategoryEvent.InternalError)
                 else -> {}
@@ -54,7 +56,7 @@ class CategoryViewModel(
     }
 
     fun deleteCategory(categoryId: Long) {
-        viewModelScope.launch {
+        accountScope.launch {
             when (deleteCategory.await(categoryId = categoryId)) {
                 is DeleteCategory.Result.InternalError -> _events.send(CategoryEvent.InternalError)
                 else -> {}
@@ -63,7 +65,7 @@ class CategoryViewModel(
     }
 
     fun changeOrder(category: Category, newIndex: Int) {
-        viewModelScope.launch {
+        accountScope.launch {
             when (reorderCategory.await(category, newIndex)) {
                 is ReorderCategory.Result.InternalError -> _events.send(CategoryEvent.InternalError)
                 else -> {}
@@ -72,7 +74,7 @@ class CategoryViewModel(
     }
 
     fun renameCategory(category: Category, name: String) {
-        viewModelScope.launch {
+        accountScope.launch {
             when (renameCategory.await(category, name)) {
                 is RenameCategory.Result.InternalError -> _events.send(CategoryEvent.InternalError)
                 else -> {}

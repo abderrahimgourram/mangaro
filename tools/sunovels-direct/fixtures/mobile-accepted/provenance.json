@@ -1,0 +1,10 @@
+{
+  "purpose": "Previously owner-authorized anonymous mobile responses, replay only",
+  "privateCredentials": false,
+  "sha256": {
+    "locked-reader-fixture.json": "6d3213850fe6542db94f116f5510181d5237403f365d1648ec89b95ac1f4056a",
+    "public-reader-fixture.json": "465e9492c1a5a5aa83127e74c24d4b08f2635a8f9f53479f2ebe43025b35a63b",
+    "locked.html": "b9c6fe544e9e331c1847b8e1c2f45fa0617442451a858a050ca0a806c1a8a909",
+    "public.html": "2c8bd1b0594394c12cbf93ea141ea2257350d434e1ed49ce07560bb3329de6bf"
+  }
+}

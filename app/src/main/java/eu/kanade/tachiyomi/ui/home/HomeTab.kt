@@ -33,6 +33,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -109,6 +110,19 @@ object HomeTab : Tab {
         val context = LocalContext.current
         val tabNavigator = LocalTabNavigator.current
         val navigator = LocalNavigator.currentOrThrow
+        var selectedCatalogId by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<Long?>(null) }
+        val catalogItems = state.popularManga + state.latestManga + state.newManga + state.completedManga + listOfNotNull(state.discoveryFeatured)
+        val catalogGroups = androidx.compose.runtime.remember(catalogItems) { GroupDiscoveryItems.group(catalogItems) }
+        val selectedCatalog = catalogGroups.firstOrNull { item -> (listOf(item) + item.alternatives).any { it.mangaId == selectedCatalogId } }
+        val openCatalog: (Long) -> Unit = { id ->
+            val group = catalogGroups.firstOrNull { item -> (listOf(item) + item.alternatives).any { it.mangaId == id } }
+            // Preserve the clicked Popular/Latest representative unless an explicit preference exists.
+            navigator.push(MangaScreen(group?.let { CatalogEditionOpening.preferred(it)?.mangaId } ?: id, true))
+        }
+        if (selectedCatalog != null && selectedCatalog.availableVersions.size > 1) {
+            eu.kanade.presentation.home.MangaroSourceChooserSheet(selectedCatalog,
+                onSelectVersion = { navigator.push(MangaScreen(it, true)) }, onDismiss = { selectedCatalogId = null })
+        }
 
         val account = androidx.compose.runtime.remember { uy.kohesive.injekt.Injekt.get<mihon.domain.account.AccountFoundation>() }
         val accountSession by account.session.collectAsStateWithLifecycle()
@@ -124,7 +138,7 @@ object HomeTab : Tab {
             onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
         }
         val currentInboxOwner = (accountSession as? mihon.domain.account.AccountSession.Authenticated)?.profile?.userId
-        val hasUnreadInbox = workNotices.any { it.readAt == null } || (inboxState.owner == currentInboxOwner && inboxState.unread > 0)
+        val hasUnreadInbox = workNotices.any { it.owner == currentInboxOwner && it.readAt == null } || (inboxState.owner == currentInboxOwner && inboxState.unread > 0)
 
         val snackbarHostState = androidx.compose.runtime.remember { androidx.compose.material3.SnackbarHostState() }
         val chapterRefresh = eu.kanade.presentation.library.rememberLibraryUpdateRefresh { snackbarHostState.showSnackbar(it) }
@@ -142,7 +156,7 @@ object HomeTab : Tab {
         ) { openDrawer ->
         Scaffold(
             contentWindowInsets = WindowInsets(0),
-            snackbarHost = { androidx.compose.material3.SnackbarHost(snackbarHostState) },
+            snackbarHost = { eu.kanade.presentation.components.MangaroSnackbarHost(snackbarHostState) },
         ) { paddingValues ->
             PullRefresh(
                 refreshing = state.isSwipeRefreshing || chapterRefresh.refreshing,
@@ -208,7 +222,7 @@ object HomeTab : Tab {
                     }
 
                     // Section 3: شائع الآن (Popular Manga)
-                    if (state.popularManga.isNotEmpty() || state.isDiscoveryLoading) {
+                    if (state.popularManga.isNotEmpty() || !state.popularResolved) {
                         item(key = "popular_manga_header") {
                             Spacer(modifier = Modifier.height(12.dp))
                             MangaroSectionHeader(
@@ -226,9 +240,8 @@ object HomeTab : Tab {
                             if (state.popularManga.isNotEmpty()) {
                                 MangaroPopularShelf(
                                     items = state.popularManga,
-                                    onMangaClick = { mangaId ->
-                                        navigator.push(MangaScreen(mangaId, true))
-                                    },
+                                    onMangaClick = openCatalog,
+                                    onChooseEdition = { selectedCatalogId = it },
                                 )
                             } else {
                                 MangaCardSkeletonRow()
@@ -237,7 +250,7 @@ object HomeTab : Tab {
                     }
 
                     // Section 4: جديد (New Manga)
-                    if (state.newManga.isNotEmpty() || (state.isDiscoveryLoading && state.popularManga.isEmpty())) {
+                    if (state.newManga.isNotEmpty() || !state.newResolved) {
                         item(key = "new_manga_header") {
                             Spacer(modifier = Modifier.height(8.dp))
                             MangaroSectionHeader(
@@ -255,9 +268,8 @@ object HomeTab : Tab {
                             if (state.newManga.isNotEmpty()) {
                                 MangaroNewShelf(
                                     items = state.newManga,
-                                    onMangaClick = { mangaId ->
-                                        navigator.push(MangaScreen(mangaId, true))
-                                    },
+                                    onMangaClick = openCatalog,
+                                    onChooseEdition = { selectedCatalogId = it },
                                 )
                             } else {
                                 MangaCardSkeletonRow()
@@ -266,7 +278,7 @@ object HomeTab : Tab {
                     }
 
                     // Section 5: آخر التحديثات (Latest Updates)
-                    if (state.latestManga.isNotEmpty() || state.isDiscoveryLoading) {
+                    if (state.latestManga.isNotEmpty() || !state.latestResolved) {
                         item(key = "latest_manga_header") {
                             Spacer(modifier = Modifier.height(8.dp))
                             MangaroSectionHeader(
@@ -284,9 +296,8 @@ object HomeTab : Tab {
                             if (state.latestManga.isNotEmpty()) {
                                 MangaroLatestShelf(
                                     items = state.latestManga,
-                                    onMangaClick = { mangaId ->
-                                        navigator.push(MangaScreen(mangaId, true))
-                                    },
+                                    onMangaClick = openCatalog,
+                                    onChooseEdition = { selectedCatalogId = it },
                                 )
                             } else {
                                 MangaCardSkeletonRow()
@@ -295,7 +306,7 @@ object HomeTab : Tab {
                     }
 
                     // Section 6: مكتمل (Completed Manga)
-                    if (state.completedManga.isNotEmpty() || state.isDiscoveryLoading) {
+                    if (state.completedManga.isNotEmpty() || !state.completedResolved) {
                         item(key = "completed_manga_header") {
                             Spacer(modifier = Modifier.height(8.dp))
                             MangaroSectionHeader(
@@ -314,9 +325,8 @@ object HomeTab : Tab {
                                 MangaroStandardShelf(
                                     category = "completed",
                                     items = state.completedManga,
-                                    onMangaClick = { mangaId ->
-                                        navigator.push(MangaScreen(mangaId, true))
-                                    },
+                                    onMangaClick = openCatalog,
+                                    onChooseEdition = { selectedCatalogId = it },
                                 )
                             } else {
                                 MangaCardSkeletonRow()

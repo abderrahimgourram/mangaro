@@ -7,6 +7,10 @@ internal object NovelQueueSql {
         "CREATE TABLE tasks (id TEXT PRIMARY KEY, edition_id TEXT NOT NULL, chapter TEXT NOT NULL, state TEXT NOT NULL, generation INTEGER NOT NULL DEFAULT 0, ordinal INTEGER NOT NULL, created INTEGER NOT NULL, error TEXT)",
         "CREATE INDEX pending_tasks ON tasks(state,edition_id,created,ordinal)",
     )
+    // Retain generation tombstones: removing the row would permit an ABA on re-download.
+    const val deleting = "UPDATE tasks SET state='DELETING',generation=generation+1,error=NULL WHERE id=?"
+    const val deleted = "UPDATE tasks SET state='REMOVED',error=NULL WHERE id=? AND state='DELETING'"
+    const val visible = "SELECT id,edition_id,chapter,state,generation,error,created FROM tasks WHERE state NOT IN ('REMOVED','CANCELLED') ORDER BY created,ordinal"
     const val recover = "UPDATE tasks SET state='PENDING',generation=generation+1 WHERE state='RUNNING'"
     const val pause = "UPDATE tasks SET state='PAUSED',generation=generation+1 WHERE edition_id=? AND state IN ('PENDING','RUNNING')"
     const val cancel = "UPDATE tasks SET state='CANCELLED',generation=generation+1 WHERE edition_id=? AND state NOT IN ('DONE','DELETING')"

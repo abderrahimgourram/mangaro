@@ -18,6 +18,12 @@ import java.util.zip.GZIPOutputStream
 internal fun novelDigest(value: String): String = MessageDigest.getInstance("SHA-256").digest(value.toByteArray())
     .joinToString("") { "%02x".format(java.util.Locale.US, it) }
 
+internal fun novelTextCacheKey(owner: String, editionId: String, chapterId: String) = "$owner|$editionId|$chapterId"
+
+/** Legacy files stay Guest-owned. Account paths are deterministic, without moving old data. */
+internal fun novelDownloadRoot(filesDir: File, owner: String): File =
+    File(filesDir, "novels-local" + if (owner == "guest:0") "" else "/offline-accounts/" + novelDigest(owner))
+
 /** Shared by queue and reader. No manga paths, external storage, executable HTML or temporary image copies. */
 class NovelDownloadDisk(private val root: File) {
     private val json = Json { ignoreUnknownKeys = true }
@@ -30,7 +36,8 @@ class NovelDownloadDisk(private val root: File) {
     }
     private val temporary get() = File(root, "temporary")
     private fun target(editionId: String, chapterId: String) = File(File(root, "chapters/" + novelDigest(editionId)), novelDigest(chapterId) + ".json.gz")
-    @Serializable private data class StoredChapter(val editionId: String, val chapterId: String, val checksum: String, val text: NovelText)
+    @Serializable private data class StoredChapter(val editionId: String, val chapterId: String, val checksum: String, val text: NovelText,
+        val sourceContract: String? = null)
 
     fun read(editionId: String, chapterId: String): NovelText? {
         val file = target(editionId, chapterId)
@@ -55,7 +62,11 @@ class NovelDownloadDisk(private val root: File) {
             if (editionId == "novel.cenele" || editionId.startsWith("novel.cenele:") || editionId.startsWith("novel.cenele/")) {
                 text = CeneleSanitizer.sanitize(text)
             }
-            validate(text)
+            val sea = editionId.startsWith(SeaNovelSource.SOURCE_ID + ":")
+            validate(text, allowShortText = sea || (editionId.startsWith(SunovelsSource.SOURCE_ID + ":") &&
+                stored.sourceContract == SunovelsSource.PARSER_VERSION))
+            if (sea) SeaNovelSource.validateText(text)
+            if (editionId.startsWith(SunovelsSource.SOURCE_ID + ":")) SunovelsSource.validateText(text)
             text
         }.getOrNull()
     }
@@ -65,6 +76,7 @@ class NovelDownloadDisk(private val root: File) {
         val file = target(editionId, chapterId)
         check(!file.exists() || file.delete()) { "Unable to delete downloaded novel chapter" }
         removeIllustrationOwner(ownerKey(editionId, chapterId))
+        file.parentFile?.let { directory -> if (directory.listFiles()?.isEmpty() == true) directory.delete() }
     }
 
     internal class PreparedChapter(private val part: File, private val destination: File) : java.io.Closeable {
@@ -90,8 +102,12 @@ class NovelDownloadDisk(private val root: File) {
         val sanitized = if (editionId == "novel.cenele" || editionId.startsWith("novel.cenele:") || editionId.startsWith("novel.cenele/")) {
             CeneleSanitizer.sanitize(text)
         } else text
-        validate(sanitized)
-        val value = StoredChapter(editionId, chapterId, novelDigest(json.encodeToString(sanitized)), sanitized)
+        val sea = editionId.startsWith(SeaNovelSource.SOURCE_ID + ":")
+        validate(sanitized, allowShortText = sea || editionId.startsWith(SunovelsSource.SOURCE_ID + ":"))
+        if (sea) SeaNovelSource.validateText(sanitized)
+        if (editionId.startsWith(SunovelsSource.SOURCE_ID + ":")) SunovelsSource.validateText(sanitized)
+        val value = StoredChapter(editionId, chapterId, novelDigest(json.encodeToString(sanitized)), sanitized,
+            sourceContract = SunovelsSource.PARSER_VERSION.takeIf { editionId.startsWith(SunovelsSource.SOURCE_ID + ":") })
         val bytes = json.encodeToString(value).toByteArray()
         check(bytes.size <= 8 * 1024 * 1024)
         temporary.mkdirs()
@@ -228,8 +244,9 @@ class NovelDownloadDisk(private val root: File) {
         }
         return deleted
     }
-    private fun validate(text: NovelText) {
-        check(text.paragraphs.size >= 3 && text.paragraphs.sumOf { it.length } >= 200) { "Incomplete novel chapter" }
+    private fun validate(text: NovelText, allowShortText: Boolean = false) {
+        check(if (allowShortText) text.paragraphs.isNotEmpty() && text.paragraphs.any { p -> p.any(Char::isLetter) }
+            else text.paragraphs.size >= 3 && text.paragraphs.sumOf { it.length } >= 200) { "Incomplete novel chapter" }
         check(text.markup.isEmpty() || text.markup.size == text.paragraphs.size)
         check(text.blocks.size <= 20000)
         check(text.blocks.filter { it.kind == NovelBlockKind.IMAGE }.size <= 256)

@@ -35,6 +35,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import tachiyomi.data.accountOperation
 import tachiyomi.data.Database
 import tachiyomi.data.manga.MangaMapper
 import tachiyomi.domain.chapter.model.Chapter
@@ -54,6 +55,8 @@ class MangaroDownloadsViewModel(
     private val storage: StorageManager = Injekt.get(),
     private val context: Context = Injekt.get(),
 ) : ViewModel() {
+    private val accountScope = kotlinx.coroutines.CoroutineScope(viewModelScope.coroutineContext + tachiyomi.core.common.util.lang.LocalAccountScope.context())
+
     private val mutableState = MutableStateFlow(State())
     val state = mutableState.asStateFlow()
     private var lastScan = 0L
@@ -61,7 +64,7 @@ class MangaroDownloadsViewModel(
     private val inventoryMutex = Mutex()
 
     init {
-        viewModelScope.launch {
+        accountScope.launch {
             manager.queueState.flatMapLatest { queue ->
                 if (queue.isEmpty()) flowOf(emptyList()) else combine(queue.map { download ->
                     download.statusFlow.flatMapLatest { status ->
@@ -75,10 +78,10 @@ class MangaroDownloadsViewModel(
             }.distinctUntilChanged()
                 .collectLatest { rows -> mutableState.update { it.copy(queue = rows) } }
         }
-        viewModelScope.launch {
+        accountScope.launch {
             manager.isDownloaderRunning.collectLatest { running -> mutableState.update { it.copy(running = running) } }
         }
-        viewModelScope.launch(Dispatchers.IO) {
+        accountScope.launch(Dispatchers.IO) {
             // A single inventory observer; bursts of completions never trigger scans per row.
             merge(cache.changes, storage.changes).debounce(700).conflate().collect {
                 val requestedAt = android.os.SystemClock.elapsedRealtime()
@@ -97,9 +100,12 @@ class MangaroDownloadsViewModel(
         try {
             val root = checkNotNull(storage.getDownloadsDirectory()) { "Downloads storage unavailable" }
             val entries = mutableMapOf<String, DiskEntry>()
+            val visibleRoots = storage.getDownloadDirectories()
+            val privateContainers = visibleRoots.mapNotNull { it.findFile("accounts")?.uri?.toString() }.toSet()
             suspend fun measure(file: UniFile): DiskEntry {
                 currentCoroutineContext().ensureActive()
                 val key = file.uri.toString()
+                if (key in privateContainers) return DiskEntry(0, 0)
                 val modified = file.lastModified()
                 completedSizes[key]?.takeIf { modified > 0 && it.first == modified }?.let {
                     entries[key] = it.second
@@ -113,8 +119,9 @@ class MangaroDownloadsViewModel(
                 if (file.isDirectory || file.name.orEmpty().endsWith(".cbz", ignoreCase = true)) entries[key] = entry
                 return entry
             }
-            val used = storage.getDownloadDirectories().sumOf { measure(it).bytes }
-            val mangas = Injekt.get<Database>().mangasQueries.getAllManga(MangaMapper::mapManga).awaitAsList()
+            val used = visibleRoots.sumOf { measure(it).bytes }
+            val database = Injekt.get<Database>()
+            val mangas = database.accountOperation { database.mangasQueries.getAllManga(MangaMapper::mapManga).awaitAsList() }
             val nextSizes = mutableMapOf<String, Pair<Long, DiskEntry>>()
             val groups = mangas.mapNotNull { manga ->
                 currentCoroutineContext().ensureActive()
@@ -180,7 +187,7 @@ class MangaroDownloadsViewModel(
     fun clearCurrentDownloads() {
         if (mutableState.value.clearing || manager.queueState.value.isEmpty()) return
         mutableState.update { it.copy(clearing = true, error = null) }
-        viewModelScope.launch {
+        accountScope.launch {
             try {
                 manager.clearQueue()
             } catch (cancel: CancellationException) {
@@ -211,7 +218,7 @@ class MangaroDownloadsViewModel(
         // Claim synchronously on confirmation, before dispatching any file work or accepting another tap.
         mutableState.update { state -> state.copy(groups = state.groups.filterNot { it.manga.id in ids },
             deletingMangaIds = state.deletingMangaIds + ids, error = null) }
-        viewModelScope.launch(Dispatchers.IO) {
+        accountScope.launch(Dispatchers.IO) {
             // Confirmed deletion finishes even if the Downloads screen is subsequently left.
             withContext(NonCancellable) {
                 inventoryMutex.withLock {
@@ -238,7 +245,7 @@ class MangaroDownloadsViewModel(
         }
     }
     private fun action(block: () -> Unit) {
-        viewModelScope.launch(Dispatchers.IO) {
+        accountScope.launch(Dispatchers.IO) {
             try { block() }
             catch (cancel: CancellationException) { throw cancel }
             catch (_: Exception) { mutableState.update { it.copy(error = "تعذّر تنفيذ العملية. حاول مجددًا") } }

@@ -17,7 +17,16 @@ class ExtensionUpdateNotifier(
     private val context: Context,
     private val securityPreferences: SecurityPreferences = Injekt.get(),
 ) {
-    fun promptUpdates(names: List<String>) {
+    fun promptUpdates(names: List<String>, identities: Set<String>) {
+        if (names.isEmpty() || identities.isEmpty()) return
+        val prefs = context.getSharedPreferences("mangaro_source_notice_events", Context.MODE_PRIVATE)
+        val claimed = synchronized(EVENT_LOCK) {
+            val seen = prefs.getStringSet("seen", emptySet()).orEmpty().toSet()
+            if ((identities - seen).isEmpty()) false
+            else prefs.edit().putStringSet("seen", seen + identities).commit()
+        }
+        if (!claimed) return
+        if (!Injekt.get<eu.kanade.tachiyomi.data.notification.NotificationPreferences>().sourceUpdates.get()) return
         context.notify(
             Notifications.ID_UPDATES_TO_EXTS,
             Notifications.CHANNEL_EXTENSIONS_UPDATE,
@@ -36,9 +45,12 @@ class ExtensionUpdateNotifier(
             }
             setSmallIcon(R.drawable.ic_extension_24dp)
             setContentIntent(NotificationReceiver.openExtensionsPendingActivity(context))
+            setOnlyAlertOnce(true)
             setAutoCancel(true)
         }
     }
+
+    companion object { private val EVENT_LOCK = Any() }
 
     fun dismiss() {
         context.cancelNotification(Notifications.ID_UPDATES_TO_EXTS)

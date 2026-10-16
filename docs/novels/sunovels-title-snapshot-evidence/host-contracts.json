@@ -1,0 +1,15 @@
+{
+  "checks": 151,
+  "gatewayRequests": 0,
+  "sourceReplayRequests": 24,
+  "failureInjectionRequests": 24,
+  "diagnosticRetainedCharacters": 8811,
+  "bootstrapRecords": 1461,
+  "bootstrapParseMs": 77.379547,
+  "registryIngestMs": 806.806671,
+  "localSearchMeanMs": 0.20279827,
+  "hostJvmMaxHeapBytes": 402653184,
+  "hostJvmUsedHeapBytes": 84598040,
+  "totalMs": 48680.970767,
+  "androidRuntimeTested": false
+}

@@ -7,6 +7,7 @@ import java.io.File
 import java.io.IOException
 import java.io.InputStream
 import java.util.UUID
+import okio.source
 import okio.Source
 import okio.buffer
 import okio.sink
@@ -56,8 +57,15 @@ class CoverCache(private val context: Context) {
      * @param mangaId the manga id.
      * @return cover image.
      */
-    fun getCustomCoverFile(mangaId: Long?): File {
-        return File(customCoverCacheDir, DiskUtil.hashKeyForDisk(mangaId.toString()))
+    fun getCustomCoverFile(mangaId: Long?, owner: String = tachiyomi.core.common.util.lang.LocalAccountScope.fileOwner()): File {
+        val scope = tachiyomi.core.common.util.lang.LocalAccountScope.segment(owner)
+        val root = if (scope.isEmpty()) customCoverCacheDir else File(customCoverCacheDir, "accounts/$scope")
+        val target = File(root, DiskUtil.hashKeyForDisk(mangaId.toString()))
+        if (target.exists()) return target
+        return tachiyomi.core.common.util.lang.LocalAccountScope.readableFileOwners(owner).drop(1).map { claimed ->
+            val segment = tachiyomi.core.common.util.lang.LocalAccountScope.segment(claimed)
+            File(if (segment.isEmpty()) customCoverCacheDir else File(customCoverCacheDir, "accounts/$segment"), DiskUtil.hashKeyForDisk(mangaId.toString()))
+        }.firstOrNull { it.exists() } ?: target
     }
 
     /**
@@ -69,8 +77,17 @@ class CoverCache(private val context: Context) {
      */
     @Throws(IOException::class)
     fun setCustomCoverToCache(manga: Manga, inputStream: InputStream) {
-        getCustomCoverFile(manga.id).outputStream().use {
-            inputStream.copyTo(it)
+        tachiyomi.core.common.util.lang.LocalAccountScope.check(manga.accountToken)
+        inputStream.source().use { source ->
+            writeCover(source, getCustomCoverFile(manga.id)) { staging ->
+                val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                android.graphics.BitmapFactory.decodeFile(staging.path, bounds)
+                if (bounds.outWidth <= 0 || bounds.outHeight <= 0) throw IOException("Invalid custom cover")
+                val decoded = android.graphics.BitmapFactory.decodeFile(staging.path,
+                    android.graphics.BitmapFactory.Options().apply { inSampleSize = maxOf(bounds.outWidth, bounds.outHeight).div(2048).coerceAtLeast(1) })
+                    ?: throw IOException("Undecodable custom cover")
+                decoded.recycle()
+            }
         }
     }
 
@@ -112,13 +129,14 @@ class CoverCache(private val context: Context) {
     }
 
     /** Same-directory atomic replacement: interrupted writes never overwrite a valid cached image. */
-    internal fun writeCover(input: Source, target: File) {
+    internal fun writeCover(input: Source, target: File, validate: (File) -> Unit = {}) {
         target.parentFile?.mkdirs()
         val staging = File(target.parentFile, "cover-write-${UUID.randomUUID()}.tmp")
         CacheFileAccess.shared.acquire(target).use {
             CacheFileAccess.shared.acquire(staging).use {
                 try {
                     staging.sink().buffer().use { it.writeAll(input) }
+                    validate(staging)
                     if (!staging.renameTo(target)) throw IOException("Unable to commit cached cover")
                 } finally {
                     staging.delete()

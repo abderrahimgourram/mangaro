@@ -4,9 +4,18 @@
 -keep,allowoptimization class tachiyomi.**
 -keep,allowoptimization class mihon.**
 
-# WebView invokes these methods by JavaScript name, outside R8's call graph.
--keepclassmembers class eu.kanade.tachiyomi.data.ads.** {
-    @android.webkit.JavascriptInterface <methods>;
+# InMobi 11.5.0 supplies scoped SDK/Picasso/OMSDK reflection rules in its AAR.
+# Do not disable R8 or add application-wide advertising keep rules.
+# Choice CMP has no consumer rules; keep only its public callbacks/reflected models.
+-keep class com.inmobi.cmp.ChoiceCmp { public protected *; }
+-keep interface com.inmobi.cmp.ChoiceCmpCallback { public protected *; }
+-keep class com.inmobi.cmp.model.** { public protected *; }
+-keep class com.inmobi.cmp.core.model.** { *; }
+-keep class com.inmobi.cmp.data.model.ChoiceStyle { public protected *; }
+-keep class com.inmobi.cmp.data.model.ChoiceColor { public protected *; }
+-keepattributes Signature
+-keepclassmembers,allowobfuscation class * {
+    @com.google.gson.annotations.SerializedName <fields>;
 }
 
 # Keep common dependencies used in extensions

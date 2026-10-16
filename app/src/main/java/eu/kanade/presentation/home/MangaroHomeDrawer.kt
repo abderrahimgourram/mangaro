@@ -86,6 +86,7 @@ fun MangaroHomeDrawer(
     onProfile: ((MangaroProfile) -> Unit)? = null,
     content: @Composable (openDrawer: () -> Unit) -> Unit,
 ) {
+    eu.kanade.tachiyomi.data.ads.InitializeAdvertisingPrivacy()
     val uriHandler = LocalUriHandler.current
     val drawer = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()

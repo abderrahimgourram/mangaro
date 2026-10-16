@@ -67,6 +67,13 @@ class CloudLocalGatewayTest {
         coVerify {chapters.update(match {it.lastPageRead==10L})}
         coVerify(exactly=0) {mangas.update(any())}
     }
+    @Test fun `history restore cannot overwrite a separately available chapter progress event`()=runTest {
+        values["A" to "remote/cloud_chapter_progress/${mk.value}/$ck"]="{}"
+        val row=JsonObject(entry()+buildJsonObject {put("last_chapter_key",ck);put("last_page_index",10);put("last_total_pages",12);put("last_read_at",stamp(1_700_000_000_000))})
+        gateway.apply("A","cloud_manga_history",row,true) shouldBe true
+        coVerify {history.upsertHistory(any())}
+        coVerify(exactly=0) {chapters.update(any())}
+    }
     @Test fun `remote completed chapter emits no local mutation and records XP suppression`()=runTest {
         values["A" to "remote/cloud_library_entries/${mk.value}"]=entry().toString()
         val row=buildJsonObject {put("manga_key",mk.value);put("chapter_key",ck);put("source_chapter_url",c.url);put("is_read",true);put("last_page_index",11);put("total_pages",12);put("deleted_at",JsonNull)}
@@ -85,6 +92,17 @@ class CloudLocalGatewayTest {
         coVerify(exactly=0) {history.resetHistoryByMangaId(any())}
         coVerify(exactly=0) {chapters.update(any())}
     }
+    @Test fun `newer cloud reset beats stale local page and authored time survives SQLite trigger`()=runTest {
+        values["A" to "remote/cloud_library_entries/${mk.value}"]=entry().toString()
+        coEvery {chapters.getChapterByMangaId(m.id,any())} returns listOf(c.copy(lastPageRead=20,lastModifiedAt=1_700_000_000))
+        coEvery {chapters.getChapterByUrlAndMangaId(c.url,m.id)} returns c.copy(lastPageRead=20,lastModifiedAt=1_700_000_000)
+        val row=buildJsonObject {put("manga_key",mk.value);put("chapter_key",ck);put("source_chapter_url",c.url);put("is_read",false);put("last_page_index",0);put("state_changed_at",stamp(1_700_000_100_000));put("deleted_at",JsonNull)}
+        gateway.apply("A","cloud_chapter_progress",row,true) shouldBe true
+        coVerify {chapters.update(match {it.lastPageRead==0L && it.read==false})}
+        // Same restored fields, but a later SQLite metadata update touched lastModifiedAt.
+        coEvery {chapters.getChapterByUrlAndMangaId(c.url,m.id)} returns c.copy(lastPageRead=0,read=false,lastModifiedAt=1_800_000_000)
+        gateway.baseline("A","cloud_chapter_progress",row)!!.text("state_changed_at") shouldBe stamp(1_700_000_100_000)
+    }
     @Test fun `unavailable source is unresolved without chapter fabrication or substitution`()=runTest {
         coEvery {mangas.getMangaByUrlAndSourceId(m.url,m.source)} returns null
         every {sources.get(m.source)} returns null
@@ -99,10 +117,13 @@ class CloudLocalGatewayTest {
         first.size shouldBe 2
         (gateway.all("B").keys intersect first.keys).size shouldBe 0
     }
-    @Test fun `first merge does not let cloud tombstone destroy preexisting local library`()=runTest {
+    @Test fun `first merge honors cloud tombstone and archives original guest membership`()=runTest {
         coEvery {mangas.getMangaByUrlAndSourceId(m.url,m.source)} returns m.copy(favorite=true)
         gateway.apply("A","cloud_library_entries",JsonObject(entry()+("deleted_at" to JsonPrimitive(stamp(1_700_000_000_000)))),true) shouldBe true
-        coVerify {mangas.update(match {it.favorite==true})}
+        coVerify {mangas.update(match {it.favorite==false})}
+        verify {store.put("A",match {it.startsWith("guestLibrary/")},any())}
+        coVerify(exactly=0) {chapters.update(any())}
+        coVerify(exactly=0) {history.resetHistoryByMangaId(any())}
     }
     @Test fun `canonical built in shelf UUID follows internal identifier despite rename and account`()=runTest {
         every {preferences.getLong("mangaro.library.shelf.favorite",-1L).get()} returns 4

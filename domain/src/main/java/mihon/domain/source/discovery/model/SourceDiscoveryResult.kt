@@ -7,4 +7,6 @@ data class SourceDiscoveryResult(
     val page: Int,
     val hasNextPage: Boolean,
     val items: List<SourceDiscoveryItem>,
+    /** False for error placeholders and last-known fallback data. */
+    val isFresh: Boolean = true,
 )

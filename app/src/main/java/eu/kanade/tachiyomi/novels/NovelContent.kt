@@ -7,7 +7,7 @@ import org.jsoup.nodes.TextNode
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 /** Walk only the already-sanitized story container. No scripts, browser or document-body scraping. */
-internal fun extractNovelContent(content: Element): NovelText {
+internal fun extractNovelContent(content: Element, allowShortText: Boolean = false): NovelText {
     val paragraphs = mutableListOf<String>()
     val markup = mutableListOf<String>()
     val blocks = mutableListOf<NovelContentBlock>()
@@ -36,6 +36,7 @@ internal fun extractNovelContent(content: Element): NovelText {
             Regex("(?:^|[\\s_-])(avatar|emoji|smiley|icon|logo|banner|advert|ads|tracking|pixel)(?:$|[\\s_-])", RegexOption.IGNORE_CASE).containsMatchIn(identity)) return
         val candidates = listOf("data-src", "data-lazy-src", "data-original", "src").map { element.absUrl(it) } +
             listOf("data-srcset", "srcset").flatMap { attr -> element.attr(attr).split(',').map { it.trim().substringBefore(' ') } }
+                .filter { it.isNotBlank() } // An empty candidate resolves to the chapter URL, never an image.
                 .map { element.baseUri().toHttpUrlOrNull()?.resolve(it)?.toString().orEmpty() }
         val url = candidates.firstOrNull { NovelHttp.allowed(it) && !it.contains("placeholder", ignoreCase = true) }
         if (url == null && candidates.none { it.startsWith("https://") || it.startsWith("http://") }) return
@@ -68,7 +69,8 @@ internal fun extractNovelContent(content: Element): NovelText {
         }
     }
     visit(content, 0); flush()
-    if (paragraphs.size < 3 || paragraphs.sumOf { it.length } < 200)
+    if (if (allowShortText) paragraphs.isEmpty() || paragraphs.none { p -> p.any(Char::isLetter) }
+        else paragraphs.size < 3 || paragraphs.sumOf { it.length } < 200)
         throw NovelSourceFailure("هذا الفصل غير متاح حاليًا. يمكنك فتحه في الموقع.", "Empty or incomplete novel text")
     // Omit new fields on ordinary text-only chapters, preserving legacy file checksums/positions.
     return NovelText(paragraphs, markup, blocks.takeIf { list -> list.any { it.kind != NovelBlockKind.TEXT } }.orEmpty())

@@ -201,7 +201,7 @@ fun AccountPanel(onBack: () -> Unit) {
                         if (!account.auth.googleSignInAvailable) Text("تسجيل الدخول غير متاح حاليًا", color = Color(0xFFB7A9C4), style = MaterialTheme.typography.bodySmall)
                     }
                 }
-                (error ?: authError)?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                (error ?: authError)?.let { eu.kanade.presentation.components.MangaroErrorState(it) }
             }
         }
 }
@@ -375,7 +375,7 @@ private fun AccountProfileEditor(
             containerColor = MangaroDesignSystem.SurfaceDark) {
             Column(Modifier.fillMaxWidth().imePadding().navigationBarsPadding().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("تعديل الملف", color = Color.White, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                errorMessage?.let { eu.kanade.presentation.components.MangaroErrorState(it) }
                 if (profile.username == null) Text("أكمل ملفك باختيار اسم مستخدم فريد. يمكنك مواصلة القراءة كالمعتاد.",
                     color = secondary, style = MaterialTheme.typography.bodySmall)
                 val fieldColors = OutlinedTextFieldDefaults.colors(

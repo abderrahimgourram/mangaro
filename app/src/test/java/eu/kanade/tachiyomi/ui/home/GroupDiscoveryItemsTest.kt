@@ -9,6 +9,13 @@ class GroupDiscoveryItemsTest {
     private fun known(item: HomeDiscoveryItem): HomeDiscoveryItem = item.copy(url = "/work/${item.mangaId}").also {
         PreferredMangaVariants.remember(tachiyomi.domain.manga.model.Manga.create().copy(
             id = it.mangaId, source = it.sourceId, url = it.url, title = it.title, author = "Known Creator",
+            memo = kotlinx.serialization.json.buildJsonObject {
+                put(tachiyomi.domain.manga.service.WorkMetadata.MEMO_KEY, kotlinx.serialization.json.buildJsonObject {
+                    put("externalIds", kotlinx.serialization.json.buildJsonObject {
+                        put("anilist", kotlinx.serialization.json.JsonPrimitive(GroupDiscoveryItems.normalizeTitle(it.title)))
+                    })
+                })
+            },
         ))
     }
 
@@ -29,7 +36,7 @@ class GroupDiscoveryItemsTest {
         val grouped = GroupDiscoveryItems.group(listOf(known(itemA), known(itemB)))
 
         grouped.size shouldBe 1
-        grouped.first().availableVersions.size shouldBe 0
+        grouped.first().availableVersions.size shouldBe 2
         (listOf(grouped.first()) + grouped.first().alternatives).map { it.sourceId } shouldContainExactlyInAnyOrder listOf(100L, 200L)
     }
 
@@ -64,7 +71,7 @@ class GroupDiscoveryItemsTest {
         val page2Combined = GroupDiscoveryItems.group(page1Grouped + listOf(known(page2Duplicate)))
 
         page2Combined.size shouldBe 1
-        page2Combined.first().availableVersions.size shouldBe 0
+        page2Combined.first().availableVersions.size shouldBe 2
         (listOf(page2Combined.first()) + page2Combined.first().alternatives).map { it.mangaId } shouldContainExactlyInAnyOrder listOf(10L, 20L)
     }
 
@@ -81,6 +88,14 @@ class GroupDiscoveryItemsTest {
         val previewGroups = grouped.take(HOME_DISCOVERY_PREVIEW_LIMIT)
 
         previewGroups.size shouldBe 8
-        previewGroups.first().availableVersions.size shouldBe 0
+        previewGroups.first().availableVersions.size shouldBe 2
+    }
+    @Test
+    fun `One Piece and Strong World zero remain distinct while exact cards deduplicate`() {
+        val original=HomeDiscoveryItem(mangaId=9091L,title="One Piece",coverData=MangaCover(9091L,100L,false,"https://example.org/cover.jpg",0L),sourceId=100L,sourceName="source",url="/one-piece")
+        val special=HomeDiscoveryItem(mangaId=9092L,title="One Piece Strong World 0",coverData=MangaCover(9092L,100L,false,"https://example.org/special.jpg",0L),sourceId=100L,sourceName="source",url="/strong-world-0")
+        val result=GroupDiscoveryItems.group(listOf(original,original,special))
+        result.size shouldBe 2
+        result.map {it.title}.toSet() shouldBe setOf(original.title,special.title)
     }
 }

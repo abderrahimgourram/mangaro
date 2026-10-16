@@ -13,7 +13,13 @@ import mihon.domain.source.health.SourceHealthMonitor
 class CanonicalWorkPreferenceTest {
     private fun manga(id: Long, count: Int, state: String = "COMPLETE"): Manga {
         val m = Manga.create().copy(id=id,source=id,url="/work/$id",title="Linked Work $id",author="Creator",initialized=true,
-            memo=buildJsonObject { put("claimedChapterCount", 230) })
+            memo=buildJsonObject {
+                put("claimedChapterCount", 230)
+                // Authored verified-work fixture; count/quality never establishes equivalence.
+                put(tachiyomi.domain.manga.service.WorkMetadata.MEMO_KEY, buildJsonObject {
+                    put("externalIds", buildJsonObject { put("anilist", "fixture-linked-work") })
+                })
+            })
         return m.copy(memo=ChapterListIntegrity.memo(m,state,rows(m,count)))
     }
     private fun rows(m: Manga, count: Int) = (1..count).map { Chapter.create().copy(id=it.toLong(),mangaId=m.id,
@@ -76,8 +82,12 @@ class CanonicalWorkPreferenceTest {
         val translated=manga(921013,230).copy(title="التسوية المنفردة",memo=JsonObject(manga(921013,230).memo +
             (tachiyomi.domain.manga.service.WorkMetadata.MEMO_KEY to buildJsonObject {
                 put("aliases",JsonArray(listOf(JsonPrimitive("Solo Leveling"))))
+                put("externalIds",buildJsonObject { put("anilist", "fixture-linked-work") })
             })))
-        val unrelated=manga(921014,240).copy(title="Solo Leveling",author="Different Creator")
+        val unrelated=manga(921014,240).let { it.copy(title="Solo Leveling",author="Different Creator",
+            memo=JsonObject(it.memo + (tachiyomi.domain.manga.service.WorkMetadata.MEMO_KEY to buildJsonObject {
+                put("externalIds",buildJsonObject { put("anilist", "fixture-other-work") })
+            }))) }
         listOf(original,translated,unrelated).forEach(PreferredMangaVariants::remember)
         val grouped=GroupDiscoveryItems.group(listOf(item(unrelated),item(original),item(translated)))
         grouped.size shouldBe 2

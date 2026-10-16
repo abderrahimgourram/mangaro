@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.data.account
 
+import uy.kohesive.injekt.api.get
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -25,6 +26,9 @@ import io.github.jan.supabase.postgrest.exception.PostgrestRestException
 import io.github.jan.supabase.storage.Storage
 import io.github.jan.supabase.storage.storage
 import io.ktor.http.ContentType
+import kotlinx.coroutines.async
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -50,7 +54,17 @@ import java.security.MessageDigest
 import kotlin.time.Duration.Companion.seconds
 
 /** One injectable application client; Google browser OAuth only. No local manga database access. */
-class SupabaseAccountAuth private constructor(private val client: SupabaseClient, private val credentials: AccountSessionStorage) : AccountAuth {
+class SupabaseAccountAuth internal constructor(
+    private val client: SupabaseClient,
+    private val credentials: AccountSessionStorage,
+    private val bindWorkspace: suspend (String?) -> Unit = { user ->
+        uy.kohesive.injekt.Injekt.get<tachiyomi.data.LocalAccountWorkspace>().bind(user) {
+            if (user != null || eu.kanade.tachiyomi.novels.NovelRepository.peek() != null) {
+                eu.kanade.tachiyomi.novels.NovelRepository.get(uy.kohesive.injekt.Injekt.get<Context>()).bindCloudAccount(user, scopeTransition = true)
+            }
+        }
+    },
+) : AccountAuth {
     private val rankMilestones = RankMilestoneTracker()
     override fun consumeRankMilestone(userId: String): RankMilestone? =
         if ((session.value as? AccountSession.Authenticated)?.profile?.userId == userId) rankMilestones.consume(userId) else null
@@ -58,43 +72,87 @@ class SupabaseAccountAuth private constructor(private val client: SupabaseClient
     internal val communityClient: SupabaseClient get() = client
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mutations = Mutex()
+    private val logoutGate = Any()
+    private var logoutInFlight: Deferred<Unit>? = null
     private val session = MutableStateFlow<AccountSession>(AccountSession.Loading)
     private val errors = MutableStateFlow<String?>(null)
     override val error = errors.asStateFlow()
     override val googleSignInAvailable = true
     override fun observeSession() = session.asStateFlow()
 
+    /** A private instrumentation dependency replacement must retire the unused observer.
+     * Never used by normal login/logout; credentials and provider checks are unchanged. */
+    internal fun closeForTest() { scope.cancel() }
+
+    internal fun retireGuestObserverForAcceptance() {
+        check((eu.kanade.tachiyomi.BuildConfig.DEBUG || eu.kanade.tachiyomi.BuildConfig.SUNOVELS_PRIVATE_ACCEPTANCE) && session.value is AccountSession.Guest)
+        scope.cancel()
+    }
+
+    private suspend fun bindLocal(user: String?) = bindWorkspace(user)
+    private suspend fun publishGuest() {
+        bindLocal(null)
+        session.value = AccountSession.Guest
+    }
+    private suspend fun retainOfflineIdentity() {
+        val user = client.auth.currentUserOrNull()
+        if (user != null && user.isAnonymous != true && (user.appMetadata?.get("provider") as? JsonPrimitive)?.content == "google") {
+            bindLocal(user.id)
+        } else if (session.value !is AccountSession.Authenticated) publishGuest()
+    }
+
     init {
         scope.launch {
             if (withTimeoutOrNull(15_000) { session.first { it != AccountSession.Loading } } == null) {
-                session.value = AccountSession.Guest
-                errors.value = "تعذّر استعادة الحساب، يمكنك المتابعة كضيف"
+                mutations.withLock {
+                    retainOfflineIdentity()
+                    errors.value = "تعذّر الاتصال بالحساب؛ بياناتك المحلية محفوظة"
+                }
             }
         }
         scope.launch {
             client.auth.sessionStatus.collectLatest { status ->
-                when (status) {
-                    SessionStatus.Initializing -> session.value = AccountSession.Loading
-                    is SessionStatus.Authenticated -> {
-                        try {
-                            val user = status.session.user ?: client.auth.retrieveUserForCurrentSession()
-                            if (user.isAnonymous == true || (user.appMetadata?.get("provider") as? JsonPrimitive)?.content != "google") {
-                                client.auth.clearSession()
-                                session.value = AccountSession.Guest
-                            } else {
-                                mutations.withLock { loadProfile(user) }
+                // Serialize the entire workspace transition with logout/profile mutations.
+                // A status queued before logout must not restore the previous account.
+                try {
+                    mutations.withLock {
+                        if (client.auth.sessionStatus.value != status) return@withLock
+                        when (status) {
+                            SessionStatus.Initializing -> session.value = AccountSession.Loading
+                            is SessionStatus.Authenticated -> {
+                                try {
+                                    val user = status.session.user ?: client.auth.retrieveUserForCurrentSession()
+                                    if (user.isAnonymous == true || (user.appMetadata?.get("provider") as? JsonPrimitive)?.content != "google") {
+                                        client.auth.clearSession()
+                                        publishGuest()
+                                    } else {
+                                        if ((session.value as? AccountSession.Authenticated)?.profile?.userId != user.id) {
+                                            session.value = AccountSession.Loading
+                                            bindLocal(user.id)
+                                        }
+                                        loadProfile(user)
+                                    }
+                                } catch (cancelled: CancellationException) { throw cancelled }
+                                catch (_: Exception) {
+                                    retainOfflineIdentity()
+                                    errors.value = "تعذّر تحميل ملفك الشخصي، حاول مجددًا"
+                                }
                             }
-                        } catch (cancelled: CancellationException) { throw cancelled }
-                        catch (_: Exception) {
-                            session.value = AccountSession.Guest
-                            errors.value = "تعذّر تحميل ملفك الشخصي، حاول مجددًا"
+                            is SessionStatus.NotAuthenticated -> {
+                                rankMilestones.reset()
+                                // Explicit logout already committed the guest workspace. Retain its
+                                // truthful offline-revocation warning instead of clearing it here.
+                                publishGuest()
+                            }
+                            is SessionStatus.RefreshFailure -> {
+                                retainOfflineIdentity()
+                                errors.value = "تعذّر الاتصال بالحساب؛ بياناتك المحلية محفوظة"
+                            }
                         }
                     }
-                    is SessionStatus.NotAuthenticated -> { rankMilestones.reset(); session.value = AccountSession.Guest }
-                    is SessionStatus.RefreshFailure -> {
-                        session.value = AccountSession.Guest
-                        errors.value = "تعذّر استعادة الحساب، يمكنك المتابعة كضيف"
-                    }
+                } catch (cancelled: CancellationException) { throw cancelled }
+                catch (_: Exception) {
+                    errors.value = "تعذّر فتح مساحة الحساب بأمان؛ حاول مجددًا"
                 }
             }
         }
@@ -159,20 +217,44 @@ class SupabaseAccountAuth private constructor(private val client: SupabaseClient
         return true
     }
 
-    override suspend fun signOut() = mutations.withLock {
-        rankMilestones.reset()
-        // Stop account-only UI/work immediately; remote revocation may be offline or slow.
-        session.value = AccountSession.Guest
-        errors.value = null
-        try { client.auth.signOut() }
-        catch (cancelled: CancellationException) { throw cancelled }
-        catch (_: Exception) { /* Clear only this cloud session even if revocation is offline. */ }
-        finally {
-            withContext(NonCancellable) {
-                try { client.auth.clearSession(); credentials.deleteCodeVerifier() }
-                finally { session.value = AccountSession.Guest; errors.value = null }
-            }
+    override suspend fun signOut() {
+        // AccountPanel leaves composition as soon as workspace.ready becomes false;
+        // its rememberCoroutineScope is cancelled at that point. The existing application
+        // auth scope owns logout, so that cancellation cannot interrupt token deletion or
+        // the atomic workspace switch. Double taps await the same operation.
+        val operation = synchronized(logoutGate) {
+            logoutInFlight?.takeIf { it.isActive } ?: scope.async {
+                mutations.withLock {
+                    errors.value = null
+                    var revoked = false
+                    try {
+                        withTimeoutOrNull(12_000) { client.auth.signOut(); revoked = true }
+                    } catch (_: Exception) {
+                        // Network failure is not proof of server-side revocation. Local
+                        // logout still uses the supported SDK cleanup below.
+                    } finally {
+                        withContext(NonCancellable) {
+                            try {
+                                // MUST precede any UI/workspace transition. SDK clearSession
+                                // deletes the encrypted persisted session and stops refresh.
+                                client.auth.clearSession()
+                                credentials.deleteCodeVerifier()
+                                check(client.auth.currentSessionOrNull() == null)
+                                rankMilestones.reset()
+                                publishGuest()
+                                if (!revoked) errors.value = "تم تسجيل الخروج محليًا؛ تعذّر تأكيد إبطال الجلسة على الخادم"
+                            } catch (_: Exception) {
+                                // Keep the old workspace fenced if a local transition failed;
+                                // never claim logout success or delete private user records.
+                                errors.value = "تعذّر إكمال تسجيل الخروج بأمان؛ حاول مجددًا"
+                            }
+                        }
+                    }
+                    Unit
+                }
+            }.also { logoutInFlight = it }
         }
+        operation.await()
     }
 
     override suspend fun getCurrentProfile(): MangaroProfile? = mutations.withLock {
@@ -329,6 +411,7 @@ class SupabaseAccountAuth private constructor(private val client: SupabaseClient
             })
         // Total XP/level come only from server state; offline refresh retains the last confirmed values.
         if (client.auth.currentUserOrNull()?.id == user.id) {
+            bindLocal(user.id)
             session.value = AccountSession.Authenticated(profile)
             errors.value = null
         }

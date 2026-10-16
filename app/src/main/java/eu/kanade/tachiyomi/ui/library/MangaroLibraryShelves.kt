@@ -28,7 +28,7 @@ object MangaroLibraryShelves {
 
     suspend fun ensure(): List<Binding> = mutex.withLock {
         val repository = Injekt.get<CategoryRepository>()
-        val preferences = Injekt.get<PreferenceStore>()
+        val preferences = tachiyomi.core.common.preference.AccountPreferenceStore(Injekt.get<PreferenceStore>())
         var categories = repository.getAll().filterNot(Category::isSystemCategory)
         val result = Shelf.entries.map { shelf ->
             val preference = preferences.getLong("mangaro.library.shelf.${shelf.storageKey}", -1L)

@@ -9,6 +9,7 @@ import androidx.appcompat.widget.AppCompatTextView
 import androidx.core.view.isNotEmpty
 import androidx.core.view.isVisible
 import com.google.android.material.progressindicator.CircularProgressIndicator
+import eu.kanade.presentation.util.mangaroErrorMessage
 import eu.kanade.presentation.util.contentErrorMessage
 import eu.kanade.tachiyomi.ui.reader.model.ChapterTransition
 import eu.kanade.tachiyomi.ui.reader.model.ReaderChapter
@@ -121,7 +122,7 @@ class WebtoonTransitionHolder(
     private fun setError(error: Throwable, transition: ChapterTransition) {
         val textView = AppCompatTextView(context).apply {
             wrapContent()
-            text = context.stringResource(MR.strings.transition_pages_error, error.message.contentErrorMessage() ?: "")
+            text = error.mangaroErrorMessage("تعذر تحميل الفصل")
         }
 
         val retryBtn = AppCompatButton(context).apply {

@@ -1,13 +1,12 @@
 package eu.kanade.tachiyomi.ui.main
 
-import android.Manifest
 import android.app.SearchManager
 import android.app.assist.AssistContent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
-import android.content.pm.PackageManager
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
@@ -52,7 +51,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -80,8 +78,6 @@ import eu.kanade.presentation.components.AppStateBanners
 import eu.kanade.presentation.components.DownloadedOnlyBannerBackgroundColor
 import eu.kanade.presentation.components.IncognitoModeBannerBackgroundColor
 import eu.kanade.presentation.components.IndexingBannerBackgroundColor
-import eu.kanade.presentation.home.MangaroNotificationPermissionPrompt
-import eu.kanade.presentation.home.MangaroStartupTransition
 import eu.kanade.presentation.more.settings.screen.data.RestoreBackupScreen
 import eu.kanade.presentation.util.AssistContentScreen
 import eu.kanade.presentation.util.DefaultNavigatorScreenTransition
@@ -153,14 +149,12 @@ class MainActivity : BaseActivity() {
         registerSecureActivity(this)
     }
 
-    private var launchSplashRemoved by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val isLaunch = savedInstanceState == null
 
         // Prevent splash screen showing up on configuration changes
         val splashScreen = if (isLaunch) installSplashScreen() else null
-        launchSplashRemoved = splashScreen == null
 
         super.onCreate(savedInstanceState)
         // Consume auth before the duplicate-activity guard. A callback arriving over Reader
@@ -173,42 +167,33 @@ class MainActivity : BaseActivity() {
             return
         }
 
-        val playStartupIntro = (application as eu.kanade.tachiyomi.App).claimStartupIntro()
         setComposeContent {
+            val accountWorkspace by tachiyomi.core.common.util.lang.LocalAccountScope.changes.collectAsState()
+            if (!accountWorkspace.ready) {
+                val auth = remember { Injekt.get<mihon.domain.account.AccountFoundation>().auth }
+                val boundaryError by auth.error.collectAsState()
+                val boundaryScope = androidx.compose.runtime.rememberCoroutineScope()
+                // LocalAccountActivities hides the old private frame immediately. Reveal
+                // only AFTER Compose has replaced it with this account-neutral boundary.
+                androidx.compose.runtime.SideEffect { window.decorView.visibility = android.view.View.VISIBLE }
+                androidx.compose.foundation.layout.Column(
+                    androidx.compose.ui.Modifier.fillMaxSize(),
+                    horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
+                    verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
+                ) {
+                    androidx.compose.material3.Text(boundaryError ?: "جارٍ فتح مساحة الحساب بأمان…")
+                    if (boundaryError != null) androidx.compose.material3.TextButton(onClick = {
+                        boundaryScope.launch { auth.signOut() }
+                    }) { androidx.compose.material3.Text("إعادة المحاولة") }
+                }
+                return@setComposeContent
+            }
             var localInitialized by remember { mutableStateOf(false) }
             var navigationInitialized by remember { mutableStateOf(false) }
             var startupReady by remember { mutableStateOf(false) }
             val app = application as eu.kanade.tachiyomi.App
-            val introSession = app.startupIntro
-            val introState by introSession.state.collectAsState()
-            val showStartupOverlay = playStartupIntro && !introState.dismissed
-            var minimumCompleted by remember { mutableStateOf(false) }
-            var videoFrameDelivered by remember { mutableStateOf(false) }
-            LaunchedEffect(launchSplashRemoved, videoFrameDelivered) {
-                if (launchSplashRemoved && videoFrameDelivered) {
-                    // Do not count frames that are still covered by Android's launch splash.
-                    withFrameNanos { }
-                    introSession.firstFrame()
-                }
-            }
             var initializationError by remember { mutableStateOf(false) }
             var startupAttempt by remember { mutableStateOf(0) }
-            val introOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
-            DisposableEffect(introOwner) {
-                val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-                    if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP && !isChangingConfigurations)
-                        introSession.dismiss()
-                }
-                introOwner.lifecycle.addObserver(observer)
-                onDispose { introOwner.lifecycle.removeObserver(observer) }
-            }
-            LaunchedEffect(introState.firstFrameAt) {
-                val firstFrame = introState.firstFrameAt ?: return@LaunchedEffect
-                kotlinx.coroutines.delay((3000L - (android.os.SystemClock.elapsedRealtime() - firstFrame)).coerceAtLeast(0L))
-                minimumCompleted = true
-            }
-            val highlights = remember { (application as eu.kanade.tachiyomi.App).updateHighlights }
-            val highlightsVersion by highlights.pendingVersion.changes().collectAsState(initial = highlights.pendingVersion.get())
             val view = LocalView.current
             val destinationFramePosted = remember { AtomicBoolean(false) }
             val markStartupReady = remember {
@@ -222,12 +207,12 @@ class MainActivity : BaseActivity() {
             }
             LaunchedEffect(localInitialized, startupReady) {
                 if (localInitialized && startupReady) {
-                    // Optional work may prepare behind the video; no network result gates it.
+                    // Optional services start after Home has drawn; no network result gates it.
                     app.onFirstUsableFrame()
                 }
             }
-            LaunchedEffect(localInitialized, startupReady, showStartupOverlay) {
-                if (localInitialized && startupReady && !showStartupOverlay && !fullyDrawnReported) {
+            LaunchedEffect(localInitialized, startupReady) {
+                if (localInitialized && startupReady && !fullyDrawnReported) {
                     withFrameNanos { }
                     fullyDrawnReported = true
                     reportFullyDrawn()
@@ -236,7 +221,7 @@ class MainActivity : BaseActivity() {
             LaunchedEffect(startupAttempt) {
                 initializationError = false
                 try {
-                    // A stuck local service produces recovery UI, never an endless intro.
+                    // A stuck local service produces recovery UI, never an endless splash.
                     kotlinx.coroutines.withTimeout(20_000L) {
                         Migrator.await()
                         Migrator.release()
@@ -247,12 +232,10 @@ class MainActivity : BaseActivity() {
                 } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
                     android.util.Log.w("MangaroStartup", "Local initialization timed out", e)
                     initializationError = true
-                    introSession.dismiss()
                 } catch (e: kotlinx.coroutines.CancellationException) { throw e }
                 catch (e: Exception) {
                     android.util.Log.e("MangaroStartup", "Local initialization failed", e)
                     initializationError = true
-                    introSession.dismiss()
                 }
             }
             Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
@@ -371,12 +354,10 @@ class MainActivity : BaseActivity() {
                         HandleOnNewIntent(context = context, navigator = navigator)
 
                         if (!isBenchmarkBuildType) {
-                            CheckForUpdates()
                             LaunchedEffect(Unit) {
                                 // First launch is usable immediately; permissions are action-scoped.
                                 preferences.shownOnboardingFlow.set(true)
                             }
-                            ShowDonationCampaign()
                         }
                     }
                 }
@@ -387,36 +368,18 @@ class MainActivity : BaseActivity() {
                         Button(onClick = { startupAttempt++ }) { Text("حاول مجددًا") }
                     }
                 }
-                if (!localInitialized && !showStartupOverlay && !initializationError) {
+                if (!localInitialized && !initializationError) {
                     androidx.compose.foundation.Image(
                         painter = androidx.compose.ui.res.painterResource(eu.kanade.tachiyomi.R.drawable.ic_splash_logo),
                         contentDescription = null,
                         modifier = Modifier.align(androidx.compose.ui.Alignment.Center).size(96.dp),
                     )
                 }
-                if (showStartupOverlay) {
-                    MangaroStartupTransition(
-                        ready = localInitialized && startupReady &&
-                            (minimumCompleted || introState.skipRequested || introState.failed),
-                        canSkip = localInitialized && startupReady,
-                        onFirstFrame = { videoFrameDelivered = true },
-                        onFailure = introSession::fail,
-                        onSkip = introSession::skip,
-                        onDismissed = introSession::dismiss,
-                    )
-                }
-                if (localInitialized && startupReady && !showStartupOverlay &&
-                    highlightsVersion == eu.kanade.tachiyomi.data.updater.UpdateHighlightsState.RELEASE_CODE
-                ) {
-                    eu.kanade.presentation.home.MangaroUpdateHighlights(onContinue = highlights::acknowledge)
-                } else if (localInitialized && startupReady && !showStartupOverlay) {
-                    ShowNotificationPromptIfNeeded(preferences)
-                }
+
             }
         }
 
-        // Let Android's launch splash exit on the first frame so local video is visible
-        // during real initialization. It is never held by a timer or network work.
+        // Android's launch splash exits on the first frame; no artificial intro delay.
         setSplashScreenExitAnimation(splashScreen)
 
     }
@@ -427,26 +390,6 @@ class MainActivity : BaseActivity() {
             is AssistContentScreen -> {
                 screen.onProvideAssistUrl()?.let { outContent.webUri = it.toUri() }
             }
-        }
-    }
-
-    @Composable
-    private fun ShowNotificationPromptIfNeeded(preferences: BasePreferences) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
-
-        val context = LocalContext.current
-        var showPrompt by remember {
-            mutableStateOf(
-                !preferences.notificationPromptHandled.get() &&
-                    context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED,
-            )
-        }
-
-        if (showPrompt) {
-            MangaroNotificationPermissionPrompt(
-                preferences = preferences,
-                onDismiss = { showPrompt = false },
-            )
         }
     }
 
@@ -616,7 +559,7 @@ class MainActivity : BaseActivity() {
             provider.view.animate()
                 .alpha(0f)
                 .setDuration(100L)
-                .withEndAction { provider.remove(); launchSplashRemoved = true }
+                .withEndAction { provider.remove() }
                 .start()
         }
     }
@@ -645,7 +588,7 @@ class MainActivity : BaseActivity() {
             return true
         }
         val notificationId = intent.getIntExtra("notificationId", -1)
-        if (notificationId > -1) {
+        if (intent.hasExtra("notificationId")) {
             NotificationReceiver.dismissNotification(
                 applicationContext,
                 notificationId,

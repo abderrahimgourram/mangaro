@@ -1,5 +1,7 @@
 package mihon.domain.source.interactor
 
+import eu.kanade.tachiyomi.focus.*
+import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.domain.chapter.interactor.SyncChaptersWithSource
 import eu.kanade.domain.chapter.model.toSChapter
 import eu.kanade.domain.manga.model.hasCustomCover
@@ -130,12 +132,18 @@ class UpdateMangaFromRemote(
                 mihon.domain.source.health.SourceHealthMonitor.shared.run(source.id, 180_000, healthy = {
                     !fetchChapters || it.chapterCompleteness !in setOf(ChapterFetchCompleteness.PARTIAL, ChapterFetchCompleteness.FAILED)
                 }) {
-                    source.getMangaUpdate(
+                    suspend fun fetch() = source.getMangaUpdate(
                         manga = manga.toSManga(),
                         chapters = chapters.map(Chapter::toSChapter),
                         fetchDetails = fetchDetails,
                         fetchChapters = fetchChapters,
-                    ).also { result ->
+                    )
+                    val result = if (source is HttpSource) {
+                        FocusEngine.network(java.net.URI(source.baseUrl).host.orEmpty().removePrefix("www."),
+                            FocusTask(if (manualFetch) WorkPriority.ACTIVE_WORK else WorkPriority.OPTIONAL,
+                                source.id.toString(), manga.id.toString(), operation = FocusOperation.METADATA)) { fetch() }
+                    } else fetch()
+                    result.also { result ->
                         if (fetchChapters && result.chapterCompleteness == ChapterFetchCompleteness.COMPLETE && result.declaredChapterCount != null && result.declaredChapterCount != result.chapters.size) {
                             throw IOException("Incomplete chapter response: declared ${result.declaredChapterCount}, received ${result.chapters.size}")
                         }
@@ -179,16 +187,24 @@ class UpdateMangaFromRemote(
                 updatedManga = mangaRepository.getMangaById(manga.id)
             }
 
-            if (updatedManga.favorite && newChapters.isNotEmpty()) {
+            val noticeChapters = eu.kanade.tachiyomi.data.notification.relevantChapterUpdates(
+                chapters, newChapters, updatedManga.favorite,
+                update.chapterCompleteness == ChapterFetchCompleteness.COMPLETE &&
+                    tachiyomi.domain.chapter.service.ChapterListIntegrity.complete(updatedManga),
+            )
+            if (noticeChapters.isNotEmpty()) {
                 // Publish discovery regardless of whether Details or a Library worker initiated it.
                 // Optional presentation persistence cannot invalidate committed source data.
                 withIOContext {
                     runCatching {
                         synchronized(libraryPreferences) {
-                            libraryPreferences.newUpdatesCount.getAndSet { it + newChapters.size }
+                            libraryPreferences.newUpdatesCount.getAndSet { it + noticeChapters.size }
                         }
                     }
-                    runCatching { recordUpdates(updatedManga, newChapters) }
+                    runCatching { recordUpdates(updatedManga, noticeChapters) }.onFailure { failure ->
+                        if (failure is CancellationException) throw failure
+                        logcat(LogPriority.WARN, failure) { "Could not persist chapter notification" }
+                    }
                 }
             }
             eu.kanade.tachiyomi.ui.home.PreferredMangaVariants.remember(updatedManga)

@@ -167,8 +167,15 @@ data class CommunitySnapshot(
     val replies: Map<String, List<CommunityComment>> = emptyMap(),
     val replyCursors: Map<String, CommunityCursor> = emptyMap(),
     val loadingReplies: Set<String> = emptySet(),
+    val viewerUserId: String? = null,
 ) {
     init { require(!hasMore || nextCursor != null) }
+    /** Public bodies survive a session switch; another user's private interaction flags do not. */
+    fun forViewer(userId: String?): CommunitySnapshot = if (viewerUserId == userId) this else copy(
+        rating = rating?.copy(currentUserRating = null),
+        comments = comments.map { it.copy(isOwnedByCurrentUser = false, isLikedByCurrentUser = false) },
+        replies = emptyMap(), replyCursors = emptyMap(), loadingReplies = emptySet(), viewerUserId = userId,
+    )
 }
 
 /** Opaque server cursor, not a local chapter/manga row ID or client guessed offset. */
@@ -224,6 +231,8 @@ sealed interface CommunityEvent {
     data class ChapterRated(val target: CommunityTarget, val stars: Int) : CommunityEvent
 }
 interface CommunityRepository {
+    /** Public, reviewed manga relationships only; absence/revocation never changes stored editions. */
+    suspend fun reviewedMangaWorks(editionKeys: Set<String>): Map<String, String> = emptyMap()
     suspend fun commentById(target: CommunityTarget, id: String): CommunityComment? = null
     val available: Boolean
     val events: Flow<CommunityEvent>

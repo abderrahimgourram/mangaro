@@ -164,13 +164,14 @@ private fun CommunityContent(
 ) {
     val repository = remember { Injekt.get<CommunityRepository>() }
     val account = remember { Injekt.get<AccountFoundation>() }
-    val snapshot by remember(context.target) { repository.observe(context.target) }.collectAsState()
+    val rawSnapshot by remember(context.target) { repository.observe(context.target) }.collectAsState()
     val session by account.session.collectAsState()
     val scope = rememberCoroutineScope()
     val actor = (session as? AccountSession.Authenticated)?.profile?.userId
+    val snapshot = rawSnapshot.forViewer(actor)
     var loginPrompt by remember(context.target, actor) { mutableStateOf(false) }
     var profilePrompt by remember(context.target, actor) { mutableStateOf(false) }
-    var actionInFlight by remember(context.target) { mutableStateOf(false) }
+    var actionInFlight by remember(context.target, actor) { mutableStateOf(false) }
     var submissionVersion by rememberSaveable(context.target, actor) { mutableIntStateOf(0) }
     var threadId by rememberSaveable(context.target, actor) { mutableStateOf<String?>(initialThreadId) }
     var threadAnchor by remember(context.target, actor) { mutableStateOf<CommunityComment?>(null) }

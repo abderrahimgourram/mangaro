@@ -1,5 +1,7 @@
 package eu.kanade.tachiyomi.novels
 
+import eu.kanade.tachiyomi.focus.*
+
 import android.content.Context
 import android.util.AtomicFile
 import android.util.Log
@@ -41,7 +43,7 @@ class NovelRepository private constructor(context: Context) {
     private suspend fun <T> coalesce(key: String, action: suspend () -> T): T {
         val flight = synchronized(metadataFlights) {
             metadataFlights[key]?.also { it.readers++ }
-                ?: MetadataFlight(io.async(start = CoroutineStart.LAZY) { action() })
+                ?: MetadataFlight(io.async(context = tachiyomi.core.common.util.lang.LocalAccountScope.StorageElement(offlineOwner()), start = CoroutineStart.LAZY) { action() })
                     .also { metadataFlights[key] = it }
         }
         try { return flight.result.await() as T }
@@ -71,9 +73,13 @@ class NovelRepository private constructor(context: Context) {
     private val settingsFile = AtomicFile(File(app.filesDir, "novels-local/reader-settings.json"))
     private val metadata = NovelMetadataStore(File(app.filesDir, "novels-local"))
     private val indexCache = NovelMetadataStore(File(app.cacheDir, "novels-indexes"))
-    val disk by lazy { NovelDownloadDisk(File(app.filesDir, "novels-local/text-downloads")) }
-    private val downloadQueue = lazy { NovelDownloadQueue(app, this, disk) }
-    val downloads by downloadQueue
+    private val downloadDisks = ConcurrentHashMap<String, NovelDownloadDisk>()
+    private val downloadQueues = ConcurrentHashMap<String, NovelDownloadQueue>()
+    private fun offlineOwner() = tachiyomi.core.common.util.lang.LocalAccountScope.fileOwner()
+    private fun offlineRoot() = novelDownloadRoot(app.filesDir, offlineOwner())
+    val disk get() = diskFor(offlineOwner())
+    private fun diskFor(owner: String) = downloadDisks.computeIfAbsent(owner) { NovelDownloadDisk(File(novelDownloadRoot(app.filesDir, it), "text-downloads")) }
+    val downloads get() = downloadQueues.computeIfAbsent(offlineOwner()) { NovelDownloadQueue(app, this, diskFor(it), it) }
     private val ready = CompletableDeferred<Unit>()
     private val mutableRestored = MutableStateFlow(false)
     val restored = mutableRestored.asStateFlow()
@@ -134,16 +140,21 @@ class NovelRepository private constructor(context: Context) {
     }
     val sources by lazy {
         val http = chapterNetwork
-        listOf(KolNovelSource(http), CeneleSource(http), SunovelsSource(http), SeaNovelSource(http))
+        val sun = SunovelsSource(http)
+        listOf(KolNovelSource(http), CeneleSource(http),
+            if (!SunovelsSource.directEnabled && SunovelsGatewayConfig.enabled) SunovelsGatewaySource(sun) else sun, SeaNovelSource(http))
     }
     val activeSources get() = sources.filter { NovelSourceAvailability.active(it.id) }
     private val rules by lazy { NovelRuleStore(app) }
     private val indexRevision = MutableStateFlow(0L)
     private val indexes = LinkedHashMap<String, NovelChapterIndex>()
     private val texts = object : LinkedHashMap<String, NovelText>(4, .75f, true) {}
-    private data class ChapterFlight(val result: Deferred<NovelText>, var readers: Int = 1)
-    private val chapterFlights = mutableMapOf<Pair<String, String>, ChapterFlight>()
+    private data class ChapterFlight(val result: Deferred<NovelText>, var readers: Int = 1, val seaTrace: SeaReaderTrace? = null)
+    private val chapterFlights = mutableMapOf<Triple<String, String, String>, ChapterFlight>()
     @kotlinx.serialization.Serializable private data class DiscoveryCache(val result: NovelPage, val at: Long)
+    private val sunLocalSearch = SunovelsLocalSearch()
+    private val sunBootstrapLock = Mutex()
+    private var sunBootstrapLoaded = false
     private val discoveryCache = LinkedHashMap<String, DiscoveryCache>(16, .75f, true)
 
     init {
@@ -162,7 +173,7 @@ class NovelRepository private constructor(context: Context) {
                     .onFailure { libraryReadable = false; mutableStorageError.value = "تعذّر استعادة مكتبة الروايات."; android.util.Log.w("MangaroNovels", "Library restore failed", it) }
                 runCatching { if (settingsFile.baseFile.exists() || File(settingsFile.baseFile.path + ".bak").exists()) mutableSettings.value = json.decodeFromString(settingsFile.openRead().use { it.readBytes().decodeToString() }) }
                     .onFailure { android.util.Log.w("MangaroNovels", "Reader settings restore failed", it) }
-                val old = runCatching { metadata.read("catalog.json")?.let { json.decodeFromString<NovelCatalogState>(it) } }.getOrNull() ?: NovelCatalogState()
+                val old = runCatching { metadata.read("catalog.json")?.let { SunovelsSource.cleanCatalog(json.decodeFromString<NovelCatalogState>(it)) } }.getOrNull() ?: NovelCatalogState()
                 val migrated = NovelWorkReconciler.ingest(old, mutableLibrary.value.map { it.novel }).copy(migrationVersion = 1)
                 mutableCatalog.value = migrated
                 metadata.write("catalog.json", json.encodeToString(migrated))
@@ -177,7 +188,7 @@ class NovelRepository private constructor(context: Context) {
         catalogLock.withLock {
             val reconciled = NovelWorkReconciler.ingest(mutableCatalog.value, novels)
             val protected = library.value.map { it.novel.id }.toSet() + novels.map { it.id } +
-                if (downloadQueue.isInitialized()) downloads.tasks.value.map { it.novel.id }.toSet() else emptySet()
+                if (activeDownloads() != null) downloads.tasks.value.map { it.novel.id }.toSet() else emptySet()
             val retained = reconciled.works.filter { w -> w.editions.any { it.id in protected } } +
                 reconciled.works.filterNot { w -> w.editions.any { it.id in protected } }.takeLast(1500)
             val ids = retained.map { it.id }.toSet()
@@ -193,17 +204,43 @@ class NovelRepository private constructor(context: Context) {
             }
         }
     }
+    suspend fun detailSnapshot(novel: Novel): Novel? = withContext(Dispatchers.IO) {
+        val path = "details/" + novelDigest(novel.id) + ".json"
+        runCatching { metadata.read(path)?.let { SunovelsSource.cleanMetadata(json.decodeFromString<Novel>(it)) }?.takeIf { it.id == novel.id } }.getOrNull()
+    }
     suspend fun detail(novel: Novel): Novel = withContext(Dispatchers.IO) {
         coalesce("detail:" + novel.id) {
             synchronized(detailCache) { detailCache[novel.id]?.takeIf { System.nanoTime() - it.second < 600_000_000_000L } }?.first
-                ?: source(novel.sourceId).details(novel).also {
-                    ingest(listOf(it))
-                    synchronized(detailCache) {
-                        detailCache[novel.id] = it to System.nanoTime()
-                        while (detailCache.size > 32) detailCache.remove(detailCache.keys.first())
+                ?: try {
+                    withContext(FocusTask(WorkPriority.ACTIVE_WORK,novel.sourceId,novel.id,operation=FocusOperation.METADATA)) {
+                        source(novel.sourceId).details(novel)
+                    }.also {
+                        ingest(listOf(it))
+                        if (novel.sourceId == SunovelsSource.SOURCE_ID) metadata.write("details/" + novelDigest(novel.id) + ".json", json.encodeToString(it))
+                        synchronized(detailCache) { detailCache[novel.id] = it to System.nanoTime(); while (detailCache.size > 32) detailCache.remove(detailCache.keys.first()) }
                     }
+                } catch (c: CancellationException) { throw c }
+                catch (e: Exception) {
+                    if (novel.sourceId != SunovelsSource.SOURCE_ID) throw e
+                    (detailSnapshot(novel) ?: catalog.value.work(novel.id)?.editions?.firstOrNull { it.id == novel.id })?.also { ingest(listOf(it)) } ?: throw e
                 }
         }
+    }
+    private suspend fun ensureSunBootstrap() {
+        if (!SunovelsSource.directEnabled) return
+        ready.await()
+        sunBootstrapLock.withLock {
+            if (sunBootstrapLoaded) return
+            // Existing observed metadata wins over a packaged historical seed.
+            val known = catalog.value.works.flatMap { it.editions }.mapTo(HashSet()) { it.id }
+            val rows = runCatching { SunovelsBootstrap.load(app) }.getOrDefault(emptyList()).filter { it.id !in known }
+            if (rows.isNotEmpty()) ingest(rows)
+            sunBootstrapLoaded = true
+        }
+    }
+    private suspend fun sunLocalDiscovery(term: String, page: Int, genre: String?): NovelPage? {
+        ensureSunBootstrap()
+        return sunLocalSearch.page(catalog.value, term, page, genre)
     }
     suspend fun verifyCandidates(visible: Set<String>) = withContext(Dispatchers.Default) {
         val all = catalog.value.works.flatMap { it.editions }.filter { NovelSourceAvailability.active(it.sourceId) }
@@ -216,11 +253,19 @@ class NovelRepository private constructor(context: Context) {
         }
     }
     private fun discoveryKey(source: NovelSource, term: String, page: Int, genre: String?) =
-        listOf(source.id, term, page.toString(), genre.orEmpty()).joinToString("|")
+        listOf(source.id, term, page.toString(), genre.orEmpty()).joinToString("|") +
+            when {
+                source.id == SeaNovelSource.SOURCE_ID -> "|${SeaNovelSource.PARSER_VERSION}"
+                source is SunovelsGatewaySource -> "|${SunovelsGatewayConfig.cacheKey}"
+                source.id == SunovelsSource.SOURCE_ID -> "|sun-direct-discovery-v2"
+                else -> ""
+            }
     suspend fun discoverySnapshot(source: NovelSource, term: String, page: Int, genre: String?): NovelPage? = withContext(Dispatchers.IO) {
         val key = discoveryKey(source, term, page, genre)
+        if (source.id == SunovelsSource.SOURCE_ID && source !is SunovelsGatewaySource) ensureSunBootstrap()
+        val store = if (source.id == SunovelsSource.SOURCE_ID && source !is SunovelsGatewaySource) metadata else indexCache
         synchronized(discoveryCache) { discoveryCache[key]?.takeIf { System.currentTimeMillis() - it.at in 0..86_400_000L }?.let { return@withContext it.result } }
-        val restored = runCatching { indexCache.read("discovery/" + novelDigest(key) + ".json")?.let { json.decodeFromString<DiscoveryCache>(it) } }
+        val restored = runCatching { store.read("discovery/" + novelDigest(key) + ".json")?.let { json.decodeFromString<DiscoveryCache>(it).let { cached -> cached.copy(result = cached.result.copy(novels = cached.result.novels.map(SunovelsSource::cleanMetadata))) } } }
             .getOrNull()?.takeIf { System.currentTimeMillis() - it.at in 0..86_400_000L } ?: return@withContext null
         synchronized(discoveryCache) {
             discoveryCache[key] = restored
@@ -231,10 +276,21 @@ class NovelRepository private constructor(context: Context) {
     suspend fun discover(source: NovelSource, term: String, page: Int, genre: String?): NovelPage = withContext(Dispatchers.IO) {
         val key = discoveryKey(source, term, page, genre)
         return@withContext coalesce("discovery:" + key) {
-        synchronized(discoveryCache) { discoveryCache[key]?.takeIf { System.currentTimeMillis() - it.at < 300_000 }?.let { return@coalesce it.result } }
-        val result = withTimeoutOrNull(30_000L) {
-            if (term.isNotBlank()) source.search(term, page) else source.catalog(page, latest = true, genre = genre)
+        // Sea paginates a single validated metadata snapshot. Re-enter its session even
+        // when a persisted page is visible, so pages from different snapshots cannot mix.
+        // The adapter coalesces/cache-bounds metadata requests; snapshot display stays instant.
+        if (source.id != SeaNovelSource.SOURCE_ID && source !is SunovelsGatewaySource) synchronized(discoveryCache) {
+            discoveryCache[key]?.takeIf { System.currentTimeMillis() - it.at < 300_000 }?.let { return@coalesce it.result }
+        }
+        val result = try { withTimeoutOrNull(30_000L) {
+            if (source is SunovelsGatewaySource) source.discovery(term,page,genre)
+            else if (term.isNotBlank()) source.search(term, page) else source.catalog(page, latest = true, genre = genre)
         } ?: throw NovelSourceFailure("استغرق التحميل وقتًا طويلًا. حاول مجددًا.", "Discovery deadline exceeded")
+        } catch (c: CancellationException) { throw c }
+        catch (e: Exception) {
+            if (source.id != SunovelsSource.SOURCE_ID || source is SunovelsGatewaySource) throw e
+            return@coalesce discoverySnapshot(source, term, page, genre)?.copy(notice = "تعذّر تحديث المصدر؛ تُعرض بيانات الاكتشاف المحفوظة.") ?: throw e
+        }
         ingest(result.novels)
         val snapshot = DiscoveryCache(result, System.currentTimeMillis())
         synchronized(discoveryCache) {
@@ -243,11 +299,12 @@ class NovelRepository private constructor(context: Context) {
         }
         io.launch {
             runCatching {
-                synchronized(indexCache) {
+                val store = if (source.id == SunovelsSource.SOURCE_ID && source !is SunovelsGatewaySource) metadata else indexCache
+                synchronized(store) {
                     val path = "discovery/" + novelDigest(key) + ".json"
-                    val old = indexCache.read(path)?.let { json.decodeFromString<DiscoveryCache>(it) }
-                    if (old == null || old.at <= snapshot.at) indexCache.write(path, json.encodeToString(snapshot))
-                    val directory = File(app.cacheDir, "novels-indexes/discovery")
+                    val old = store.read(path)?.let { json.decodeFromString<DiscoveryCache>(it) }
+                    if (old == null || old.at <= snapshot.at) store.write(path, json.encodeToString(snapshot))
+                    val directory = if (store === metadata) File(app.filesDir, "novels-local/discovery") else File(app.cacheDir, "novels-indexes/discovery")
                     val files = directory.listFiles().orEmpty().sortedByDescending { it.lastModified() }
                     var bytes = 0L
                     files.forEachIndexed { i, file -> bytes += file.length(); if (i >= 32 || bytes > 16L * 1024 * 1024) file.delete() }
@@ -277,7 +334,7 @@ class NovelRepository private constructor(context: Context) {
     private suspend fun maySave(novel: Novel): Boolean {
         ready.await()
         if (NovelSourceAvailability.active(novel.sourceId) || library.value.any { it.novel.id == novel.id } || diskHasEdition(novel)) return true
-        val queue = activeDownloads() ?: if (File(app.filesDir, "novels-local/downloads/queue.db").isFile) downloads else null
+        val queue = activeDownloads() ?: if (File(offlineRoot(), "downloads/queue.db").isFile) downloads else null
         return try { queue?.awaitReady(); queue?.tasks?.value?.any { it.novel.id == novel.id } == true }
         catch (c: CancellationException) { throw c }
         catch (_: Exception) { false }
@@ -407,9 +464,17 @@ class NovelRepository private constructor(context: Context) {
         } }
     }
     /** Account switching never moves/deletes the previous library or offline chapter payloads. */
-    suspend fun bindCloudAccount(owner: String?, importGuest: Boolean = false) = withContext(Dispatchers.IO) {
+    suspend fun bindCloudAccount(owner: String?, importGuest: Boolean = false, scopeTransition: Boolean = false) = withContext(Dispatchers.IO) {
+        val token = tachiyomi.core.common.util.lang.LocalAccountScope.capture()
+        fun checkBinding() {
+            if (!scopeTransition) {
+                tachiyomi.core.common.util.lang.LocalAccountScope.check(token)
+                tachiyomi.core.common.util.lang.LocalAccountScope.checkOwner(owner ?: "guest")
+            } else check(!tachiyomi.core.common.util.lang.LocalAccountScope.changes.value.ready)
+        }
         ready.await()
         lock.withLock {
+            checkBinding()
             // Already-bound account state is authoritative in memory. Do not reread every
             // private library/history file on a foreground refresh or each sync worker.
             if (cloudAccount == owner && libraryReadable && !importGuest) return@withLock
@@ -438,13 +503,7 @@ class NovelRepository private constructor(context: Context) {
                     val b = oldGuest[g.novel.id]
                     if (g == b) continue
                     val e = byId[g.novel.id]
-                    byId[g.novel.id] = if (e == null || b == null) g else e.copy(
-                        saved = if (g.saved != b.saved) g.saved else e.saved,
-                        favorite = if (g.favorite != b.favorite) g.favorite else e.favorite,
-                        readingStatus = if (g.readingStatus != b.readingStatus) g.readingStatus else e.readingStatus,
-                        position = if (g.position != b.position) g.position else e.position,
-                        bookmarks = (e.bookmarks + (g.bookmarks - b.bookmarks)) - (b.bookmarks - g.bookmarks),
-                    )
+                    byId[g.novel.id] = NovelGuestMerge.item(e, g, b)
                 }
                 for (b in baseline) if (guest.none { it.novel.id == b.novel.id }) byId[b.novel.id]?.let { byId[b.novel.id] = it.copy(saved = false, favorite = false) }
                 byId.values.toList()
@@ -463,7 +522,10 @@ class NovelRepository private constructor(context: Context) {
                     if (positionBaseline[relative] != digest) {
                         val value = metadata.read("positions/" + relative) ?: error("Unreadable guest position")
                         json.decodeFromString<NovelReadingPosition>(value)
-                        metadata.write(accountPrefix(owner) + "positions/" + relative, value)
+                        val destination = accountPrefix(owner) + "positions/" + relative
+                        if (NovelGuestMerge.canImportPosition(metadata.read(destination), positionBaseline[relative])) {
+                            metadata.write(destination, value)
+                        }
                     }
                 }
                 write(target, json.encodeToString(normalized))
@@ -471,6 +533,7 @@ class NovelRepository private constructor(context: Context) {
                 metadata.write(positionBaselineName, json.encodeToString(newPositionBaseline))
                 write(claim, json.encodeToString(owner!!))
             }
+            checkBinding()
             cloudAccount = owner
             mutableLibrary.value = normalized
             libraryReadable = true
@@ -545,20 +608,44 @@ class NovelRepository private constructor(context: Context) {
         try { stream.write(value.toByteArray()); target.finishWrite(stream) }
         catch (e: Exception) { target.failWrite(stream); throw e }
     }
-    private fun indexKey(novel: Novel) = novelDigest("index-v2|${novel.sourceId}|${NovelRules.selector(novel.sourceId, "chapterLinks", "compiled")}|${NovelRules.selector(novel.sourceId, "chapterTitle", "compiled")}")
+    private fun indexKey(novel: Novel) = novelDigest("index-v2|${novel.sourceId}|${NovelRules.selector(novel.sourceId, "chapterLinks", "compiled")}|${NovelRules.selector(novel.sourceId, "chapterTitle", "compiled")}" +
+        when (novel.sourceId) {
+            "novel.kolnovel" -> "|${KolNovelSource.INDEX_PARSER_VERSION}"
+            SeaNovelSource.SOURCE_ID -> "|${SeaNovelSource.PARSER_VERSION}"
+            SunovelsSource.SOURCE_ID -> "|${SunovelsSource.INDEX_PARSER_VERSION}|${if (SunovelsSource.directEnabled) "direct" else if (SunovelsGatewayConfig.enabled) "gateway" else "direct"}"
+            else -> ""
+        })
     private fun indexPath(novel: Novel) = "indexes/" + novelDigest(novel.id) + ".json"
     suspend fun indexSnapshot(novel: Novel): NovelChapterIndex? = withContext(Dispatchers.IO) {
         memoryCacheLock.withLock { indexes[novel.id] }?.let {
-            if (it.parserKey != indexKey(novel)) it.copy(complete = false) else it
+            if (it.parserKey != indexKey(novel) || SunovelsIndexSnapshots.stale(it)) it.copy(complete = false) else it
         } ?: runCatching {
             (metadata.read(indexPath(novel)) ?: indexCache.read(indexPath(novel)))?.let { json.decodeFromString<NovelChapterIndex>(it) }
                 ?.takeIf { it.editionId == novel.id && it.chapters.distinctBy { ch -> ch.id }.size == it.chapters.size &&
                     it.chapters.all { ch -> NovelHttp.allowed(ch.url) && ch.title.isNotBlank() &&
                         ch.url.toHttpUrl().host.removePrefix("www.") == novel.url.toHttpUrl().host.removePrefix("www.") } }
-        }.getOrNull()?.let { if (it.parserKey != indexKey(novel)) it.copy(complete = false) else it }?.also { cacheIndex(it) }
+        }.getOrNull()?.let { if (it.parserKey != indexKey(novel) || SunovelsIndexSnapshots.stale(it)) it.copy(complete = false) else it }?.let { restored ->
+            // Restore authoritative proof before returning the first disk-backed UI projection.
+            if (novel.sourceId == SunovelsSource.SOURCE_ID)
+                restored.chapters.forEach { readSunReaderEvidence(novel, it) }
+            cacheIndex(restored)
+            if (novel.sourceId == SunovelsSource.SOURCE_ID) memoryCacheLock.withLock { indexes[novel.id] } else restored
+        }
     }
+    /** Local state only: availability checks continue to update an already-open details screen. */
+    fun observeSunIndex(novel: Novel): Flow<NovelChapterIndex> {
+        require(novel.sourceId == SunovelsSource.SOURCE_ID)
+        return indexRevision.mapNotNull { indexSnapshot(novel) }.distinctUntilChanged()
+    }
+    private fun overlaySunReaderEvidence(index: NovelChapterIndex): NovelChapterIndex =
+        if (!index.editionId.startsWith(SunovelsSource.SOURCE_ID + ":")) index else {
+            val rows = index.chapters.map {
+                SunovelsAccess.mobileIndexCandidate(SunovelsAccess.mergeIndex(it, sunReaderRestrictions[index.editionId + "|" + it.id]))
+            }
+            index.copy(chapters = rows, notice = index.notice.takeUnless { rows.all { it.available } })
+        }
     private suspend fun cacheIndex(index: NovelChapterIndex) = memoryCacheLock.withLock {
-        indexes[index.editionId] = index
+        indexes[index.editionId] = overlaySunReaderEvidence(index)
         while (indexes.size > 5) indexes.remove(indexes.keys.first())
         indexRevision.update { it + 1 }
     }
@@ -570,7 +657,7 @@ class NovelRepository private constructor(context: Context) {
     }
 
     suspend fun completeIndex(novel: Novel, refresh: Boolean = false, onPage: suspend (NovelChapterIndex) -> Unit = {}): NovelChapterIndex =
-        completeIndex(novel, refresh, Int.MAX_VALUE, onPage)
+        completeIndex(novel, refresh, if (novel.sourceId == SunovelsSource.SOURCE_ID) 2 else Int.MAX_VALUE, onPage)
 
     suspend fun completeIndex(novel: Novel, refresh: Boolean = false, maxPages: Int, onPage: suspend (NovelChapterIndex) -> Unit = {}): NovelChapterIndex = withContext(Dispatchers.IO) {
         ready.await()
@@ -580,9 +667,17 @@ class NovelRepository private constructor(context: Context) {
         val flight = synchronized(indexFlights) {
             indexFlights[flightKey]?.also { it.readers++; it.release?.cancel(); it.release = null }
                 ?: IndexFlight(io.async(start = CoroutineStart.LAZY) {
-                    if (maxPages == Int.MAX_VALUE) collectCompleteIndex(novel, refresh, maxPages)
+                    // Eight individually bounded source calls may legitimately take >20s.
+                    // Preserve Sunovels' separately accepted two-page/session policy.
+                    if (maxPages == Int.MAX_VALUE || novel.sourceId != SunovelsSource.SOURCE_ID) collectCompleteIndex(novel, refresh, maxPages)
                     else withTimeoutOrNull(20_000) { collectCompleteIndex(novel, refresh, maxPages) }
-                        ?: throw NovelSourceFailure("تعذّر تحميل بقية الفصول. أعد المحاولة.", "Chapter discovery session timed out")
+                        ?: run {
+                            if (novel.sourceId == SunovelsSource.SOURCE_ID)
+                                SunovelsDiagnostics.log("INDEX_DEADLINE", novel.url, "REPOSITORY_INDEX", code = "SUN_INDEX_TIMEOUT", reason = "BOUNDED_SESSION")
+                            throw NovelSourceFailure(if (novel.sourceId == SunovelsSource.SOURCE_ID)
+                                "استغرق تحميل فهرس الفصول وقتًا طويلًا. الفصول المحفوظة تبقى متاحة؛ أعد المحاولة."
+                                else "تعذّر تحميل بقية الفصول. أعد المحاولة.", "Chapter discovery session timed out", code = if (novel.sourceId == SunovelsSource.SOURCE_ID) "SUN_INDEX_TIMEOUT" else null)
+                        }
                 })
                     .also { indexFlights[flightKey] = it }
         }
@@ -603,8 +698,10 @@ class NovelRepository private constructor(context: Context) {
                     flight.result.start()
                     val result = flight.result.await()
                     observer.cancelAndJoin()
-                    onPage(result)
-                    result
+                    // The collector may have captured a lock hint before availability verification.
+                    val visible = if (novel.sourceId == SunovelsSource.SOURCE_ID) indexSnapshot(novel) ?: result else result
+                    onPage(visible)
+                    visible
                 } catch (c: CancellationException) { throw c }
                 catch (e: Exception) { observer.cancelAndJoin(); indexSnapshot(novel)?.let { onPage(it) }; throw e }
                 finally { observer.cancel() }
@@ -632,43 +729,87 @@ class NovelRepository private constructor(context: Context) {
             val old = indexSnapshot(novel)
             val key = indexKey(novel)
             val checkpointPath = indexPath(novel).removeSuffix(".json") + ".refresh.json"
+            val restartSun = novel.sourceId == SunovelsSource.SOURCE_ID && refresh
+            val staleSun = old?.let(SunovelsIndexSnapshots::stale) == true
+            if (novel.sourceId == SunovelsSource.SOURCE_ID) SunovelsDiagnostics.log(
+                if (restartSun) "RETRY_RESTART" else "CHECKPOINT_RESTORE", novel.url, "REPOSITORY_INDEX",
+                checkpoint = old?.nextPage, generation = old?.gatewayIndexGeneration, parserKey = old?.parserKey, reason = if (restartSun) "USER_REFRESH" else "AUTO_CONTINUE")
             val pending = runCatching {
                 (metadata.read(checkpointPath) ?: indexCache.read(checkpointPath))?.let { json.decodeFromString<NovelChapterIndex>(it) }
-                    ?.takeIf { it.editionId == novel.id && it.parserKey == key && it.updatedAt > (old?.updatedAt ?: 0) }
+                    ?.takeIf { it.editionId == novel.id && it.parserKey == key && !SunovelsIndexSnapshots.stale(it) && it.updatedAt > (old?.updatedAt ?: 0) }
+                    ?.takeUnless { novel.sourceId != SunovelsSource.SOURCE_ID && NovelIndexRecovery.invalidContinuation(it) }
+                    ?.takeUnless { restartSun }
             }.getOrNull()
-            if (old?.complete == true && old.parserKey == key && pending == null && !refresh &&
+            if (old?.complete == true && old.failureState == null && old.parserKey == key && !staleSun && pending == null && !refresh &&
+                !NovelChapterIndexer.staleKolnovelCompletion(novel, old) &&
                 System.currentTimeMillis() - old.updatedAt < 21_600_000) return@withLock old
-            val preserve = old != null && (old.complete || old.parserKey != key || pending != null)
-            // Retry resumes a partial traversal; refresh only restarts a finished index.
-            val initial = pending ?: old?.takeIf { !it.complete && it.parserKey == key }
-                ?: NovelChapterIndex(novel.id, parserKey = key)
+            val stranded = old != null && novel.sourceId != SunovelsSource.SOURCE_ID && NovelIndexRecovery.invalidContinuation(old)
+            val preserve = old != null && (restartSun || staleSun || old.complete || old.parserKey != key || pending != null || stranded)
+            // Sunovels user Retry starts fresh while last-good rows remain visible. Automatic continuation resumes.
+            val empty = if (novel.sourceId == SunovelsSource.SOURCE_ID) SunovelsIndexSnapshots.fresh(novel.id, key) else NovelChapterIndex(novel.id, parserKey = key)
+            val initial = if (restartSun) empty else pending ?: old?.takeIf { !stranded && !it.complete && it.parserKey == key && !staleSun &&
+                !(novel.sourceId == SunovelsSource.SOURCE_ID && refresh && it.nextPage == null) }
+                ?: empty
             var latest = initial
-            suspend fun checkpoint(index: NovelChapterIndex) {
+            suspend fun checkpoint(incoming: NovelChapterIndex) {
+                val index = if (novel.sourceId == SunovelsSource.SOURCE_ID) incoming.copy(chapters = incoming.chapters.map { chapter ->
+                    SunovelsAccess.mergeIndex(chapter, readSunReaderEvidence(novel, chapter) ?: old?.chapters?.firstOrNull { it.id == chapter.id })
+                }) else incoming
+                if (novel.sourceId == SunovelsSource.SOURCE_ID) SunovelsDiagnostics.log("CHECKPOINT_SAVED", novel.url,
+                    "REPOSITORY_INDEX", checkpoint = index.nextPage, generation = index.gatewayIndexGeneration, parserKey = index.parserKey, reason = if (index.complete) "COMPLETE" else "PARTIAL")
+                latest = index
+                if (preserve && novel.sourceId == SunovelsSource.SOURCE_ID && !index.complete) {
+                    metadata.write(checkpointPath, json.encodeToString(index))
+                    val fresh = index.chapters.associateBy { it.id }
+                    val oldIds = old!!.chapters.mapTo(HashSet()) { it.id }
+                    // Expose verified availability/evidence immediately while retaining every
+                    // old URL. Keep the independent collector checkpoint free of old rows.
+                    val visible = if (index.nextPage == null && oldIds.all { it in fresh }) index else SunovelsIndexSnapshots.visible(old, index)
+                    cacheIndex(visible); persistIndex(novel, visible)
+                    return
+                }
                 if (preserve && index.complete) {
                     val ids = index.chapters.mapTo(HashSet()) { it.id }
-                    check(old!!.chapters.all { it.id in ids }) { "Chapter index unexpectedly decreased" }
+                    val removed = old!!.chapters.filter { it.id !in ids }
+                    if (novel.sourceId == SunovelsSource.SOURCE_ID && removed.isNotEmpty()) {
+                        // Absence is accepted only after a complete verified traversal. Retain URLs/progress.
+                        val retained = index.copy(chapters = index.chapters + removed.map { it.copy(available = false,
+                            unavailableReason = SunovelsSource.REMOVED_MESSAGE, sunovelsState = SunovelsChapterState.MISSING, sunovelsEvidence = SunovelsChapterEvidence.INDEX) }, notice = SunovelsSource.REMOVED_MESSAGE)
+                        cacheIndex(retained); persistIndex(novel, retained)
+                        return
+                    }
+                    check(removed.isEmpty()) { "Chapter index unexpectedly decreased" }
                 }
-                latest = index
-                if (preserve && !index.complete) metadata.write(checkpointPath, json.encodeToString(index))
+                if (preserve && !index.complete) {
+                    metadata.write(checkpointPath, json.encodeToString(index))
+                    val visible = NovelIndexRecovery.visible(old!!, index)
+                    cacheIndex(visible); persistIndex(novel, visible)
+                }
                 else { cacheIndex(index); persistIndex(novel, index) }
             }
             try {
-                suspend fun collect() = NovelChapterIndexer.collect(source(novel.sourceId), novel, initial, maxPages = maxPages) { index ->
-                    checkpoint(index) // Every verified page survives process death, not just every fourth page.
+                suspend fun collect() = withContext(FocusTask(WorkPriority.ACTIVE_WORK,novel.sourceId,novel.id,operation=FocusOperation.METADATA)) {
+                    NovelChapterIndexer.collect(source(novel.sourceId), novel, initial, maxPages = maxPages) { index ->
+                        checkpoint(index) // Every verified page survives process death, not just every fourth page.
+                    }
                 }
                 val result = collect()
                 checkpoint(result)
                 if (result.complete) updateEvidence(novel, NovelEditionEvidence(true, result.availableCount, catalog.value.evidence[novel.id]?.accessWorks, result.updatedAt))
-                if (preserve && !result.complete) old!!.copy(complete = false, nextPage = result.nextPage, declaredTotal = result.declaredTotal) else result
+                if (preserve && novel.sourceId == SunovelsSource.SOURCE_ID && !result.complete) indexSnapshot(novel) ?: result
+                else if (preserve && !result.complete) indexSnapshot(novel) ?: result else result
             } catch (c: CancellationException) {
                 withContext(NonCancellable) { checkpoint(latest) }; throw c
             } catch (e: Exception) {
                 // Never overwrite the prior usable index with an unfinished refresh.
-                if (e.message == "Chapter total changed during pagination") {
+                if (e.message == "Chapter total changed during pagination" || (e as? NovelSourceFailure)?.code == "SUN_INDEX_CHECKPOINT_CHANGED") {
                     // A changing source invalidates the continuation, not the usable chapters.
-                    metadata.write(checkpointPath, json.encodeToString(NovelChapterIndex(novel.id,
-                        parserKey = key, updatedAt = System.currentTimeMillis())))
+                    metadata.write(checkpointPath, json.encodeToString(empty.copy(updatedAt = System.currentTimeMillis())))
                 } else checkpoint(latest)
+                // Failure provenance is durable and distinct from verified-empty. Retain every
+                // last-good row and its freshness; a failed refresh cannot renew the success TTL.
+                val visible = NovelIndexRecovery.failed(indexSnapshot(novel) ?: old ?: latest, e)
+                cacheIndex(visible); persistIndex(novel, visible)
                 throw e
             }
         }
@@ -683,12 +824,19 @@ class NovelRepository private constructor(context: Context) {
             val revision = indexRevision.value
             val snapshot = indexSnapshot(novel) ?: NovelChapterIndex(novel.id)
             if (snapshot.complete || snapshot.chapters.size >= count) return@withContext snapshot
+            if (novel.sourceId == SunovelsSource.SOURCE_ID && snapshot.parserKey != indexKey(novel)) {
+                return@withContext completeIndex(novel, refresh = true, maxPages = 8)
+            }
+            if (novel.sourceId == SeaNovelSource.SOURCE_ID && snapshot.parserKey != indexKey(novel)) {
+                return@withContext completeIndex(novel, refresh = true, maxPages = 1)
+            }
             if (indexMutex.tryLock()) {
                 try {
                     val latest = indexSnapshot(novel) ?: snapshot
                     if (latest.complete || latest.chapters.size >= count) return@withContext latest
                     val result = NovelChapterIndexer.collect(source(novel.sourceId), novel, latest,
                         stopWhen = { it.chapters.size >= count },
+                        maxPages = if (novel.sourceId == SunovelsSource.SOURCE_ID) 8 else Int.MAX_VALUE,
                         onPage = { cacheIndex(it); persistIndex(novel, it) })
                     persistIndex(novel, result)
                     if (result.complete) updateEvidence(novel, NovelEditionEvidence(true, result.availableCount, catalog.value.evidence[novel.id]?.accessWorks, result.updatedAt))
@@ -703,10 +851,10 @@ class NovelRepository private constructor(context: Context) {
         }
         @Suppress("UNREACHABLE_CODE") error("No chapter index")
     }
-    private fun diskHasEdition(novel: Novel) = File(app.filesDir, "novels-local/text-downloads/chapters/" + novelDigest(novel.id)).isDirectory
+    private fun diskHasEdition(novel: Novel) = File(offlineRoot(), "text-downloads/chapters/" + novelDigest(novel.id)).listFiles()?.any { it.isFile && it.name.endsWith(".json.gz") } == true
     private fun persistIndex(novel: Novel, index: NovelChapterIndex) {
-        if (!index.complete || metadata.read(indexPath(novel)) != null || library.value.any { it.novel.id == novel.id && it.saved } || diskHasEdition(novel))
-            metadata.write(indexPath(novel), json.encodeToString(index))
+        if (novel.sourceId == SunovelsSource.SOURCE_ID || !index.complete || metadata.read(indexPath(novel)) != null || library.value.any { it.novel.id == novel.id && it.saved } || diskHasEdition(novel))
+            metadata.write(indexPath(novel), json.encodeToString(overlaySunReaderEvidence(index)))
         else {
             indexCache.write(indexPath(novel), json.encodeToString(index))
             val directory = File(app.cacheDir, "novels-indexes/indexes")
@@ -747,7 +895,7 @@ class NovelRepository private constructor(context: Context) {
         }
     }
     suspend fun chapterPage(novel: Novel, page: Int): ChapterPage = withContext(Dispatchers.IO) { source(novel.sourceId).chapters(novel, page) }
-    suspend fun adjacent(novel: Novel, chapter: NovelChapter, forward: Boolean): NovelChapter? = withContext(Dispatchers.IO) {
+    suspend fun adjacent(novel: Novel, chapter: NovelChapter, forward: Boolean): NovelChapter? = withContext(Dispatchers.IO + FocusTask(WorkPriority.VISIBLE, novel.sourceId, novel.id, chapter.id)) {
         fun neighbor(index: NovelChapterIndex?): NovelChapter? {
             val location = index?.chapters?.indexOfFirst { it.id == chapter.id } ?: -1
             return if (location < 0) null else index?.chapters?.getOrNull(location + if (forward) 1 else -1)
@@ -758,7 +906,15 @@ class NovelRepository private constructor(context: Context) {
             val revision = indexRevision.value
             val current = indexSnapshot(novel) ?: NovelChapterIndex(novel.id)
             neighbor(current)?.let { return@withContext it }
-            if (current.complete) return@withContext null
+            if (current.complete || novel.sourceId == SunovelsSource.SOURCE_ID && current.nextPage == null && current.parserKey == indexKey(novel)) return@withContext null
+            if (novel.sourceId == SunovelsSource.SOURCE_ID && current.parserKey != indexKey(novel)) {
+                return@withContext neighbor(completeIndex(novel, refresh = true, maxPages = 8))
+            }
+            if (novel.sourceId == SeaNovelSource.SOURCE_ID && current.parserKey != indexKey(novel)) {
+                // Preserve cached/offline neighbors above. At an unresolved boundary, use the
+                // normal last-good-preserving reparse rather than a stale exhausted cursor.
+                return@withContext neighbor(completeIndex(novel, refresh = true, maxPages = 1))
+            }
             if (indexMutex.tryLock()) {
                 try {
                     val index = NovelChapterIndexer.collect(source(novel.sourceId), novel, current,
@@ -775,64 +931,247 @@ class NovelRepository private constructor(context: Context) {
     }
     @Volatile var lastDataOrigin = "unknown"
 
+    private val sunReaderRestrictions = ConcurrentHashMap<String, NovelChapter>()
+    private val sunReaderEpochs = ConcurrentHashMap<String, Long>()
+    private fun sunEvidencePath(novel: Novel, chapter: NovelChapter) = "sun-reader-evidence/" + novelDigest(novel.id) + "/" + novelDigest(chapter.id) + ".json"
+    private fun readSunReaderEvidence(novel: Novel, chapter: NovelChapter): NovelChapter? {
+        val key = novelTextCacheKey(offlineOwner(), novel.id, chapter.id)
+        return sunReaderRestrictions[key] ?: runCatching {
+            metadata.read(sunEvidencePath(novel, chapter))?.let { json.decodeFromString<NovelChapter>(it) }
+                ?.takeIf { it.id == chapter.id && it.sunovelsEvidence != null }
+                // A slow disk read must not overwrite proof published by a concurrent verification.
+                ?.let { sunReaderRestrictions.putIfAbsent(key, it) ?: it }
+        }.getOrNull()
+    }
+    private suspend fun rememberSunReaderEvidence(novel: Novel, chapter: NovelChapter, report: SunovelsResolutionReport? = null) {
+        if (!SunovelsAccess.durableEvidence(chapter)) return
+        // The same atomic metadata store retains reader proof independently of a concurrent index refresh.
+        synchronized(metadata) {
+            val key = novelTextCacheKey(offlineOwner(), novel.id, chapter.id)
+            val epoch = report?.epoch ?: 0
+            if (epoch < (sunReaderEpochs[key] ?: 0)) return
+            sunReaderEpochs[key] = epoch
+            metadata.write(sunEvidencePath(novel, chapter), json.encodeToString(chapter))
+            sunReaderRestrictions[novelTextCacheKey(offlineOwner(), novel.id, chapter.id)] = chapter
+        }
+        memoryCacheLock.withLock {
+            if ((report?.epoch ?: 0) < (sunReaderEpochs[novelTextCacheKey(offlineOwner(), novel.id, chapter.id)] ?: 0)) return@withLock
+            indexes[novel.id]?.let { current ->
+                val repairedPage = report?.indexRepair
+                val freshRows = repairedPage?.chapters?.associateBy { it.id }.orEmpty()
+                val rows = current.chapters.map { row ->
+                    val fresh = freshRows[row.id] ?: row
+                    if (row.id == chapter.id) fresh.copy(available = chapter.available, unavailableReason = chapter.unavailableReason, sunovelsState = chapter.sunovelsState, sunovelsEvidence = chapter.sunovelsEvidence) else fresh
+                }
+                val next = overlaySunReaderEvidence(current.copy(chapters = rows,
+                    declaredTotal = repairedPage?.declaredTotal ?: current.declaredTotal))
+                indexes[novel.id] = next; persistIndex(novel, next)
+            }
+            // Also notify consumers when proof arrived before an index was loaded into memory.
+            indexRevision.update { it + 1 }
+        }
+    }
+    /** User action only: one normal public GET; no URL guessing, lock bypass or reader navigation. */
+    suspend fun revalidateSunChapter(novel: Novel, chapter: NovelChapter): NovelChapter = withContext(Dispatchers.IO) {
+        require(novel.sourceId == SunovelsSource.SOURCE_ID && SunovelsSource.directEnabled)
+        coalesce("sun-revalidate:" + novelTextCacheKey(offlineOwner(), novel.id, chapter.id)) {
+            val direct = source(novel.sourceId) as? SunovelsSource ?: error("Direct source unavailable")
+            val prior = readSunReaderEvidence(novel, chapter) ?: chapter
+            try {
+                val candidate = SunovelsAccess.probeCandidate(chapter)
+                SunovelsSource.requireResolutionOwnership(novel, candidate)
+                val resolved = direct.resolvePublicChapter(candidate, manualRetry = true, availabilityCheck = true)
+                SunovelsReaderDiagnostics.record(resolved.report.copy(previousAccessEvidence = SunovelsReaderDiagnostics.lockEvidence(prior)))
+                val text = resolved.text
+                SunovelsSource.validateText(text)
+                memoryCacheLock.withLock {
+                    texts[novelTextCacheKey(offlineOwner(), novel.id, chapter.id)] = text
+                    while (texts.size > 2 || texts.values.sumOf { value -> value.paragraphs.sumOf { it.length } + value.markup.sumOf { it.length } } > 1_000_000) texts.remove(texts.keys.first())
+                }
+                SunovelsAccess.readable(chapter.copy(title = SunovelsSource.bestTitle(chapter.title, resolved.report.pageTitle))).also { rememberSunReaderEvidence(novel, it, resolved.report) }
+            } catch (c: CancellationException) { throw c }
+            catch (e: Exception) {
+                SunovelsReaderDiagnostics.get(chapter.id)?.let { SunovelsReaderDiagnostics.record(it.copy(
+                    previousAccessEvidence = SunovelsReaderDiagnostics.lockEvidence(prior))) }
+                if ((e as? NovelSourceFailure)?.let { it.sourceVerified && it.code == "SUN_LOCKED" } == true)
+                    rememberSunReaderEvidence(novel, SunovelsAccess.failed(prior, e), SunovelsReaderDiagnostics.get(chapter.id))
+                throw e
+            }
+        }
+    }
+    /** User-initiated preflight: no position/history mutation until a verified reader opens. */
+    suspend fun prepareReaderChapter(novel: Novel, chapter: NovelChapter, manualRetry: Boolean = false) = withContext(Dispatchers.IO) {
+        if (novel.sourceId != SunovelsSource.SOURCE_ID) return@withContext
+        SunovelsDiagnostics.log("READER_PREFLIGHT", novel.url, "REPOSITORY_READER", page = chapter.sourcePage)
+        try {
+            // Keep checksum-validated downloads/memory as the fast path even on manual Retry.
+            val retained = memoryCacheLock.withLock { texts[novelTextCacheKey(offlineOwner(), novel.id, chapter.id)] } ?: disk.read(novel.id, chapter.id)
+            if (manualRetry && retained == null) revalidateSunChapter(novel, chapter)
+            chapterText(novel, chapter)
+        }
+        catch (c: CancellationException) { throw c }
+        catch (e: NovelSourceFailure) {
+            if (SunovelsReaderDiagnostics.get(chapter.id) == null) SunovelsReaderDiagnostics.failed(chapter, e)
+            SunovelsDiagnostics.log("READER_REFUSED", novel.url, "REPOSITORY_READER", status = e.httpStatus, code = e.code)
+            throw e
+        }
+    }
+
+    internal suspend fun requireSunChapter(novel: Novel, chapter: NovelChapter, storedContent: Boolean = false) {
+        if (novel.sourceId != SunovelsSource.SOURCE_ID) return
+        fun checked(row: NovelChapter) = if (storedContent) SunovelsAccess.storedCandidate(row) else row
+        var validating = chapter
+        fun validate(row: NovelChapter) { validating = row; SunovelsSource.requireResolutionOwnership(novel, row) }
+        try {
+            val evidence = readSunReaderEvidence(novel, chapter)
+            // Report durable reader lock proof before a weaker index hint for the same identity.
+            evidence?.let { validate(checked(it)) }
+            validate(checked(SunovelsAccess.readerCandidate(chapter, evidence)))
+            indexSnapshot(novel)?.chapters?.firstOrNull { it.id == chapter.id }?.let {
+                validate(checked(SunovelsAccess.readerCandidate(it, readSunReaderEvidence(novel, chapter))))
+            }
+        } catch (c: CancellationException) { throw c }
+        catch (e: Exception) { SunovelsReaderDiagnostics.failed(validating, e); throw e }
+    }
+
+    /** Owner-authorized mobile text enters the same checked, atomic disk/queue pipeline as other novels. */
+    internal suspend fun ceneleChapterForDownload(novel: Novel, chapter: NovelChapter): NovelText = withContext(Dispatchers.IO) {
+        require(novel.sourceId == "novel.cenele")
+        val cached = chapterText(novel, chapter)
+        if (!CeneleSource.staleIllustration(chapter, cached)) return@withContext cached
+        // Preserve the old readable disk text until a successful atomic queue commit. Only
+        // this impossible illustration address needs a fresh source parse, not a data reset.
+        evictChapter(novel.id, chapter.id)
+        source(novel.sourceId).chapter(chapter).also { validateNovelRepositoryContent(novel.sourceId, it) }
+    }
+    internal suspend fun sunChapterForDownload(novel: Novel, chapter: NovelChapter): NovelText = withContext(Dispatchers.IO) {
+        require(novel.sourceId == SunovelsSource.SOURCE_ID)
+        disk.read(novel.id, chapter.id)?.let { stored ->
+            requireSunChapter(novel, chapter, storedContent = true)
+            SunovelsSource.validateText(stored)
+            return@withContext stored
+        }
+        requireSunChapter(novel, chapter)
+        if (SunovelsSource.mobileOfflineAuthorized) return@withContext chapterText(novel, chapter).also { SunovelsSource.validateText(it) }
+        (source(novel.sourceId) as SunovelsSource).chapterForDownload(chapter).also { SunovelsSource.validateText(it) }
+    }
     suspend fun chapterText(novel: Novel, chapter: NovelChapter): NovelText = withContext(Dispatchers.IO) {
-        val identity = novel.id to chapter.id
-        val key = novel.id + "|" + chapter.id
         val isCenele = novel.sourceId == "novel.cenele" || novel.id == "novel.cenele" || novel.id.startsWith("novel.cenele:") || novel.id.startsWith("novel.cenele/")
+        val seaTrace = SeaNovelReaderDiagnostics.current() ?: SeaNovelReaderDiagnostics.begin(novel, chapter)
+        seaTrace?.stage(SeaReaderStage.REPOSITORY_OWNERSHIP)
+        if (novel.sourceId == SeaNovelSource.SOURCE_ID) SeaNovelSource.requireOwnership(novel, chapter)
+        disk.read(novel.id, chapter.id)?.takeIf { disk.complete(it) }?.let { stored ->
+            requireSunChapter(novel, chapter, storedContent = true)
+            val validated = if (isCenele) CeneleSanitizer.sanitize(stored) else stored
+            validateNovelRepositoryContent(novel.sourceId, validated)
+            lastDataOrigin = "disk"
+            seaTrace?.cache("CHECKSUM_DOWNLOAD", stored)
+            if(novel.sourceId == SunovelsSource.SOURCE_ID) SunovelsReaderDiagnostics.cached(chapter,stored,"CHECKSUM_DOWNLOAD")
+            return@withContext validated
+        }
+        if (novel.sourceId == SunovelsSource.SOURCE_ID) {
+            // A later public lock must not erase authorized, validated offline reading.
+            // Ownership, ambiguous-address and missing-identity checks still apply.
+            val memory = memoryCacheLock.withLock { texts[novelTextCacheKey(offlineOwner(), novel.id, chapter.id)] }
+            val retained = memory ?: disk.read(novel.id, chapter.id)
+            if (retained != null) {
+                requireSunChapter(novel, chapter, storedContent = true)
+                SunovelsSource.validateText(retained)
+                lastDataOrigin = "stored"
+                SunovelsReaderDiagnostics.cached(chapter, retained, if (memory != null) "VERIFIED_MEMORY" else "CHECKSUM_DOWNLOAD")
+                return@withContext retained
+            }
+        }
+        requireSunChapter(novel, chapter)
+        val requestOwner = offlineOwner()
+        val identity = Triple(requestOwner, novel.id, chapter.id)
+        val key = novelTextCacheKey(offlineOwner(), novel.id, chapter.id)
+        seaTrace?.stage(SeaReaderStage.CACHE_LOOKUP)
         memoryCacheLock.withLock { texts[key] }?.let {
+            if (novel.sourceId == SunovelsSource.SOURCE_ID) SunovelsSource.validateText(it)
             lastDataOrigin = "memory"
+            seaTrace?.cache("VERIFIED_MEMORY", it)
             return@withContext if (isCenele) CeneleSanitizer.sanitize(it) else it
         }
         // A text request must not wait on an unrelated catalog/detail hash collision.
         // Share the actual result with all callers, even if the small text LRU changes meanwhile.
+        val fetchTrace = seaTrace?.fork()
+        val requestTask = FocusTask(currentCoroutineContext()[FocusTask]?.priority ?: WorkPriority.VISIBLE, novel.sourceId, novel.id, chapter.id)
         val flight = synchronized(chapterFlights) {
-            chapterFlights[identity]?.also { it.readers++ } ?: ChapterFlight(io.async(start = CoroutineStart.LAZY) {
-                memoryCacheLock.withLock { texts[key] }?.let {
-                    lastDataOrigin = "memory"
-                    return@async if (isCenele) CeneleSanitizer.sanitize(it) else it
-                }
-                val offline = disk.read(novel.id, chapter.id)
-                if (offline == null || !disk.complete(offline)) {
-                    // Restore an existing queue on cold reopen; do not create one for ordinary online reading.
-                    val queue = if (downloadQueue.isInitialized() || File(app.filesDir, "novels-local/downloads/queue.db").isFile) downloads else null
-                    if (queue != null) {
-                        try {
-                            queue.awaitReady()
-                            if (queue.tasks.value.any {
-                                it.novel.id == novel.id && it.chapter.id == chapter.id && it.state == NovelDownloadState.DONE
-                            }) queue.invalidate(novel, chapter)
-                        } catch (e: CancellationException) {
-                            throw e
-                        } catch (e: Exception) {
-                            // A queue failure must not erase or prevent reading valid cached text.
-                            android.util.Log.w("MangaroNovels", "Novel download integrity recovery unavailable")
+            chapterFlights[identity]?.also { it.readers++ } ?: ChapterFlight(io.async(context = requestTask + tachiyomi.core.common.util.lang.LocalAccountScope.StorageElement(requestOwner) + (fetchTrace ?: kotlin.coroutines.EmptyCoroutineContext), start = CoroutineStart.LAZY) {
+                try {
+                    fetchTrace?.stage(SeaReaderStage.CACHE_LOOKUP)
+                    memoryCacheLock.withLock { texts[key] }?.let {
+                        if (novel.sourceId == SunovelsSource.SOURCE_ID) SunovelsSource.validateText(it)
+                        lastDataOrigin = "memory"
+                        fetchTrace?.cache("VERIFIED_MEMORY", it)
+                        return@async if (isCenele) CeneleSanitizer.sanitize(it) else it
+                    }
+                    val offline = disk.read(novel.id, chapter.id)
+                    if (offline == null || !disk.complete(offline)) {
+                        // Restore an existing queue on cold reopen; do not create one for ordinary online reading.
+                        val queue = if (activeDownloads() != null || File(offlineRoot(), "downloads/queue.db").isFile) downloads else null
+                        if (queue != null) {
+                            try {
+                                queue.awaitReady()
+                                if (queue.tasks.value.any {
+                                    it.novel.id == novel.id && it.chapter.id == chapter.id && it.state == NovelDownloadState.DONE
+                                }) queue.invalidate(novel, chapter)
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                // A queue failure must not erase or prevent reading valid cached text.
+                                android.util.Log.w("MangaroNovels", "Novel download integrity recovery unavailable")
+                            }
                         }
                     }
-                }
-                val rawResult = if (offline != null) {
-                    lastDataOrigin = "disk"
-                    offline
-                } else {
-                    lastDataOrigin = "network"
-                    try { source(novel.sourceId).chapter(chapter) }
-                    catch (c: CancellationException) { throw c }
-                    catch (e: Exception) {
-                        if (novel.sourceId == "novel.sunovels") throw NovelSourceFailure(
-                            "تعذّر الوصول إلى هذا الفصل من Sunovels؛ قد يكون مقفلًا أو يتطلب تطبيق المصدر. الفصول المحمّلة تبقى قابلة للقراءة.",
-                            "Retired source chapter unavailable").also { it.initCause(e) }
-                        throw e
+                    var resolvedReport: SunovelsResolutionReport? = null
+                    val rawResult = if (offline != null) {
+                        lastDataOrigin = "disk"
+                        fetchTrace?.cache("CHECKSUM_DOWNLOAD", offline)
+                        offline
+                    } else {
+                        lastDataOrigin = "network"
+                        fetchTrace?.cache("NETWORK")
+                        try {
+                            if (novel.sourceId == SunovelsSource.SOURCE_ID) {
+                                val direct = source(novel.sourceId) as SunovelsSource
+                                val resolved = direct.resolvePublicChapter(SunovelsAccess.readerCandidate(chapter, readSunReaderEvidence(novel, chapter)))
+                                resolvedReport = resolved.report
+                                resolved.text
+                            } else source(novel.sourceId).chapter(chapter)
+                        } catch (c: CancellationException) { throw c }
+                        catch (e: Exception) {
+                            if (novel.sourceId == SunovelsSource.SOURCE_ID && (e as? NovelSourceFailure)?.let { it.sourceVerified && it.code == "SUN_LOCKED" } == true)
+                                rememberSunReaderEvidence(novel, SunovelsAccess.failed(readSunReaderEvidence(novel, chapter) ?: chapter, e), SunovelsReaderDiagnostics.get(chapter.id))
+                            throw e
+                        }
                     }
-                }
-                val result = if (isCenele) CeneleSanitizer.sanitize(rawResult) else rawResult
-                check(result.paragraphs.size >= 3 && result.paragraphs.sumOf { it.length } >= 200) { "Incomplete novel chapter" }
-                memoryCacheLock.withLock {
-                    texts[key] = result
-                    while (texts.size > 2 || texts.values.sumOf { v -> v.paragraphs.sumOf { it.length } + v.markup.sumOf { it.length } + v.blocks.sumOf { (it.imageUrl?.length ?: 0) + it.alt.length } } > 1_000_000) texts.remove(texts.keys.first())
-                }
-                result
-            }).also { chapterFlights[identity] = it }
+                    val result = if (isCenele) CeneleSanitizer.sanitize(rawResult) else rawResult
+                    if (novel.sourceId == SunovelsSource.SOURCE_ID) {
+                        SunovelsSource.validateText(result)
+                        if (offline == null) rememberSunReaderEvidence(novel, SunovelsAccess.readable(chapter.copy(title = resolvedReport?.pageTitle ?: chapter.title)), resolvedReport)
+                    }
+                    fetchTrace?.stage(SeaReaderStage.REPOSITORY_VALIDATION)
+                    if (novel.sourceId != SunovelsSource.SOURCE_ID) validateNovelRepositoryContent(novel.sourceId, result)
+                    fetchTrace?.accepted(result, source = false)
+                    fetchTrace?.stage(SeaReaderStage.REPOSITORY_ACCEPTED)
+                    memoryCacheLock.withLock {
+                        texts[key] = result
+                        while (texts.size > 2 || texts.values.sumOf { v -> v.paragraphs.sumOf { it.length } + v.markup.sumOf { it.length } + v.blocks.sumOf { (it.imageUrl?.length ?: 0) + it.alt.length } } > 1_000_000) texts.remove(texts.keys.first())
+                    }
+                    result
+                } catch (e: Exception) { fetchTrace?.failed(e); throw e }
+            }, seaTrace = fetchTrace).also { chapterFlights[identity] = it }
         }
-        try { flight.result.start(); flight.result.await() }
+        try {
+            flight.result.start()
+            val result = flight.result.await()
+            seaTrace?.adopt(flight.seaTrace)
+            result
+        } catch (e: Exception) {
+            seaTrace?.adopt(flight.seaTrace); seaTrace?.failed(e); throw e
+        }
         finally {
             synchronized(chapterFlights) {
                 flight.readers--
@@ -844,17 +1183,29 @@ class NovelRepository private constructor(context: Context) {
             }
         }
     }
-    internal suspend fun evictChapter(editionId: String, chapterId: String) {
-        memoryCacheLock.withLock { texts.remove(editionId + "|" + chapterId) }
+    suspend fun sunovelsDiagnostic(novel: Novel, chapter: NovelChapter): String = withContext(Dispatchers.IO) {
+        require(SunovelsSource.diagnosticsEnabled)
+        val identity = "selectedSource=${novel.sourceId}\nsourceName=${sources.firstOrNull { it.id == novel.sourceId }?.name ?: novel.sourceId}\neditionId=${novel.id}\n"
+        if (novel.sourceId == SeaNovelSource.SOURCE_ID) return@withContext identity + (SeaNovelReaderDiagnostics.get(novel, chapter)?.copyReport()
+            ?: "resolution=SEA_NO_CAPTURED_READER_ATTEMPT\nrequestedUrl=NOT_CAPTURED\nfinalUrl=NOT_CAPTURED\nhttp=UNKNOWN")
+        if (novel.sourceId != SunovelsSource.SOURCE_ID) return@withContext identity + "novelUrl=${novel.url}\npersistedChapterId=${chapter.id}\ndisplayTitle=${chapter.title}\nresolution=NON_SUNOVELS_SAVED_EDITION\nrequestedUrl=NOT_OBSERVED\nfinalUrl=NOT_OBSERVED"
+        val downloaded = disk.read(novel.id, chapter.id)?.let { runCatching { SunovelsSource.validateText(it) }.isSuccess } == true
+        val memory = memoryCacheLock.withLock { texts[novelTextCacheKey(offlineOwner(), novel.id, chapter.id)] != null }
+        val report = SunovelsReaderDiagnostics.get(chapter.id) ?: SunovelsResolutionReport(chapter,
+            SunovelsOutcome.NETWORK_TRANSIENT, "NOT_ATTEMPTED", provenance = "NO_READER_EVIDENCE")
+        identity + report.copy(chapter = chapter).copyReport(downloaded) + "\nmemoryCached=$memory\nindexDeclaredTotal=${indexSnapshot(novel)?.declaredTotal}\nindexRows=${indexSnapshot(novel)?.chapters?.size}\nnovelMetadataCount=${novel.chapterCount}"
     }
-    internal fun activeDownloads(): NovelDownloadQueue? = if (downloadQueue.isInitialized()) downloads else null
+    internal suspend fun evictChapter(editionId: String, chapterId: String, owner: String = offlineOwner()) {
+        memoryCacheLock.withLock { texts.remove(novelTextCacheKey(owner, editionId, chapterId)) }
+    }
+    internal fun activeDownloads(): NovelDownloadQueue? = downloadQueues[offlineOwner()]
     companion object {
         @Volatile private var instance: NovelRepository? = null
         internal fun peek(): NovelRepository? = instance
         internal suspend fun recoverDownloads(context: Context): NovelDownloadQueue? = withContext(Dispatchers.IO) {
             val active = instance?.activeDownloads()
             if (active != null) active
-            else if (File(context.filesDir, "novels-local/downloads/queue.db").isFile) get(context).downloads
+            else if (File(novelDownloadRoot(context.filesDir, tachiyomi.core.common.util.lang.LocalAccountScope.fileOwner()), "downloads/queue.db").isFile) get(context).downloads
             else null
         }
         fun get(context: Context): NovelRepository = instance ?: synchronized(this) { instance ?: NovelRepository(context).also { instance = it } }

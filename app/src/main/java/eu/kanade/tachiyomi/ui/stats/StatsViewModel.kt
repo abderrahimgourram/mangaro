@@ -33,11 +33,13 @@ class StatsViewModel(
     private val preferences: LibraryPreferences = Injekt.get(),
     private val trackerManager: TrackerManager = Injekt.get(),
 ) : StateViewModel<StatsScreenState>(StatsScreenState.Loading) {
+    private val accountScope = kotlinx.coroutines.CoroutineScope(viewModelScope.coroutineContext + tachiyomi.core.common.util.lang.LocalAccountScope.context())
+
 
     private val loggedInTrackers by lazy { trackerManager.loggedInTrackers() }
 
     init {
-        viewModelScope.launchIO {
+        accountScope.launchIO {
             val libraryManga = getLibraryManga.await()
 
             val distinctLibraryManga = libraryManga.fastDistinctBy { it.id }

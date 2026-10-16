@@ -23,6 +23,14 @@ class DelayedTrackingUpdateJob(private val context: Context, workerParams: Worke
     CoroutineWorker(context, workerParams) {
 
     override suspend fun doWork(): Result {
+        val state = tachiyomi.core.common.util.lang.LocalAccountScope.changes.value
+        if (!state.ready) return Result.retry()
+        val expected = inputData.getString("local-account-owner")
+        if (expected != null && expected != state.token.fileOwner) return Result.retry()
+        return kotlinx.coroutines.withContext(tachiyomi.core.common.util.lang.LocalAccountScope.Element(state.token)) { doAccountWork() }
+    }
+
+    private suspend fun doAccountWork(): Result {
         if (runAttemptCount > 3) {
             return Result.failure()
         }
@@ -61,6 +69,7 @@ class DelayedTrackingUpdateJob(private val context: Context, workerParams: Worke
             )
 
             val request = OneTimeWorkRequestBuilder<DelayedTrackingUpdateJob>()
+                .setInputData(androidx.work.workDataOf("local-account-owner" to tachiyomi.core.common.util.lang.LocalAccountScope.fileOwner()))
                 .setConstraints(constraints)
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 5, TimeUnit.MINUTES)
                 .addTag(TAG)

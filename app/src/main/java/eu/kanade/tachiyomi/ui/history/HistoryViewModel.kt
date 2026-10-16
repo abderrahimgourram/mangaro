@@ -58,12 +58,14 @@ class HistoryViewModel(
     val snackbarHostState: SnackbarHostState = SnackbarHostState(),
     private val sourceManager: SourceManager = Injekt.get(),
 ) : StateViewModel<HistoryViewModel.State>(State()) {
+    private val accountScope = kotlinx.coroutines.CoroutineScope(viewModelScope.coroutineContext + tachiyomi.core.common.util.lang.LocalAccountScope.context())
+
 
     private val _events: Channel<Event> = Channel(Channel.UNLIMITED)
     val events: Flow<Event> = _events.receiveAsFlow()
 
     init {
-        viewModelScope.launch {
+        accountScope.launch {
             state.map { it.searchQuery }
                 .distinctUntilChanged()
                 .flatMapLatest { query ->
@@ -100,7 +102,7 @@ class HistoryViewModel(
     private val openingHistory = java.util.concurrent.atomic.AtomicBoolean(false)
     fun getNextChapterForManga(mangaId: Long, chapterId: Long) {
         if (!openingHistory.compareAndSet(false, true)) return
-        viewModelScope.launchIO {
+        accountScope.launchIO {
             try {
                 val chapter = getChapter.await(chapterId)?.takeIf { it.mangaId == mangaId }
                 _events.send(Event.OpenChapter(chapter))
@@ -115,19 +117,19 @@ class HistoryViewModel(
     }
 
     fun removeFromHistory(history: HistoryWithRelations) {
-        viewModelScope.launchIO {
+        accountScope.launchIO {
             removeHistory.await(history)
         }
     }
 
     fun removeAllFromHistory(mangaId: Long) {
-        viewModelScope.launchIO {
+        accountScope.launchIO {
             removeHistory.await(mangaId)
         }
     }
 
     fun removeAllHistory() {
-        viewModelScope.launchIO {
+        accountScope.launchIO {
             val result = removeHistory.awaitAll()
             if (!result) return@launchIO
             _events.send(Event.HistoryCleared)
@@ -157,7 +159,7 @@ class HistoryViewModel(
     }
 
     private fun moveMangaToCategory(mangaId: Long, categoryIds: List<Long>) {
-        viewModelScope.launchIO {
+        accountScope.launchIO {
             setMangaCategories.await(mangaId, categoryIds)
         }
     }
@@ -166,7 +168,7 @@ class HistoryViewModel(
         moveMangaToCategory(manga.id, categories)
         if (manga.favorite) return
 
-        viewModelScope.launchIO {
+        accountScope.launchIO {
             updateManga.awaitUpdateFavorite(manga.id, true)
         }
     }
@@ -177,7 +179,7 @@ class HistoryViewModel(
     }
 
     fun addFavorite(mangaId: Long) {
-        viewModelScope.launchIO {
+        accountScope.launchIO {
             val manga = getManga.await(mangaId) ?: return@launchIO
 
             val duplicates = getDuplicateLibraryManga(manga)
@@ -191,7 +193,7 @@ class HistoryViewModel(
     }
 
     fun addFavorite(manga: Manga) {
-        viewModelScope.launchIO {
+        accountScope.launchIO {
             // Move to default category if applicable
             val categories = getCategories()
             val defaultCategoryId = libraryPreferences.defaultCategory.get().toLong()
@@ -228,7 +230,7 @@ class HistoryViewModel(
     }
 
     fun showChangeCategoryDialog(manga: Manga) {
-        viewModelScope.launch {
+        accountScope.launch {
             val categories = getCategories()
             val selection = getMangaCategoryIds(manga)
             mutableState.update { currentState ->

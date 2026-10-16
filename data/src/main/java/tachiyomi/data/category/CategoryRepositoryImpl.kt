@@ -1,5 +1,7 @@
 package tachiyomi.data.category
 
+import tachiyomi.data.accountOperation
+
 import mihon.domain.account.LocalCloudChanges
 
 import app.cash.sqldelight.async.coroutines.awaitAsList
@@ -16,15 +18,21 @@ class CategoryRepositoryImpl(
 ) : CategoryRepository {
 
     override suspend fun get(id: Long): Category? {
-        return database.categoriesQueries
+        return database.accountOperation {
+        return@accountOperation database.categoriesQueries
             .getCategory(id, ::mapCategory)
             .awaitAsOneOrNull()
+
+        }
     }
 
     override suspend fun getAll(): List<Category> {
-        return database.categoriesQueries
+        return database.accountOperation {
+        return@accountOperation database.categoriesQueries
             .getCategories(::mapCategory)
             .awaitAsList()
+
+        }
     }
 
     override fun getAllAsFlow(): Flow<List<Category>> {
@@ -34,9 +42,12 @@ class CategoryRepositoryImpl(
     }
 
     override suspend fun getCategoriesByMangaId(mangaId: Long): List<Category> {
-        return database.categoriesQueries
+        return database.accountOperation {
+        return@accountOperation database.categoriesQueries
             .getCategoriesByMangaId(mangaId, ::mapCategory)
             .awaitAsList()
+
+        }
     }
 
     override fun getCategoriesByMangaIdAsFlow(mangaId: Long): Flow<List<Category>> {
@@ -46,6 +57,7 @@ class CategoryRepositoryImpl(
     }
 
     override suspend fun insert(category: Category) {
+        return database.accountOperation {
         val sigilOwner = mihon.domain.sigils.SigilEvents.captureOwner?.invoke() ?: "_no_owner"
         val categoryId = database.categoriesQueries.insertReturningId(
             name = category.name,
@@ -54,33 +66,50 @@ class CategoryRepositoryImpl(
         ).awaitAsOne()
         LocalCloudChanges.changed(LocalCloudChanges.Kind.COLLECTIONS)
         mihon.domain.sigils.SigilEvents.emit(mihon.domain.sigils.SigilEvents.Kind.CATEGORIES, categoryId, owner=sigilOwner)
+
+        }
     }
 
     override suspend fun updateName(categoryId: Long, name: String) {
+        return database.accountOperation {
         database.categoriesQueries.updateName(name = name, categoryId = categoryId)
         LocalCloudChanges.changed(LocalCloudChanges.Kind.COLLECTIONS)
+
+        }
     }
 
     override suspend fun updateFlags(categoryId: Long, flags: Long) {
+        return database.accountOperation {
         database.categoriesQueries.updateFlags(flags = flags, categoryId = categoryId)
+
+        }
     }
 
     override suspend fun updateAllFlags(flags: Long?) {
+        return database.accountOperation {
         database.categoriesQueries.updateAllFlags(flags = flags)
+
+        }
     }
 
     override suspend fun updateAllOrders(orderedIds: List<Long>) {
+        return database.accountOperation {
         database.transaction {
             orderedIds.forEachIndexed { index, categoryId ->
                 database.categoriesQueries.updateOrder(order = index.toLong(), categoryId = categoryId)
             }
         }
         LocalCloudChanges.changed(LocalCloudChanges.Kind.COLLECTIONS)
+
+        }
     }
 
     override suspend fun delete(categoryId: Long) {
+        return database.accountOperation {
         database.categoriesQueries.delete(categoryId = categoryId)
         LocalCloudChanges.changed(LocalCloudChanges.Kind.COLLECTION_DELETED, categoryId)
+
+        }
     }
 
     private fun mapCategory(

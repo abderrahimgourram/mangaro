@@ -1,0 +1,35 @@
+{
+  "modified": [
+    ".idea/workspace.xml",
+    "app/src/main/java/eu/kanade/presentation/novels/NovelScreens.kt",
+    "app/src/main/java/eu/kanade/tachiyomi/novels/NovelChapterIndexer.kt",
+    "app/src/main/java/eu/kanade/tachiyomi/novels/NovelDownloadQueue.kt",
+    "app/src/main/java/eu/kanade/tachiyomi/novels/NovelHttp.kt",
+    "app/src/main/java/eu/kanade/tachiyomi/novels/NovelMetadataStore.kt",
+    "app/src/main/java/eu/kanade/tachiyomi/novels/NovelModels.kt",
+    "app/src/main/java/eu/kanade/tachiyomi/novels/NovelRepository.kt",
+    "app/src/main/java/eu/kanade/tachiyomi/novels/NovelSourceAvailability.kt",
+    "app/src/main/java/eu/kanade/tachiyomi/novels/SunovelsSource.kt"
+  ],
+  "added": [
+    "app/src/debug/assets/novels/sunovels-catalog-v1.json.gzip",
+    "app/src/debug/assets/novels/sunovels-catalog-v1.receipt.json",
+    "app/src/main/java/eu/kanade/tachiyomi/novels/SunovelsBootstrap.kt",
+    "app/src/main/java/eu/kanade/tachiyomi/novels/SunovelsLocalSearch.kt",
+    "app/src/main/java/eu/kanade/tachiyomi/novels/SunovelsRequestPolicy.kt",
+    "docs/novels/SUNOVELS_D1_REMOVAL_PLAN.md",
+    "docs/novels/SUNOVELS_DIRECT_ENGINE.md",
+    "docs/novels/sunovels-direct-evidence/accepted-metadata-backup.json.gz",
+    "docs/novels/sunovels-direct-evidence/accepted-metadata-backup.sha256",
+    "docs/novels/sunovels-direct-evidence/changed-files.json",
+    "docs/novels/sunovels-direct-evidence/dependency-audit.json",
+    "docs/novels/sunovels-direct-evidence/public-report.json",
+    "docs/novels/sunovels-direct-evidence/validation.json",
+    "tools/sunovels-direct/SourceContract.kt",
+    "tools/sunovels-direct/audit-dependencies.py",
+    "tools/sunovels-direct/export-bootstrap.py",
+    "tools/sunovels-direct/inspect-public.py",
+    "tools/sunovels-direct/run-contracts.py",
+    "tools/sunovels-direct/validate-integration.py"
+  ]
+}

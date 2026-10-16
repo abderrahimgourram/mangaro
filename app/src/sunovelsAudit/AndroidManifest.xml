@@ -1,0 +1,6 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
+    <application android:label="Mangaro Sunovels Local Audit" tools:replace="android:label">
+        <activity android:name="eu.kanade.tachiyomi.novels.SunovelsAuditActivity" android:exported="false" />
+    </application>
+    <instrumentation android:name="eu.kanade.tachiyomi.novels.SunovelsRuntimeInstrumentation" android:targetPackage="${applicationId}" />
+</manifest>

@@ -1,5 +1,6 @@
 package eu.kanade.presentation.novels
 
+import eu.kanade.tachiyomi.focus.*
 import android.text.Spanned
 import android.text.style.StyleSpan
 import androidx.activity.compose.BackHandler
@@ -79,7 +80,7 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
     @Composable override fun Content() {
         val context=LocalContext.current
         val repository=remember(context) {NovelRepository.get(context)}
-        val downloadAdGate = rememberNovelDownloadAdGate()
+        val downloadAdGate = rememberNovelDownloadAdGate(readerActive = true)
         val navigator=LocalNavigator.currentOrThrow
         NovelForegroundRefresh(repository)
         val storageError by repository.storageError.collectAsStateWithLifecycle()
@@ -87,10 +88,10 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
         var appearance by remember {mutableStateOf(savedSettings)}
         LaunchedEffect(savedSettings) {appearance=savedSettings}
         var chapter by rememberSaveable {mutableStateOf(initialChapter)}
+        FocusSurface(FocusTarget(FocusContext.NOVEL_READER, novel.sourceId, novel.id, chapter.id))
         var settingsOpen by rememberSaveable {mutableStateOf(false)}
         var commentsOpen by rememberSaveable { mutableStateOf(false) }
         var controlsVisible by rememberSaveable { mutableStateOf(true) }
-        var inlineAdHeight by remember(chapter.id) { mutableIntStateOf(0) }
         val activity = remember(context) { generateSequence(context) { (it as? android.content.ContextWrapper)?.baseContext }
             .filterIsInstance<android.app.Activity>().firstOrNull() }
         val readerPreferences = remember { Injekt.get<ReaderPreferences>() }
@@ -152,6 +153,7 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
         var blocks by remember { mutableStateOf(emptyList<NovelContentBlock>()) }
         var blockPositions by remember { mutableStateOf(emptyList<Int>()) }
         var error by remember {mutableStateOf<String?>(null)}
+        var seaDiagnostic by remember(chapter.id) { mutableStateOf<String?>(null) }
         var loading by remember {mutableStateOf(true)}
         var navigationJob by remember { mutableStateOf<Job?>(null) }
         var navigating by remember {mutableStateOf(false)}
@@ -168,50 +170,76 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
         var ceneleDiagRenderedTheft by remember { mutableIntStateOf(0) }
         var ceneleDiagRenderedCenele by remember { mutableIntStateOf(0) }
         val scroll=rememberLazyListState()
-        val chapterAd = remember(novel.id, chapter.id) { NovelAdRequest("reader:" + novelDigest(novel.id + "|" + chapter.id)) }
+        val chapterAd = remember(novel.id, chapter.id) {
+            NovelAdRequest("reader:" + novelDigest(novel.id + "|" + chapter.id))
+        }
+        val readerOwner = remember { tachiyomi.core.common.util.lang.LocalAccountScope.capture() }
         val scope=rememberCoroutineScope()
         LaunchedEffect(chapter.id,generation) {
             loading=true;restoring=true;loadedChapter=null;error=null;paragraphs=emptyList();plain=emptyList();anchors=emptyList();blocks=emptyList();blockPositions=emptyList()
+            val requestedChapter = chapter
+            val requestedGeneration = generation
+            val seaTrace = SeaNovelReaderDiagnostics.begin(novel, requestedChapter)
+            seaDiagnostic = null
+            fun captureSeaReport() {
+                seaTrace?.let {
+                    SeaNovelReaderDiagnostics.publish(it)
+                    if (chapter.id == requestedChapter.id && generation == requestedGeneration) seaDiagnostic = it.snapshot().copyReport()
+                }
+            }
             try {
-                repository.awaitLocal()
-                val text=repository.chapterText(novel,chapter)
-                plain=text.paragraphs
-                val document = preparedDocument(novel.id + "|" + chapter.id, text)
-                paragraphs = document.paragraphs
-                anchors = document.anchors
-                blocks = document.blocks
-                blockPositions = document.positions
+                withContext(seaTrace ?: kotlin.coroutines.EmptyCoroutineContext) {
+                    seaTrace?.stage(SeaReaderStage.LOCAL_RESTORE)
+                    repository.awaitLocal()
+                    if (generation > 0) repository.prepareReaderChapter(novel, requestedChapter, manualRetry = true)
+                    val text=repository.chapterText(novel,requestedChapter)
+                    plain=text.paragraphs
+                    seaTrace?.stage(SeaReaderStage.READER_RENDER)
+                    val document = preparedDocument(novel.id + "|" + requestedChapter.id, text)
+                    paragraphs = document.paragraphs
+                    anchors = document.anchors
+                    blocks = document.blocks
+                    blockPositions = document.positions
 
-                fun countWord(list: List<String>, word: String): Int = list.sumOf { p ->
-                    val normP = Normalizer.normalize(p, Normalizer.Form.NFKC).replace("\u0640", "")
-                    Regex(Regex.escape(word), RegexOption.IGNORE_CASE).findAll(normP).count()
+                    fun countWord(list: List<String>, word: String): Int = list.sumOf { p ->
+                        val normP = Normalizer.normalize(p, Normalizer.Form.NFKC).replace("\u0640", "")
+                        Regex(Regex.escape(word), RegexOption.IGNORE_CASE).findAll(normP).count()
+                    }
+                    ceneleDiagSourceMatch = isCenele
+                    ceneleDiagOrigin = repository.lastDataOrigin
+                    ceneleDiagRawTheft = countWord(text.paragraphs, "يسرق")
+                    ceneleDiagRawCenele = countWord(text.paragraphs, "فضاء")
+                    ceneleDiagSanitizerTheft = countWord(plain, "يسرق")
+                    ceneleDiagSanitizerCenele = countWord(plain, "فضاء")
+                    ceneleDiagRenderedTheft = countWord(paragraphs.map { it.text }, "يسرق")
+                    ceneleDiagRenderedCenele = countWord(paragraphs.map { it.text }, "فضاء")
+                    seaTrace?.stage(SeaReaderStage.READER_RESTORE)
+                    val position=repository.readingPosition(novel,requestedChapter)
+                    val index = withContext(Dispatchers.Default) {
+                        val anchor = position?.anchor?.takeIf { it.isNotEmpty() }?.let { hash ->
+                            anchors.indices.filter { anchors[it] == hash }.minByOrNull { kotlin.math.abs(document.positions[it] - (position?.paragraph ?: 0)) } ?: -1
+                        } ?: -1
+                        if (anchor >= 0) anchor + 1 else if ((position?.paragraph ?: 0) == 0) 0 else
+                            (blocks.indexOfFirst { it.paragraph == (position!!.paragraph - 1) } + 1).coerceIn(0, blocks.size)
+                    }
+                    // Wait for this chapter's lazy-list layout, not merely the old heading-only list.
+                    withFrameNanos { }
+                    snapshotFlow { scroll.layoutInfo.totalItemsCount }.first { it >= blocks.size + 1 }
+                    scroll.scrollToItem(index, position?.offset ?: 0)
+                    loadedChapter = requestedChapter
+                    restoring = false
+                    tachiyomi.core.common.util.lang.LocalAccountScope.check(readerOwner)
+                    repository.savePosition(novel, requestedChapter, blockPositions.getOrElse(index - 1) { 0 }, position?.offset ?: 0,
+                        anchors.getOrNull(index - 1).orEmpty(), refreshHistory = true)
+                    seaTrace?.stage(SeaReaderStage.READER_VISIBLE)
+                    captureSeaReport()
                 }
-                ceneleDiagSourceMatch = isCenele
-                ceneleDiagOrigin = repository.lastDataOrigin
-                ceneleDiagRawTheft = countWord(text.paragraphs, "يسرق")
-                ceneleDiagRawCenele = countWord(text.paragraphs, "فضاء")
-                ceneleDiagSanitizerTheft = countWord(plain, "يسرق")
-                ceneleDiagSanitizerCenele = countWord(plain, "فضاء")
-                ceneleDiagRenderedTheft = countWord(paragraphs.map { it.text }, "يسرق")
-                ceneleDiagRenderedCenele = countWord(paragraphs.map { it.text }, "فضاء")
-                val position=repository.readingPosition(novel,chapter)
-                val index = withContext(Dispatchers.Default) {
-                    val anchor = position?.anchor?.takeIf { it.isNotEmpty() }?.let { hash ->
-                        anchors.indices.filter { anchors[it] == hash }.minByOrNull { kotlin.math.abs(document.positions[it] - (position?.paragraph ?: 0)) } ?: -1
-                    } ?: -1
-                    if (anchor >= 0) anchor + 1 else if ((position?.paragraph ?: 0) == 0) 0 else
-                        (blocks.indexOfFirst { it.paragraph == (position!!.paragraph - 1) } + 1).coerceIn(0, blocks.size)
-                }
-                // Wait for this chapter's lazy-list layout, not merely the old heading-only list.
-                withFrameNanos { }
-                snapshotFlow { scroll.layoutInfo.totalItemsCount }.first { it >= blocks.size + 1 }
-                scroll.scrollToItem(index, position?.offset ?: 0)
-                loadedChapter = chapter
-                restoring = false
-                repository.savePosition(novel, chapter, blockPositions.getOrElse(index - 1) { 0 }, position?.offset ?: 0,
-                    anchors.getOrNull(index - 1).orEmpty(), refreshHistory = true)
-            } catch(c: CancellationException) {throw c}
-            catch(e: Exception) {error=novelError(e)}
+            } catch(c: CancellationException) { seaTrace?.failed(c); captureSeaReport(); throw c }
+            catch(e: Exception) {
+                seaTrace?.failed(e); captureSeaReport()
+                if (seaTrace != null) android.util.Log.w("MangaroSeaReader", "action=${seaTrace.snapshot().actionId} request=${seaTrace.snapshot().requestId} stage=${seaTrace.snapshot().stage} failure=${seaTrace.snapshot().failureCode} exception=${seaTrace.snapshot().exceptionClass}")
+                error=novelError(e, logDetails = novel.sourceId != SeaNovelSource.SOURCE_ID)
+            }
             finally {loading=false}
         }
         LaunchedEffect(loadedChapter?.id) {
@@ -244,6 +272,7 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
         val currentAnchors by rememberUpdatedState(anchors)
         val currentBlockPositions by rememberUpdatedState(blockPositions)
         fun saveCurrent() {
+            if (runCatching { tachiyomi.core.common.util.lang.LocalAccountScope.check(readerOwner) }.isFailure) return
             val shown = currentChapter ?: return
             if(!currentRestoring && currentPlain.isNotEmpty()) {
                 val index=scroll.firstVisibleItemIndex.coerceAtMost(currentAnchors.size)
@@ -269,7 +298,10 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
             navigationJob = scope.launch {
                 try {
                     val target=repository.adjacent(novel,requested,forward)
-                    if(target!=null && chapter.id == requested.id) chapter=target
+                    if (target != null && chapter.id == requested.id) {
+                        repository.prepareReaderChapter(novel, target)
+                        if (chapter.id == requested.id) chapter = target
+                    }
                 } catch(c: CancellationException) {throw c} catch(e: Exception) {if(chapter.id == requested.id) error=novelError(e)}
                 finally {navigating=false}
             }
@@ -294,6 +326,7 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                 Column(Modifier.fillMaxSize()) {
                     storageError?.let { Text(it,Modifier.padding(horizontal=20.dp),color=gold,style=MaterialTheme.typography.labelSmall) }
                     if(error!=null) NovelFailure(error!!,chapter.url) {generation++}
+                    SunovelsChapterDiagnostic(novel, chapter, seaReport = seaDiagnostic)
                     val adVisible by remember { derivedStateOf { scroll.layoutInfo.visibleItemsInfo.any { it.key == "chapter-heading" } } }
                     LazyColumn(state=scroll,modifier=Modifier.fillMaxSize().pointerInput(tapLimit) {
                             awaitEachGesture {
@@ -305,7 +338,7 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                                     if ((pointer.position - down.position).getDistance() > tapSlop || event.changes.size > 1) moved = true
                                     if (!pointer.pressed) {
                                         val onHeaderOrAd = scroll.layoutInfo.visibleItemsInfo.any {
-                                            it.key == "chapter-heading" && inlineAdHeight > 0 && down.position.y >= it.offset && down.position.y < it.offset + inlineAdHeight
+                                            it.key == "chapter-heading" && down.position.y >= it.offset && down.position.y < it.offset + it.size
                                         }
                                         // Observe without consuming: long-press selection and scrolling keep their gestures.
                                         if (!pointer.isConsumed && !moved && !onHeaderOrAd && pointer.uptimeMillis - down.uptimeMillis < tapLimit && !scroll.isScrollInProgress) {
@@ -320,18 +353,14 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                             verticalArrangement=Arrangement.spacedBy(appearance.paragraphSpacing.dp)) {
                             item(key="chapter-heading") {
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Box(Modifier.fillMaxWidth().onSizeChanged { inlineAdHeight = it.height }) {
-                                        if (!loading && loadedChapter?.id == chapter.id && error == null) {
-                                            // The URL is shared across chapters; the WebView and callbacks are not.
-                                            // Cached transitions may coalesce loading frames, so isolate ownership explicitly.
-                                            key(chapterAd.key, chapterAd.owner) {
-                                                NovelAdPlacement(chapterAd, visible = adVisible, allowStart = !scroll.isScrollInProgress)
-                                            }
-                                        }
-                                    }
                                     Text(chapter.title,color=gold,fontWeight=FontWeight.Bold,
                                         style=MaterialTheme.typography.titleLarge.copy(textDirection=TextDirection.ContentOrRtl),
                                         modifier=Modifier.padding(horizontal=appearance.margin.dp).alpha(if(controlsVisible) 1f else 0f).then(if(controlsVisible) Modifier else Modifier.clearAndSetSemantics { }))
+                                    Box(Modifier.fillMaxWidth()) {
+                                        if (!loading && !restoring && loadedChapter?.id == chapter.id && error == null && blocks.isNotEmpty()) {
+                                            NovelAdPlacement(chapterAd, visible = adVisible, allowStart = !scroll.isScrollInProgress)
+                                        }
+                                    }
                                 }
                             }
                             items(blocks.size, key = { "block-$it" }, contentType = { blocks[it].kind }) { index ->
@@ -381,11 +410,12 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                         Column(Modifier.padding(horizontal=12.dp,vertical=4.dp)) {
                             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween, verticalAlignment=Alignment.CenterVertically) {
                                 TextButton(onClick={adjacent(false)},enabled=!loading && !navigating) {Text("السابق",color=gold)}
-                                ReaderProgress(scroll, blocks.size, gold)
+                                if (loadedChapter?.id == chapter.id && blocks.isNotEmpty())
+                                    ReaderProgress(scroll, blocks.size, gold)
                                 TextButton(onClick={adjacent(true)},enabled=!loading && !navigating) {Text("التالي",color=gold)}
                             }
                             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.Center,verticalAlignment=Alignment.CenterVertically) {
-                                IconButton(onClick={downloadAdGate(1) { scope.launch { try {repository.downloads.enqueue(novel,listOf(chapter))} catch(c: CancellationException) {throw c} catch(e: Exception) {error=novelError(e)} } }},enabled=!offline && !loading) {Icon(Icons.Outlined.Download,"تحميل الفصل",tint=gold)}
+                                IconButton(onClick={downloadAdGate(1) { scope.launch { try {repository.downloads.enqueue(novel,listOf(chapter))} catch(c: CancellationException) {throw c} catch(e: Exception) {error=novelError(e)} } }},enabled=!offline && !loading && loadedChapter?.id == chapter.id) {Icon(Icons.Outlined.Download,"تحميل الفصل",tint=gold)}
                                 val bookmarked by remember(repository, novel.id, chapter.id) {
                                     repository.library.map { entries -> entries.firstOrNull { it.novel.id == novel.id }?.bookmarks?.contains(chapter.id) == true }
                                         .distinctUntilChanged().flowOn(Dispatchers.Default)
@@ -430,7 +460,17 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                 LazyColumn(Modifier.fillMaxWidth().heightIn(max=480.dp)) {
                     items(chapterChoices.size,key={chapterChoices[it].id}) {index ->
                         val choice=chapterChoices[index]
-                        TextButton(onClick={saveCurrent();navigationJob?.cancel();navigating=false;chapter=choice;chaptersOpen=false},modifier=Modifier.fillMaxWidth()) {
+                        TextButton(onClick={
+                            saveCurrent(); navigationJob?.cancel(); navigating = true
+                            navigationJob = scope.launch {
+                                try {
+                                    repository.prepareReaderChapter(novel, choice)
+                                    chapter = choice; chaptersOpen = false
+                                } catch (c: CancellationException) { throw c }
+                                catch (e: Exception) { error = novelError(e) }
+                                finally { navigating = false }
+                            }
+                        }, enabled = choice.available && !navigating, modifier=Modifier.fillMaxWidth()) {
                             Text(choice.title,color=if(choice.id==chapter.id) gold else Color(0xFFDDCDE8))
                         }
                     }

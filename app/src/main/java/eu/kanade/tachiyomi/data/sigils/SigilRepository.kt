@@ -124,7 +124,7 @@ class SigilRepository(context: Context, private val account: AccountFoundation,
             organized=kind==SigilEvents.Kind.ORGANIZED && m.favorite && personalCategories().any {it.first in categories},occurredAt=at)
     }
     private suspend fun personalCategories(): List<Pair<Long,String>> {
-        val excluded=MangaroLibraryShelves.Shelf.entries.map {preferences.getLong("mangaro.library.shelf.${it.storageKey}",-1).get()}.toSet()
+        val excluded=MangaroLibraryShelves.Shelf.entries.map {tachiyomi.core.common.preference.AccountPreferenceStore(preferences).getLong("mangaro.library.shelf.${it.storageKey}",-1).get()}.toSet()
         val names=MangaroLibraryShelves.Shelf.entries.map {it.title}.toSet()
         return database.categoriesQueries.getCategories().awaitAsList().filter {it.id>0 && it.id !in excluded && it.name !in names}.map {it.id to it.name}
     }

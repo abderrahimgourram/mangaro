@@ -4,14 +4,19 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_gravity="center"
-    android:gravity="center">
+    android:gravity="center"
+    android:layoutDirection="rtl"
+    android:padding="24dp"
+    android:background="@drawable/mangaro_error_surface">
 
     <TextView
         android:id="@+id/error_message"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_margin="8dp"
-        android:text="@string/decode_image_error"
+        android:text="تعذر تحميل الصورة"
+        android:textColor="#F3ECF8"
+        android:gravity="center"
         android:textAppearance="?attr/textAppearanceBodyMedium" />
 
     <eu.kanade.tachiyomi.ui.reader.viewer.ReaderButton
@@ -19,14 +24,20 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_margin="8dp"
-        android:text="@string/action_retry" />
+        android:text="إعادة المحاولة"
+        android:textColor="#FFB800"
+        android:backgroundTint="#22172B"
+        android:minHeight="48dp" />
 
     <eu.kanade.tachiyomi.ui.reader.viewer.ReaderButton
         android:id="@+id/action_open_in_web_view"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_margin="8dp"
-        android:text="@string/action_open_in_web_view"
+        android:text="فتح في المتصفح"
+        android:textColor="#A78BFA"
+        android:backgroundTint="#22172B"
+        android:minHeight="48dp"
         android:visibility="gone" />
 
 </LinearLayout>

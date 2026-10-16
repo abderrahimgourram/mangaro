@@ -67,11 +67,13 @@ abstract class SearchViewModel(
     private fun rankResults(items: Map<Source, SearchItemResult>, order: Map<Long, Int>, relevance: SearchRelevance, selector: SearchWorkSelection): List<RankedSearchResult> {
         val raw = relevance.rank(items, order)
         if (!liveSearch) return raw
+        searchEvidence.requestMappings(raw)
         val groups = selector.select(raw.map { searchEvidence.candidate(it, order[it.source.id] ?: Int.MAX_VALUE) })
         val byId = raw.associateBy { searchEvidence.key(it.manga) }
         return groups.mapNotNull { group -> byId[group.winner.id]?.copy(workKey = group.key,
             verifiedDistinctChapters = group.winner.chapters.distinct, indexComplete = group.winner.chapters.complete,
-            provisional = group.provisional && group.members.size > 1) }
+            provisional = group.provisional && group.members.size > 1,
+            alternatives = group.members.filterNot { it.id == group.winner.id }.mapNotNull { byId[it.id] }) }
     }
     private fun enrichResults(request: Long = generation.get()) {
         if (!liveSearch || state.value.isSearching) return
@@ -182,7 +184,7 @@ abstract class SearchViewModel(
         mutableState.update { current ->
             when {
                 query.isNullOrBlank() -> current.copy(searchQuery = query, items = emptyMap(), rankedResults = emptyList(), resultQuery = null, activeQuery = null, isSearching = false, pages = emptyMap(), isLoadingMore = false, paginationFailed = false)
-                recent != null -> current.copy(searchQuery = query, items = recent.items, rankedResults = recent.ranked, resultQuery = query.trim(), activeQuery = query.trim(), isSearching = false, pages = recent.pages, isLoadingMore = false, paginationFailed = false)
+                recent != null -> current.copy(searchQuery = query, items = recent.items, rankedResults = rankResults(recent.items, getSelectedSources().mapIndexed { i, source -> source.id to i }.toMap(), SearchRelevance(query.orEmpty()), workSelection), resultQuery = query.trim(), activeQuery = query.trim(), isSearching = false, pages = recent.pages, isLoadingMore = false, paginationFailed = false)
                 else -> current.copy(searchQuery = query, isSearching = liveSearch, pages = emptyMap(), isLoadingMore = false, paginationFailed = false)
             }
         }
@@ -238,7 +240,7 @@ abstract class SearchViewModel(
         val recent = if (liveSearch && !force) cached(key) else null
         if (recent != null) {
             workSelection.restore(recent.groups)
-            mutableState.update { it.copy(items = recent.items, rankedResults = recent.ranked, resultQuery = query, activeQuery = query, isSearching = false, pages = recent.pages, isLoadingMore = false, paginationFailed = false) }
+            mutableState.update { it.copy(items = recent.items, rankedResults = rankResults(recent.items, getSelectedSources().mapIndexed { i, source -> source.id to i }.toMap(), SearchRelevance(query.orEmpty()), workSelection), resultQuery = query, activeQuery = query, isSearching = false, pages = recent.pages, isLoadingMore = false, paginationFailed = false) }
             enrichResults(request)
             return
         }

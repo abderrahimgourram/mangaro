@@ -1,5 +1,7 @@
 package tachiyomi.data.manga
 
+import tachiyomi.data.accountOperation
+
 import mihon.domain.account.LocalCloudChanges
 
 import app.cash.sqldelight.async.coroutines.awaitAsList
@@ -30,21 +32,38 @@ class MangaRepositoryImpl(
 ) : MangaRepository {
 
     override suspend fun getMangaById(id: Long): Manga {
-        return database.mangasQueries
+        return database.accountOperation {
+        return@accountOperation database.mangasQueries
             .getMangaById(id, MangaMapper::mapManga)
             .awaitAsOne()
+
+        }
+    }
+
+    override suspend fun getMangaByIds(ids: List<Long>): List<Manga> {
+        return database.accountOperation {
+        if (ids.isEmpty()) return@accountOperation emptyList()
+        return@accountOperation database.mangasQueries.getMangaByIds(ids, MangaMapper::mapManga).awaitAsList()
+
+        }
     }
 
     override suspend fun getMangaByIdAsFlow(id: Long): Flow<Manga> {
-        return database.mangasQueries
+        return database.accountOperation {
+        return@accountOperation database.mangasQueries
             .getMangaById(id, MangaMapper::mapManga)
             .subscribeToOne()
+
+        }
     }
 
     override suspend fun getMangaByUrlAndSourceId(url: String, sourceId: Long): Manga? {
-        return database.mangasQueries
+        return database.accountOperation {
+        return@accountOperation database.mangasQueries
             .getMangaByUrlAndSource(url, sourceId, MangaMapper::mapManga)
             .awaitAsOneOrNull()
+
+        }
     }
 
     override fun getMangaByUrlAndSourceIdAsFlow(url: String, sourceId: Long): Flow<Manga?> {
@@ -54,27 +73,39 @@ class MangaRepositoryImpl(
     }
 
     override suspend fun getFavorites(): List<Manga> {
-        return database.mangasQueries
+        return database.accountOperation {
+        return@accountOperation database.mangasQueries
             .getFavorites(MangaMapper::mapManga)
             .awaitAsList()
+
+        }
     }
 
     override suspend fun getReadMangaNotInLibrary(): List<Manga> {
-        return database.mangasQueries
+        return database.accountOperation {
+        return@accountOperation database.mangasQueries
             .getReadMangaNotInLibrary(MangaMapper::mapManga)
             .awaitAsList()
+
+        }
     }
 
     override suspend fun getLibraryManga(): List<LibraryManga> {
-        return database.libraryViewQueries
+        return database.accountOperation {
+        return@accountOperation database.libraryViewQueries
             .library(MangaMapper::mapLibraryManga)
             .awaitAsList()
+
+        }
     }
 
     override suspend fun getKnownMangaWithGenres(sourceId: Long): List<Manga> {
-        return database.mangasQueries
+        return database.accountOperation {
+        return@accountOperation database.mangasQueries
             .getKnownMangaWithGenres(sourceId, MangaMapper::mapManga)
             .awaitAsList()
+
+        }
     }
 
     override fun getLibraryMangaAsFlow(): Flow<List<LibraryManga>> {
@@ -90,9 +121,12 @@ class MangaRepositoryImpl(
     }
 
     override suspend fun getDuplicateLibraryManga(id: Long, title: String): List<MangaWithChapterCount> {
-        return database.mangasQueries
+        return database.accountOperation {
+        return@accountOperation database.mangasQueries
             .getDuplicateLibraryManga(id, title, MangaMapper::mapMangaWithChapterCount)
             .awaitAsList()
+
+        }
     }
 
     override suspend fun getUpcomingManga(
@@ -100,10 +134,11 @@ class MangaRepositoryImpl(
         excludedCategories: List<Long>,
         includedCategories: List<Long>,
     ): Flow<List<Manga>> {
+        return database.accountOperation {
         val timeZone = TimeZone.currentSystemDefault()
         val epochMillis =
             Clock.System.now().toLocalDateTime(timeZone).date.atStartOfDayIn(timeZone).toEpochMilliseconds()
-        return database.mangasQueries
+        return@accountOperation database.mangasQueries
             .getUpcomingManga(
                 startOfDay = epochMillis,
                 statuses = statuses,
@@ -114,19 +149,25 @@ class MangaRepositoryImpl(
                 mapper = MangaMapper::mapManga,
             )
             .subscribeToList()
+
+        }
     }
 
     override suspend fun resetViewerFlags(): Boolean {
-        return try {
+        return database.accountOperation {
+        return@accountOperation try {
             database.mangasQueries.resetViewerFlags()
             true
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, e)
             false
         }
+
+        }
     }
 
     override suspend fun setMangaCategories(mangaId: Long, categoryIds: List<Long>) {
+        return database.accountOperation {
         val sigilOwner = mihon.domain.sigils.SigilEvents.captureOwner?.invoke() ?: "_no_owner"
         database.transaction {
             database.mangas_categoriesQueries.deleteMangaCategoryByMangaId(mangaId)
@@ -136,11 +177,14 @@ class MangaRepositoryImpl(
         }
         LocalCloudChanges.changed(LocalCloudChanges.Kind.MANGA, mangaId)
         mihon.domain.sigils.SigilEvents.emit(mihon.domain.sigils.SigilEvents.Kind.ORGANIZED, mangaId, owner=sigilOwner)
+
+        }
     }
 
     override suspend fun update(update: MangaUpdate): Boolean {
+        return database.accountOperation {
         val sigilOwner = mihon.domain.sigils.SigilEvents.captureOwner?.invoke() ?: "_no_owner"
-        return try {
+        return@accountOperation try {
             partialUpdate(update)
             if (update.favorite != null || update.dateAdded != null) LocalCloudChanges.changed(LocalCloudChanges.Kind.MANGA, update.id)
             if (update.favorite == true) mihon.domain.sigils.SigilEvents.emit(mihon.domain.sigils.SigilEvents.Kind.LIBRARY, update.id, owner=sigilOwner)
@@ -149,11 +193,14 @@ class MangaRepositoryImpl(
             logcat(LogPriority.ERROR, e)
             false
         }
+
+        }
     }
 
     override suspend fun updateAll(mangaUpdates: List<MangaUpdate>): Boolean {
+        return database.accountOperation {
         val sigilOwner = mihon.domain.sigils.SigilEvents.captureOwner?.invoke() ?: "_no_owner"
-        return try {
+        return@accountOperation try {
             partialUpdate(*mangaUpdates.toTypedArray())
             mangaUpdates.filter { it.favorite != null || it.dateAdded != null }.forEach { LocalCloudChanges.changed(LocalCloudChanges.Kind.MANGA, it.id) }
             mangaUpdates.filter { it.favorite == true }.forEach { mihon.domain.sigils.SigilEvents.emit(mihon.domain.sigils.SigilEvents.Kind.LIBRARY, it.id, owner=sigilOwner) }
@@ -162,10 +209,13 @@ class MangaRepositoryImpl(
             logcat(LogPriority.ERROR, e)
             false
         }
+
+        }
     }
 
     override suspend fun insertNetworkManga(manga: List<Manga>): List<Manga> {
-        return database.transactionWithResult {
+        return database.accountOperation {
+        return@accountOperation database.transactionWithResult {
             manga.map { remote ->
                 // Catalogue and details share the same source-scoped row. Optional omissions
                 // must not erase a previously initialized manga when rediscovered.
@@ -211,9 +261,12 @@ class MangaRepositoryImpl(
                     .awaitAsOne()
             }
         }
+
+        }
     }
 
     private suspend fun partialUpdate(vararg mangaUpdates: MangaUpdate) {
+        mangaUpdates.forEach { tachiyomi.core.common.util.lang.LocalAccountScope.check(it.accountToken) }
         database.transaction {
             mangaUpdates.forEach { value ->
                 database.mangasQueries.update(

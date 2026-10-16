@@ -1,0 +1,184 @@
+{
+  "readOnly": true,
+  "references": [
+    {
+      "area": "android",
+      "file": "app/src/main/java/eu/kanade/tachiyomi/novels/NovelRepository.kt",
+      "lines": [
+        139,
+        251,
+        257,
+        258,
+        274,
+        278,
+        283,
+        294,
+        600
+      ]
+    },
+    {
+      "area": "android",
+      "file": "app/src/main/java/eu/kanade/tachiyomi/novels/NovelSourceAvailability.kt",
+      "lines": [
+        6
+      ]
+    },
+    {
+      "area": "android",
+      "file": "app/src/main/java/eu/kanade/tachiyomi/novels/SunovelsGateway.kt",
+      "lines": [
+        20,
+        21,
+        22,
+        23,
+        26,
+        30,
+        76,
+        78
+      ]
+    },
+    {
+      "area": "android",
+      "file": "app/src/main/java/eu/kanade/presentation/novels/NovelScreens.kt",
+      "lines": [
+        205,
+        225,
+        303,
+        326
+      ]
+    },
+    {
+      "area": "android",
+      "file": "app/build.gradle.kts",
+      "lines": [
+        81,
+        82,
+        83,
+        84,
+        157,
+        158,
+        159,
+        160,
+        169,
+        170,
+        171,
+        172
+      ]
+    },
+    {
+      "area": "sources",
+      "file": "sunovels_gateway/README.md",
+      "lines": [
+        15,
+        23,
+        24,
+        48,
+        107,
+        108,
+        109,
+        136,
+        149,
+        150,
+        151,
+        152
+      ]
+    },
+    {
+      "area": "sources",
+      "file": "sunovels_gateway/cloud_sync.py",
+      "lines": [
+        15
+      ]
+    },
+    {
+      "area": "sources",
+      "file": "sunovels_gateway/cloudflare/package.json",
+      "lines": [
+        8
+      ]
+    },
+    {
+      "area": "sources",
+      "file": "sunovels_gateway/cloudflare/package-lock.json",
+      "lines": [
+        2,
+        7
+      ]
+    },
+    {
+      "area": "sources",
+      "file": "sunovels_gateway/cloudflare/wrangler.jsonc",
+      "lines": [
+        3,
+        15,
+        16
+      ]
+    },
+    {
+      "area": "sources",
+      "file": "sunovels_gateway/cloudflare/ops/mangaro-sunovels-staging-discovery.service",
+      "lines": [
+        8
+      ]
+    },
+    {
+      "area": "sources",
+      "file": "sunovels_gateway/cloudflare/ops/mangaro-sunovels-staging-discovery.timer",
+      "lines": [
+        8
+      ]
+    },
+    {
+      "area": "sources",
+      "file": "sunovels_gateway/cloudflare/ops/verify-budget-after-reset.sh",
+      "lines": [
+        6,
+        8
+      ]
+    },
+    {
+      "area": "sources",
+      "file": "tools/verify_sunovels_budget.py",
+      "lines": [
+        10
+      ]
+    },
+    {
+      "area": "sources",
+      "file": "tools/verify_sunovels_sql_budget.py",
+      "lines": [
+        9,
+        14
+      ]
+    },
+    {
+      "area": "scheduler",
+      "file": "mangaro-sunovels-staging-discovery.service",
+      "lines": [
+        8
+      ]
+    },
+    {
+      "area": "scheduler",
+      "file": "mangaro-sunovels-staging-discovery.timer",
+      "lines": [
+        8
+      ]
+    },
+    {
+      "area": "transient_scheduler",
+      "file": "mangaro-sunovels-staging-budget-verify.service",
+      "lines": [
+        3,
+        8
+      ]
+    },
+    {
+      "area": "transient_scheduler",
+      "file": "mangaro-sunovels-staging-budget-verify.timer",
+      "lines": [
+        3
+      ]
+    }
+  ]
+}

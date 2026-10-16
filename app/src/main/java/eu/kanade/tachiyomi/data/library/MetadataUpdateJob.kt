@@ -49,9 +49,17 @@ class MetadataUpdateJob(private val context: Context, workerParams: WorkerParame
     private var mangaToUpdate: List<LibraryManga> = mutableListOf()
 
     override suspend fun doWork(): Result {
-        setForegroundSafely()
+        val state = tachiyomi.core.common.util.lang.LocalAccountScope.changes.value
+        if (!state.ready) return Result.retry()
+        val expected = inputData.getString("local-account-owner")
+        if (expected != null && expected != state.token.fileOwner) return Result.retry()
+        return kotlinx.coroutines.withContext(tachiyomi.core.common.util.lang.LocalAccountScope.Element(state.token)) { doAccountWork() }
+    }
 
+    private suspend fun doAccountWork(): Result {
         addMangaToQueue()
+        if (mangaToUpdate.isEmpty()) { notifier.cancelProgressNotification(); return Result.success() }
+        setForegroundSafely()
 
         return withIOContext {
             try {
@@ -59,8 +67,7 @@ class MetadataUpdateJob(private val context: Context, workerParams: WorkerParame
                 Result.success()
             } catch (e: Exception) {
                 if (e is CancellationException) {
-                    // Assume success although cancelled
-                    Result.success()
+                    throw e
                 } else {
                     logcat(LogPriority.ERROR, e)
                     Result.failure()
@@ -119,7 +126,7 @@ class MetadataUpdateJob(private val context: Context, workerParams: WorkerParame
                                             manga = manga,
                                             fetchDetails = true,
                                         ).getOrThrow()
-                                    } catch (e: Throwable) {
+                                    } catch (e: CancellationException) { throw e } catch (e: Throwable) {
                                         // Ignore errors and continue
                                         logcat(LogPriority.ERROR, e)
                                     }
@@ -175,6 +182,7 @@ class MetadataUpdateJob(private val context: Context, workerParams: WorkerParame
                 return false
             }
             val request = OneTimeWorkRequestBuilder<MetadataUpdateJob>()
+                .setInputData(androidx.work.workDataOf("local-account-owner" to tachiyomi.core.common.util.lang.LocalAccountScope.fileOwner()))
                 .addTag(TAG)
                 .addTag(WORK_NAME_MANUAL)
                 .build()

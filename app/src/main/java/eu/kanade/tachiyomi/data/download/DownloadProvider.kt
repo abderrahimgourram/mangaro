@@ -40,6 +40,8 @@ class DownloadProvider(
      * @param source the source of the manga.
      */
     internal fun getMangaDir(mangaTitle: String, source: Source): Result<UniFile> {
+        // An explicitly claimed legacy directory remains the resumable write location.
+        findMangaDir(mangaTitle, source)?.let { return Result.success(it) }
         val downloadsDir = downloadsDir
         if (downloadsDir == null) {
             logcat(LogPriority.ERROR) { "Failed to create download directory" }

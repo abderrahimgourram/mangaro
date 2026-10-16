@@ -94,7 +94,8 @@ object NovelWorkReconciler {
         val aliases = state.aliases.toMutableMap()
         val keys = HashMap<String, Set<String>>()
         fun keysFor(novel: Novel) = keys.getOrPut(novel.id) { NovelIdentity.matchingKeys(novel) }
-        for (incoming in novels) {
+        for (candidate in novels) {
+            val incoming = SunovelsSource.cleanMetadata(candidate)
             val previous = works.firstOrNull { w -> w.editions.any { it.id == incoming.id } }
             val old = previous?.editions?.firstOrNull { it.id == incoming.id }
             // A small catalogue card must never erase details learned from the actual work page.
@@ -102,7 +103,7 @@ object NovelWorkReconciler {
                 author = incoming.author?.takeIf { it.isNotBlank() } ?: old.author,
                 description = incoming.description.ifBlank { old.description },
                 cover = incoming.cover ?: old.cover, status = incoming.status ?: old.status,
-                originalTitle = incoming.originalTitle ?: old.originalTitle,
+                originalTitle = incoming.originalTitle ?: if (incoming.sourceId == SunovelsSource.SOURCE_ID) SunovelsSource.cleanOriginalTitle(old.originalTitle) else old.originalTitle,
                 alternativeTitles = (old.alternativeTitles + incoming.alternativeTitles).distinct(),
                 workIdentifiers = (old.workIdentifiers + incoming.workIdentifiers).distinct(),
                 genres = incoming.genres.ifEmpty { old.genres },

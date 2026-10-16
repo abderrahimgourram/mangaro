@@ -1,0 +1,5 @@
+eu.kanade.tachiyomi.source.Source|getPopularManga
+eu.kanade.tachiyomi.source.CatalogueSource|fetchPopularManga
+eu.kanade.tachiyomi.source.SourceFactory|createSources
+eu.kanade.tachiyomi.source.ConfigurableSource|setupPreferenceScreen
+eu.kanade.tachiyomi.source.UnmeteredSource

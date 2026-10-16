@@ -12,6 +12,10 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.paging.LoadState
@@ -59,12 +63,16 @@ fun BrowseSourceContent(
         with(context) { state.error.formattedMessage }
     }
 
-    LaunchedEffect(errorState) {
+    var lastAlert by remember { mutableStateOf<Pair<String, Int>?>(null) }
+    LaunchedEffect(errorState?.let { getErrorMessage(it as LoadState.Error) }, mangaList.itemCount > 0) {
         if (mangaList.itemCount > 0 && errorState != null && errorState is LoadState.Error) {
+            val event = getErrorMessage(errorState) to mangaList.itemCount
+            if (lastAlert == event) return@LaunchedEffect
+            lastAlert = event
             val result = snackbarHostState.showSnackbar(
-                message = getErrorMessage(errorState),
+                message = event.first,
                 actionLabel = context.stringResource(MR.strings.action_retry),
-                duration = SnackbarDuration.Indefinite,
+                duration = SnackbarDuration.Short,
             )
             when (result) {
                 SnackbarResult.Dismissed -> snackbarHostState.currentSnackbarData?.dismiss()
@@ -78,6 +86,10 @@ fun BrowseSourceContent(
         return
     }
 
+    if (mangaList.itemCount == 0 && errorState is LoadState.Error) {
+        eu.kanade.presentation.components.MangaroErrorState(getErrorMessage(errorState), mangaList::retry, Modifier.padding(contentPadding))
+        return
+    }
     if (mangaList.itemCount == 0) {
         MangaroEmptyState(
             modifier = Modifier.padding(contentPadding),
@@ -157,8 +169,8 @@ internal fun MissingSourceScreen(
             )
         },
     ) { paddingValues ->
-        EmptyScreen(
-            message = "هذا المحتوى غير متاح حالياً",
+        eu.kanade.presentation.components.MangaroErrorState(
+            message = "هذا المحتوى غير متاح حاليًا، راجع إعدادات المصادر",
             modifier = Modifier.padding(paddingValues),
         )
     }

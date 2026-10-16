@@ -15,6 +15,7 @@ class ReaderWebAdPolicy(context: Context) {
         private const val HANDLED_BOUNDARIES = "handled_chapter_boundaries"
     }
 
+    private val preferencesContext = context.applicationContext
     private val preferences = context.applicationContext.getSharedPreferences("mangaro_ads_policy", Context.MODE_PRIVATE)
     private val sessions = mutableMapOf<String, LinkedHashMap<Long, Unit>>()
     private data class Reservation(val session: String, val owner: String)
@@ -23,7 +24,7 @@ class ReaderWebAdPolicy(context: Context) {
     val completionRevision = mutableCompletionRevision.asStateFlow()
     private val handledBoundaries = preferences.getStringSet(HANDLED_BOUNDARIES, emptySet())
         .orEmpty().mapNotNullTo(mutableSetOf()) { it.toLongOrNull() }
-    private val rewardState = AdFreeRewardState.get(context)
+    private val sdkPolicy = InMobiAds.get(context).policy
 
     private val namedHandled = LinkedHashSet(preferences.getStringSet("handled_content_placements", emptySet()).orEmpty())
     private val namedReserved = mutableMapOf<String, String>()
@@ -31,7 +32,7 @@ class ReaderWebAdPolicy(context: Context) {
 
     /** Namespaced content identities never enter the manga chapter/XP identity space. */
     @Synchronized fun reserveContentPlacement(key: String, owner: String, skipCooldown: Boolean = false): Boolean {
-        if (rewardState.isActive() || key in namedHandled || reservedBoundaries.isNotEmpty()) return false
+        if (key in namedHandled || reservedBoundaries.isNotEmpty()) return false
         if (namedReserved[key] == owner) return true
         if (namedReserved.isNotEmpty() || (!skipCooldown && lastNamedRequest != 0L && android.os.SystemClock.elapsedRealtime() - lastNamedRequest < 60_000L)) return false
         namedReserved[key] = owner
@@ -42,7 +43,7 @@ class ReaderWebAdPolicy(context: Context) {
         return (60_000L - (android.os.SystemClock.elapsedRealtime() - lastNamedRequest)).coerceAtLeast(0L)
     }
     @Synchronized fun commitContentPlacement(key: String, owner: String): Boolean {
-        if (namedReserved[key] != owner || rewardState.isActive()) return false
+        if (namedReserved[key] != owner) return false
         namedReserved.remove(key)
         namedHandled.add(key)
         while (namedHandled.size > 512) namedHandled.remove(namedHandled.first())
@@ -55,17 +56,19 @@ class ReaderWebAdPolicy(context: Context) {
     }
 
     @Synchronized
-    fun startSession(id: String) { sessions.getOrPut(id) { linkedMapOf() } }
+    fun startSession(id: String) { sessions.getOrPut(id) { linkedMapOf() }; sdkPolicy.startSession(id) }
 
     @Synchronized
     fun endSession(id: String) {
         sessions.remove(id)
+        sdkPolicy.endSession(id)
         if (reservedBoundaries.entries.removeAll { it.value.session == id }) mutableCompletionRevision.value++
     }
 
     @Synchronized
     fun chapterCompleted(session: String, chapterId: Long) {
         val completed = sessions[session] ?: return
+        sdkPolicy.chapterCompleted(session, chapterId)
         if (completed.size < 1000 && completed.putIfAbsent(chapterId, Unit) == null) {
             mutableCompletionRevision.value++
         }
@@ -73,8 +76,8 @@ class ReaderWebAdPolicy(context: Context) {
 
     @Synchronized
     fun reserveBoundaryOpportunity(session: String, chapterId: Long, owner: String): Boolean {
-        if (sessions[session]?.containsKey(chapterId) != true || rewardState.isActive()) return false
-        if (chapterId in handledBoundaries) return false
+        if (sessions[session]?.containsKey(chapterId) != true) return false
+        if (chapterId in handledBoundaries || !sdkPolicy.nativeEligible(session, chapterId)) return false
         val reservation = Reservation(session, owner)
         val existing = reservedBoundaries[chapterId]
         if (existing != null) return existing == reservation
@@ -86,7 +89,8 @@ class ReaderWebAdPolicy(context: Context) {
     fun commitBoundaryRequest(session: String, chapterId: Long, owner: String): Boolean {
         if (reservedBoundaries[chapterId] != Reservation(session, owner)) return false
         reservedBoundaries.remove(chapterId)
-        if (!handledBoundaries.add(chapterId)) return false
+        if (!sdkPolicy.claimNative(session, chapterId) || !handledBoundaries.add(chapterId)) return false
+        InMobiAds.get(preferencesContext).persistCaps()
         preferences.edit().putStringSet(HANDLED_BOUNDARIES, handledBoundaries.mapTo(mutableSetOf()) { it.toString() }).apply()
         return true
     }

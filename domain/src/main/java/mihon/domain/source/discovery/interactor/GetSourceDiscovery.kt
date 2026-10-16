@@ -58,7 +58,7 @@ class GetSourceDiscovery(
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
-            if (health.discoverable(source.id)) cached[cacheKey]?.let { return@withContext it }
+            if (health.discoverable(source.id)) cached[cacheKey]?.let { return@withContext it.copy(isFresh = false) }
             return@withContext SourceDiscoveryResult(
                 sourceId = source.id,
                 sourceName = source.name,
@@ -66,6 +66,7 @@ class GetSourceDiscovery(
                 page = page,
                 hasNextPage = false,
                 items = emptyList(),
+                isFresh = false,
             )
         }
 

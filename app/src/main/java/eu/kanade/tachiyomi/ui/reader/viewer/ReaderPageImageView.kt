@@ -10,6 +10,8 @@ import android.util.AttributeSet
 import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
+import kotlin.math.abs
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.widget.FrameLayout
 import androidx.annotation.AttrRes
@@ -66,6 +68,34 @@ open class ReaderPageImageView @JvmOverloads constructor(
 
     private var pageView: View? = null
 
+    // Observe the image's events without intercepting scrolling, panning or scaling.
+    // Child image widgets have their own click detectors, separate from the viewer detector.
+    private val tapSlop = ViewConfiguration.get(context).scaledTouchSlop
+    private var touchX = 0f
+    private var touchY = 0f
+    private var stationaryTap = false
+    private var suppressImageTap = false
+
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                touchX = event.x
+                touchY = event.y
+                stationaryTap = true
+                suppressImageTap = false
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (stationaryTap && event.eventTime - event.downTime >= ViewConfiguration.getLongPressTimeout()) suppressImageTap = true
+                if (abs(event.x - touchX) > tapSlop || abs(event.y - touchY) > tapSlop) stationaryTap = false
+            }
+            MotionEvent.ACTION_POINTER_DOWN, MotionEvent.ACTION_CANCEL -> stationaryTap = false
+            MotionEvent.ACTION_UP -> {
+                if (stationaryTap && event.eventTime - event.downTime >= ViewConfiguration.getLongPressTimeout()) suppressImageTap = true
+            }
+        }
+        return super.dispatchTouchEvent(event)
+    }
+
     private var config: Config? = null
 
     var onImageLoaded: (() -> Unit)? = null
@@ -96,7 +126,7 @@ open class ReaderPageImageView @JvmOverloads constructor(
 
     @CallSuper
     open fun onViewClicked() {
-        onViewClicked?.invoke()
+        if (!suppressImageTap) onViewClicked?.invoke()
     }
 
     open fun onPageSelected(forward: Boolean) {
@@ -255,6 +285,8 @@ open class ReaderPageImageView @JvmOverloads constructor(
                     }
                 },
             )
+            isLongClickable = false
+            isHapticFeedbackEnabled = false
             setOnClickListener { this@ReaderPageImageView.onViewClicked() }
         }
         addView(pageView, MATCH_PARENT, MATCH_PARENT)
@@ -348,6 +380,8 @@ open class ReaderPageImageView @JvmOverloads constructor(
             PhotoView(context)
         }.apply {
             adjustViewBounds = true
+            isLongClickable = false
+            isHapticFeedbackEnabled = false
 
             if (this is PhotoView) {
                 setScaleLevels(1F, 2F, MAX_ZOOM_SCALE)

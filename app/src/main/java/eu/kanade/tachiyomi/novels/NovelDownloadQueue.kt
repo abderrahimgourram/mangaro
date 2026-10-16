@@ -1,5 +1,7 @@
 package eu.kanade.tachiyomi.novels
 
+import eu.kanade.tachiyomi.focus.*
+
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
@@ -17,15 +19,19 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 /** Durable states, never inferred from browser events or manga downloads. */
-enum class NovelDownloadState { PENDING, RUNNING, PAUSED, DONE, FAILED, CANCELLED, DELETING }
+enum class NovelDownloadState { PENDING, RUNNING, PAUSED, DONE, FAILED, CANCELLED, DELETING, REMOVED }
 data class NovelDownloadTask(val key: String, val novel: Novel, val chapter: NovelChapter,
-    val state: NovelDownloadState, val generation: Long = 0, val error: String? = null)
+    val state: NovelDownloadState, val generation: Long = 0, val error: String? = null, val queuedAt: Long = 0)
 data class NovelDownloadSummary(val novel: Novel, val total: Int, val done: Int, val pending: Int,
     val running: Int, val paused: Int, val failed: Int, val cancelled: Int, val deleting: Int)
 internal fun novelDownloadKey(editionId: String, chapterId: String) = novelDigest(editionId + "|" + chapterId)
 
 /** A separate SQLite file. No app/manga database, queue, paths or schema is used. */
-class NovelDownloadQueue(private val app: Context, private val repository: NovelRepository, private val disk: NovelDownloadDisk) {
+class NovelDownloadQueue(private val app: Context, private val repository: NovelRepository, private val disk: NovelDownloadDisk, private val owner: String = tachiyomi.core.common.util.lang.LocalAccountScope.fileOwner()) {
+    private fun checkOwner() {
+        tachiyomi.core.common.util.lang.LocalAccountScope.check()
+        check(tachiyomi.core.common.util.lang.LocalAccountScope.fileOwner() == owner) { "Download account changed" }
+    }
     private val json = Json { ignoreUnknownKeys = true }
     private val mutex = Mutex()
     private val batchMutex = Mutex()
@@ -41,7 +47,7 @@ class NovelDownloadQueue(private val app: Context, private val repository: Novel
     val error = mutableError.asStateFlow()
     private val mutableRestored = MutableStateFlow(false)
     val restored = mutableRestored.asStateFlow()
-    private val helper by lazy { object : SQLiteOpenHelper(app, File(app.filesDir, "novels-local/downloads/queue.db").also { it.parentFile!!.mkdirs() }.absolutePath, null, 1) {
+    private val helper by lazy { object : SQLiteOpenHelper(app, File(novelDownloadRoot(app.filesDir, owner), "downloads/queue.db").also { it.parentFile!!.mkdirs() }.absolutePath, null, 1) {
         override fun onCreate(db: SQLiteDatabase) {
             NovelQueueSql.schema.forEach { db.execSQL(it) }
         }
@@ -57,6 +63,17 @@ class NovelDownloadQueue(private val app: Context, private val repository: Novel
                 finishDeletion(tasks.value.filter { it.state == NovelDownloadState.DELETING })
                 db.execSQL(NovelQueueSql.recover)
                 publish()
+                // Retain payloads and keys, but do not advertise a known ambiguous Sun
+                // address as a successful download restored from an older parser.
+                var sunChanged = false
+                tasks.value.filter { it.novel.sourceId == SunovelsSource.SOURCE_ID && it.state == NovelDownloadState.DONE }.forEach { task ->
+                    try { repository.requireSunChapter(task.novel, task.chapter, storedContent = disk.complete(task.novel.id, task.chapter.id)) }
+                    catch (e: NovelSourceFailure) {
+                        db.execSQL("UPDATE tasks SET state='FAILED',error=? WHERE id=? AND state='DONE'", arrayOf(e.publicMessage, task.key))
+                        sunChanged = true
+                    }
+                }
+                if (sunChanged) publish()
                 ready.complete(Unit)
                 if (tasks.value.any { it.state == NovelDownloadState.PENDING }) schedule(append = false)
             } catch (e: Exception) {
@@ -71,13 +88,20 @@ class NovelDownloadQueue(private val app: Context, private val repository: Novel
         if (c.moveToFirst()) NovelDownloadState.valueOf(c.getString(0)) to c.getLong(1) else null
     }
     suspend fun enqueue(novel: Novel, chapters: List<NovelChapter>) = withContext(Dispatchers.IO) {
-        ready.await()
+        checkOwner(); ready.await(); checkOwner()
         mutableError.value = null
         repository.source(novel.sourceId) // approved edition only
         repository.protectOfflineIndex(novel, chapters)
         val unique = chapters.distinctBy { it.id }.filter { it.available }
         require(unique.all { NovelHttp.allowed(it.url) && java.net.URI(it.url).host == java.net.URI(novel.url).host })
+        val sunFailures = if (novel.sourceId == SunovelsSource.SOURCE_ID) buildMap<String, String> {
+            for (chapter in unique) {
+                try { repository.requireSunChapter(novel, chapter, storedContent = disk.complete(novel.id, chapter.id)) }
+                catch (e: NovelSourceFailure) { put(chapter.id, e.publicMessage) }
+            }
+        } else emptyMap()
         mutex.withLock {
+            checkOwner()
             db.beginTransaction()
             try {
                 db.execSQL("INSERT OR REPLACE INTO editions(id,source_id,novel) VALUES(?,?,?)", arrayOf(novel.id, novel.sourceId, json.encodeToString(novel)))
@@ -85,9 +109,9 @@ class NovelDownloadQueue(private val app: Context, private val repository: Novel
                     val key = novelDownloadKey(novel.id, chapter.id)
                     val old = stateOf(key)
                     if (old?.first in setOf(NovelDownloadState.PENDING, NovelDownloadState.RUNNING, NovelDownloadState.PAUSED, NovelDownloadState.DELETING)) continue
-                    val state = if (disk.complete(novel.id, chapter.id)) "DONE" else "PENDING"
-                    db.execSQL("INSERT OR REPLACE INTO tasks(id,edition_id,chapter,state,generation,ordinal,created,error) VALUES(?,?,?,?,?,?,?,NULL)",
-                        arrayOf<Any?>(key, novel.id, json.encodeToString(chapter), state, (old?.second ?: 0) + 1, chapter.order, System.currentTimeMillis()))
+                    val state = if (chapter.id in sunFailures) "FAILED" else if (disk.complete(novel.id, chapter.id)) "DONE" else "PENDING"
+                    db.execSQL("INSERT OR REPLACE INTO tasks(id,edition_id,chapter,state,generation,ordinal,created,error) VALUES(?,?,?,?,?,?,?,?)",
+                        arrayOf<Any?>(key, novel.id, json.encodeToString(chapter), state, (old?.second ?: 0) + 1, chapter.order, System.currentTimeMillis(), sunFailures[chapter.id]))
                 }
                 db.setTransactionSuccessful()
             } finally { db.endTransaction() }
@@ -97,12 +121,13 @@ class NovelDownloadQueue(private val app: Context, private val repository: Novel
         eu.kanade.tachiyomi.data.cache.StorageMaintenanceJob.schedule(app)
     }
     suspend fun control(editionId: String, action: NovelDownloadState, chapterId: String? = null) = withContext(Dispatchers.IO) {
-        ready.await()
+        checkOwner(); ready.await(); checkOwner()
         mutableError.value = null
         val cancelKeys = mutableListOf<String>()
         val suffix = if (chapterId == null) "" else " AND id=?"
         val arguments = if (chapterId == null) arrayOf(editionId) else arrayOf(editionId, novelDownloadKey(editionId, chapterId))
         mutex.withLock {
+            checkOwner()
             when (action) {
                 NovelDownloadState.PAUSED -> {
                     cancelKeys += tasks.value.filter { it.novel.id == editionId && (chapterId == null || it.chapter.id == chapterId) && it.state == NovelDownloadState.RUNNING }.map { it.key }
@@ -122,8 +147,9 @@ class NovelDownloadQueue(private val app: Context, private val repository: Novel
         if (action in setOf(NovelDownloadState.PENDING, NovelDownloadState.FAILED)) schedule(append = true)
     }
     suspend fun cancelSelected(editionId: String, chapterIds: Set<String>) = withContext(Dispatchers.IO) {
-        ready.await()
+        checkOwner(); ready.await(); checkOwner()
         val jobs = mutex.withLock {
+            checkOwner()
             val targets = tasks.value.filter { it.novel.id == editionId && it.chapter.id in chapterIds && it.state !in setOf(NovelDownloadState.DONE, NovelDownloadState.DELETING) }
             db.beginTransaction()
             try {
@@ -136,14 +162,15 @@ class NovelDownloadQueue(private val app: Context, private val repository: Novel
         jobs.forEach { it.cancel() }
     }
     suspend fun deleteChapters(editionId: String, chapterIds: Set<String>) = withContext(Dispatchers.IO) {
-        ready.await()
+        checkOwner(); ready.await(); checkOwner()
         // Fence queued/running tasks before touching files; cancellation cannot turn them pending.
         withContext(NonCancellable) {
             val targets = mutex.withLock {
+                checkOwner()
                 val selected = tasks.value.filter { it.novel.id == editionId && it.chapter.id in chapterIds }
                 db.beginTransaction()
                 try {
-                    selected.forEach { db.execSQL("UPDATE tasks SET state='DELETING',generation=generation+1,error=NULL WHERE id=?", arrayOf(it.key)) }
+                    selected.forEach { db.execSQL(NovelQueueSql.deleting, arrayOf(it.key)) }
                     db.setTransactionSuccessful()
                 } finally { db.endTransaction() }
                 publish()
@@ -163,7 +190,7 @@ class NovelDownloadQueue(private val app: Context, private val repository: Novel
                 if (stateOf(task.key)?.first != NovelDownloadState.DELETING) return@forEach
                 try {
                     disk.delete(task.novel.id, task.chapter.id)
-                    db.execSQL("DELETE FROM tasks WHERE id=? AND state='DELETING'", arrayOf(task.key))
+                    db.execSQL(NovelQueueSql.deleted, arrayOf(task.key))
                     removed += task
                 } catch (e: Exception) {
                     failure = e
@@ -174,12 +201,12 @@ class NovelDownloadQueue(private val app: Context, private val repository: Novel
             db.setTransactionSuccessful()
         } finally { db.endTransaction() }
         // SQLite transactions are thread-affine: suspend only after endTransaction().
-        removed.forEach { repository.evictChapter(it.novel.id, it.chapter.id) }
+        removed.forEach { repository.evictChapter(it.novel.id, it.chapter.id, owner) }
         // Failed deletions remain fenced and retryable, never falsely reported as removed.
         failure?.let { mutableError.value = "تعذّر حذف بعض الفصول. حاول مجددًا." }
     }
     suspend fun invalidate(novel: Novel, chapter: NovelChapter) = withContext(Dispatchers.IO) {
-        ready.await(); mutex.withLock {
+        checkOwner(); ready.await(); checkOwner(); mutex.withLock {
             db.execSQL("UPDATE tasks SET state='FAILED',error=? WHERE id=? AND state='DONE'", arrayOf("تعذّر فتح الفصل المحمّل. أعد تحميله.", novelDownloadKey(novel.id, chapter.id)))
             publish()
         }
@@ -192,10 +219,10 @@ class NovelDownloadQueue(private val app: Context, private val repository: Novel
         val editions = db.rawQuery("SELECT id,novel FROM editions", null).use { c -> buildMap {
             while (c.moveToNext()) put(c.getString(0), json.decodeFromString<Novel>(c.getString(1)))
         } }
-        mutableTasks.value = db.rawQuery("SELECT id,edition_id,chapter,state,generation,error FROM tasks ORDER BY created,ordinal", null).use { c -> buildList {
+        mutableTasks.value = db.rawQuery(NovelQueueSql.visible, null).use { c -> buildList {
             while (c.moveToNext()) {
                 val novel = editions[c.getString(1)] ?: continue
-                add(NovelDownloadTask(c.getString(0), novel, json.decodeFromString(c.getString(2)), NovelDownloadState.valueOf(c.getString(3)), c.getLong(4), c.getString(5)))
+                add(NovelDownloadTask(c.getString(0), novel, json.decodeFromString(c.getString(2)), NovelDownloadState.valueOf(c.getString(3)), c.getLong(4), c.getString(5), c.getLong(6)))
             }
         } }
         mutableError.value = if (mutableTasks.value.any { it.state == NovelDownloadState.DELETING && it.error != null }) "تعذّر حذف بعض الفصول. حاول مجددًا." else null
@@ -209,6 +236,12 @@ class NovelDownloadQueue(private val app: Context, private val repository: Novel
         val now = System.currentTimeMillis()
         val next = tasks.value.filter { it.state == NovelDownloadState.PENDING && it.novel.sourceId !in activeSources && now >= (sourceNextAt[it.novel.sourceId] ?: 0) }
             .minWithOrNull(compareBy<NovelDownloadTask> { sourceLastServed[it.novel.sourceId] ?: 0 }.thenBy { it.chapter.order }) ?: return@withLock null
+        try { repository.requireSunChapter(next.novel, next.chapter, storedContent = disk.complete(next.novel.id, next.chapter.id)) }
+        catch (e: NovelSourceFailure) {
+            db.execSQL("UPDATE tasks SET state='FAILED',error=? WHERE id=?", arrayOf(e.publicMessage, next.key))
+            changed(next.key, NovelDownloadState.FAILED, e.publicMessage)
+            return@withLock null
+        }
         // Crash after a file commit but before SQLite completion: recover from the real validated file.
         if (disk.complete(next.novel.id, next.chapter.id)) {
             db.execSQL("UPDATE tasks SET state='DONE' WHERE id=?", arrayOf(next.key)); changed(next.key, NovelDownloadState.DONE); return@withLock null
@@ -229,9 +262,9 @@ class NovelDownloadQueue(private val app: Context, private val repository: Novel
                 context.ensureActive()
                 prepared.commit { context.isActive }
                 val state = if (prepared.imagesComplete) NovelDownloadState.DONE else NovelDownloadState.FAILED
-                if (state == NovelDownloadState.DONE) DownloadNotifier.incrementSuccessCount(1)
                 val error = if (prepared.imagesComplete) null else "النص محفوظ، وتعذّر تحميل بعض الصور. أعد المحاولة."
                 db.execSQL("UPDATE tasks SET state=?,error=? WHERE id=?", arrayOf(state.name, error, task.key))
+                if (state == NovelDownloadState.DONE) DownloadNotifier.recordSuccess(app, "novel:${task.key}:${task.queuedAt}")
                 changed(task.key, state, error)
             }
         }
@@ -239,7 +272,9 @@ class NovelDownloadQueue(private val app: Context, private val repository: Novel
     private suspend fun failed(task: NovelDownloadTask, error: Exception) = mutex.withLock {
         if (stateOf(task.key) != (NovelDownloadState.RUNNING to task.generation)) return@withLock
         android.util.Log.w("MangaroNovels", "Novel chapter download failed", error)
-        db.execSQL("UPDATE tasks SET state='FAILED',error=? WHERE id=?", arrayOf("تعذّر تحميل الفصل. حاول مجددًا.", task.key)); changed(task.key, NovelDownloadState.FAILED, "تعذّر تحميل الفصل. حاول مجددًا.")
+        val message = if (task.novel.sourceId in setOf(SeaNovelSource.SOURCE_ID, SunovelsSource.SOURCE_ID)) (error as? NovelSourceFailure)?.publicMessage
+            ?: "تعذّر تحميل الفصل. حاول مجددًا." else "تعذّر تحميل الفصل. حاول مجددًا."
+        db.execSQL("UPDATE tasks SET state='FAILED',error=? WHERE id=?", arrayOf(message, task.key)); changed(task.key, NovelDownloadState.FAILED, message)
     }
     private suspend fun release(task: NovelDownloadTask) = mutex.withLock {
         active.remove(task.key); activeSources.remove(task.novel.sourceId)
@@ -247,7 +282,7 @@ class NovelDownloadQueue(private val app: Context, private val repository: Novel
             db.execSQL("UPDATE tasks SET state='PENDING',generation=generation+1 WHERE id=?", arrayOf(task.key)); changed(task.key, NovelDownloadState.PENDING, increment = true)
         }
     }
-    suspend fun runBatch(): Boolean = batchMutex.withLock { supervisorScope {
+    suspend fun runBatch(): Boolean = withContext(tachiyomi.core.common.util.lang.LocalAccountScope.StorageElement(owner)) { batchMutex.withLock { supervisorScope {
         ready.await()
         val until = System.currentTimeMillis() + 7 * 60_000
         val lanes = List(2) {
@@ -259,8 +294,10 @@ class NovelDownloadQueue(private val app: Context, private val repository: Novel
                         delay(250); continue
                     }
                     supervisorScope {
-                    val attempt = async(start = CoroutineStart.LAZY) {
-                        val text = repository.chapterText(task.novel, task.chapter)
+                    val attempt = async(context = FocusTask(WorkPriority.DOWNLOAD,task.novel.sourceId,task.novel.id,task.chapter.id), start = CoroutineStart.LAZY) {
+                        val text = if (task.novel.sourceId == SunovelsSource.SOURCE_ID && SunovelsSource.mobileDeliveryEnabled) repository.sunChapterForDownload(task.novel, task.chapter)
+                            else if (task.novel.sourceId == "novel.cenele") repository.ceneleChapterForDownload(task.novel, task.chapter)
+                            else repository.chapterText(task.novel, task.chapter)
                         complete(task, text)
                     }
                     mutex.withLock {
@@ -277,6 +314,7 @@ class NovelDownloadQueue(private val app: Context, private val repository: Novel
         }
         lanes.joinAll()
         tasks.value.any { it.state == NovelDownloadState.PENDING }
+    }
     }
     }
     internal fun workerFailed() { mutableError.value = "تعذّر إكمال التنزيل. حاول مجددًا." }

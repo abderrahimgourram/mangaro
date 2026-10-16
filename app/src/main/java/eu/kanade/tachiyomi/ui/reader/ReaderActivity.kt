@@ -1,5 +1,7 @@
 package eu.kanade.tachiyomi.ui.reader
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.padding
 import android.annotation.SuppressLint
 import android.app.assist.AssistContent
 import android.content.ClipData
@@ -66,6 +68,8 @@ import eu.kanade.presentation.reader.appbars.ReaderAppBars
 import eu.kanade.presentation.reader.components.ChapterNavigatorType
 import eu.kanade.presentation.reader.mangaro.MangaroChapterSelectorSheet
 import eu.kanade.presentation.reader.settings.ReaderSettingsDialog
+import eu.kanade.presentation.components.showMangaroErrorSnackbar
+import eu.kanade.presentation.util.mangaroErrorMessage
 import eu.kanade.presentation.util.contentErrorMessage
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.data.coil.TachiyomiImageDecoder
@@ -124,6 +128,7 @@ class ReaderActivity : BaseActivity() {
             return Intent(context, ReaderActivity::class.java).apply {
                 putExtra("manga", mangaId)
                 putExtra("chapter", chapterId)
+                putExtra("mangaro.local.workspace.owner", tachiyomi.core.common.util.lang.LocalAccountScope.capture().owner)
                 addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
             }
         }
@@ -231,7 +236,7 @@ class ReaderActivity : BaseActivity() {
         viewModel.eventFlow
             .onEach { event ->
                 when (event) {
-                    ReaderViewModel.Event.ChapterLoadFailed -> toast("تعذّر فتح الفصل. حاول مجددًا")
+                    ReaderViewModel.Event.ChapterLoadFailed -> binding.root.showMangaroErrorSnackbar("تعذر تحميل الفصل")
                     ReaderViewModel.Event.ReloadViewerChapters -> {
                         viewModel.state.value.viewerChapters?.let(::setChapters)
                     }
@@ -260,6 +265,11 @@ class ReaderActivity : BaseActivity() {
 
     private fun ReaderActivityBinding.setComposeOverlay(): Unit = composeOverlay.setComposeContent {
         val state by viewModel.state.collectAsState()
+        var imageToSave by remember { mutableStateOf<ReaderPage?>(null) }
+        val saveImageAction = eu.kanade.presentation.util.rememberImageSaveAction(
+            onGranted = { viewModel.saveImage(imageToSave) },
+            onDenied = { binding.root.showMangaroErrorSnackbar("لم يُمنح إذن حفظ الصورة، يمكنك متابعة القراءة") },
+        )
         val showPageNumber by readerPreferences.showPageNumber.collectAsState()
         val settingsviewModel = remember {
             ReaderSettingsViewModel(
@@ -280,6 +290,13 @@ class ReaderActivity : BaseActivity() {
                 )
             }
 
+            state.initError?.let { failure ->
+                androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().background(eu.kanade.presentation.theme.MangaroDesignSystem.BackgroundDark), contentAlignment = Alignment.Center) {
+                    eu.kanade.presentation.components.MangaroErrorState(
+                        failure.mangaroErrorMessage("تعذر تحميل الفصل"), viewModel::retryInitialChapter, Modifier.padding(24.dp),
+                    )
+                }
+            }
             ContentOverlay(state = state)
 
             AppBars(state = state)
@@ -368,7 +385,7 @@ class ReaderActivity : BaseActivity() {
                     onDismissRequest = onDismissRequest,
                     onSetAsCover = viewModel::setAsCover,
                     onShare = viewModel::shareImage,
-                    onSave = viewModel::saveImage,
+                    onSave = { imageToSave = (state.dialog as? ReaderViewModel.Dialog.PageActions)?.page; saveImageAction() },
                 )
             }
             null -> {}
@@ -387,6 +404,7 @@ class ReaderActivity : BaseActivity() {
     }
 
     override fun onPause() {
+        viewModel.setFocusActive(false)
         lifecycleScope.launchNonCancellable {
             viewModel.updateHistory()
         }
@@ -399,6 +417,7 @@ class ReaderActivity : BaseActivity() {
      */
     override fun onResume() {
         super.onResume()
+        viewModel.setFocusActive(true)
         viewModel.restartReadTimer()
         setMenuVisibility(viewModel.state.value.menuVisible)
     }
@@ -700,8 +719,7 @@ class ReaderActivity : BaseActivity() {
      */
     private fun setInitialChapterError(error: Throwable) {
         logcat(LogPriority.ERROR, error)
-        finish()
-        toast(error.message.contentErrorMessage())
+        // Keep the reader open: Compose presents the recoverable error with Retry.
     }
 
     /**
@@ -757,14 +775,6 @@ class ReaderActivity : BaseActivity() {
 
     fun onPageSelected(page: ReaderPage) {
         if (!selectingChapter) viewModel.onPageSelected(page)
-    }
-
-    /**
-     * Called from the viewer whenever a [page] is long clicked. A bottom sheet with a list of
-     * actions to perform is shown.
-     */
-    fun onPageLongTap(page: ReaderPage) {
-        viewModel.openPageDialog(page)
     }
 
     /**
@@ -833,6 +843,7 @@ class ReaderActivity : BaseActivity() {
             }
             is ReaderViewModel.SaveImageResult.Error -> {
                 logcat(LogPriority.ERROR, result.error)
+                binding.root.showMangaroErrorSnackbar("تعذر حفظ الصورة، أعد المحاولة")
             }
         }
     }

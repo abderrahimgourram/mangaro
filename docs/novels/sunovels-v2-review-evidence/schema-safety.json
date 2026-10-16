@@ -1,0 +1,51 @@
+{
+  "inspection": "repository schema and host reconstruction only; no phone access",
+  "novelQueue": {
+    "version": 1,
+    "tables": {
+      "editions": [
+        "id",
+        "source_id",
+        "novel"
+      ],
+      "tasks": [
+        "id",
+        "edition_id",
+        "chapter",
+        "state",
+        "generation",
+        "ordinal",
+        "created",
+        "error"
+      ]
+    },
+    "migrationChain": "onCreate only; onUpgrade Unit"
+  },
+  "mainDatabase": {
+    "name": "tachiyomi.db",
+    "driver": "SQLDelight with BundledSQLiteDriver",
+    "version": 16,
+    "migrations": [
+      "1.sqm",
+      "2.sqm",
+      "3.sqm",
+      "4.sqm",
+      "5.sqm",
+      "6.sqm",
+      "7.sqm",
+      "8.sqm",
+      "9.sqm",
+      "10.sqm",
+      "11.sqm",
+      "12.sqm",
+      "13.sqm",
+      "14.sqm",
+      "15.sqm"
+    ],
+    "chapterTableIsMangaMetadata": true
+  },
+  "novelMetadata": "existing JSON atomic files; library/bookmarks/progress and gzipped chapter text separate",
+  "proposedRoomMigrationApplicable": false,
+  "databaseOrUserVersionChanges": false,
+  "phonePersistedDataInspected": false
+}

@@ -20,6 +20,7 @@ data class Chapter(
     val version: Long,
     val memo: JsonObject,
     val totalPages: Long = 0L,
+    val accountToken: tachiyomi.core.common.util.lang.LocalAccountScope.Token = tachiyomi.core.common.util.lang.LocalAccountScope.capture(),
 ) {
     val isRecognizedNumber: Boolean
         get() = chapterNumber >= 0f

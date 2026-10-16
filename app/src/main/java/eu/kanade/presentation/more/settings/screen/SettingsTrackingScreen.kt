@@ -1,5 +1,6 @@
 package eu.kanade.presentation.more.settings.screen
 
+import eu.kanade.presentation.components.showMangaroErrorSnackbar
 import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -314,7 +315,7 @@ object SettingsTrackingScreen : SearchableSettings {
             true
         } catch (e: Throwable) {
             tracker.logout()
-            withUIContext { context.toast(e.message.toString()) }
+            withUIContext { context.showMangaroErrorSnackbar("تعذر تسجيل الدخول إلى خدمة التتبع، أعد المحاولة") }
             false
         }
     }
