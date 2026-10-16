@@ -253,6 +253,8 @@ abstract class PagerViewer(val activity: ReaderActivity) : Viewer {
      * Tells this viewer to set the given [chapters] as active. If the pager is currently idle,
      * it sets the chapters immediately, otherwise they are saved and set when it becomes idle.
      */
+    override fun isActivePage(page: ReaderPage): Boolean = currentPage === page
+
     override fun setChapters(chapters: ViewerChapters) {
         if (isIdle) {
             setChaptersInternal(chapters)

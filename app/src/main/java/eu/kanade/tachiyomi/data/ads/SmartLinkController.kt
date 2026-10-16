@@ -82,9 +82,13 @@ internal class SmartLinkController private constructor(private val app: Applicat
         scope.launch { safely { Account.check(token);edit { it.observe(owner(token),kind,key,previouslyRead) } } }
     }
     /** Called in reader-owned order after observeChapter, even on a fast one-page chapter. */
-    fun completeChapter(kind: String, key: String, previouslyRead: Boolean, token: Account.Token): Job {
+    fun completeChapter(kind: String, key: String, previouslyRead: Boolean, token: Account.Token, end: ReaderEndDestination? = null): Job {
         if(!BuildConfig.SMARTLINK_V3_ENABLED) return Job().apply {complete()}
-        return scope.launch { safely { Account.check(token);edit { it.observe(owner(token),kind,key,previouslyRead);it.complete(owner(token),kind,key) } } }
+        return scope.launch { safely { Account.check(token);edit {
+            Account.check(token)
+            if(end!=null) it.completeAtEnd(owner(token),kind,key,previouslyRead,end)
+            else {it.observe(owner(token),kind,key,previouslyRead);it.complete(owner(token),kind,key)}
+        } } }
     }
     fun abandon(target: String?, token: Account.Token) {
         if(target==null) return
@@ -129,7 +133,7 @@ internal class SmartLinkController private constructor(private val app: Applicat
         if(!BuildConfig.SMARTLINK_V3_ENABLED || InMobiAds.get(app).privacyChoice()==AdPrivacyChoice.DISABLED) return true
         Account.check(token)
         val pending=edit { Account.check(token);it.entry(owner(token),kind,work,destination,payload,chapterKey,previouslyRead) } ?: return true
-        return readerTransition(kind,work,pending.from,destination,payload,token)
+        return readerTransition(kind,work,pending.from,pending.destination,pending.payload,token)
     }
     /** Called by actual navigation before loading the next chapter. No browser opens here.
      * The journal stores destination/evidence; only the explicit full-screen gate button launches a link.

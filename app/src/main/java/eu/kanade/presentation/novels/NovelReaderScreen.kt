@@ -177,8 +177,11 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
         var smartPreviouslyRead by remember(chapter.id) { mutableStateOf(true) }
         val smartController=remember(context) { eu.kanade.tachiyomi.data.ads.SmartLinkController.get(context) }
         val smartWork=remember(novel.id) { eu.kanade.tachiyomi.data.ads.SmartLinkController.chapter("novel",novel.sourceId,novel.id,"work") }
-        var smartCompletionJob by remember { mutableStateOf<Job?>(null) }
         val readerOwner = remember { tachiyomi.core.common.util.lang.LocalAccountScope.capture() }
+        val smartAdState by smartController.state.collectAsState()
+        val smartPending = smartAdState.readerTransitions[eu.kanade.tachiyomi.data.ads.adHash(
+            eu.kanade.tachiyomi.data.ads.SmartLinkController.owner(readerOwner),"novel")]
+        var smartCompletionJob by remember { mutableStateOf<Job?>(null) }
         val scope=rememberCoroutineScope()
         LaunchedEffect(chapter.id,generation) {
             loading=true;restoring=true;loadedChapter=null;error=null;paragraphs=emptyList();plain=emptyList();anchors=emptyList();blocks=emptyList();blockPositions=emptyList()
@@ -287,7 +290,13 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                 scroll.layoutInfo.visibleItemsInfo.any { it.key=="block-${blocks.lastIndex}" && it.offset+it.size<=end && it.size>0 } && !scroll.isScrollInProgress
             }.first {it}
             smartCompletionJob = smartController.completeChapter("novel",
-                eu.kanade.tachiyomi.data.ads.SmartLinkController.chapter("novel",novel.sourceId,novel.id,shown.id),smartPreviouslyRead,readerOwner)
+                eu.kanade.tachiyomi.data.ads.SmartLinkController.chapter("novel",novel.sourceId,novel.id,shown.id),smartPreviouslyRead,readerOwner,
+                repository.indexSnapshot(novel)?.chapters.let { rows ->
+                    val at=rows?.indexOfFirst {it.id==shown.id} ?: -1
+                    val target=if(at>=0) rows?.getOrNull(at+1) ?: shown else shown
+                    eu.kanade.tachiyomi.data.ads.ReaderEndDestination(smartWork,shown.id,target.id,
+                        kotlinx.serialization.json.Json.encodeToString(NovelChapter.serializer(),target))
+                })
         }
         val currentChapter by rememberUpdatedState(loadedChapter)
         val currentRestoring by rememberUpdatedState(restoring)
@@ -327,12 +336,15 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
             if(BuildConfig.SMARTLINK_V3_ENABLED) smartController.readerApplied("novel",smartWork,target.id,readerOwner)
             return true
         }
-        LaunchedEffect(loadedChapter?.id,loading,restoring) {
+        LaunchedEffect(loadedChapter?.id,loading,restoring,smartPending?.id) {
             if(!BuildConfig.SMARTLINK_V3_ENABLED || loading || restoring || navigating) return@LaunchedEffect
             val shown=loadedChapter ?: return@LaunchedEffect
             val pending=smartController.pendingReader("novel",smartWork,readerOwner) ?: return@LaunchedEffect
-            if(pending.destination==shown.id && pending.satisfied) {
-                smartController.readerApplied("novel",smartWork,shown.id,readerOwner);return@LaunchedEffect
+            if(pending.destination==shown.id) {
+                if(pending.satisfied || smartController.readerTransition("novel",smartWork,pending.from,
+                        pending.destination,pending.payload,readerOwner))
+                    smartController.readerApplied("novel",smartWork,shown.id,readerOwner)
+                return@LaunchedEffect
             }
             val restored=runCatching { kotlinx.serialization.json.Json.decodeFromString(NovelChapter.serializer(),pending.payload ?: "") }.getOrNull()
                 ?.takeIf { it.id==pending.destination } ?: return@LaunchedEffect

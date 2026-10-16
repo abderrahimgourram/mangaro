@@ -46,6 +46,8 @@ data class DownloadAdRequest(val chapterKeys: List<String>) {
 /** Local navigation intent, not chapter content. Applied only by its original account/work. */
 @Serializable internal data class ReaderAdTransition(val id: String, val owner: String, val kind: String,
     val work: String, val from: String?, val destination: String, val payload: String? = null, val satisfied: Boolean = false)
+/** Already resolved destination metadata, never fetched chapter content. */
+internal data class ReaderEndDestination(val work: String, val from: String, val destination: String, val payload: String? = null)
 @Serializable internal data class SmartLinkState(val schema: Int = 1, val batches: Map<String,UnlockBatch> = emptyMap(),
     val chapters: Map<String,ChapterAdvertising> = emptyMap(), val pending: BrowserNavigation? = null,
     val launches: List<Long> = emptyList(), val grantedChapters: Set<String> = emptySet(),
@@ -85,6 +87,9 @@ internal class SmartLinkPolicy(var state: SmartLinkState = SmartLinkState(), val
         }
     }
     fun entry(owner: String, kind: String, work: String, destination: String, payload: String?, chapterKey: String, previouslyRead: Boolean): ReaderAdTransition? {
+        state.readerTransitions[adHash(owner,kind)]?.takeIf {
+            it.work==work && it.from==destination && !it.satisfied
+        }?.let {return it}
         // Opening an old completed chapter is not a new opportunity; a genuinely new entry
         // cannot bypass an already-due interval by leaving and reopening the reader.
         if(previouslyRead || state.chapters[adHash(owner,kind)]?.observed?.get(chapterKey)==2) return null
@@ -122,6 +127,15 @@ internal class SmartLinkPolicy(var state: SmartLinkState = SmartLinkState(), val
         state=state.copy(chapters=state.chapters+(key to data.copy(observed=data.observed+(chapter to 2),count=count,
             lastCompleted=chapter,boundary=if(count-serviced(data)>=settings.chapterInterval) data.boundary ?: chapter else null,
             servicedCount=serviced(data),dismissed=false)))
+    }
+    /** Journal writes completion and its due navigation obligation in the same commit. */
+    fun completeAtEnd(owner: String, kind: String, chapter: String, previouslyRead: Boolean, end: ReaderEndDestination) {
+        observe(owner,kind,chapter,previouslyRead)
+        complete(owner,kind,chapter)
+        val due=dueBoundary(owner,kind) ?: return
+        if(state.readerTransitions[adHash(owner,kind)]?.id==due) return
+        // At a final indexed chapter the safe boundary may stay on that chapter.
+        transition(owner,kind,end.work,end.from.takeUnless {it==end.destination},end.destination,end.payload)
     }
     fun boundary(owner: String, kind: String, chapter: String): String? =
         dueBoundary(owner,kind)?.takeIf { state.chapters[adHash(owner,kind)]?.lastCompleted == chapter }

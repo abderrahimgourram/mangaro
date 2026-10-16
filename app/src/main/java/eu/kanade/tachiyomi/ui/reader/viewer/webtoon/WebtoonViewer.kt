@@ -71,6 +71,7 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
      * Currently active item. It can be a chapter page or a chapter transition.
      */
     private var currentPage: Any? = null
+    private var endNotified: ReaderPage? = null
 
     private val threshold: Int =
         Injekt.get<ReaderPreferences>()
@@ -215,6 +216,15 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
     /**
      * Tells this viewer to set the given [chapters] as active.
      */
+    override fun isAtChapterEnd(page: ReaderPage): Boolean {
+        if(!isActivePage(page)) return false
+        val view=layoutManager.findViewByPosition(adapter.items.indexOf(page)) ?: return false
+        return eu.kanade.tachiyomi.data.ads.chapterEndVisible(page.index,page.chapter.pages?.lastIndex ?: -1,
+            layoutManager.getDecoratedBottom(view),recycler.height-recycler.paddingBottom)
+    }
+
+    override fun isActivePage(page: ReaderPage): Boolean = currentPage === page
+
     override fun setChapters(chapters: ViewerChapters) {
         val forceTransition = config.alwaysShowChapterTransition || currentPage is ChapterTransition
         adapter.setChapters(chapters, forceTransition)
@@ -253,6 +263,11 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
                 is ChapterTransition -> onTransitionSelected(item)
             }
         }
+        val active=currentPage as? ReaderPage
+        if(active!=null && isAtChapterEnd(active)) {
+            if(endNotified!==active) {endNotified=active;activity.onPageSelected(active)}
+        } else endNotified=null
+
     }
 
     /**

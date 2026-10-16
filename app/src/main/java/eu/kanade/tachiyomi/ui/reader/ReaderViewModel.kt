@@ -49,6 +49,7 @@ import eu.kanade.tachiyomi.util.storage.DiskUtil
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -118,6 +119,7 @@ class ReaderViewModel @JvmOverloads constructor(
     private val readerAdPolicy = eu.kanade.tachiyomi.data.ads.ReaderWebAdPolicy.get(Injekt.get<Application>()).also { it.startSession(adReadingSession) }
     private var smartCompletionJob: kotlinx.coroutines.Job? = null
     private var smartAutomaticTransition: kotlinx.coroutines.Job? = null
+    private var endPresentationAttempt: String? = null
     private val smartController get() = eu.kanade.tachiyomi.data.ads.SmartLinkController.get(Injekt.get<Application>())
     private fun smartWork(work: Manga) = eu.kanade.tachiyomi.data.ads.SmartLinkController.chapter("manga",work.source.toString(),work.url,"work")
     private val smartInitialRead = mutableMapOf<Long,Boolean>()
@@ -147,7 +149,7 @@ class ReaderViewModel @JvmOverloads constructor(
     /**
      * The chapter id of the currently loaded chapter. Used to restore from process kill.
      */
-    private var chapterId = savedState.get<Long>("chapter_id") ?: -1L
+    private var chapterId = savedState.get<LongArray>("reader_position")?.getOrNull(0) ?: savedState.get<Long>("chapter_id") ?: -1L
         set(value) {
             savedState["chapter_id"] = value
             field = value
@@ -156,11 +158,15 @@ class ReaderViewModel @JvmOverloads constructor(
     /**
      * The visible page index of the currently loaded chapter. Used to restore from process kill.
      */
-    private var chapterPageIndex = savedState.get<Int>("page_index") ?: -1
+    private var chapterPageIndex = savedState.get<LongArray>("reader_position")?.getOrNull(1)?.toInt() ?: savedState.get<Int>("page_index") ?: -1
         set(value) {
             savedState["page_index"] = value
             field = value
         }
+
+    private val pageOwnership = eu.kanade.tachiyomi.ui.reader.model.ReaderPositionOwnership(
+        if(chapterId>=0) chapterId else initialChapterId, chapterPageIndex,
+    )
 
     /**
      * The chapter loader for the loaded manga. It'll be null until [manga] is set.
@@ -277,16 +283,28 @@ class ReaderViewModel @JvmOverloads constructor(
             .distinctUntilChanged()
             .filterNotNull()
             .onEach { currentChapter ->
-                if (chapterPageIndex >= 0) {
-                    // Restore from SavedState
-                    currentChapter.requestedPage = chapterPageIndex
-                } else if (!currentChapter.chapter.read) {
-                    currentChapter.requestedPage = currentChapter.chapter.last_page_read
-                }
                 chapterId = currentChapter.chapter.id!!
             }
             .launchIn(accountScope)
 
+        if(eu.kanade.tachiyomi.BuildConfig.SMARTLINK_V3_ENABLED) {
+            accountScope.launch {
+                kotlinx.coroutines.flow.combine(state,smartController.state) { reader,ads ->
+                    val pending=ads.readerTransitions[eu.kanade.tachiyomi.data.ads.adHash(
+                        eu.kanade.tachiyomi.data.ads.SmartLinkController.owner(accountToken),"manga")]
+                    Triple(reader.currentChapter?.chapter?.id,reader.isLoadingAdjacentChapter,pending)
+                }.distinctUntilChanged().collect { (current,loading,pending) ->
+                    if(current!=null && !loading && pending!=null && manga?.let {smartWork(it)}==pending.work &&
+                        endPresentationAttempt!=pending.id) {
+                        // One automatic presentation attempt per obligation in this reader.
+                        // Back or a failed destination must not create an immediate dialog/retry loop.
+                        endPresentationAttempt=pending.id
+                        smartAutomaticTransition?.join()
+                        resumePendingAdvertisingTransition()
+                    }
+                }
+            }
+        }
         if (hasValidArgs) {
             accountScope.launch { init() }
         }
@@ -368,11 +386,12 @@ class ReaderViewModel @JvmOverloads constructor(
             if(!smartController.readerTransition("manga",smartWork(work),previous.chapter.id.toString(),chapter.chapter.id.toString(),selectedPage?.toString(),accountToken))
                 return checkNotNull(state.value.viewerChapters)
         }
+        chapter.chapter.id?.let { smartInitialRead.putIfAbsent(it,chapter.chapter.read) }
         focusChapter(chapter)
         loader.loadChapter(chapter)
-        // Automatic paged/webtoon transitions retain the actual selected image, including
-        // backward boundary traversal. Apply only after authorization and page-list validation.
-        selectedPage?.let { index -> chapter.requestedPage=index.coerceIn(0, chapter.pages.orEmpty().lastIndex.coerceAtLeast(0)) }
+        val ownPage=pageOwnership.enter(chapter.chapter.id!!,chapter.chapter.last_page_read,
+            chapter.chapter.read,chapter.pages.orEmpty().lastIndex,selectedPage)
+        chapter.requestedPage=ownPage
 
         val chapterPos = chapterList.indexOf(chapter)
         val newChapters = ViewerChapters(
@@ -382,6 +401,7 @@ class ReaderViewModel @JvmOverloads constructor(
         )
 
         withUIContext {
+            tachiyomi.core.common.util.lang.LocalAccountScope.check(accountToken)
             mutableState.update {
                 // Add new references first to avoid unnecessary recycling
                 newChapters.ref()
@@ -389,10 +409,14 @@ class ReaderViewModel @JvmOverloads constructor(
 
                 it.copy(
                     viewerChapters = newChapters,
+                    currentPage = ownPage + 1,
                     bookmarked = newChapters.currChapter.chapter.bookmark,
                 )
             }
         }
+        savedState["reader_position"]=longArrayOf(chapter.chapter.id!!,ownPage.toLong())
+        chapterId=chapter.chapter.id!!
+        chapterPageIndex=ownPage
         if(eu.kanade.tachiyomi.BuildConfig.SMARTLINK_V3_ENABLED) manga?.let { work ->
             smartController.readerApplied("manga",smartWork(work),chapter.chapter.id.toString(),accountToken)
         }
@@ -408,7 +432,7 @@ class ReaderViewModel @JvmOverloads constructor(
 
         if(eu.kanade.tachiyomi.BuildConfig.SMARTLINK_V3_ENABLED && smartAutomaticTransition?.isActive==true) return
         smartAutomaticTransition = accountScope.launchIO {
-            logcat { "Loading ${chapter.chapter.url}" }
+            logcat { "Loading reader chapter ${chapter.chapter.id}" }
 
             updateHistory()
             restartReadTimer()
@@ -483,7 +507,7 @@ class ReaderViewModel @JvmOverloads constructor(
 
         val loader = loader ?: return
         try {
-            logcat { "Preloading ${chapter.chapter.url}" }
+            logcat { "Preloading reader chapter ${chapter.chapter.id}" }
             loader.loadChapter(chapter)
         } catch (e: Throwable) {
             if (e is CancellationException) {
@@ -505,6 +529,8 @@ class ReaderViewModel @JvmOverloads constructor(
      * read, update tracking services, enqueue downloaded chapter deletion, and updating the active chapter if this
      * [page]'s chapter is different from the currently active.
      */
+    private val pageSelections=eu.kanade.tachiyomi.ui.reader.model.ReaderPageSelection()
+    private val progressWrites=kotlinx.coroutines.sync.Mutex()
     private val sigilSelections = mutableMapOf<String, Int>()
     private val sigilStartedWorks = mutableSetOf<String>()
     private var sigilStartObservation: kotlinx.coroutines.Job? = null
@@ -570,10 +596,17 @@ class ReaderViewModel @JvmOverloads constructor(
                     // obsolete chapter is not a SmartLink completion; durable policy deduplicates
                     // repeated ready/selection callbacks even after recreation.
                     if (!incognitoMode && eu.kanade.tachiyomi.BuildConfig.SMARTLINK_V3_ENABLED &&
-                        selectedChapter==getCurrentChapter() && !state.value.isLoadingAdjacentChapter &&
-                        page.status is Page.State.Ready && sigilSelections[sigilSelection]==page.index) manga?.let { work ->
+                        selectedChapter==getCurrentChapter() &&
+                        page.status is Page.State.Ready && sigilSelections[sigilSelection]==page.index &&
+                        state.value.viewer?.isAtChapterEnd(page)==true) manga?.let { work ->
                         smartCompletionJob = smartController.completeChapter(
-                            "manga", eu.kanade.tachiyomi.data.ads.SmartLinkController.chapter("manga",work.source.toString(),work.url,selectedChapter.chapter.url),smartWasRead,accountToken)
+                            "manga", eu.kanade.tachiyomi.data.ads.SmartLinkController.chapter("manga",work.source.toString(),work.url,selectedChapter.chapter.url),smartWasRead,accountToken,
+                            state.value.viewerChapters?.nextChapter.let { next ->
+                                val target=next ?: selectedChapter
+                                val ownPage=if(target.chapter.read) 0 else target.chapter.last_page_read
+                                eu.kanade.tachiyomi.data.ads.ReaderEndDestination(smartWork(work),chapterId.toString(),
+                                    target.chapter.id.toString(),ownPage.toString())
+                            })
                     }
                 }
                 if (page.status is Page.State.Ready) {
@@ -590,12 +623,16 @@ class ReaderViewModel @JvmOverloads constructor(
         }
 
         // Save last page read and mark as read if needed
+        val selection=pageSelections.selected(selectedChapter.chapter.id ?: return)
         accountScope.launchNonCancellable {
-            updateChapterProgress(selectedChapter, page)
+            progressWrites.withLock {
+                if(pageSelections.isLatest(selectedChapter.chapter.id!!,selection))
+                    updateChapterProgress(selectedChapter, page, selection)
+            }
         }
 
         if (selectedChapter != getCurrentChapter()) {
-            logcat { "Setting ${selectedChapter.chapter.url} as active" }
+            logcat { "Activating reader chapter ${selectedChapter.chapter.id}" }
             loadNewChapter(selectedChapter)
         }
 
@@ -684,14 +721,17 @@ class ReaderViewModel @JvmOverloads constructor(
         }
     }
 
-    private suspend fun updateChapterProgress(readerChapter: ReaderChapter, page: Page) {
+    private suspend fun updateChapterProgress(readerChapter: ReaderChapter, page: Page, selection: Long) {
         val pageIndex = page.index
 
-        mutableState.update {
-            it.copy(currentPage = pageIndex + 1)
+        tachiyomi.core.common.util.lang.LocalAccountScope.check(accountToken)
+        // A delayed persistence callback may save its OWN chapter, never the visible chapter's page.
+        if(pageSelections.isVisible(selection) && eu.kanade.tachiyomi.ui.reader.model.ReaderPositionOwnership.owns(getCurrentChapter()?.chapter?.id,readerChapter.chapter.id)) {
+            mutableState.update { it.copy(currentPage = pageIndex + 1) }
+            savedState["reader_position"]=longArrayOf(readerChapter.chapter.id!!,pageIndex.toLong())
+            chapterPageIndex = pageIndex
         }
         readerChapter.requestedPage = pageIndex
-        chapterPageIndex = pageIndex
 
         if (!incognitoMode && page.status !is Page.State.Error) {
             readerChapter.chapter.last_page_read = pageIndex
@@ -772,8 +812,12 @@ class ReaderViewModel @JvmOverloads constructor(
         val current=getCurrentChapter() ?: return
         smartAutomaticTransition=accountScope.launch {
             val pending=smartController.pendingReader("manga",smartWork(work),accountToken) ?: return@launch
-            if(pending.destination==current.chapter.id.toString() && pending.satisfied) {
-                smartController.readerApplied("manga",smartWork(work),pending.destination,accountToken);return@launch
+            if(pending.destination==current.chapter.id.toString()) {
+                if(pending.satisfied || smartController.readerTransition("manga",smartWork(work),pending.from,
+                        pending.destination,pending.payload,accountToken)) {
+                    smartController.readerApplied("manga",smartWork(work),pending.destination,accountToken)
+                }
+                return@launch
             }
             val destination=chapterList.firstOrNull {it.chapter.id.toString()==pending.destination} ?: return@launch
             loadAdjacent(destination,pending.payload?.toIntOrNull()?.takeIf {it>=0})

@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.ui.reader.loader
 
 import android.content.Context
+import kotlinx.coroutines.sync.withLock
 import eu.kanade.tachiyomi.data.download.DownloadManager
 import eu.kanade.tachiyomi.data.download.DownloadProvider
 import eu.kanade.tachiyomi.source.Source
@@ -26,29 +27,32 @@ class ChapterLoader(
     private val downloadProvider: DownloadProvider,
     private val manga: Manga,
     private val source: Source,
+    private val pageLoaderFactory: ((ReaderChapter) -> PageLoader)? = null,
 ) {
 
     /**
      * Assigns the chapter's page loader and loads the its pages. Returns immediately if the chapter
      * is already loaded.
      */
-    suspend fun loadChapter(chapter: ReaderChapter) {
+    suspend fun loadChapter(chapter: ReaderChapter) = chapter.loadMutex.withLock {
         if (chapterIsReady(chapter)) {
-            return
+            return@withLock
         }
 
-        chapter.state = ReaderChapter.State.Loading
         withIOContext {
+            chapter.state = ReaderChapter.State.Loading
+            var path="RESOLVE"
             logcat { "Loading pages for ${chapter.chapter.name}" }
             try {
-                val loader = getPageLoader(chapter)
+                val loader = pageLoaderFactory?.invoke(chapter) ?: getPageLoader(chapter)
+                path=if(loader.isLocal) "OFFLINE" else "CACHE_OR_NETWORK"
                 chapter.pageLoader = loader
 
                 val pages = loader.getPages()
                     .onEach { it.chapter = chapter }
 
                 if (pages.isEmpty()) {
-                    throw Exception(context.stringResource(MR.strings.page_list_empty_error))
+                    throw EmptyReaderPages()
                 }
 
                 // If the chapter is partially read, set the starting page to the last the user read
@@ -58,13 +62,24 @@ class ChapterLoader(
                 }
 
                 chapter.state = ReaderChapter.State.Loaded(pages)
+                diagnostic(chapter,path,"LOADED")
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                chapter.pageLoader?.recycle();chapter.pageLoader=null
+                chapter.state = ReaderChapter.State.Wait
+                diagnostic(chapter,path,"CANCELLED")
                 throw cancelled
             } catch (e: Throwable) {
+                chapter.pageLoader?.recycle();chapter.pageLoader=null
                 chapter.state = ReaderChapter.State.Error(e)
+                diagnostic(chapter,path,ReaderLoadRecovery.category(e))
                 throw e
             }
         }
+    }
+
+    private fun diagnostic(chapter: ReaderChapter, path: String, outcome: String) {
+        val opaque=eu.kanade.tachiyomi.data.ads.adHash(manga.source.toString(),chapter.chapter.id.toString()).take(16)
+        runCatching { android.util.Log.i("MangaroReaderLoad","stage=PAGE_LIST source=${manga.source} chapter=$opaque path=$path outcome=$outcome") }
     }
 
     /**

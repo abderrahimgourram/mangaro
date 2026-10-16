@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import tachiyomi.core.common.util.system.logcat
 
 data class ReaderChapter(val chapter: Chapter) {
+    internal val loadMutex = kotlinx.coroutines.sync.Mutex()
     var verifiedChapterList: Boolean = false
 
     val stateFlow = MutableStateFlow<State>(State.Wait)

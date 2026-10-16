@@ -237,7 +237,7 @@ class ReaderActivity : BaseActivity() {
             .onEach { event ->
                 when (event) {
                     ReaderViewModel.Event.ExitAdvertisingEntry -> finish()
-                    ReaderViewModel.Event.ChapterLoadFailed -> binding.root.showMangaroErrorSnackbar("تعذر تحميل الفصل")
+                    ReaderViewModel.Event.ChapterLoadFailed -> binding.root.showMangaroErrorSnackbar("تعذر فتح الفصل؛ حاول مجددًا بعد قليل")
                     ReaderViewModel.Event.ReloadViewerChapters -> {
                         viewModel.state.value.viewerChapters?.let(::setChapters)
                     }
@@ -294,7 +294,7 @@ class ReaderActivity : BaseActivity() {
             state.initError?.let { failure ->
                 androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().background(eu.kanade.presentation.theme.MangaroDesignSystem.BackgroundDark), contentAlignment = Alignment.Center) {
                     eu.kanade.presentation.components.MangaroErrorState(
-                        failure.mangaroErrorMessage("تعذر تحميل الفصل"), viewModel::retryInitialChapter, Modifier.padding(24.dp),
+                        "تعذر فتح الفصل\nحاول مجددًا بعد قليل", viewModel::retryInitialChapter, Modifier.padding(24.dp),
                     )
                 }
             }
@@ -542,6 +542,7 @@ class ReaderActivity : BaseActivity() {
             window.attributes = layoutParams
         }
 
+        androidx.compose.runtime.key(state.currentChapter?.chapter?.id) {
         ReaderAppBars(
             visible = state.menuVisible,
 
@@ -606,6 +607,7 @@ class ReaderActivity : BaseActivity() {
                 }
             },
         )
+        }
     }
 
     /**
@@ -776,7 +778,7 @@ class ReaderActivity : BaseActivity() {
     private var selectingChapter = false
 
     fun onPageSelected(page: ReaderPage) {
-        if (!selectingChapter) viewModel.onPageSelected(page)
+        if (!selectingChapter && viewModel.state.value.viewer?.isActivePage(page)==true) viewModel.onPageSelected(page)
     }
 
     /**

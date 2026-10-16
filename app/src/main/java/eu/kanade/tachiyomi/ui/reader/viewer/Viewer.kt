@@ -31,6 +31,11 @@ interface Viewer {
      */
     fun moveToPage(page: ReaderPage)
 
+    /** Reject a late callback from a replaced viewer/page. */
+    fun isActivePage(page: ReaderPage): Boolean = true
+
+    fun isAtChapterEnd(page: ReaderPage): Boolean = isActivePage(page) && page.index == page.chapter.pages?.lastIndex
+
     /**
      * Called from the containing activity when a key [event] is received. It should return true
      * if the event was handled, false otherwise.

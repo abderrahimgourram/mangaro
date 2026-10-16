@@ -87,22 +87,31 @@ internal class HttpPageLoader(
      * Returns the page list for a chapter. It tries to return the page list from the local cache,
      * otherwise fallbacks to network.
      */
+    private fun trace(stage: String, outcome: String) {
+        val opaque=eu.kanade.tachiyomi.data.ads.adHash(source.id.toString(),chapter.chapter.id.toString()).take(16)
+        runCatching { android.util.Log.i("MangaroReaderLoad","stage=$stage source=${source.id} chapter=$opaque outcome=$outcome") }
+    }
     override suspend fun getPages(): List<ReaderPage> {
         val pages = try {
             if (MangaDarPageResolver.supports(source)) {
-                network { MangaDarPageResolver.getPages(source, chapter.chapter) }
+                network { ReaderLoadRecovery.request { MangaDarPageResolver.getPages(source, chapter.chapter) } }
             } else {
                 try {
-                    chapterCache.getPageListFromCache(chapter.chapter.toDomainChapter()!!)
+                    chapterCache.getPageListFromCache(chapter.chapter.toDomainChapter()!!).also { if(it.isEmpty()) throw EmptyReaderPages();trace("PAGE_LIST_CACHE","HIT") }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (_: Exception) {
-                    network { source.getPageList(chapter.chapter) }
+                    trace("PAGE_LIST_CACHE","MISS_OR_INVALID")
+                    network { ReaderLoadRecovery.request {
+                        trace("PAGE_LIST_NETWORK","ATTEMPT")
+                        source.getPageList(chapter.chapter).also { if(it.isEmpty()) throw EmptyReaderPages() }
+                    } }
                 }
             }
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
+            trace("PAGE_LIST_NETWORK",ReaderLoadRecovery.category(error))
             val repository = Injekt.get<tachiyomi.domain.chapter.repository.ChapterRepository>()
             val stored = chapter.chapter.toDomainChapter() ?: throw error
             val manga = Injekt.get<tachiyomi.domain.manga.repository.MangaRepository>().getMangaById(stored.mangaId)
@@ -110,6 +119,7 @@ internal class HttpPageLoader(
                 .await(source, manga, stored, error) } ?: throw error
             chapter.chapter.url = recovered.chapter.url
             chapter.chapter.memo = recovered.chapter.memo
+            trace("STALE_IDENTITY_RECOVERY","RECOVERED")
             recovered.pages
         }
         return pages.mapIndexed { index, page ->

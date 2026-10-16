@@ -25,3 +25,7 @@ internal class AdChapterCompletion {
     fun ready(chapter: Long, index: Int, lastIndex: Int): Boolean =
         lastIndex >= 0 && index == lastIndex && pendingEnds.remove(chapter) && completed.add(chapter)
 }
+
+/** A tall last webtoon image is not complete until its lower edge is in the viewport. */
+internal fun chapterEndVisible(index: Int, lastIndex: Int, imageBottom: Int, viewportEnd: Int): Boolean =
+    lastIndex>=0 && index==lastIndex && viewportEnd>0 && imageBottom<=viewportEnd
