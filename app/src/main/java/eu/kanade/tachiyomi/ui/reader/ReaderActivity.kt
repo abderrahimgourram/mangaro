@@ -236,6 +236,7 @@ class ReaderActivity : BaseActivity() {
         viewModel.eventFlow
             .onEach { event ->
                 when (event) {
+                    ReaderViewModel.Event.ExitAdvertisingEntry -> finish()
                     ReaderViewModel.Event.ChapterLoadFailed -> binding.root.showMangaroErrorSnackbar("تعذر تحميل الفصل")
                     ReaderViewModel.Event.ReloadViewerChapters -> {
                         viewModel.state.value.viewerChapters?.let(::setChapters)

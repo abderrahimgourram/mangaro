@@ -125,10 +125,16 @@ internal class SmartLinkController private constructor(private val app: Applicat
     suspend fun readerApplied(kind: String, work: String, destination: String, token: Account.Token) {
         Account.check(token); edit { Account.check(token);it.applied(owner(token),kind,work,destination) }
     }
+    suspend fun readerEntry(kind: String, work: String, destination: String, payload: String?, chapterKey: String, previouslyRead: Boolean, token: Account.Token): Boolean {
+        if(!BuildConfig.SMARTLINK_V3_ENABLED || InMobiAds.get(app).privacyChoice()==AdPrivacyChoice.DISABLED) return true
+        Account.check(token)
+        val pending=edit { Account.check(token);it.entry(owner(token),kind,work,destination,payload,chapterKey,previouslyRead) } ?: return true
+        return readerTransition(kind,work,pending.from,destination,payload,token)
+    }
     /** Called by actual navigation before loading the next chapter. No browser opens here.
      * The journal stores destination/evidence; only the explicit dialog button launches a link.
      */
-    suspend fun readerTransition(kind: String, work: String, from: String, destination: String, payload: String?, token: Account.Token): Boolean {
+    suspend fun readerTransition(kind: String, work: String, from: String?, destination: String, payload: String?, token: Account.Token): Boolean {
         if(!BuildConfig.SMARTLINK_V3_ENABLED) return true
         Account.check(token)
         if(InMobiAds.get(app).privacyChoice()==AdPrivacyChoice.DISABLED) return true

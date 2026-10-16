@@ -196,6 +196,11 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                 withContext(seaTrace ?: kotlin.coroutines.EmptyCoroutineContext) {
                     seaTrace?.stage(SeaReaderStage.LOCAL_RESTORE)
                     repository.awaitLocal()
+                    if(BuildConfig.SMARTLINK_V3_ENABLED && !smartController.readerEntry("novel",smartWork,requestedChapter.id,
+                            kotlinx.serialization.json.Json.encodeToString(NovelChapter.serializer(),requestedChapter),
+                            eu.kanade.tachiyomi.data.ads.SmartLinkController.chapter("novel",novel.sourceId,novel.id,requestedChapter.id),false,readerOwner)) {
+                        navigator.pop();return@withContext
+                    }
                     if (generation > 0) repository.prepareReaderChapter(novel, requestedChapter, manualRetry = true)
                     val text=repository.chapterText(novel,requestedChapter)
                     plain=text.paragraphs
@@ -329,7 +334,6 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
             if(pending.destination==shown.id && pending.satisfied) {
                 smartController.readerApplied("novel",smartWork,shown.id,readerOwner);return@LaunchedEffect
             }
-            if(pending.from!=shown.id) return@LaunchedEffect
             val restored=runCatching { kotlinx.serialization.json.Json.decodeFromString(NovelChapter.serializer(),pending.payload ?: "") }.getOrNull()
                 ?.takeIf { it.id==pending.destination } ?: return@LaunchedEffect
             navigating=true

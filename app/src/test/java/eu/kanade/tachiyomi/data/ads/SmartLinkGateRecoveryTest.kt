@@ -163,6 +163,32 @@ class SmartLinkGateRecoveryTest {
         val restored=restore(p.state).state.readerTransitions[adHash(a,"manga")]!!
         assertEquals(pending,restored);assertEquals("19",restored.destination);assertEquals(16,restored.payload!!.toInt())
     }
+    @Test fun directNewReaderEntryCannotSkipOutstandingTwentiethCompletion() {
+        val p=SmartLinkPolicy();complete(p,"novel",1,20)
+        val pending=p.entry(a,"novel","work","chapter-21","row-21","chapter-21",false)!!
+        assertNull(pending.from);assertFalse(pending.satisfied)
+        assertNotNull(restore(p.state).entry(a,"novel","work","chapter-21","row-21","chapter-21",false))
+        returned(p,a,pending.id,1)
+        assertTrue(p.transition(a,"novel","work",null,"chapter-21","row-21")!!.satisfied)
+    }
+    @Test fun oldCompletedEntryAndHistoricallyReadMangaDoNotCreateNewOpportunities() {
+        val p=SmartLinkPolicy();complete(p,"novel",1,20)
+        assertNull(p.entry(a,"novel","work","chapter-19",null,"chapter-19",false))
+        complete(p,"manga",1,20)
+        assertNull(p.entry(a,"manga","work","old-chapter",null,"old-key",true))
+        assertEquals(20L,p.state.chapters[adHash(a,"novel")]!!.count)
+        assertNotNull(p.dueBoundary(a,"novel"))
+    }
+    @Test fun recreationFromAnOlderIntentKeepsTheOriginalBrowserProofAndDestination() {
+        val p=SmartLinkPolicy();complete(p,"novel",1,20)
+        val pending=p.transition(a,"novel","work","chapter-20","chapter-21","row-21")!!
+        p.prepare(a,pending.id,"browser",10_000);p.accepted("browser",10_000);p.away("browser")
+        val rebound=p.entry(a,"novel","work","chapter-21","row-21","chapter-21",false)!!
+        assertEquals(pending,rebound);assertNotNull(p.state.pending)
+        p.returned(a,11_000)
+        assertTrue(p.state.readerTransitions[adHash(a,"novel")]!!.satisfied)
+        assertEquals("chapter-20",p.state.readerTransitions[adHash(a,"novel")]!!.from)
+    }
     @Test fun noVisibleDownloadBypassOrFailOpenAndAllNavigationUsesSharedGate() {
         val root=generateSequence(File(System.getProperty("user.dir"))) {it.parentFile}.first {File(it,"app/src/main").isDirectory}
         val ui=File(root,"app/src/main/java/eu/kanade/tachiyomi/data/ads/DownloadAdGate.kt").readText()
@@ -171,6 +197,7 @@ class SmartLinkGateRecoveryTest {
         assertTrue(ui.contains("onDismissRequest={closeGate()}"));assertTrue(ui.contains("batch?.unlocked==true"))
         val novel=File(root,"app/src/main/java/eu/kanade/presentation/novels/NovelReaderScreen.kt").readText()
         assertTrue(novel.contains("transitionTo(target)"));assertTrue(novel.contains("transitionTo(choice)"))
+        assertTrue(novel.contains("smartController.readerEntry("));assertTrue(File(root,"app/src/main/java/eu/kanade/tachiyomi/ui/reader/ReaderViewModel.kt").readText().contains("smartController.readerEntry("))
         assertFalse(novel.contains("dismissBoundary("));assertTrue(novel.contains("restoring,loading,error,blocks.size"))
         val manga=File(root,"app/src/main/java/eu/kanade/tachiyomi/ui/reader/ReaderViewModel.kt").readText()
         assertTrue(manga.contains("smartController.readerTransition("));assertTrue(manga.contains("smartCompletionJob?.join()"))

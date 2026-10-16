@@ -354,6 +354,14 @@ class ReaderViewModel @JvmOverloads constructor(
         selectedPage: Int? = null,
     ): ViewerChapters {
         val previous=getCurrentChapter()
+        if(!incognitoMode && eu.kanade.tachiyomi.BuildConfig.SMARTLINK_V3_ENABLED && previous==null) {
+            val work=checkNotNull(manga)
+            if(!smartController.readerEntry("manga",smartWork(work),chapter.chapter.id.toString(),selectedPage?.toString(),
+                    eu.kanade.tachiyomi.data.ads.SmartLinkController.chapter("manga",work.source.toString(),work.url,chapter.chapter.url),chapter.chapter.read,accountToken)) {
+                eventChannel.trySend(Event.ExitAdvertisingEntry)
+                throw CancellationException("Reader entry declined")
+            }
+        }
         if(!incognitoMode && eu.kanade.tachiyomi.BuildConfig.SMARTLINK_V3_ENABLED && previous!=null && previous.chapter.id!=chapter.chapter.id) {
             smartCompletionJob?.join()
             val work=manga ?: return checkNotNull(state.value.viewerChapters)
@@ -767,7 +775,6 @@ class ReaderViewModel @JvmOverloads constructor(
             if(pending.destination==current.chapter.id.toString() && pending.satisfied) {
                 smartController.readerApplied("manga",smartWork(work),pending.destination,accountToken);return@launch
             }
-            if(pending.from!=current.chapter.id.toString()) return@launch
             val destination=chapterList.firstOrNull {it.chapter.id.toString()==pending.destination} ?: return@launch
             loadAdjacent(destination,pending.payload?.toIntOrNull()?.takeIf {it>=0})
             eventChannel.trySend(Event.ReloadViewerChapters)
@@ -1163,6 +1170,7 @@ class ReaderViewModel @JvmOverloads constructor(
 
     sealed interface Event {
         data object ChapterLoadFailed : Event
+        data object ExitAdvertisingEntry : Event
         data object ReloadViewerChapters : Event
         data object PageChanged : Event
         data class SetOrientation(val orientation: Int) : Event

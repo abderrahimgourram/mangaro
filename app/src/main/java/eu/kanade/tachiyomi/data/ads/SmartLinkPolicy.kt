@@ -45,7 +45,7 @@ data class DownloadAdRequest(val chapterKeys: List<String>) {
     val created: Long, val accepted: Boolean = false, val away: Boolean = false, val returned: Boolean = false)
 /** Local navigation intent, not chapter content. Applied only by its original account/work. */
 @Serializable internal data class ReaderAdTransition(val id: String, val owner: String, val kind: String,
-    val work: String, val from: String, val destination: String, val payload: String? = null, val satisfied: Boolean = false)
+    val work: String, val from: String?, val destination: String, val payload: String? = null, val satisfied: Boolean = false)
 @Serializable internal data class SmartLinkState(val schema: Int = 1, val batches: Map<String,UnlockBatch> = emptyMap(),
     val chapters: Map<String,ChapterAdvertising> = emptyMap(), val pending: BrowserNavigation? = null,
     val launches: List<Long> = emptyList(), val grantedChapters: Set<String> = emptySet(),
@@ -70,11 +70,11 @@ internal class SmartLinkPolicy(var state: SmartLinkState = SmartLinkState(), val
         return if (data.count - serviced(data) >= settings.chapterInterval)
             "boundary:$key:${serviced(data) + settings.chapterInterval}" else null
     }
-    fun transition(owner: String, kind: String, work: String, from: String, destination: String, payload: String?): ReaderAdTransition? {
-        require(kind in setOf("novel", "manga") && work.isNotBlank() && from.isNotBlank() && destination.isNotBlank())
+    fun transition(owner: String, kind: String, work: String, from: String?, destination: String, payload: String?): ReaderAdTransition? {
+        require(kind in setOf("novel", "manga") && work.isNotBlank() && (from==null || from.isNotBlank()) && destination.isNotBlank())
         if (from == destination) return null
         val key = adHash(owner, kind)
-        state.readerTransitions[key]?.takeIf { it.work == work && it.from == from && it.destination == destination }?.let { return it }
+        state.readerTransitions[key]?.takeIf { it.work == work && it.destination == destination }?.let { return it }
         // A deliberate different selection supersedes the old intent, never replays it later.
         val prior=state.readerTransitions[key]
         if(prior!=null) state=state.copy(readerTransitions=state.readerTransitions-key,
@@ -83,6 +83,12 @@ internal class SmartLinkPolicy(var state: SmartLinkState = SmartLinkState(), val
         return ReaderAdTransition(boundary, owner, kind, work, from, destination, payload).also {
             state = state.copy(readerTransitions = state.readerTransitions + (key to it))
         }
+    }
+    fun entry(owner: String, kind: String, work: String, destination: String, payload: String?, chapterKey: String, previouslyRead: Boolean): ReaderAdTransition? {
+        // Opening an old completed chapter is not a new opportunity; a genuinely new entry
+        // cannot bypass an already-due interval by leaving and reopening the reader.
+        if(previouslyRead || state.chapters[adHash(owner,kind)]?.observed?.get(chapterKey)==2) return null
+        return transition(owner,kind,work,null,destination,payload)
     }
     fun applied(owner: String, kind: String, work: String, destination: String) {
         val key = adHash(owner, kind)
