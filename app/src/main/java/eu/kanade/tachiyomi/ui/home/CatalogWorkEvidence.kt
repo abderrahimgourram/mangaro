@@ -49,7 +49,14 @@ internal object CatalogWorkEvidence {
                     batch.forEach { attempts[it] = now }
                     while (attempts.size > 2048) attempts.remove(attempts.keys.first())
                     try {
-                        val result = withTimeout(5_000) { Injekt.get<CommunityRepository>().reviewedMangaWorks(batch.toSet()) }
+                        val result = withTimeout(5_000) {
+                            withContext(eu.kanade.tachiyomi.focus.FocusTask(eu.kanade.tachiyomi.focus.WorkPriority.ENRICHMENT,
+                                null, null, operation = eu.kanade.tachiyomi.focus.FocusOperation.METADATA)) {
+                                eu.kanade.tachiyomi.focus.FocusEngine.network("community-metadata") {
+                                    CatalogPerformance.measure("identity.batch") { Injekt.get<CommunityRepository>().reviewedMangaWorks(batch.toSet()) }
+                                }
+                            }
+                        }
                         val changed = mappings.replace(batch.toSet(), result)
                         preferences.edit().putString("snapshot", Json.encodeToString(mappings.snapshot().map { (key, row) ->
                             Saved(key, row.work, row.checkedAt)

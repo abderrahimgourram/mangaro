@@ -9,7 +9,7 @@ import kotlin.coroutines.AbstractCoroutineContextElement
 import kotlin.coroutines.CoroutineContext
 
 enum class FocusContext { IDLE, NOVEL_DETAILS, NOVEL_READER, MANGA_DETAILS, MANGA_READER, APP_BACKGROUND }
-enum class WorkPriority { VISIBLE, ACTIVE_WORK, DOWNLOAD, OPTIONAL }
+enum class WorkPriority { VISIBLE, ACTIVE_WORK, DOWNLOAD, OPTIONAL, ENRICHMENT }
 enum class FocusOperation { CONTENT, METADATA, VISIBLE_IMAGE, PREFETCH }
 data class FocusTarget(val context: FocusContext, val source: String? = null, val work: String? = null, val chapter: String? = null)
 data class FocusSnapshot(val target: FocusTarget = FocusTarget(FocusContext.IDLE), val generation: Long = 0)

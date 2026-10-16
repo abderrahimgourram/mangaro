@@ -494,9 +494,10 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
                 }
             } }
         }
-        LaunchedEffect(work.editions.map { it.id }, retry) {
+        LaunchedEffect(work.editions.map { it.id }, novel.id, retry) {
             val request = ++indexEpoch
-            val editions = work.editions.filter { (NovelSourceAvailability.active(it.sourceId) || it.id == initial.id) && (retryEditionId == null || it.id == retryEditionId) }
+            val retryTarget = retryEditionId?.takeIf { it == novel.id }
+            val editions = work.editions.filter { (NovelSourceAvailability.active(it.sourceId) || it.id == initial.id) && (retryTarget == null || it.id == retryTarget) }.sortedBy { it.id != selectedId }
             busy = editions.map { it.id }.toSet(); indexErrors = indexErrors - busy
             // Cached indexes and known offline/history rows are available before any HTTP request.
             editions.forEach { edition ->
@@ -657,13 +658,28 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
                 if (novel.id in busy) item {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Design.LavenderPrimary)
-                        Text(if (index.chapters.isEmpty()) "جاري تحميل الفصول..." else "جاري تحميل المزيد من الفصول...", color = Design.LavenderPrimary, style = MaterialTheme.typography.labelSmall)
+                        Text(if (index.chapters.isEmpty()) "جار تحميل قائمة الفصول..." else "جار استكمال الفصول...", color = Design.LavenderPrimary, style = MaterialTheme.typography.labelSmall)
                     }
                 }
                 if (novel.id !in busy && !index.complete && index.nextPage != null && indexErrors[novel.id] == null) item {
                     TextButton(onClick = { restartSunIndex = false; retryEditionId = novel.id; retry++ }) { Text("تحميل المزيد من الفصول", color = Design.GoldPrimary) }
                 }
-                (error ?: indexErrors[novel.id])?.let { message -> item { NovelFailure(message, novel.url) { error = null; restartSunIndex = true; retryEditionId = novel.id; retry++ } } }
+                error?.let { message -> item { NovelFailure(message, novel.url) { error = null; restartSunIndex = true; retryEditionId = novel.id; retry++ } } }
+                if (indexErrors[novel.id] != null && novel.id !in busy) item(key = "index-recovery") {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(if (index.failureState == NovelIndexState.ACCESS_RESTRICTED)
+                            "يتطلب المصدر إذن وصول لإكمال قائمة الفصول" else "تعذر استكمال بعض الفصول",
+                            color = Color(0xFFE5B5AB), style = MaterialTheme.typography.bodySmall)
+                        TextButton(onClick = { restartSunIndex = false; retryEditionId = novel.id; retry++ }) {
+                            Text("إعادة المحاولة", color = Design.LavenderPrimary)
+                        }
+                        if (index.failureState == NovelIndexState.ACCESS_RESTRICTED)
+                            NovelFailure("تحقق من متطلبات الوصول لدى المصدر", novel.url) { restartSunIndex = false; retryEditionId = novel.id; retry++ }
+                    }
+                }
+                if (index.complete && novel.id !in busy && indexErrors[novel.id] == null) item(key = "index-ready") {
+                    Text("تم تحميل الفصول المتاحة", color = Design.LavenderPrimary, style = MaterialTheme.typography.labelSmall)
+                }
                 storageError?.let { message -> item {
                     Text(message, color = Color(0xFFE5B5AB), style = MaterialTheme.typography.bodySmall)
                     if (repository.libraryRestoreFailed) TextButton(onClick = { scope.launch { repository.retryLibraryRestore() } }) { Text("حاول مجددًا") }

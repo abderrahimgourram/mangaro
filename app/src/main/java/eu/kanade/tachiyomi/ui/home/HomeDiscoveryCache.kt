@@ -29,7 +29,9 @@ internal class HomeDiscoveryCache(context: Context, private val mangas: MangaRep
             // Old content is a brief offline fallback, never a reason to suppress refreshing.
             if (System.currentTimeMillis() - stored.savedAt !in 0..86_400_000L) return@withContext null
             val references = stored.sections.values.flatten().take(MAX_REFERENCES)
-            val local = mangas.getMangaByIds(references.map { it.id }.distinct()).associateBy { it.id }
+            val local = CatalogPerformance.measure("cache.database-batch") {
+                mangas.getMangaByIds(references.map { it.id }.distinct()).associateBy { it.id }
+            }
             PreferredMangaVariants.rememberAll(local.values)
             Snapshot(stored.freshAt, stored.sources, stored.sections.mapValues { (category, refs) ->
                 GroupDiscoveryItems.group(refs.take(MAX_PER_SECTION).mapNotNull { ref ->

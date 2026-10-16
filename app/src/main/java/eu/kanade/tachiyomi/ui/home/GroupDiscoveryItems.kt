@@ -14,6 +14,10 @@ fun DiscoveryCategory.selectionContext(): CatalogSelectionContext = when (this) 
 }
 
 object GroupDiscoveryItems {
+    private data class ProjectionKey(val items: List<HomeDiscoveryItem>, val evidence: List<tachiyomi.domain.manga.service.WorkMetadata>,
+        val revision: Long, val health: Map<Long, mihon.domain.source.health.SourceHealthMonitor.State>, val context: CatalogSelectionContext)
+    internal val projectionMemo = CatalogProjectionMemo<Any, List<HomeDiscoveryItem>>()
+
     fun normalizeTitle(title: String): String = WorkTitleNormalizer.normalize(title)
     fun presentationKey(item: HomeDiscoveryItem): String = item.canonicalWorkId
         ?: VerifiedCatalogIdentity.key(listOf(VerifiedCatalogIdentity.from(PreferredMangaVariants.work(item))))
@@ -34,6 +38,9 @@ object GroupDiscoveryItems {
         val variants = items.flatMap { listOf(it.copy(alternatives = emptyList())) + it.alternatives }
             .distinctBy { it.sourceId to it.mangaId }
         val evidence = variants.map(PreferredMangaVariants::work)
+        val key = ProjectionKey(variants, evidence, PreferredMangaVariants.changes.value,
+            variants.map { it.sourceId }.distinct().associateWith { mihon.domain.source.health.SourceHealthMonitor.shared.health(it).state }, context)
+        if (variants.size <= 256) projectionMemo.get(key)?.let { return it }
         val byReference = variants.zip(evidence).associate { (item, work) -> work.reference to item }
         val order = evidence.mapIndexed { index, work -> work.reference to index }.toMap()
         val works = WorkLinker.group(evidence).sortedBy { work -> work.members.minOf { order.getValue(it.reference) } }
@@ -51,6 +58,8 @@ object GroupDiscoveryItems {
                 } else emptyList(), alternatives = members.filterNot { it.sourceId == winner.sourceId && it.mangaId == winner.mangaId })
         }
         CatalogDuplicateDiagnostics.record(evidence, works, result.associate { it.canonicalWorkId!! to it.mangaId })
-        return if (context == CatalogSelectionContext.LATEST) CatalogEditionSelection.orderLatest(result) { it.chapterPublishedAt } else result
+        val projection = if (context == CatalogSelectionContext.LATEST) CatalogEditionSelection.orderLatest(result) { it.chapterPublishedAt } else result
+        if (variants.size <= 256 && key.revision == PreferredMangaVariants.changes.value) projectionMemo.put(key, projection)
+        return projection
     }
 }

@@ -32,6 +32,22 @@ internal object NovelChapterIndexer {
         }
         return checkNotNull(latest)
     }
+    /** One bounded retry for transport failures only; parser/access/identity failures are not retried.
+     * The caller supplies the durable cursor on every attempt. Retry-After beyond our short budget
+     * is surfaced to the user rather than ignored or held in an unbounded foreground loop.
+     */
+    suspend fun recoverBatch(load: suspend () -> NovelChapterIndex): NovelChapterIndex {
+        try { return load() }
+        catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+        catch (error: Exception) {
+            if (!NovelIndexRecovery.temporary(error)) throw error
+            val wait = (error as? NovelSourceFailure)?.retryAfterMs ?: 1_000L
+            if (wait > 5_000L) throw error
+            kotlinx.coroutines.delay(wait.coerceAtLeast(1_000L))
+            return load()
+        }
+    }
+
     suspend fun collect(source: NovelSource, novel: Novel, initial: NovelChapterIndex = NovelChapterIndex(novel.id),
         stopWhen: (NovelChapterIndex) -> Boolean = { false },
         maxPages: Int = Int.MAX_VALUE,

@@ -335,7 +335,14 @@ class HomeViewModel(
             listOf(DiscoveryCategory.POPULAR, DiscoveryCategory.LATEST, DiscoveryCategory.NEW, DiscoveryCategory.COMPLETED).flatMap { category ->
                 categories.getValue(category).map { source -> async {
                     try {
-                        val result = requests.withPermit { getSourceDiscovery(source, category, page = 1) }
+                        val result = requests.withPermit {
+                            withContext(eu.kanade.tachiyomi.focus.FocusTask(eu.kanade.tachiyomi.focus.WorkPriority.OPTIONAL,
+                                source.id.toString(), null, operation = eu.kanade.tachiyomi.focus.FocusOperation.METADATA)) {
+                                eu.kanade.tachiyomi.focus.FocusEngine.network((source as? HttpSource)?.baseUrl?.let { java.net.URI(it).host }.orEmpty()) {
+                                    CatalogPerformance.measure("home.source") { getSourceDiscovery(source, category, page = 1) }
+                                }
+                            }
+                        }
                         if (!result.isFresh) fresh.set(false)
                         if (category == DiscoveryCategory.LATEST || (category == DiscoveryCategory.POPULAR && !source.supportsLatest)) {
                             publication.withLock { pageUpdates[source.id] = result.page; hasMoreUpdates[source.id] = result.hasNextPage }

@@ -14,7 +14,8 @@ object DiscoverySnapshotStore {
     }
 
     fun getSnapshot(category: DiscoveryCategory): List<HomeDiscoveryItem> {
-        return GroupDiscoveryItems.group(snapshotMap[category].orEmpty(), category.selectionContext())
+        // Already grouped when published. Do not redo identity linking on the UI thread.
+        return snapshotMap[category].orEmpty().distinctBy(GroupDiscoveryItems::presentationKey)
     }
 
     fun clear() {

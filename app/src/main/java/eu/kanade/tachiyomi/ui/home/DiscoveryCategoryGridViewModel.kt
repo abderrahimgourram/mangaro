@@ -8,17 +8,21 @@ import eu.kanade.tachiyomi.source.CatalogueSource
 import eu.kanade.tachiyomi.source.online.HttpSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import mihon.domain.manga.model.toDomainManga
 import mihon.domain.source.discovery.interactor.GetSourceCapabilities
@@ -51,6 +55,7 @@ class DiscoveryCategoryGridViewModel(
         val hasMore: Boolean = true,
     )
 
+    private val accountScope = kotlinx.coroutines.CoroutineScope(viewModelScope.coroutineContext + tachiyomi.core.common.util.lang.LocalAccountScope.context())
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
 
@@ -62,14 +67,17 @@ class DiscoveryCategoryGridViewModel(
     private var paginationJob: Job? = null
 
     init {
-        viewModelScope.launch {
-            PreferredMangaVariants.changes.collectLatest { _state.update { it.copy(items=GroupDiscoveryItems.group(it.items, category.selectionContext())) } }
+        accountScope.launch {
+            PreferredMangaVariants.changes.collectLatest {
+                withContext(Dispatchers.Default) { _state.update { it.copy(items = GroupDiscoveryItems.group(it.items, category.selectionContext())) } }
+            }
         }
-        viewModelScope.launch {
+        accountScope.launch {
             var failed = emptySet<Long>()
-            mihon.domain.source.health.SourceHealthMonitor.shared.states.collectLatest { states ->
-                _state.update { current -> current.copy(items = GroupDiscoveryItems.group(current.items, category.selectionContext())) }
-                val nowFailed = states.filterValues { it.failures > 0 || it.state == mihon.domain.source.health.SourceHealthMonitor.State.UNAVAILABLE }.keys
+            mihon.domain.source.health.SourceHealthMonitor.shared.states
+                .map { states -> states.mapValues { it.value.state } }.distinctUntilChanged().collectLatest { states ->
+                withContext(Dispatchers.Default) { _state.update { current -> current.copy(items = GroupDiscoveryItems.group(current.items, category.selectionContext())) } }
+                val nowFailed = states.filterValues { it != mihon.domain.source.health.SourceHealthMonitor.State.HEALTHY }.keys
                 if ((failed - nowFailed).isNotEmpty() && sourcesList.isNotEmpty()) loadInitialPage(isRefresh = true, hasSeedItems = _state.value.items.isNotEmpty())
                 failed = nowFailed
             }
@@ -85,8 +93,9 @@ class DiscoveryCategoryGridViewModel(
             }
         }
 
-        viewModelScope.launch {
-            sourceManager.sources.collectLatest { sources ->
+        accountScope.launch {
+            sourceManager.sources.combine(sourceManager.isInitialized) { sources, initialized -> sources.takeIf { initialized } }
+                .filterNotNull().distinctUntilChanged { a, b -> a.map { it.id }.toSet() == b.map { it.id }.toSet() }.collectLatest { sources ->
                 val onlineSources = sources
                     .filterIsInstance<HttpSource>()
                     .distinctBy { it.id }
@@ -115,7 +124,7 @@ class DiscoveryCategoryGridViewModel(
         val previousJob = initialJob
         previousJob?.cancel()
         paginationJob?.cancel()
-        initialJob = viewModelScope.launch {
+        initialJob = accountScope.launch {
             previousJob?.cancelAndJoin()
 
             if (!isRefresh && _state.value.items.isEmpty() && !hasSeedItems) {
@@ -125,15 +134,15 @@ class DiscoveryCategoryGridViewModel(
             }
 
             val pageMapToUse = if (!isRefresh && hasSeedItems) sourcePageMap else emptyMap()
-            val batchResult = fetchCategoryPage(sourcesList, pageMap = pageMapToUse)
+            val batchResult = fetchCategoryPage(sourcesList, pageMap = pageMapToUse) { progressive ->
+                _state.update { current -> current.copy(items = progressive, isLoadingInitial = false) }
+            }
 
+            currentCoroutineContext().ensureActive()
             sourcePageMap.putAll(batchResult.pageMap)
             sourceHasMoreMap.putAll(batchResult.hasMoreMap)
 
-            val currentItems = if (isRefresh) _state.value.items.filter {
-                mihon.domain.source.health.SourceHealthMonitor.shared.health(it.sourceId).state == mihon.domain.source.health.SourceHealthMonitor.State.DEGRADED
-            } else _state.value.items
-            val combinedItems = GroupDiscoveryItems.group(currentItems + batchResult.items, category.selectionContext()).filter { mihon.domain.source.health.SourceHealthMonitor.shared.discoverable(it.sourceId) }
+            val combinedItems = batchResult.items
             val hasMoreAny = sourceHasMoreMap.values.any { it }
 
             _state.update {
@@ -149,7 +158,8 @@ class DiscoveryCategoryGridViewModel(
     }
 
     fun loadNextPage() {
-        if (_state.value.isPaginationLoading || _state.value.isLoadingInitial || !_state.value.hasMore) return
+        if (!ProgressiveCatalogBatch.canPaginate(initialJob?.isActive == true, paginationJob?.isActive == true,
+                _state.value.isLoadingInitial, _state.value.isPaginationLoading, _state.value.hasMore)) return
 
         val paginationSources = sourcesList.filter { sourceHasMoreMap[it.id] != false }
         if (paginationSources.isEmpty()) {
@@ -157,15 +167,18 @@ class DiscoveryCategoryGridViewModel(
             return
         }
 
-        paginationJob = viewModelScope.launch {
+        paginationJob = accountScope.launch {
             _state.update { it.copy(isPaginationLoading = true) }
 
-            val batchResult = fetchCategoryPage(paginationSources, pageMap = sourcePageMap)
+            val batchResult = fetchCategoryPage(paginationSources, pageMap = sourcePageMap.toMap()) { progressive ->
+                _state.update { current -> current.copy(items = progressive) }
+            }
 
+            currentCoroutineContext().ensureActive()
             sourcePageMap.putAll(batchResult.pageMap)
             sourceHasMoreMap.putAll(batchResult.hasMoreMap)
 
-            val newCombined = GroupDiscoveryItems.group(_state.value.items + batchResult.items, category.selectionContext())
+            val newCombined = batchResult.items
             val hasMoreAny = sourceHasMoreMap.values.any { it }
 
             _state.update {
@@ -181,55 +194,52 @@ class DiscoveryCategoryGridViewModel(
     private suspend fun fetchCategoryPage(
         sources: List<CatalogueSource>,
         pageMap: Map<Long, Int>,
-    ): CategoryBatchResult {
-        return withContext(Dispatchers.IO) {
-            val semaphore = Semaphore(2)
-
-            val fetchDeferreds = sources.map { source ->
-                val currentPage = pageMap[source.id] ?: 0
-                val nextPage = currentPage + 1
-                async {
-                    semaphore.withPermit {
-                        getSourceDiscovery(source, category, page = nextPage)
-                    }
-                }
-            }
-
-            val fetchResults = fetchDeferreds.awaitAll()
-
-            val perSourceItems = mutableListOf<List<HomeDiscoveryItem>>()
-            val newPageMap = mutableMapOf<Long, Int>()
-            val newHasMoreMap = mutableMapOf<Long, Boolean>()
-
-            for (res in fetchResults) {
-                newPageMap[res.sourceId] = res.page
-                newHasMoreMap[res.sourceId] = res.hasNextPage
-
-                if (res.items.isEmpty()) continue
-
-                val domainMangas = res.items.take(12).map { it.toDomainManga() }
-                val localMangas = networkToLocalManga(domainMangas).let { eu.kanade.tachiyomi.source.internal.util.DiscoveryChapterGate.filter(it) }
-                val items = localMangas.mapIndexed { idx, manga ->
-                    HomeDiscoveryItem(
-                        mangaId = manga.id,
-                        title = manga.title,
-                        coverData = manga.also { PreferredMangaVariants.remember(it) }.asMangaCover(),
-                        sourceId = res.sourceId,
-                        sourceName = res.sourceName,
-                        url = manga.url,
-                    )
-                }
-                if (items.isNotEmpty()) perSourceItems.add(items)
-            }
-
-            val interleaved = GroupDiscoveryItems.group(interleaveSources(perSourceItems), category.selectionContext())
-
-            CategoryBatchResult(
-                pageMap = newPageMap,
-                hasMoreMap = newHasMoreMap,
-                items = interleaved,
-            )
+        onProgress: suspend (List<HomeDiscoveryItem>) -> Unit,
+    ): CategoryBatchResult = withContext(Dispatchers.IO) {
+        val initial = _state.value.items.flatMap { listOf(it) + it.alternatives }
+            .distinctBy { it.sourceId to it.mangaId }.groupBy { it.sourceId }
+        val sections = initial.toMutableMap()
+        val pageUpdates = mutableMapOf<Long, Int>()
+        val moreUpdates = mutableMapOf<Long, Boolean>()
+        val publication = Mutex()
+        suspend fun projection() = withContext(Dispatchers.Default) {
+            GroupDiscoveryItems.group(interleaveSources(sourcesList.map { sections[it.id].orEmpty() }), category.selectionContext())
         }
+        ProgressiveCatalogBatch.collect(sources, concurrency = 2, load = { source ->
+            val nextPage = (pageMap[source.id] ?: 0) + 1
+            val result = withContext(eu.kanade.tachiyomi.focus.FocusTask(
+                eu.kanade.tachiyomi.focus.WorkPriority.OPTIONAL, source.id.toString(), null,
+                operation = eu.kanade.tachiyomi.focus.FocusOperation.METADATA,
+            )) {
+                eu.kanade.tachiyomi.focus.FocusEngine.network((source as? HttpSource)?.baseUrl?.let { java.net.URI(it).host }.orEmpty()) {
+                    CatalogPerformance.measure("category.source") { getSourceDiscovery(source, category, page = nextPage) }
+                }
+            }
+            val mangas = networkToLocalManga(result.items.take(12).map { it.toDomainManga() })
+                .let { eu.kanade.tachiyomi.source.internal.util.DiscoveryChapterGate.filter(it) }
+            PreferredMangaVariants.rememberAll(mangas)
+            result to mangas.map { manga -> HomeDiscoveryItem(manga.id, manga.title, manga.asMangaCover(), source.id, source.name, manga.url) }
+        }, publish = { source, (result, cards) ->
+            publication.withLock {
+                currentCoroutineContext().ensureActive()
+                // Failed responses neither advance the page cursor nor erase verified cards.
+                if (result.isFresh) {
+                    pageUpdates[source.id] = result.page
+                    moreUpdates[source.id] = result.hasNextPage
+                    sections[source.id] = if (result.page == 1) cards else
+                        (sections[source.id].orEmpty() + cards).distinctBy { it.sourceId to it.mangaId }
+                } else {
+                    moreUpdates[source.id] = sourceHasMoreMap[source.id] ?: true
+                    if (sections[source.id].isNullOrEmpty() && cards.isNotEmpty()) sections[source.id] = cards
+                }
+                val visible = projection()
+                onProgress(visible)
+                DiscoverySnapshotStore.setSnapshot(category, visible)
+            }
+        }, failed = { source, _ -> publication.withLock {
+            moreUpdates[source.id] = sourceHasMoreMap[source.id] ?: true
+        } })
+        CategoryBatchResult(pageUpdates, moreUpdates, projection())
     }
 
     private data class CategoryBatchResult(

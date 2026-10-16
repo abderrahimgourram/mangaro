@@ -652,7 +652,9 @@ class NovelRepository private constructor(context: Context) {
     suspend fun continueIndex(novel: Novel, refresh: Boolean = false, onPage: suspend (NovelChapterIndex) -> Unit = {}): NovelChapterIndex {
         var first = true
         return NovelChapterIndexer.continueBatches {
-            completeIndex(novel, refresh = first && refresh, maxPages = 8, onPage = onPage).also { first = false }
+            NovelChapterIndexer.recoverBatch {
+                completeIndex(novel, refresh = first && refresh, maxPages = 8, onPage = onPage)
+            }.also { first = false }
         }
     }
 

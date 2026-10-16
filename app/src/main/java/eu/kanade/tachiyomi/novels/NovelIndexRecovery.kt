@@ -17,13 +17,15 @@ internal object NovelIndexRecovery {
             notice = incoming.notice, failureState = null, failureCode = null,
         )
     }
+    fun temporary(error: Exception): Boolean = error is java.io.IOException ||
+        (error as? NovelSourceFailure)?.let { it.httpStatus in setOf(408, 429, 500, 502, 503, 504) ||
+            it.code in setOf("TIMEOUT", "SUN_INDEX_TIMEOUT") } == true
     fun failed(index: NovelChapterIndex, error: Exception): NovelChapterIndex {
         val source = error as? NovelSourceFailure
         val state = when {
             source?.httpStatus in setOf(401, 403) -> NovelIndexState.ACCESS_RESTRICTED
             source?.httpStatus in setOf(404, 410) -> NovelIndexState.SOURCE_UNAVAILABLE
-            error is java.io.IOException || source?.httpStatus in setOf(408, 429, 500, 502, 503, 504) ||
-                source?.code == "TIMEOUT" -> NovelIndexState.TEMPORARY_FAILURE
+            temporary(error) -> NovelIndexState.TEMPORARY_FAILURE
             else -> NovelIndexState.INVALID_SOURCE_RESPONSE
         }
         return index.copy(failureState = state, failureCode = source?.code ?: state.name)
