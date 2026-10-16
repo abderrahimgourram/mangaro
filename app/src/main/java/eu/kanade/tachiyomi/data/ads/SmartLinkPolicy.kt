@@ -37,18 +37,58 @@ data class DownloadAdRequest(val chapterKeys: List<String>) {
 @Serializable internal data class UnlockBatch(val id: String, val owner: String, val count: Int, val required: Int,
     val returnedActions: Int = 0, val fallback: String? = null,
     val chapterTokens: Set<String> = emptySet(), val reusedUnlock: Boolean = false) {
-    val unlocked get() = returnedActions>=required || fallback!=null || reusedUnlock
+    val unlocked get() = returnedActions>=required || reusedUnlock
 }
 @Serializable internal data class ChapterAdvertising(val observed: Map<String,Int> = emptyMap(), val count: Long = 0,
-    val boundary: String? = null, val lastCompleted: String? = null, val dismissed: Boolean = false)
+    val boundary: String? = null, val lastCompleted: String? = null, val dismissed: Boolean = false, val servicedCount: Long? = null)
 @Serializable internal data class BrowserNavigation(val token: String, val owner: String, val target: String,
     val created: Long, val accepted: Boolean = false, val away: Boolean = false, val returned: Boolean = false)
+/** Local navigation intent, not chapter content. Applied only by its original account/work. */
+@Serializable internal data class ReaderAdTransition(val id: String, val owner: String, val kind: String,
+    val work: String, val from: String, val destination: String, val payload: String? = null, val satisfied: Boolean = false)
 @Serializable internal data class SmartLinkState(val schema: Int = 1, val batches: Map<String,UnlockBatch> = emptyMap(),
     val chapters: Map<String,ChapterAdvertising> = emptyMap(), val pending: BrowserNavigation? = null,
-    val launches: List<Long> = emptyList(), val grantedChapters: Set<String> = emptySet())
+    val launches: List<Long> = emptyList(), val grantedChapters: Set<String> = emptySet(),
+    val readerTransitions: Map<String, ReaderAdTransition> = emptyMap())
 
 /** Mutate a candidate then durably save BEFORE publishing it. Controller serializes this machine. */
 internal class SmartLinkPolicy(var state: SmartLinkState = SmartLinkState(), val settings: SmartLinkSettings = SmartLinkSettings()) {
+    init {
+        // Legacy error/privacy fallback is not proof of earned steps. Preserve genuine grants,
+        // counters and all download files; only stop incomplete fallback grants authorizing new work.
+        val invalid = state.batches.values.filter { it.fallback != null && it.returnedActions < it.required }.flatMap { it.chapterTokens }.toSet()
+        val genuine = state.batches.values.filter { it.returnedActions >= it.required }.flatMap { it.chapterTokens }.toSet()
+        val grants = (state.grantedChapters - invalid) + genuine
+        state = state.copy(grantedChapters = grants, batches = state.batches.mapValues { (_, row) ->
+            row.copy(reusedUnlock = row.reusedUnlock && grants.containsAll(row.chapterTokens) && row.chapterTokens.isNotEmpty())
+        })
+    }
+    private fun serviced(data: ChapterAdvertising): Long = data.servicedCount ?: if (data.dismissed)
+        data.count / settings.chapterInterval * settings.chapterInterval else 0L
+    fun dueBoundary(owner: String, kind: String): String? {
+        val key = adHash(owner, kind); val data = state.chapters[key] ?: return null
+        return if (data.count - serviced(data) >= settings.chapterInterval)
+            "boundary:$key:${serviced(data) + settings.chapterInterval}" else null
+    }
+    fun transition(owner: String, kind: String, work: String, from: String, destination: String, payload: String?): ReaderAdTransition? {
+        require(kind in setOf("novel", "manga") && work.isNotBlank() && from.isNotBlank() && destination.isNotBlank())
+        if (from == destination) return null
+        val key = adHash(owner, kind)
+        state.readerTransitions[key]?.takeIf { it.work == work && it.from == from && it.destination == destination }?.let { return it }
+        // A deliberate different selection supersedes the old intent, never replays it later.
+        val prior=state.readerTransitions[key]
+        if(prior!=null) state=state.copy(readerTransitions=state.readerTransitions-key,
+            pending=state.pending?.takeUnless {it.owner==owner && it.target==prior.id})
+        val boundary = dueBoundary(owner, kind) ?: return null
+        return ReaderAdTransition(boundary, owner, kind, work, from, destination, payload).also {
+            state = state.copy(readerTransitions = state.readerTransitions + (key to it))
+        }
+    }
+    fun applied(owner: String, kind: String, work: String, destination: String) {
+        val key = adHash(owner, kind)
+        if (state.readerTransitions[key]?.let { it.owner == owner && it.work == work && it.destination == destination && it.satisfied } == true)
+            state = state.copy(readerTransitions = state.readerTransitions - key)
+    }
     fun batch(owner: String, request: DownloadAdRequest): UnlockBatch {
         val ids=request.unique; require(ids.isNotEmpty())
         val id=adHash(owner,"download",*ids.toTypedArray())
@@ -66,7 +106,7 @@ internal class SmartLinkPolicy(var state: SmartLinkState = SmartLinkState(), val
     }
     fun observe(owner: String, kind: String, chapter: String, previouslyRead: Boolean) {
         val key=adHash(owner,kind); val data=state.chapters[key] ?: ChapterAdvertising()
-        if (chapter in data.observed) return
+        if (chapter in data.observed && !(data.observed[chapter] == 0 && !previouslyRead)) return
         state=state.copy(chapters=state.chapters+(key to data.copy(observed=data.observed+(chapter to if(previouslyRead) 0 else 1))))
     }
     fun complete(owner: String, kind: String, chapter: String) {
@@ -74,26 +114,34 @@ internal class SmartLinkPolicy(var state: SmartLinkState = SmartLinkState(), val
         if (data.observed[chapter]!=1) return
         val count=data.count+1
         state=state.copy(chapters=state.chapters+(key to data.copy(observed=data.observed+(chapter to 2),count=count,
-            lastCompleted=chapter,boundary=if(count%settings.chapterInterval==0L) chapter else null,dismissed=false)))
+            lastCompleted=chapter,boundary=if(count-serviced(data)>=settings.chapterInterval) data.boundary ?: chapter else null,
+            servicedCount=serviced(data),dismissed=false)))
     }
-    fun boundary(owner: String, kind: String, chapter: String): String? {
-        val key=adHash(owner,kind); val data=state.chapters[key] ?: return null
-        return if(data.boundary==chapter && data.lastCompleted==chapter && !data.dismissed) "boundary:$key:$chapter" else null
-    }
+    fun boundary(owner: String, kind: String, chapter: String): String? =
+        dueBoundary(owner,kind)?.takeIf { state.chapters[adHash(owner,kind)]?.lastCompleted == chapter }
+    /** Leaving a boundary cancels its browser intent, never earns or consumes a step. */
     fun dismiss(target: String, owner: String) {
-        state.chapters.entries.firstOrNull { (key,data) -> target=="boundary:$key:${data.boundary}" && key in listOf(adHash(owner,"novel"),adHash(owner,"manga")) }?.let { (key,data) ->
-            state=state.copy(chapters=state.chapters+(key to data.copy(dismissed=true)),
-                pending=state.pending?.takeUnless {it.owner==owner && it.target==target})
+        if (listOf("novel", "manga").any { dueBoundary(owner,it)==target })
+            state=state.copy(pending=state.pending?.takeUnless {it.owner==owner && it.target==target})
+    }
+    private fun satisfy(target: String, owner: String) {
+        for (kind in listOf("novel", "manga")) {
+            val key=adHash(owner,kind);val data=state.chapters[key] ?: continue
+            if (dueBoundary(owner,kind)==target) state=state.copy(
+                chapters=state.chapters+(key to data.copy(servicedCount=serviced(data)+settings.chapterInterval,dismissed=false,boundary=null)),
+                readerTransitions=state.readerTransitions.mapValues { (_, transition) ->
+                    if (transition.owner==owner && transition.id==target) transition.copy(satisfied=true) else transition
+                })
         }
     }
     fun canLaunch(owner: String, target: String, now: Long): String? {
         if(state.pending!=null) return "يوجد رابط إعلاني مفتوح بالفعل"
         val batch=state.batches[target]
         if(batch!=null && (batch.owner!=owner || batch.unlocked)) return "الدفعة غير مؤهلة لخطوة أخرى"
-        if(batch==null && !state.chapters.any { (key,data) -> target=="boundary:$key:${data.boundary}" && !data.dismissed && key in listOf(adHash(owner,"novel"),adHash(owner,"manga")) }) return "انتهت فرصة هذا الفاصل"
+        if(batch==null && listOf("novel","manga").none { dueBoundary(owner,it)==target }) return "انتهت فرصة هذا الفاصل"
         val last=state.launches.lastOrNull()
         if(last!=null && (now<last || now-last<settings.minimumLaunchGapMs)) return "انتظر لحظة قبل فتح رابط إعلاني آخر"
-        if(state.launches.count { now-it in 0 until 3_600_000 }>=settings.maxLaunchesPerHour) return "بلغت حد الروابط الإعلانية لهذا الجهاز؛ يمكنك المتابعة دون إعلان"
+        if(state.launches.count { now-it in 0 until 3_600_000 }>=settings.maxLaunchesPerHour) return "بلغت حد الروابط الإعلانية لهذا الجهاز؛ حاول لاحقًا"
         return null
     }
     fun prepare(owner: String, target: String, token: String, now: Long) {
@@ -119,14 +167,14 @@ internal class SmartLinkPolicy(var state: SmartLinkState = SmartLinkState(), val
             val next=b.copy(returnedActions=(b.returnedActions+1).coerceAtMost(b.required))
             state=state.copy(batches=state.batches+(b.id to next),grantedChapters=if(next.unlocked) state.grantedChapters+next.chapterTokens else state.grantedChapters)
         }
-        else dismiss(p.target,p.owner)
+        else satisfy(p.target,p.owner)
         state=state.copy(pending=null)
     }
     fun cancel(token: String? = state.pending?.token) { if(state.pending?.token==token) state=state.copy(pending=null) }
     fun fallback(owner: String, target: String, reason: String) {
         require(reason in setOf("OFFLINE","NO_BROWSER","LAUNCH_FAILED","USER_REPORTED_UNAVAILABLE","PRIVACY_DISABLED","DEVICE_LIMIT"))
         val b=state.batches[target]?.takeIf {it.owner==owner} ?: return
-        state=state.copy(batches=state.batches+(target to b.copy(fallback=reason)),grantedChapters=state.grantedChapters+b.chapterTokens,pending=state.pending?.takeUnless {it.owner==owner && it.target==target})
+        state=state.copy(batches=state.batches+(target to b.copy(fallback=reason)),pending=state.pending?.takeUnless {it.owner==owner && it.target==target})
     }
 }
 
@@ -139,7 +187,12 @@ internal class SmartLinkJournal(private val read: () -> SmartLinkState, private 
     suspend fun <T> edit(change: (SmartLinkPolicy)->T): T = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         mutex.lock()
         try {
-            if(!loaded) { val restored=read();check(restored.schema==1);mutableState.value=restored;loaded=true }
+            if(!loaded) {
+                val stored=read();check(stored.schema==1)
+                val restored=SmartLinkPolicy(stored).state
+                if(restored!=stored) write(restored)
+                mutableState.value=restored;loaded=true
+            }
             val before=mutableState.value
             val machine=SmartLinkPolicy(before)
             val result=change(machine)

@@ -418,6 +418,7 @@ class ReaderActivity : BaseActivity() {
     override fun onResume() {
         super.onResume()
         viewModel.setFocusActive(true)
+        lifecycleScope.launch { kotlinx.coroutines.yield();viewModel.resumePendingAdvertisingTransition() }
         viewModel.restartReadTimer()
         setMenuVisibility(viewModel.state.value.menuVisible)
     }

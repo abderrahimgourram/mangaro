@@ -11,6 +11,9 @@ import eu.kanade.tachiyomi.BuildConfig
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.serialization.json.Json
 import tachiyomi.core.common.util.lang.LocalAccountScope as Account
 import java.io.File
@@ -45,11 +48,13 @@ internal class SmartLinkController private constructor(private val app: Applicat
     val problem=mutableProblem.asStateFlow()
     @Volatile private var launchingActivity: WeakReference<Activity>? = null
     @Volatile private var launchingToken: String? = null
+    private val destroyed=kotlinx.coroutines.flow.MutableSharedFlow<Activity>(extraBufferCapacity=2)
+    private val lifecycleRevision=MutableStateFlow(0L)
     @Volatile private var resumed: WeakReference<Activity>? = null
     init {
         if(BuildConfig.SMARTLINK_V3_ENABLED) {
             app.registerActivityLifecycleCallbacks(this)
-            scope.launch { runCatching { edit {} } }
+            scope.launch { safely { edit {} } }
             scope.launch {
                 var wasReady=false
                 Account.changes.collect { state ->
@@ -66,7 +71,7 @@ internal class SmartLinkController private constructor(private val app: Applicat
         }
     }
     private suspend fun <T> edit(change: (SmartLinkPolicy)->T): T = journal.edit(change)
-    private suspend fun safely(action: suspend ()->Unit) { try {action()} catch(c: CancellationException) {throw c} catch(_:Exception) {mutableProblem.value="تعذّر حفظ تقدم الرابط الإعلاني؛ تنزيلاتك محفوظة ويمكنك المتابعة دون إعلان"} }
+    private suspend fun safely(action: suspend ()->Unit) { try {action()} catch(c: CancellationException) {throw c} catch(_:Exception) {mutableProblem.value="تعذّر حفظ تقدم الرابط الإعلاني؛ تنزيلاتك محفوظة ويمكنك الرجوع أو إعادة المحاولة"} }
     suspend fun batch(request: DownloadAdRequest, token: Account.Token): UnlockBatch {
         Account.check(token)
         val result=edit { it.batch(owner(token),request) }
@@ -77,12 +82,9 @@ internal class SmartLinkController private constructor(private val app: Applicat
         scope.launch { safely { Account.check(token);edit { it.observe(owner(token),kind,key,previouslyRead) } } }
     }
     /** Called in reader-owned order after observeChapter, even on a fast one-page chapter. */
-    fun completeChapter(kind: String, key: String, previouslyRead: Boolean, token: Account.Token) {
-        if(!BuildConfig.SMARTLINK_V3_ENABLED) return
-        scope.launch { safely { Account.check(token);edit { it.observe(owner(token),kind,key,previouslyRead);it.complete(owner(token),kind,key) } } }
-    }
-    fun dismissBoundary(kind: String, key: String, token: Account.Token) {
-        scope.launch { safely { Account.check(token);edit { p -> p.boundary(owner(token),kind,key)?.let {p.dismiss(it,owner(token))} } } }
+    fun completeChapter(kind: String, key: String, previouslyRead: Boolean, token: Account.Token): Job {
+        if(!BuildConfig.SMARTLINK_V3_ENABLED) return Job().apply {complete()}
+        return scope.launch { safely { Account.check(token);edit { it.observe(owner(token),kind,key,previouslyRead);it.complete(owner(token),kind,key) } } }
     }
     fun abandon(target: String?, token: Account.Token) {
         if(target==null) return
@@ -90,22 +92,19 @@ internal class SmartLinkController private constructor(private val app: Applicat
             p.state.pending?.takeIf {it.owner==owner(token) && it.target==target}?.let {p.cancel(it.token)}
         } } }
     }
-    suspend fun fallback(target: String, reason: String, token: Account.Token) {
-        Account.check(token);edit { it.fallback(owner(token),target,reason) };Account.check(token)
-    }
     suspend fun launch(activity: Activity?, target: String, token: Account.Token): String? =
         scope.async { launchOwned(activity,target,token) }.await()
     private suspend fun launchOwned(activity: Activity?, target: String, token: Account.Token): String? {
         Account.check(token)
         if(activity==null || activity.isFinishing || activity.isDestroyed) return "تعذّر فتح المتصفح؛ يمكنك المحاولة مجددًا"
-        if(!online()) return "لا يوجد اتصال بالإنترنت؛ يمكنك المتابعة دون إعلان"
-        if(InMobiAds.get(app).privacyChoice()==AdPrivacyChoice.DISABLED) return "الإعلانات مرفوضة في اختيارات الخصوصية؛ يمكنك المتابعة دون إعلان"
+        if(!online()) return "لا يوجد اتصال بالإنترنت؛ يمكنك الرجوع أو إعادة المحاولة"
+        if(InMobiAds.get(app).privacyChoice()==AdPrivacyChoice.DISABLED) return "الإعلانات مرفوضة في اختيارات الخصوصية؛ يمكنك الرجوع أو إعادة المحاولة"
         val navigation=Intent(Intent.ACTION_VIEW,Uri.parse(SmartLinkConfiguration.URL)).addCategory(Intent.CATEGORY_BROWSABLE)
         val manager=app.packageManager
         val browsers=manager.queryIntentActivities(Intent(Intent.ACTION_VIEW,Uri.parse("https://example.com")).addCategory(Intent.CATEGORY_BROWSABLE),android.content.pm.PackageManager.MATCH_DEFAULT_ONLY)
             .map { it.activityInfo.packageName }.filter { it!=app.packageName && it!="android" }
         val browser=navigation.resolveActivity(manager)?.packageName?.takeIf {it in browsers} ?: browsers.firstOrNull()
-            ?: return "لا يوجد متصفح خارجي متاح؛ يمكنك المتابعة دون إعلان"
+            ?: return "لا يوجد متصفح خارجي متاح؛ يمكنك الرجوع أو إعادة المحاولة"
         navigation.setPackage(browser)
         val id=UUID.randomUUID().toString()
         val denied=edit { it.canLaunch(owner(token),target,System.currentTimeMillis()) }
@@ -119,6 +118,68 @@ internal class SmartLinkController private constructor(private val app: Applicat
         } catch(c: CancellationException) { withContext(NonCancellable) { edit {it.cancel(id)} };throw c }
         catch(_:Exception) { edit {it.cancel(id)};return "تعذّر فتح الرابط الإعلاني؛ لم تُحتسب خطوة ويمكنك إعادة المحاولة" }
     }
+    suspend fun pendingReader(kind: String, work: String, token: Account.Token): ReaderAdTransition? {
+        Account.check(token)
+        return edit { it.state.readerTransitions[adHash(owner(token),kind)]?.takeIf { row -> row.work==work } }
+    }
+    suspend fun readerApplied(kind: String, work: String, destination: String, token: Account.Token) {
+        Account.check(token); edit { Account.check(token);it.applied(owner(token),kind,work,destination) }
+    }
+    /** Called by actual navigation before loading the next chapter. No browser opens here.
+     * The journal stores destination/evidence; only the explicit dialog button launches a link.
+     */
+    suspend fun readerTransition(kind: String, work: String, from: String, destination: String, payload: String?, token: Account.Token): Boolean {
+        if(!BuildConfig.SMARTLINK_V3_ENABLED) return true
+        Account.check(token)
+        if(InMobiAds.get(app).privacyChoice()==AdPrivacyChoice.DISABLED) return true
+        val transition=edit { Account.check(token);it.transition(owner(token),kind,work,from,destination,payload) } ?: return true
+        if(transition.satisfied) return true
+        while(true) {
+            Account.check(token)
+            val activity=withTimeoutOrNull(2_000) { lifecycleRevision.map { resumed?.get() }.filterNotNull().first { !it.isFinishing && !it.isDestroyed } } ?: return false
+            showReaderDialog(activity,transition,destination,kind,token)?.let { return it }
+            // Configuration recreation: keep the same durable intent and attach to the next Activity.
+            yield()
+        }
+    }
+    private suspend fun showReaderDialog(activity: Activity, transition: ReaderAdTransition, destination: String, kind: String, token: Account.Token): Boolean? =
+        withContext(Dispatchers.Main.immediate) {
+            coroutineScope {
+                val result=CompletableDeferred<Boolean?>()
+                val content=android.widget.LinearLayout(activity).apply {
+                    orientation=android.widget.LinearLayout.VERTICAL;layoutDirection=android.view.View.LAYOUT_DIRECTION_RTL
+                    val pad=(24*resources.displayMetrics.density).toInt();setPadding(pad,pad,pad,pad)
+                    setBackgroundColor(android.graphics.Color.rgb(27,20,35))
+                }
+                fun label(value: String)=android.widget.TextView(activity).apply {
+                    text=value;setTextColor(android.graphics.Color.rgb(235,222,244));textSize=16f
+                    setPadding(0,12,0,12);content.addView(this)
+                }
+                label("فاصل إعلاني بعد 20 فصلًا مكتملًا")
+                label("إعلان خارجي من Adsterra. افتح الرابط بإرادتك ثم ارجع لاستكمال الانتقال المحدد. العودة خطوة تنقل محلية، وليست إثبات مشاهدة أو ظهور أو تحويل. يمكنك الرجوع دون فقدان تقدم القراءة.")
+                val message=label("")
+                val button=android.widget.Button(activity).apply { text="فتح رابط إعلاني";content.addView(this) }
+                val dialog=android.app.AlertDialog.Builder(activity).setView(content).create()
+                dialog.setOnCancelListener { abandon(transition.id,token);result.complete(false) }
+                button.setOnClickListener {
+                    if(button.isEnabled) launch {
+                        button.isEnabled=false
+                        try { message.text=this@SmartLinkController.launch(activity,transition.id,token).orEmpty() }
+                        catch(cancelled:CancellationException) {throw cancelled}
+                        catch(_:Exception) {message.text="تعذّر فتح الرابط؛ لم تُحتسب خطوة. أعد المحاولة أو استخدم الرجوع"}
+                        finally {button.isEnabled=true}
+                    }
+                }
+                val proof=launch {
+                    state.first { it.readerTransitions[adHash(owner(token),kind)]?.let { row -> row.id==transition.id && row.destination==destination && row.satisfied }==true }
+                    result.complete(true)
+                }
+                val ownership=launch { Account.changes.first { !it.ready || it.token!=token };result.complete(false) }
+                val destruction=launch { destroyed.first { it===activity };result.complete(null) }
+                try { dialog.show();result.await().also { if(it==true) Account.check(token) } }
+                finally { proof.cancel();ownership.cancel();destruction.cancel();dialog.dismiss() }
+            }
+        }
     fun online(): Boolean {
         val cm=app.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager ?: return false
         val caps=cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
@@ -134,10 +195,10 @@ internal class SmartLinkController private constructor(private val app: Applicat
         if(activity!==launchingActivity?.get() || activity.isChangingConfigurations) return
         scope.launch { safely { edit {it.away(token)} } }
     }
-    override fun onActivityResumed(activity: Activity) { resumed=WeakReference(activity);scope.launch {safely {returnToApp()} } }
+    override fun onActivityResumed(activity: Activity) { resumed=WeakReference(activity);lifecycleRevision.value++;scope.launch {safely {returnToApp()} } }
     override fun onActivityPaused(activity: Activity) { if(resumed?.get()===activity) resumed=null }
     override fun onActivityCreated(a: Activity,b: Bundle?) = Unit
     override fun onActivityStarted(a: Activity) = Unit
     override fun onActivitySaveInstanceState(a: Activity,b: Bundle) = Unit
-    override fun onActivityDestroyed(a: Activity) = Unit
+    override fun onActivityDestroyed(a: Activity) { destroyed.tryEmit(a) }
 }

@@ -44,6 +44,7 @@ fun rememberDownloadAdGate(readerActive: Boolean = false): (DownloadAdRequest, (
         if(!BuildConfig.SMARTLINK_V3_ENABLED && !readerActive) ads.prepareDownloadSurface(activity)
     }
     fun proceed() {
+        if (state.batches[target]?.takeIf { it.owner==SmartLinkController.owner(token) }?.unlocked != true) return
         val next=continuation ?: return
         try {Account.check(token);next.run();target=null;continuation=null}
         catch(_:Account.Changed) {target=null;continuation=null}
@@ -51,6 +52,15 @@ fun rememberDownloadAdGate(readerActive: Boolean = false): (DownloadAdRequest, (
     }
     fun closeGate() {controller.abandon(target,token);target=null;continuation=null}
     val batch=state.batches[target]?.takeIf {account.ready && it.owner==SmartLinkController.owner(account.token)}
+    LaunchedEffect(target,batch,problem) {
+        if(target!=null && batch==null && problem!=null) {
+            target=null;continuation=null
+            android.widget.Toast.makeText(context,"تعذّر استعادة فتح الدفعة؛ لم يبدأ التنزيل. أعد المحاولة",android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+    LaunchedEffect(target,batch?.unlocked,continuation) {
+        if (target!=null && batch?.unlocked==true && continuation!=null) proceed()
+    }
     if(BuildConfig.SMARTLINK_V3_ENABLED && target!=null && batch!=null) CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
         ModalBottomSheet(onDismissRequest={closeGate()},sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true)) {
             Column(Modifier.fillMaxWidth().padding(horizontal=24.dp).navigationBarsPadding().padding(bottom=24.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) {
@@ -71,21 +81,11 @@ fun rememberDownloadAdGate(readerActive: Boolean = false): (DownloadAdRequest, (
                     if(!busy) {busy=true;scope.launch {
                         try {error=controller.launch(activity,batch.id,token)}
                         catch(c:CancellationException) {throw c}
-                        catch(_:Exception) {error="تعذّر فتح الرابط؛ لم تُحتسب خطوة. يمكنك المتابعة دون إعلان"}
+                        catch(_:Exception) {error="تعذّر فتح الرابط؛ لم تُحتسب خطوة. استخدم الرجوع للخروج أو أعد المحاولة"}
                         finally {busy=false}
                     }}
                 },enabled=!busy && state.pending==null,modifier=Modifier.fillMaxWidth()) {Text("فتح رابط إعلاني")}
-                if(!batch.unlocked) TextButton(onClick={
-                    if(!busy) {busy=true;scope.launch {
-                        try {
-                            controller.fallback(batch.id,if(!controller.online()) "OFFLINE" else "USER_REPORTED_UNAVAILABLE",token)
-                            error="تمت إتاحة الدفعة دون احتساب خطوة إعلانية"
-                        } catch(c:CancellationException) {throw c}
-                        catch(_:Exception) {error="تعذّر حفظ حالة الإعلانات؛ يمكنك بدء التنزيل دون تعديل عداد الخطوات";proceed()}
-                        finally {busy=false}
-                    }}
-                },enabled=!busy) {Text("الرابط غير متاح؟ متابعة دون إعلان")}
-                TextButton(onClick={closeGate()}) {Text("العودة دون تغيير طابور التنزيل")}
+
             }
         }
     }
@@ -107,16 +107,13 @@ fun rememberDownloadAdGate(readerActive: Boolean = false): (DownloadAdRequest, (
                         pendingOwner=SmartLinkController.owner(captured)
                         continuation=continueOnce
                         error=null
-                        if(prepared.unlocked || ads.privacyChoice()==AdPrivacyChoice.DISABLED) {
-                            if(!prepared.unlocked) controller.fallback(prepared.id,"PRIVACY_DISABLED",captured)
-                            continuation?.run();continuation=null
-                        } else target=prepared.id
+                        if(prepared.unlocked) { continuation?.run();continuation=null }
+                        else target=prepared.id
                     } catch(c:CancellationException) {throw c}
                     catch(_:Exception) {
-                        // Fail open for ad-state IO failure only; never fake progress or
-                        // alter source entitlement/content validation in the real queue.
-                        android.widget.Toast.makeText(context,if(invokingQueue) "تعذّر بدء التنزيل؛ أعد تحديد الدفعة للمحاولة مجددًا" else "الإعلان غير متاح؛ سيبدأ التنزيل دون احتساب خطوات",android.widget.Toast.LENGTH_LONG).show()
-                        if(!invokingQueue) runCatching {continueOnce.run()}
+                        // An unavailable ad journal cannot authorize a new batch. Existing queue/files are untouched.
+                        continuation=null
+                        android.widget.Toast.makeText(context,if(invokingQueue) "تعذّر بدء التنزيل؛ أعد تحديد الدفعة للمحاولة مجددًا" else "تعذّر حفظ تقدم فتح الدفعة؛ أعد المحاولة. لم يبدأ التنزيل",android.widget.Toast.LENGTH_LONG).show()
                     } finally {busy=false}
                 }
             }
@@ -140,7 +137,7 @@ internal fun SmartLinkChapterBoundary(kind: String, chapterKey: String, visible:
         Surface(shape=RoundedCornerShape(16.dp),color=MaterialTheme.colorScheme.secondaryContainer) {
             Column(Modifier.fillMaxWidth().padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
                 Text("فاصل إعلاني بعد 20 فصلًا مكتملًا",style=MaterialTheme.typography.titleMedium)
-                Text("رابط إعلاني خارجي من Adsterra. لا يلزم فتحه لمتابعة القراءة؛ العودة لا تثبت ظهورًا أو مشاهدة أو تحويلًا.",style=MaterialTheme.typography.bodySmall)
+                Text("رابط إعلاني خارجي من Adsterra بعد 20 فصلًا مكتملًا. العودة خطوة تنقل محلية ولا تثبت ظهورًا أو مشاهدة أو تحويلًا.",style=MaterialTheme.typography.bodySmall)
                 error?.let {Text(it,color=MaterialTheme.colorScheme.error)}
                 Button(onClick={if(!busy) {busy=true;scope.launch {
                     try {error=controller.launch(activity,boundary,account.token)}
@@ -148,7 +145,6 @@ internal fun SmartLinkChapterBoundary(kind: String, chapterKey: String, visible:
                     catch(_:Exception) {error="تعذّر فتح الإعلان؛ يمكنك متابعة القراءة"}
                     finally {busy=false}
                 }}},enabled=!busy && state.pending==null) {Text("فتح رابط إعلاني")}
-                TextButton(onClick={controller.dismissBoundary(kind,chapterKey,account.token)}) {Text("متابعة القراءة دون فتح الإعلان")}
             }
         }
     }

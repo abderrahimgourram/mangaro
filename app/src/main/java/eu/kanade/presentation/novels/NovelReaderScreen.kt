@@ -175,6 +175,9 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
             NovelAdRequest("reader:" + novelDigest(novel.id + "|" + chapter.id))
         }
         var smartPreviouslyRead by remember(chapter.id) { mutableStateOf(true) }
+        val smartController=remember(context) { eu.kanade.tachiyomi.data.ads.SmartLinkController.get(context) }
+        val smartWork=remember(novel.id) { eu.kanade.tachiyomi.data.ads.SmartLinkController.chapter("novel",novel.sourceId,novel.id,"work") }
+        var smartCompletionJob by remember { mutableStateOf<Job?>(null) }
         val readerOwner = remember { tachiyomi.core.common.util.lang.LocalAccountScope.capture() }
         val scope=rememberCoroutineScope()
         LaunchedEffect(chapter.id,generation) {
@@ -217,7 +220,7 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                     ceneleDiagRenderedCenele = countWord(paragraphs.map { it.text }, "فضاء")
                     seaTrace?.stage(SeaReaderStage.READER_RESTORE)
                     val position=repository.readingPosition(novel,requestedChapter)
-                    smartPreviouslyRead = position != null
+                    smartPreviouslyRead = position != null && position.paragraph >= text.paragraphs.size
                     if (BuildConfig.SMARTLINK_V3_ENABLED) eu.kanade.tachiyomi.data.ads.SmartLinkController.get(context).observeChapter(
                         "novel",eu.kanade.tachiyomi.data.ads.SmartLinkController.chapter("novel",novel.sourceId,novel.id,requestedChapter.id),smartPreviouslyRead,readerOwner)
                     val index = withContext(Dispatchers.Default) {
@@ -271,14 +274,14 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                 catch (e: Exception) { android.util.Log.d("MangaroNovels", "Optional adjacent chapter unavailable", e) }
             }
         }
-        LaunchedEffect(loadedChapter?.id,restoring) {
+        LaunchedEffect(loadedChapter?.id,restoring,loading,error,blocks.size) {
             if (!BuildConfig.SMARTLINK_V3_ENABLED || restoring || loading || error!=null || blocks.isEmpty()) return@LaunchedEffect
             val shown=loadedChapter ?: return@LaunchedEffect
             snapshotFlow {
                 val end=scroll.layoutInfo.viewportEndOffset
                 scroll.layoutInfo.visibleItemsInfo.any { it.key=="block-${blocks.lastIndex}" && it.offset+it.size<=end && it.size>0 } && !scroll.isScrollInProgress
             }.first {it}
-            eu.kanade.tachiyomi.data.ads.SmartLinkController.get(context).completeChapter("novel",
+            smartCompletionJob = smartController.completeChapter("novel",
                 eu.kanade.tachiyomi.data.ads.SmartLinkController.chapter("novel",novel.sourceId,novel.id,shown.id),smartPreviouslyRead,readerOwner)
         }
         val currentChapter by rememberUpdatedState(loadedChapter)
@@ -305,6 +308,36 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
             owner.lifecycle.addObserver(observer)
             onDispose {owner.lifecycle.removeObserver(observer);saveCurrent()}
         }
+        suspend fun transitionTo(target: NovelChapter): Boolean {
+            val from=chapter
+            if(target.id==from.id) return true
+            smartCompletionJob?.join()
+            if(BuildConfig.SMARTLINK_V3_ENABLED && !smartController.readerTransition("novel",smartWork,from.id,target.id,
+                    kotlinx.serialization.json.Json.encodeToString(NovelChapter.serializer(),target),readerOwner)) return false
+            tachiyomi.core.common.util.lang.LocalAccountScope.check(readerOwner)
+            if(chapter.id!=from.id) return false
+            repository.prepareReaderChapter(novel,target)
+            if(chapter.id!=from.id) return false
+            chapter=target
+            if(BuildConfig.SMARTLINK_V3_ENABLED) smartController.readerApplied("novel",smartWork,target.id,readerOwner)
+            return true
+        }
+        LaunchedEffect(loadedChapter?.id,loading,restoring) {
+            if(!BuildConfig.SMARTLINK_V3_ENABLED || loading || restoring || navigating) return@LaunchedEffect
+            val shown=loadedChapter ?: return@LaunchedEffect
+            val pending=smartController.pendingReader("novel",smartWork,readerOwner) ?: return@LaunchedEffect
+            if(pending.destination==shown.id && pending.satisfied) {
+                smartController.readerApplied("novel",smartWork,shown.id,readerOwner);return@LaunchedEffect
+            }
+            if(pending.from!=shown.id) return@LaunchedEffect
+            val restored=runCatching { kotlinx.serialization.json.Json.decodeFromString(NovelChapter.serializer(),pending.payload ?: "") }.getOrNull()
+                ?.takeIf { it.id==pending.destination } ?: return@LaunchedEffect
+            navigating=true
+            try { transitionTo(restored) }
+            catch(cancelled:CancellationException) {throw cancelled}
+            catch(failure:Exception) {error=novelError(failure)}
+            finally {navigating=false}
+        }
         BackHandler { if (!controlsVisible) controlsVisible = true else { saveCurrent();navigator.pop() } }
         fun adjacent(forward: Boolean) {
             if(navigating || loading) return
@@ -314,12 +347,7 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                 try {
                     val target=repository.adjacent(novel,requested,forward)
                     if (target != null && chapter.id == requested.id) {
-                        repository.prepareReaderChapter(novel, target)
-                        if (chapter.id == requested.id) {
-                            if(BuildConfig.SMARTLINK_V3_ENABLED) eu.kanade.tachiyomi.data.ads.SmartLinkController.get(context).dismissBoundary("novel",
-                                eu.kanade.tachiyomi.data.ads.SmartLinkController.chapter("novel",novel.sourceId,novel.id,requested.id),readerOwner)
-                            chapter = target
-                        }
+                        transitionTo(target)
                     }
                 } catch(c: CancellationException) {throw c} catch(e: Exception) {if(chapter.id == requested.id) error=novelError(e)}
                 finally {navigating=false}
@@ -488,8 +516,8 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                             saveCurrent(); navigationJob?.cancel(); navigating = true
                             navigationJob = scope.launch {
                                 try {
-                                    repository.prepareReaderChapter(novel, choice)
-                                    chapter = choice; chaptersOpen = false
+                                    chaptersOpen = false
+                                    transitionTo(choice)
                                 } catch (c: CancellationException) { throw c }
                                 catch (e: Exception) { error = novelError(e) }
                                 finally { navigating = false }

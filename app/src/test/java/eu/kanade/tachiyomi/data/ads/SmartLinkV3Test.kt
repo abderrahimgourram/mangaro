@@ -97,7 +97,7 @@ class SmartLinkV3Test {
     @Test fun unavailableFallbackDoesNotFakeNavigationOrAffectOtherBatches() {
         val p=SmartLinkPolicy();val a=p.batch(ownerA,request(50));val b=p.batch(ownerA,request(51))
         p.fallback(ownerA,a.id,"OFFLINE")
-        assertTrue(p.state.batches[a.id]!!.unlocked);assertEquals(0,p.state.batches[a.id]!!.returnedActions)
+        assertFalse(p.state.batches[a.id]!!.unlocked);assertEquals(0,p.state.batches[a.id]!!.returnedActions)
         assertFalse(p.state.batches[b.id]!!.unlocked)
         assertNull(p.state.pending)
     }
@@ -119,7 +119,7 @@ class SmartLinkV3Test {
         p.dismiss(boundary,ownerB);assertNotNull(p.boundary(ownerA,"novel","chapter-20"))
         p.dismiss(boundary,ownerA)
         repeat(30) {p.observe(ownerA,"novel","chapter-20",false);p.complete(ownerA,"novel","chapter-20")}
-        assertNull(p.boundary(ownerA,"novel","chapter-20"))
+        assertNotNull(p.boundary(ownerA,"novel","chapter-20")) // leaving is not a completed advertising step
         p.observe(ownerA,"manga","historically-read",true);p.complete(ownerA,"manga","historically-read")
         assertEquals(0L,p.state.chapters[adHash(ownerA,"manga")]!!.count)
     }
@@ -151,7 +151,7 @@ class SmartLinkV3Test {
         p.prepare(ownerA,boundary,"reader",10_000);p.accepted("reader",10_000)
         p.dismiss(boundary,ownerB);assertNotNull(p.state.pending)
         p.dismiss(boundary,ownerA);assertNull(p.state.pending)
-        assertNull(p.boundary(ownerA,"manga","20"))
+        assertNotNull(p.boundary(ownerA,"manga","20"))
         val b=p.batch(ownerA,request(1));assertNull(p.canLaunch(ownerA,b.id,20_000))
     }
 
