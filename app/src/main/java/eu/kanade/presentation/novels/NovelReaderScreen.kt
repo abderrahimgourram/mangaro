@@ -427,11 +427,6 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                                     })
                                 }
                             }
-                            if (BuildConfig.SMARTLINK_V3_ENABLED) item(key="smartlink-completed-boundary") {
-                                eu.kanade.tachiyomi.data.ads.SmartLinkChapterBoundary("novel",
-                                    eu.kanade.tachiyomi.data.ads.SmartLinkController.chapter("novel",novel.sourceId,novel.id,chapter.id),
-                                    !loading && !restoring && loadedChapter?.id==chapter.id && error==null)
-                            }
                         }
                 }
                 if (BuildConfig.DEBUG && isCenele) {

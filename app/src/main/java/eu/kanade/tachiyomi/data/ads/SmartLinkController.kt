@@ -132,7 +132,7 @@ internal class SmartLinkController private constructor(private val app: Applicat
         return readerTransition(kind,work,pending.from,destination,payload,token)
     }
     /** Called by actual navigation before loading the next chapter. No browser opens here.
-     * The journal stores destination/evidence; only the explicit dialog button launches a link.
+     * The journal stores destination/evidence; only the explicit full-screen gate button launches a link.
      */
     suspend fun readerTransition(kind: String, work: String, from: String?, destination: String, payload: String?, token: Account.Token): Boolean {
         if(!BuildConfig.SMARTLINK_V3_ENABLED) return true
@@ -143,29 +143,58 @@ internal class SmartLinkController private constructor(private val app: Applicat
         while(true) {
             Account.check(token)
             val activity=withTimeoutOrNull(2_000) { lifecycleRevision.map { resumed?.get() }.filterNotNull().first { !it.isFinishing && !it.isDestroyed } } ?: return false
-            showReaderDialog(activity,transition,destination,kind,token)?.let { return it }
+            showReaderGate(activity,transition,destination,kind,token)?.let { return it }
             // Configuration recreation: keep the same durable intent and attach to the next Activity.
             yield()
         }
     }
-    private suspend fun showReaderDialog(activity: Activity, transition: ReaderAdTransition, destination: String, kind: String, token: Account.Token): Boolean? =
+    private suspend fun showReaderGate(activity: Activity, transition: ReaderAdTransition, destination: String, kind: String, token: Account.Token): Boolean? =
         withContext(Dispatchers.Main.immediate) {
             coroutineScope {
                 val result=CompletableDeferred<Boolean?>()
+                val purple=android.graphics.Color.rgb(27,20,35)
+                val gold=android.graphics.Color.rgb(224,184,97)
+                val density=activity.resources.displayMetrics.density
+                fun dp(value: Int)=(value*density).toInt()
                 val content=android.widget.LinearLayout(activity).apply {
-                    orientation=android.widget.LinearLayout.VERTICAL;layoutDirection=android.view.View.LAYOUT_DIRECTION_RTL
-                    val pad=(24*resources.displayMetrics.density).toInt();setPadding(pad,pad,pad,pad)
-                    setBackgroundColor(android.graphics.Color.rgb(27,20,35))
+                    orientation=android.widget.LinearLayout.VERTICAL
+                    layoutDirection=android.view.View.LAYOUT_DIRECTION_RTL
+                    gravity=android.view.Gravity.CENTER_HORIZONTAL
+                    setPadding(dp(24),dp(32),dp(24),dp(32))
                 }
                 fun label(value: String)=android.widget.TextView(activity).apply {
                     text=value;setTextColor(android.graphics.Color.rgb(235,222,244));textSize=16f
-                    setPadding(0,12,0,12);content.addView(this)
+                    gravity=android.view.Gravity.CENTER;setPadding(0,dp(8),0,dp(8))
+                    content.addView(this,android.widget.LinearLayout.LayoutParams(-1,-2))
                 }
-                label("فاصل إعلاني بعد 20 فصلًا مكتملًا")
-                label("إعلان خارجي من Adsterra. افتح الرابط بإرادتك ثم ارجع لاستكمال الانتقال المحدد. العودة خطوة تنقل محلية، وليست إثبات مشاهدة أو ظهور أو تحويل. يمكنك الرجوع دون فقدان تقدم القراءة.")
-                val message=label("")
-                val button=android.widget.Button(activity).apply { text="فتح رابط إعلاني";content.addView(this) }
-                val dialog=android.app.AlertDialog.Builder(activity).setView(content).create()
+                label("متابعة القراءة").apply {textSize=28f;setTextColor(gold)}
+                label("افتح إعلانًا واحدًا للمتابعة")
+                label("إعلان خارجي · Adsterra · asiafilm.org").apply {textSize=12f}
+                val message=label("").apply {setTextColor(android.graphics.Color.rgb(255,180,180))}
+                val button=android.widget.Button(activity).apply {
+                    text="فتح إعلان";isAllCaps=false;minHeight=dp(52)
+                    backgroundTintList=android.content.res.ColorStateList.valueOf(gold)
+                    setTextColor(purple)
+                    content.addView(this,android.widget.LinearLayout.LayoutParams(-1,-2))
+                }
+                // A full-window gate, not a chapter-end card or a floating alert.
+                // Keep the same Activity so the validated external launch/return proof is unchanged.
+                val screen=android.widget.ScrollView(activity).apply {
+                    isFillViewport=true;setBackgroundColor(purple)
+                    addView(android.widget.FrameLayout(activity).apply {
+                        addView(content,android.widget.FrameLayout.LayoutParams(-1,-2,android.view.Gravity.CENTER))
+                    },android.widget.FrameLayout.LayoutParams(-1,-1))
+                }
+                val dialog=android.app.Dialog(activity,android.R.style.Theme_Material_NoActionBar).apply {
+                    requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
+                    setContentView(screen)
+                    setCancelable(true);setCanceledOnTouchOutside(false)
+                    window?.apply {
+                        setBackgroundDrawable(android.graphics.drawable.ColorDrawable(purple))
+                        statusBarColor=purple;navigationBarColor=purple
+                        decorView.layoutDirection=android.view.View.LAYOUT_DIRECTION_RTL
+                    }
+                }
                 dialog.setOnCancelListener { abandon(transition.id,token);result.complete(false) }
                 button.setOnClickListener {
                     if(button.isEnabled) launch {
@@ -182,7 +211,11 @@ internal class SmartLinkController private constructor(private val app: Applicat
                 }
                 val ownership=launch { Account.changes.first { !it.ready || it.token!=token };result.complete(false) }
                 val destruction=launch { destroyed.first { it===activity };result.complete(null) }
-                try { dialog.show();result.await().also { if(it==true) Account.check(token) } }
+                try {
+                    dialog.show()
+                    dialog.window?.setLayout(android.view.ViewGroup.LayoutParams.MATCH_PARENT,android.view.ViewGroup.LayoutParams.MATCH_PARENT)
+                    result.await().also { if(it==true) Account.check(token) }
+                }
                 finally { proof.cancel();ownership.cancel();destruction.cancel();dialog.dismiss() }
             }
         }

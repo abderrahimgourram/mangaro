@@ -64,19 +64,18 @@ fun rememberDownloadAdGate(readerActive: Boolean = false): (DownloadAdRequest, (
     if(BuildConfig.SMARTLINK_V3_ENABLED && target!=null && batch!=null) CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
         ModalBottomSheet(onDismissRequest={closeGate()},sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true)) {
             Column(Modifier.fillMaxWidth().padding(horizontal=24.dp).navigationBarsPadding().padding(bottom=24.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) {
-                Text("فتح دفعة التنزيل",style=MaterialTheme.typography.headlineSmall)
-                Text("${batch.count} فصلًا محددًا • تقدمك محفوظ لهذه الدفعة",style=MaterialTheme.typography.bodyMedium)
+                Text("فتح التنزيل",style=MaterialTheme.typography.headlineSmall)
                 Surface(shape=RoundedCornerShape(18.dp),color=MaterialTheme.colorScheme.secondaryContainer) {
                     Column(Modifier.fillMaxWidth().padding(18.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
-                        Text("${batch.returnedActions}/${batch.required}",style=MaterialTheme.typography.headlineLarge)
+                        Text("${batch.returnedActions} / ${batch.required}",style=MaterialTheme.typography.headlineLarge.copy(textDirection=androidx.compose.ui.text.style.TextDirection.Ltr))
                         LinearProgressIndicator(progress={batch.returnedActions.toFloat()/batch.required},modifier=Modifier.fillMaxWidth())
-                        Text(if(batch.unlocked) "الدفعة متاحة للتنزيل" else "افتح الرابط الإعلاني في المتصفح ثم ارجع إلى Mangaro لكل خطوة.")
+                        Text("افتح الإعلانات المطلوبة لبدء التنزيل")
                     }
                 }
-                Text("إعلان خارجي من Adsterra. قد يعرض المتصفح محتوى أو يطلب موافقات وفق سياسة الموقع. العودة تُحتسب كخطوة تنقل محلية فقط، ولا تثبت مشاهدة إعلان أو ظهورًا أو تحويلًا.",style=MaterialTheme.typography.bodySmall)
+                Text("إعلان خارجي · Adsterra · asiafilm.org",style=MaterialTheme.typography.bodySmall)
                 (error ?: problem)?.let {Text(it,color=MaterialTheme.colorScheme.error)}
-                if(continuation==null) Text("أُعيد إنشاء الشاشة. أغلق هذه اللوحة وحدد الفصول نفسها لاستئناف التنزيل؛ لن تتكرر الخطوات المكتملة.")
-                if(batch.unlocked) Button(onClick={proceed()},enabled=continuation!=null && !busy,modifier=Modifier.fillMaxWidth()) {Text("بدء تنزيل الفصول المحددة")}
+                if(continuation==null) Text("أعد تحديد الفصول لاستئناف التنزيل")
+                if(batch.unlocked) Button(onClick={proceed()},enabled=continuation!=null && !busy,modifier=Modifier.fillMaxWidth()) {Text("بدء التنزيل")}
                 else Button(onClick={
                     if(!busy) {busy=true;scope.launch {
                         try {error=controller.launch(activity,batch.id,token)}
@@ -84,7 +83,7 @@ fun rememberDownloadAdGate(readerActive: Boolean = false): (DownloadAdRequest, (
                         catch(_:Exception) {error="تعذّر فتح الرابط؛ لم تُحتسب خطوة. استخدم الرجوع للخروج أو أعد المحاولة"}
                         finally {busy=false}
                     }}
-                },enabled=!busy && state.pending==null,modifier=Modifier.fillMaxWidth()) {Text("فتح رابط إعلاني")}
+                },enabled=!busy && state.pending==null,modifier=Modifier.fillMaxWidth()) {Text("فتح إعلان")}
 
             }
         }
@@ -116,35 +115,6 @@ fun rememberDownloadAdGate(readerActive: Boolean = false): (DownloadAdRequest, (
                         android.widget.Toast.makeText(context,if(invokingQueue) "تعذّر بدء التنزيل؛ أعد تحديد الدفعة للمحاولة مجددًا" else "تعذّر حفظ تقدم فتح الدفعة؛ أعد المحاولة. لم يبدأ التنزيل",android.widget.Toast.LENGTH_LONG).show()
                     } finally {busy=false}
                 }
-            }
-        }
-    }
-}
-
-/** Separate deliberate button; it neither consumes gestures nor controls Next/Previous. */
-@Composable
-internal fun SmartLinkChapterBoundary(kind: String, chapterKey: String, visible: Boolean) {
-    val context=LocalContext.current
-    val controller=remember(context) {SmartLinkController.get(context)}
-    val state by controller.state.collectAsStateWithLifecycle()
-    val account by Account.changes.collectAsStateWithLifecycle()
-    val scope=rememberCoroutineScope()
-    val activity=remember(context) {generateSequence(context) {(it as? ContextWrapper)?.baseContext}.filterIsInstance<Activity>().firstOrNull()}
-    var error by remember(chapterKey) {mutableStateOf<String?>(null)}
-    var busy by remember(chapterKey) {mutableStateOf(false)}
-    val boundary=SmartLinkPolicy(state).boundary(SmartLinkController.owner(account.token),kind,chapterKey)
-    if(visible && account.ready && boundary!=null && InMobiAds.get(context).privacyChoice()!=AdPrivacyChoice.DISABLED) CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-        Surface(shape=RoundedCornerShape(16.dp),color=MaterialTheme.colorScheme.secondaryContainer) {
-            Column(Modifier.fillMaxWidth().padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                Text("فاصل إعلاني بعد 20 فصلًا مكتملًا",style=MaterialTheme.typography.titleMedium)
-                Text("رابط إعلاني خارجي من Adsterra بعد 20 فصلًا مكتملًا. العودة خطوة تنقل محلية ولا تثبت ظهورًا أو مشاهدة أو تحويلًا.",style=MaterialTheme.typography.bodySmall)
-                error?.let {Text(it,color=MaterialTheme.colorScheme.error)}
-                Button(onClick={if(!busy) {busy=true;scope.launch {
-                    try {error=controller.launch(activity,boundary,account.token)}
-                    catch(c:CancellationException) {throw c}
-                    catch(_:Exception) {error="تعذّر فتح الإعلان؛ يمكنك متابعة القراءة"}
-                    finally {busy=false}
-                }}},enabled=!busy && state.pending==null) {Text("فتح رابط إعلاني")}
             }
         }
     }

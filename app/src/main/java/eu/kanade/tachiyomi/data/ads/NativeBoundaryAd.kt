@@ -19,7 +19,7 @@ import java.util.UUID
 @Composable
 fun NativeBoundaryAd(session: String, chapterId: Long, visible: Boolean, smartChapterKey: String? = null) {
     if (eu.kanade.tachiyomi.BuildConfig.SMARTLINK_V3_ENABLED) {
-        smartChapterKey?.let { SmartLinkChapterBoundary("manga", it,visible) }
+        // SmartLink uses the full-screen transition gate, never an in-panel action.
         return
     }
     val context = LocalContext.current

@@ -184,9 +184,9 @@ class SmartLinkV3Test {
         val reader=File(root,"app/src/main/java/eu/kanade/tachiyomi/ui/reader/ReaderViewModel.kt").readText()
         val novel=File(root,"app/src/main/java/eu/kanade/presentation/novels/NovelReaderScreen.kt").readText()
         assertFalse(reader.contains("SmartLinkConfiguration.URL"));assertFalse(novel.contains("SmartLinkConfiguration.URL"))
-        assertTrue(novel.contains("listOf(selectedDownloadChapter)"));assertTrue(novel.contains("smartlink-completed-boundary"));assertTrue(novel.contains("items(blocks.size"))
+        assertTrue(novel.contains("listOf(selectedDownloadChapter)"));assertFalse(novel.contains("smartlink-completed-boundary"));assertTrue(novel.contains("items(blocks.size"))
         val ui=File(root,"app/src/main/java/eu/kanade/tachiyomi/data/ads/DownloadAdGate.kt").readText()
-        assertTrue(ui.contains("فتح رابط إعلاني"));assertFalse(ui.contains("WebView"));assertFalse(ui.contains("evaluateJavascript"))
+        assertTrue(ui.contains("فتح إعلان"));assertFalse(ui.contains("WebView"));assertFalse(ui.contains("evaluateJavascript"))
         val controller=File(root,"app/src/main/java/eu/kanade/tachiyomi/data/ads/SmartLinkController.kt").readText()
         assertTrue(controller.contains("activity.isChangingConfigurations"));assertTrue(controller.contains("scope.async { launchOwned"))
     }
