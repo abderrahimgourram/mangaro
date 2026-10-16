@@ -351,16 +351,20 @@ class ReaderViewModel @JvmOverloads constructor(
     private suspend fun loadChapter(
         loader: ChapterLoader,
         chapter: ReaderChapter,
+        selectedPage: Int? = null,
     ): ViewerChapters {
         val previous=getCurrentChapter()
         if(!incognitoMode && eu.kanade.tachiyomi.BuildConfig.SMARTLINK_V3_ENABLED && previous!=null && previous.chapter.id!=chapter.chapter.id) {
             smartCompletionJob?.join()
             val work=manga ?: return checkNotNull(state.value.viewerChapters)
-            if(!smartController.readerTransition("manga",smartWork(work),previous.chapter.id.toString(),chapter.chapter.id.toString(),null,accountToken))
+            if(!smartController.readerTransition("manga",smartWork(work),previous.chapter.id.toString(),chapter.chapter.id.toString(),selectedPage?.toString(),accountToken))
                 return checkNotNull(state.value.viewerChapters)
         }
         focusChapter(chapter)
         loader.loadChapter(chapter)
+        // Automatic paged/webtoon transitions retain the actual selected image, including
+        // backward boundary traversal. Apply only after authorization and page-list validation.
+        selectedPage?.let { index -> chapter.requestedPage=index.coerceIn(0, chapter.pages.orEmpty().lastIndex.coerceAtLeast(0)) }
 
         val chapterPos = chapterList.indexOf(chapter)
         val newChapters = ViewerChapters(
@@ -391,7 +395,7 @@ class ReaderViewModel @JvmOverloads constructor(
      * Called when the user changed to the given [chapter] when changing pages from the viewer.
      * It's used only to set this chapter as active.
      */
-    private fun loadNewChapter(chapter: ReaderChapter) {
+    private fun loadNewChapter(chapter: ReaderChapter, selectedPage: Int? = null) {
         val loader = loader ?: return
 
         if(eu.kanade.tachiyomi.BuildConfig.SMARTLINK_V3_ENABLED && smartAutomaticTransition?.isActive==true) return
@@ -403,7 +407,7 @@ class ReaderViewModel @JvmOverloads constructor(
 
             try {
                 if(eu.kanade.tachiyomi.BuildConfig.SMARTLINK_V3_ENABLED) {
-                    loadAdjacent(chapter)
+                    loadAdjacent(chapter,selectedPage)
                     eventChannel.trySend(Event.ReloadViewerChapters)
                 } else loadChapter(loader,chapter)
             } catch (e: Throwable) {
@@ -420,14 +424,14 @@ class ReaderViewModel @JvmOverloads constructor(
      */
     private val chapterSelection = eu.kanade.tachiyomi.ui.reader.model.ReaderChapterSelection()
 
-    private suspend fun loadAdjacent(chapter: ReaderChapter): Boolean {
+    private suspend fun loadAdjacent(chapter: ReaderChapter, selectedPage: Int? = null): Boolean {
         val loader = loader ?: return false
         return try {
             chapterSelection.switch(chapterList, chapter.chapter.id ?: return false) { selected ->
                 if(eu.kanade.tachiyomi.BuildConfig.SMARTLINK_V3_ENABLED && getCurrentChapter()?.chapter?.id==selected.chapter.id) return@switch
                 mutableState.update { it.copy(isLoadingAdjacentChapter = true) }
                 try {
-                    withIOContext { loadChapter(loader, selected) }
+                    withIOContext { loadChapter(loader, selected, selectedPage) }
                 } finally {
                     mutableState.update { it.copy(isLoadingAdjacentChapter = false) }
                 }
@@ -520,7 +524,7 @@ class ReaderViewModel @JvmOverloads constructor(
 
         val selectedChapter = page.chapter
         if(eu.kanade.tachiyomi.BuildConfig.SMARTLINK_V3_ENABLED && !incognitoMode && getCurrentChapter()!=null && selectedChapter!=getCurrentChapter()) {
-            loadNewChapter(selectedChapter)
+            loadNewChapter(selectedChapter,page.index)
             return
         }
         focusChapter(selectedChapter)
@@ -765,7 +769,7 @@ class ReaderViewModel @JvmOverloads constructor(
             }
             if(pending.from!=current.chapter.id.toString()) return@launch
             val destination=chapterList.firstOrNull {it.chapter.id.toString()==pending.destination} ?: return@launch
-            loadAdjacent(destination)
+            loadAdjacent(destination,pending.payload?.toIntOrNull()?.takeIf {it>=0})
             eventChannel.trySend(Event.ReloadViewerChapters)
         }
     }

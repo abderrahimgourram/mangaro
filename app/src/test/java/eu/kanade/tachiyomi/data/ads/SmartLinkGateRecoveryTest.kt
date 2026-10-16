@@ -157,6 +157,12 @@ class SmartLinkGateRecoveryTest {
         assertEquals(old.id,changed.id);assertFalse(changed.satisfied)
         assertEquals("24",p.state.readerTransitions[adHash(a,"manga")]!!.destination)
     }
+    @Test fun actualMangaPageIsRetainedWithPendingDestinationAcrossRestart() {
+        val p=SmartLinkPolicy();complete(p,"manga",1,20)
+        val pending=p.transition(a,"manga","source/work","20","19","16")!!
+        val restored=restore(p.state).state.readerTransitions[adHash(a,"manga")]!!
+        assertEquals(pending,restored);assertEquals("19",restored.destination);assertEquals(16,restored.payload!!.toInt())
+    }
     @Test fun noVisibleDownloadBypassOrFailOpenAndAllNavigationUsesSharedGate() {
         val root=generateSequence(File(System.getProperty("user.dir"))) {it.parentFile}.first {File(it,"app/src/main").isDirectory}
         val ui=File(root,"app/src/main/java/eu/kanade/tachiyomi/data/ads/DownloadAdGate.kt").readText()
@@ -169,5 +175,7 @@ class SmartLinkGateRecoveryTest {
         val manga=File(root,"app/src/main/java/eu/kanade/tachiyomi/ui/reader/ReaderViewModel.kt").readText()
         assertTrue(manga.contains("smartController.readerTransition("));assertTrue(manga.contains("smartCompletionJob?.join()"))
         assertFalse(manga.contains("dismissBoundary("));assertTrue(manga.contains("resumePendingAdvertisingTransition"))
+        assertTrue(manga.contains("loadNewChapter(selectedChapter,page.index)"))
+        assertTrue(manga.contains("loadAdjacent(destination,pending.payload?.toIntOrNull()"))
     }
 }
