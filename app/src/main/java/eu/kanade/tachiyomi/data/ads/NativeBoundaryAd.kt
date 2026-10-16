@@ -17,7 +17,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.util.UUID
 
 @Composable
-fun NativeBoundaryAd(session: String, chapterId: Long, visible: Boolean) {
+fun NativeBoundaryAd(session: String, chapterId: Long, visible: Boolean, smartChapterKey: String? = null) {
+    if (eu.kanade.tachiyomi.BuildConfig.SMARTLINK_V3_ENABLED) {
+        smartChapterKey?.let { SmartLinkChapterBoundary("manga", it,visible) }
+        return
+    }
     val context = LocalContext.current
     val boundary = remember(context) { ReaderWebAdPolicy.get(context) }
     val revision by boundary.completionRevision.collectAsStateWithLifecycle()

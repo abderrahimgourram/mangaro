@@ -216,14 +216,14 @@ class UpdatesViewModel(
     fun downloadChapters(
         items: List<UpdatesItem>,
         action: ChapterDownloadAction,
-        beforeDownload: (Int, () -> Unit) -> Unit = { _, proceed -> proceed() },
+        beforeDownload: (eu.kanade.tachiyomi.data.ads.DownloadAdRequest, () -> Unit) -> Unit = { _, proceed -> proceed() },
     ) {
         if (items.isEmpty()) return
         viewModelScope.launch {
             when (action) {
                 ChapterDownloadAction.START -> {
-                    val batch = items.distinctBy { it.update.chapterId }
-                    beforeDownload(batch.size) {
+                    val batch = items.filter { it.downloadStateProvider() in setOf(Download.State.NOT_DOWNLOADED,Download.State.ERROR) }.distinctBy { it.update.chapterId }
+                    beforeDownload(eu.kanade.tachiyomi.data.ads.DownloadAdRequest(batch.map { "manga:${it.update.mangaId}:${it.update.chapterId}" })) {
                         downloadChapters(batch)
                         if (batch.any { it.downloadStateProvider() == Download.State.ERROR }) downloadManager.startDownloads()
                     }

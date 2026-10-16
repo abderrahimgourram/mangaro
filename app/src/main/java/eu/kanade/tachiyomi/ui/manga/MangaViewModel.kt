@@ -720,19 +720,21 @@ class MangaViewModel(
     fun runChapterDownloadActions(
         items: List<ChapterList.Item>,
         action: ChapterDownloadAction,
-        beforeDownload: (Int, () -> Unit) -> Unit = { _, proceed -> proceed() },
+        beforeDownload: (eu.kanade.tachiyomi.data.ads.DownloadAdRequest, () -> Unit) -> Unit = { _, proceed -> proceed() },
     ) {
         when (action) {
             ChapterDownloadAction.START -> {
-                val chapters = items.map { it.chapter }.distinctBy { it.id }
-                beforeDownload(chapters.size) {
+                val chapters = items.filter { it.downloadState in setOf(Download.State.NOT_DOWNLOADED,Download.State.ERROR) }.map { it.chapter }.distinctBy { it.id }
+                beforeDownload(eu.kanade.tachiyomi.data.ads.DownloadAdRequest.manga(chapters)) {
                     startDownload(chapters, false)
                     if (items.any { it.downloadState == Download.State.ERROR }) downloadManager.startDownloads()
                 }
             }
             ChapterDownloadAction.START_NOW -> {
                 val chapter = items.singleOrNull()?.chapter ?: return
-                startDownload(listOf(chapter), true)
+                if (items.single().downloadState in setOf(Download.State.NOT_DOWNLOADED,Download.State.ERROR)) {
+                    beforeDownload(eu.kanade.tachiyomi.data.ads.DownloadAdRequest.manga(listOf(chapter))) { startDownload(listOf(chapter),true) }
+                } else startDownload(listOf(chapter), true)
             }
             ChapterDownloadAction.CANCEL -> {
                 val chapterId = items.singleOrNull()?.id ?: return
@@ -746,7 +748,7 @@ class MangaViewModel(
 
     fun runDownloadAction(
         action: DownloadAction,
-        beforeDownload: (Int, () -> Unit) -> Unit = { _, proceed -> proceed() },
+        beforeDownload: (eu.kanade.tachiyomi.data.ads.DownloadAdRequest, () -> Unit) -> Unit = { _, proceed -> proceed() },
     ) {
         val chaptersToDownload = when (action) {
             DownloadAction.NEXT_1_CHAPTER -> getUnreadChaptersSorted().take(1)
@@ -757,7 +759,7 @@ class MangaViewModel(
             DownloadAction.BOOKMARKED_CHAPTERS -> getBookmarkedChapters()
         }
         if (chaptersToDownload.isNotEmpty()) {
-            beforeDownload(chaptersToDownload.size) { startDownload(chaptersToDownload, false) }
+            beforeDownload(eu.kanade.tachiyomi.data.ads.DownloadAdRequest.manga(chaptersToDownload)) { startDownload(chaptersToDownload, false) }
         }
     }
 

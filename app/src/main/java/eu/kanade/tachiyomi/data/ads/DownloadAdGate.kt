@@ -2,30 +2,153 @@ package eu.kanade.tachiyomi.data.ads
 
 import android.app.Activity
 import android.content.ContextWrapper
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import eu.kanade.tachiyomi.BuildConfig
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
+import tachiyomi.core.common.util.lang.LocalAccountScope as Account
 import java.util.UUID
 
-/** One VIDEO opportunity for an eligible user batch; workers never call this gate. */
+/** Stable batch gate. The existing queue receives work only through its original callback. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun rememberDownloadAdGate(readerActive: Boolean = false): (Int, () -> Unit) -> Unit {
-    val context = LocalContext.current
-    val ads = remember(context) { InMobiAds.get(context) }
-    val activity = remember(context) {
-        generateSequence(context) { (it as? ContextWrapper)?.baseContext }.filterIsInstance<Activity>().firstOrNull()
+fun rememberDownloadAdGate(readerActive: Boolean = false): (DownloadAdRequest, () -> Unit) -> Unit {
+    val context=LocalContext.current
+    val ads=remember(context) {InMobiAds.get(context)}
+    val activity=remember(context) {generateSequence(context) {(it as? ContextWrapper)?.baseContext}.filterIsInstance<Activity>().firstOrNull()}
+    val controller=remember(context) {SmartLinkController.get(context)}
+    val scope=rememberCoroutineScope()
+    val account by Account.changes.collectAsStateWithLifecycle()
+    val state by controller.state.collectAsStateWithLifecycle()
+    val problem by controller.problem.collectAsStateWithLifecycle()
+    var target by rememberSaveable {mutableStateOf<String?>(null)}
+    var pendingOwner by rememberSaveable {mutableStateOf<String?>(null)}
+    var continuation by remember {mutableStateOf<OnceAction?>(null)}
+    var busy by remember {mutableStateOf(false)}
+    var error by rememberSaveable {mutableStateOf<String?>(null)}
+    val token=remember(account.token) {account.token}
+    LaunchedEffect(account.token,account.ready) {
+        if(!account.ready || pendingOwner!=null && pendingOwner!=SmartLinkController.owner(account.token)) {target=null;continuation=null}
     }
     androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
-        if (!readerActive) ads.prepareDownloadSurface(activity)
+        if(!BuildConfig.SMARTLINK_V3_ENABLED && !readerActive) ads.prepareDownloadSurface(activity)
     }
-    return remember(ads, activity, readerActive) {
-        var pending = false
-        { count, proceed ->
-            if (!pending) {
-                pending = true
-                val continueOnce = OnceAction { try { proceed() } finally { pending = false } }
-                if (readerActive) { ads.log("ELIGIBILITY_BLOCKED", "video", "reader_active"); continueOnce.run() }
-                else ads.download(activity, count, UUID.randomUUID().toString(), continueOnce::run)
+    fun proceed() {
+        val next=continuation ?: return
+        try {Account.check(token);next.run();target=null;continuation=null}
+        catch(_:Account.Changed) {target=null;continuation=null}
+        catch(_:Exception) {continuation=null;error="تعذّر بدء التنزيل؛ أغلق اللوحة وحدد الدفعة نفسها لإعادة المحاولة، وتقدم فتحها محفوظ"}
+    }
+    fun closeGate() {controller.abandon(target,token);target=null;continuation=null}
+    val batch=state.batches[target]?.takeIf {account.ready && it.owner==SmartLinkController.owner(account.token)}
+    if(BuildConfig.SMARTLINK_V3_ENABLED && target!=null && batch!=null) CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+        ModalBottomSheet(onDismissRequest={closeGate()},sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true)) {
+            Column(Modifier.fillMaxWidth().padding(horizontal=24.dp).navigationBarsPadding().padding(bottom=24.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) {
+                Text("فتح دفعة التنزيل",style=MaterialTheme.typography.headlineSmall)
+                Text("${batch.count} فصلًا محددًا • تقدمك محفوظ لهذه الدفعة",style=MaterialTheme.typography.bodyMedium)
+                Surface(shape=RoundedCornerShape(18.dp),color=MaterialTheme.colorScheme.secondaryContainer) {
+                    Column(Modifier.fillMaxWidth().padding(18.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                        Text("${batch.returnedActions}/${batch.required}",style=MaterialTheme.typography.headlineLarge)
+                        LinearProgressIndicator(progress={batch.returnedActions.toFloat()/batch.required},modifier=Modifier.fillMaxWidth())
+                        Text(if(batch.unlocked) "الدفعة متاحة للتنزيل" else "افتح الرابط الإعلاني في المتصفح ثم ارجع إلى Mangaro لكل خطوة.")
+                    }
+                }
+                Text("إعلان خارجي من Adsterra. قد يعرض المتصفح محتوى أو يطلب موافقات وفق سياسة الموقع. العودة تُحتسب كخطوة تنقل محلية فقط، ولا تثبت مشاهدة إعلان أو ظهورًا أو تحويلًا.",style=MaterialTheme.typography.bodySmall)
+                (error ?: problem)?.let {Text(it,color=MaterialTheme.colorScheme.error)}
+                if(continuation==null) Text("أُعيد إنشاء الشاشة. أغلق هذه اللوحة وحدد الفصول نفسها لاستئناف التنزيل؛ لن تتكرر الخطوات المكتملة.")
+                if(batch.unlocked) Button(onClick={proceed()},enabled=continuation!=null && !busy,modifier=Modifier.fillMaxWidth()) {Text("بدء تنزيل الفصول المحددة")}
+                else Button(onClick={
+                    if(!busy) {busy=true;scope.launch {
+                        try {error=controller.launch(activity,batch.id,token)}
+                        catch(c:CancellationException) {throw c}
+                        catch(_:Exception) {error="تعذّر فتح الرابط؛ لم تُحتسب خطوة. يمكنك المتابعة دون إعلان"}
+                        finally {busy=false}
+                    }}
+                },enabled=!busy && state.pending==null,modifier=Modifier.fillMaxWidth()) {Text("فتح رابط إعلاني")}
+                if(!batch.unlocked) TextButton(onClick={
+                    if(!busy) {busy=true;scope.launch {
+                        try {
+                            controller.fallback(batch.id,if(!controller.online()) "OFFLINE" else "USER_REPORTED_UNAVAILABLE",token)
+                            error="تمت إتاحة الدفعة دون احتساب خطوة إعلانية"
+                        } catch(c:CancellationException) {throw c}
+                        catch(_:Exception) {error="تعذّر حفظ حالة الإعلانات؛ يمكنك بدء التنزيل دون تعديل عداد الخطوات";proceed()}
+                        finally {busy=false}
+                    }}
+                },enabled=!busy) {Text("الرابط غير متاح؟ متابعة دون إعلان")}
+                TextButton(onClick={closeGate()}) {Text("العودة دون تغيير طابور التنزيل")}
+            }
+        }
+    }
+    return {request, action ->
+        if(!busy && target==null && request.unique.isNotEmpty()) {
+            val captured=Account.capture()
+            if(!BuildConfig.SMARTLINK_V3_ENABLED) {
+                busy=true
+                val once=OnceAction {try {Account.check(captured);action()} finally {busy=false}}
+                if(readerActive) once.run() else ads.download(activity,request.unique.size,UUID.randomUUID().toString(),once::run)
+            } else {
+                busy=true
+                var invokingQueue=false
+                val continueOnce=OnceAction {invokingQueue=true;Account.check(captured);action()}
+                scope.launch {
+                    try {
+                        Account.check(captured)
+                        val prepared=controller.batch(request,captured)
+                        pendingOwner=SmartLinkController.owner(captured)
+                        continuation=continueOnce
+                        error=null
+                        if(prepared.unlocked || ads.privacyChoice()==AdPrivacyChoice.DISABLED) {
+                            if(!prepared.unlocked) controller.fallback(prepared.id,"PRIVACY_DISABLED",captured)
+                            continuation?.run();continuation=null
+                        } else target=prepared.id
+                    } catch(c:CancellationException) {throw c}
+                    catch(_:Exception) {
+                        // Fail open for ad-state IO failure only; never fake progress or
+                        // alter source entitlement/content validation in the real queue.
+                        android.widget.Toast.makeText(context,if(invokingQueue) "تعذّر بدء التنزيل؛ أعد تحديد الدفعة للمحاولة مجددًا" else "الإعلان غير متاح؛ سيبدأ التنزيل دون احتساب خطوات",android.widget.Toast.LENGTH_LONG).show()
+                        if(!invokingQueue) runCatching {continueOnce.run()}
+                    } finally {busy=false}
+                }
+            }
+        }
+    }
+}
+
+/** Separate deliberate button; it neither consumes gestures nor controls Next/Previous. */
+@Composable
+internal fun SmartLinkChapterBoundary(kind: String, chapterKey: String, visible: Boolean) {
+    val context=LocalContext.current
+    val controller=remember(context) {SmartLinkController.get(context)}
+    val state by controller.state.collectAsStateWithLifecycle()
+    val account by Account.changes.collectAsStateWithLifecycle()
+    val scope=rememberCoroutineScope()
+    val activity=remember(context) {generateSequence(context) {(it as? ContextWrapper)?.baseContext}.filterIsInstance<Activity>().firstOrNull()}
+    var error by remember(chapterKey) {mutableStateOf<String?>(null)}
+    var busy by remember(chapterKey) {mutableStateOf(false)}
+    val boundary=SmartLinkPolicy(state).boundary(SmartLinkController.owner(account.token),kind,chapterKey)
+    if(visible && account.ready && boundary!=null && InMobiAds.get(context).privacyChoice()!=AdPrivacyChoice.DISABLED) CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+        Surface(shape=RoundedCornerShape(16.dp),color=MaterialTheme.colorScheme.secondaryContainer) {
+            Column(Modifier.fillMaxWidth().padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                Text("فاصل إعلاني بعد 20 فصلًا مكتملًا",style=MaterialTheme.typography.titleMedium)
+                Text("رابط إعلاني خارجي من Adsterra. لا يلزم فتحه لمتابعة القراءة؛ العودة لا تثبت ظهورًا أو مشاهدة أو تحويلًا.",style=MaterialTheme.typography.bodySmall)
+                error?.let {Text(it,color=MaterialTheme.colorScheme.error)}
+                Button(onClick={if(!busy) {busy=true;scope.launch {
+                    try {error=controller.launch(activity,boundary,account.token)}
+                    catch(c:CancellationException) {throw c}
+                    catch(_:Exception) {error="تعذّر فتح الإعلان؛ يمكنك متابعة القراءة"}
+                    finally {busy=false}
+                }}},enabled=!busy && state.pending==null) {Text("فتح رابط إعلاني")}
+                TextButton(onClick={controller.dismissBoundary(kind,chapterKey,account.token)}) {Text("متابعة القراءة دون فتح الإعلان")}
             }
         }
     }

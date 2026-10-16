@@ -139,11 +139,12 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
         var chaptersOpen by rememberSaveable {mutableStateOf(false)}
         var chapterChoices by remember {mutableStateOf(emptyList<NovelChapter>())}
         var chaptersComplete by remember {mutableStateOf(false)}
-        val offline by remember(repository, chapter.id) {
-            repository.downloads.tasks.map { tasks -> tasks.any {
-                it.novel.id == novel.id && it.chapter.id == chapter.id && it.state == NovelDownloadState.DONE
-            } }.distinctUntilChanged().flowOn(Dispatchers.Default)
-        }.collectAsStateWithLifecycle(initialValue = false)
+        val chapterDownloadState by remember(repository, chapter.id) {
+            repository.downloads.tasks.map { tasks -> tasks.firstOrNull {
+                it.novel.id == novel.id && it.chapter.id == chapter.id
+            }?.state }.distinctUntilChanged().flowOn(Dispatchers.Default)
+        }.collectAsStateWithLifecycle(initialValue = null)
+        val offline = chapterDownloadState == NovelDownloadState.DONE
         var choicesLoading by remember {mutableStateOf(false)}
         var paragraphs by remember {mutableStateOf(emptyList<AnnotatedString>())}
         var loadedChapter by remember { mutableStateOf<NovelChapter?>(null) }
@@ -173,6 +174,7 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
         val chapterAd = remember(novel.id, chapter.id) {
             NovelAdRequest("reader:" + novelDigest(novel.id + "|" + chapter.id))
         }
+        var smartPreviouslyRead by remember(chapter.id) { mutableStateOf(true) }
         val readerOwner = remember { tachiyomi.core.common.util.lang.LocalAccountScope.capture() }
         val scope=rememberCoroutineScope()
         LaunchedEffect(chapter.id,generation) {
@@ -215,6 +217,9 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                     ceneleDiagRenderedCenele = countWord(paragraphs.map { it.text }, "فضاء")
                     seaTrace?.stage(SeaReaderStage.READER_RESTORE)
                     val position=repository.readingPosition(novel,requestedChapter)
+                    smartPreviouslyRead = position != null
+                    if (BuildConfig.SMARTLINK_V3_ENABLED) eu.kanade.tachiyomi.data.ads.SmartLinkController.get(context).observeChapter(
+                        "novel",eu.kanade.tachiyomi.data.ads.SmartLinkController.chapter("novel",novel.sourceId,novel.id,requestedChapter.id),smartPreviouslyRead,readerOwner)
                     val index = withContext(Dispatchers.Default) {
                         val anchor = position?.anchor?.takeIf { it.isNotEmpty() }?.let { hash ->
                             anchors.indices.filter { anchors[it] == hash }.minByOrNull { kotlin.math.abs(document.positions[it] - (position?.paragraph ?: 0)) } ?: -1
@@ -266,6 +271,16 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                 catch (e: Exception) { android.util.Log.d("MangaroNovels", "Optional adjacent chapter unavailable", e) }
             }
         }
+        LaunchedEffect(loadedChapter?.id,restoring) {
+            if (!BuildConfig.SMARTLINK_V3_ENABLED || restoring || loading || error!=null || blocks.isEmpty()) return@LaunchedEffect
+            val shown=loadedChapter ?: return@LaunchedEffect
+            snapshotFlow {
+                val end=scroll.layoutInfo.viewportEndOffset
+                scroll.layoutInfo.visibleItemsInfo.any { it.key=="block-${blocks.lastIndex}" && it.offset+it.size<=end && it.size>0 } && !scroll.isScrollInProgress
+            }.first {it}
+            eu.kanade.tachiyomi.data.ads.SmartLinkController.get(context).completeChapter("novel",
+                eu.kanade.tachiyomi.data.ads.SmartLinkController.chapter("novel",novel.sourceId,novel.id,shown.id),smartPreviouslyRead,readerOwner)
+        }
         val currentChapter by rememberUpdatedState(loadedChapter)
         val currentRestoring by rememberUpdatedState(restoring)
         val currentPlain by rememberUpdatedState(plain)
@@ -300,7 +315,11 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                     val target=repository.adjacent(novel,requested,forward)
                     if (target != null && chapter.id == requested.id) {
                         repository.prepareReaderChapter(novel, target)
-                        if (chapter.id == requested.id) chapter = target
+                        if (chapter.id == requested.id) {
+                            if(BuildConfig.SMARTLINK_V3_ENABLED) eu.kanade.tachiyomi.data.ads.SmartLinkController.get(context).dismissBoundary("novel",
+                                eu.kanade.tachiyomi.data.ads.SmartLinkController.chapter("novel",novel.sourceId,novel.id,requested.id),readerOwner)
+                            chapter = target
+                        }
                     }
                 } catch(c: CancellationException) {throw c} catch(e: Exception) {if(chapter.id == requested.id) error=novelError(e)}
                 finally {navigating=false}
@@ -357,7 +376,7 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                                         style=MaterialTheme.typography.titleLarge.copy(textDirection=TextDirection.ContentOrRtl),
                                         modifier=Modifier.padding(horizontal=appearance.margin.dp).alpha(if(controlsVisible) 1f else 0f).then(if(controlsVisible) Modifier else Modifier.clearAndSetSemantics { }))
                                     Box(Modifier.fillMaxWidth()) {
-                                        if (!loading && !restoring && loadedChapter?.id == chapter.id && error == null && blocks.isNotEmpty()) {
+                                        if (!BuildConfig.SMARTLINK_V3_ENABLED && !loading && !restoring && loadedChapter?.id == chapter.id && error == null && blocks.isNotEmpty()) {
                                             NovelAdPlacement(chapterAd, visible = adVisible, allowStart = !scroll.isScrollInProgress)
                                         }
                                     }
@@ -375,6 +394,11 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                                         else -> paragraphStyle
                                     })
                                 }
+                            }
+                            if (BuildConfig.SMARTLINK_V3_ENABLED) item(key="smartlink-completed-boundary") {
+                                eu.kanade.tachiyomi.data.ads.SmartLinkChapterBoundary("novel",
+                                    eu.kanade.tachiyomi.data.ads.SmartLinkController.chapter("novel",novel.sourceId,novel.id,chapter.id),
+                                    !loading && !restoring && loadedChapter?.id==chapter.id && error==null)
                             }
                         }
                 }
@@ -415,7 +439,7 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                                 TextButton(onClick={adjacent(true)},enabled=!loading && !navigating) {Text("التالي",color=gold)}
                             }
                             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.Center,verticalAlignment=Alignment.CenterVertically) {
-                                IconButton(onClick={downloadAdGate(1) { scope.launch { try {repository.downloads.enqueue(novel,listOf(chapter))} catch(c: CancellationException) {throw c} catch(e: Exception) {error=novelError(e)} } }},enabled=!offline && !loading && loadedChapter?.id == chapter.id) {Icon(Icons.Outlined.Download,"تحميل الفصل",tint=gold)}
+                                IconButton(onClick={val selectedDownloadChapter=chapter;downloadAdGate(eu.kanade.tachiyomi.data.ads.DownloadAdRequest.novel(novel.id,listOf(selectedDownloadChapter.id))) { scope.launch { try {repository.downloads.enqueue(novel,listOf(selectedDownloadChapter))} catch(c: CancellationException) {throw c} catch(e: Exception) {error=novelError(e)} } }},enabled=chapterDownloadState !in setOf(NovelDownloadState.DONE,NovelDownloadState.PENDING,NovelDownloadState.RUNNING,NovelDownloadState.PAUSED,NovelDownloadState.DELETING) && !loading && loadedChapter?.id == chapter.id) {Icon(Icons.Outlined.Download,"تحميل الفصل",tint=gold)}
                                 val bookmarked by remember(repository, novel.id, chapter.id) {
                                     repository.library.map { entries -> entries.firstOrNull { it.novel.id == novel.id }?.bookmarks?.contains(chapter.id) == true }
                                         .distinctUntilChanged().flowOn(Dispatchers.Default)

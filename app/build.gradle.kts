@@ -28,9 +28,11 @@ if (false) {
 }
 
 // Explicit opt-in for a private, signed Release acceptance APK; published defaults stay unchanged.
+val smartlinkV3PrivateAcceptance = providers.gradleProperty("smartlinkV3PrivateAcceptance").orNull == "true"
 val sunovelsPrivateAcceptance = providers.gradleProperty("sunovelsPrivateAcceptance").orNull == "true"
 val sunovelsAcceptanceHarness = providers.gradleProperty("sunovelsAcceptanceHarness").orNull == "true"
 require(!sunovelsAcceptanceHarness || sunovelsPrivateAcceptance)
+require(!smartlinkV3PrivateAcceptance || sunovelsPrivateAcceptance) { "SmartLink V3 requires the explicit private acceptance build" }
 
 val sunovelsRuntimeAudit = providers.gradleProperty("sunovelsRuntimeAudit").orNull == "true"
 
@@ -76,7 +78,8 @@ android {
         buildConfigField("String", "SUPABASE_PUBLISHABLE_KEY", "\"$supabaseKey\"")
         manifestPlaceholders["accountAuthScheme"] = "mangaro"
 
-        versionCode = if (sunovelsPrivateAcceptance) 31 else 22
+        buildConfigField("boolean", "SMARTLINK_V3_ENABLED", smartlinkV3PrivateAcceptance.toString())
+        versionCode = if (sunovelsPrivateAcceptance) 32 else 22
         versionName = "2.0.4"
 
         buildConfigField("String", "COMMIT_COUNT", "\"${getLatestCommitCount()}\"")

@@ -117,6 +117,7 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
         Injekt.importModule(DomainModule())
         eu.kanade.tachiyomi.data.account.LocalAccountActivities.install(this)
         tachiyomi.core.common.util.lang.LocalAccountScope.beginTransition()
+        if (BuildConfig.SMARTLINK_V3_ENABLED) eu.kanade.tachiyomi.data.ads.SmartLinkController.get(this)
         ProcessLifecycleOwner.get().lifecycleScope.launch(Dispatchers.IO) {
             val auth = Injekt.get<mihon.domain.account.AccountAuth>()
             if (auth !is eu.kanade.tachiyomi.data.account.SupabaseAccountAuth) Injekt.get<tachiyomi.data.LocalAccountWorkspace>().bind(null)

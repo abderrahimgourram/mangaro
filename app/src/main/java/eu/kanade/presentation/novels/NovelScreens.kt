@@ -579,7 +579,7 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
             if (pending.isEmpty()) { notice = "الفصول محمّلة أو قيد التنزيل بالفعل"; return }
             // All batch, volume, range and chapter-row actions enter the same shared gate.
             // Dismissing that gate must not leave the queue UI stuck in an enqueueing state.
-            downloadAdGate(pending.size) {
+            downloadAdGate(eu.kanade.tachiyomi.data.ads.DownloadAdRequest.novel(novel.id,pending.map { it.id })) {
                 enqueueing = true; error = null; notice = null
                 scope.launch {
                     try { repository.downloads.enqueue(novel, pending); notice = "أُضيفت الفصول إلى التنزيلات"; selected = emptySet(); selecting = false }

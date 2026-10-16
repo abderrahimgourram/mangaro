@@ -22,4 +22,4 @@ internal fun NovelAdPlacement(request: NovelAdRequest, visible: Boolean = true, 
 }
 
 @Composable
-internal fun rememberNovelDownloadAdGate(readerActive: Boolean = false): (Int, () -> Unit) -> Unit = rememberDownloadAdGate(readerActive)
+internal fun rememberNovelDownloadAdGate(readerActive: Boolean = false): (eu.kanade.tachiyomi.data.ads.DownloadAdRequest, () -> Unit) -> Unit = rememberDownloadAdGate(readerActive)

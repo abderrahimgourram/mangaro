@@ -116,6 +116,7 @@ class ReaderViewModel @JvmOverloads constructor(
 
     val adReadingSession = java.util.UUID.randomUUID().toString()
     private val readerAdPolicy = eu.kanade.tachiyomi.data.ads.ReaderWebAdPolicy.get(Injekt.get<Application>()).also { it.startSession(adReadingSession) }
+    private val smartInitialRead = mutableMapOf<Long,Boolean>()
     private val adCompletion = eu.kanade.tachiyomi.data.ads.AdChapterCompletion()
     private val adPageReadyJobs = linkedMapOf<Long, kotlinx.coroutines.Job>()
 
@@ -516,6 +517,8 @@ class ReaderViewModel @JvmOverloads constructor(
 
         // Only selected chapter ends count; opening an ordinary page does not.
         selectedChapter.chapter.id?.let { chapterId ->
+            val smartWasRead = smartInitialRead.getOrPut(chapterId) { selectedChapter.chapter.read }
+            if (smartInitialRead.size>64) smartInitialRead.remove(smartInitialRead.keys.first())
             adCompletion.selected(chapterId, page.index, pages.lastIndex)
             if (page.index != pages.lastIndex) {
                 adPageReadyJobs.remove(chapterId)?.cancel()
@@ -526,6 +529,10 @@ class ReaderViewModel @JvmOverloads constructor(
                     }
                     if (adCompletion.ready(chapterId, page.index, pages.lastIndex)) {
                         readerAdPolicy.chapterCompleted(adReadingSession, chapterId)
+                        if (!incognitoMode && eu.kanade.tachiyomi.BuildConfig.SMARTLINK_V3_ENABLED) manga?.let { work ->
+                            eu.kanade.tachiyomi.data.ads.SmartLinkController.get(Injekt.get<Application>()).completeChapter(
+                                "manga", eu.kanade.tachiyomi.data.ads.SmartLinkController.chapter("manga",work.source.toString(),work.url,selectedChapter.chapter.url),smartWasRead,accountToken)
+                        }
                     }
                 }
                 if (page.status is Page.State.Ready) {
@@ -547,6 +554,10 @@ class ReaderViewModel @JvmOverloads constructor(
         }
 
         if (selectedChapter != getCurrentChapter()) {
+            if (eu.kanade.tachiyomi.BuildConfig.SMARTLINK_V3_ENABLED) getCurrentChapter()?.let { old ->
+                manga?.let { work -> eu.kanade.tachiyomi.data.ads.SmartLinkController.get(Injekt.get<Application>()).dismissBoundary("manga",
+                    eu.kanade.tachiyomi.data.ads.SmartLinkController.chapter("manga",work.source.toString(),work.url,old.chapter.url),accountToken) }
+            }
             logcat { "Setting ${selectedChapter.chapter.url} as active" }
             loadNewChapter(selectedChapter)
         }
