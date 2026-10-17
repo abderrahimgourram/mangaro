@@ -1,9 +1,14 @@
 package eu.kanade.tachiyomi.data.ads
 
+import android.R
 import android.content.Context
 import android.content.Intent
 import android.content.res.ColorStateList
 import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.RippleDrawable
+import android.graphics.drawable.StateListDrawable
+import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
@@ -62,6 +67,8 @@ class ReaderAdPageActivity : BaseActivity() {
             layoutDirection = View.LAYOUT_DIRECTION_RTL
             gravity = Gravity.CENTER_HORIZONTAL
             setPadding(dp(24), dp(32), dp(24), dp(32))
+            clipToPadding = false
+            clipChildren = false
         }
         fun label(value: String) = TextView(this).apply {
             text = value; textSize = 16f; setTextColor(Color.rgb(235, 222, 244))
@@ -72,10 +79,83 @@ class ReaderAdPageActivity : BaseActivity() {
         label("افتح إعلانًا واحدًا للمتابعة")
         label("إعلان خارجي · Adsterra · asiafilm.org").textSize = 12f
         val message = label("").apply { setTextColor(Color.rgb(255, 180, 180)) }
+
+        val cornerRadius = dp(28).toFloat()
+        val strokeWidth = dp(2)
+
+        val normalBg = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            setCornerRadius(cornerRadius)
+            setColor(Color.parseColor("#352044"))
+            setStroke(strokeWidth, Color.parseColor("#A855F7"))
+        }
+        val pressedBg = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            setCornerRadius(cornerRadius)
+            setColor(Color.parseColor("#4A2E5D"))
+            setStroke(strokeWidth, Color.parseColor("#C084FC"))
+        }
+        val disabledBg = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            setCornerRadius(cornerRadius)
+            setColor(Color.parseColor("#251730"))
+            setStroke(strokeWidth, Color.parseColor("#582C80"))
+        }
+
+        val stateListDrawable = StateListDrawable().apply {
+            addState(intArrayOf(-R.attr.state_enabled), disabledBg)
+            addState(intArrayOf(R.attr.state_pressed), pressedBg)
+            addState(intArrayOf(), normalBg)
+        }
+
+        val rippleColor = ColorStateList.valueOf(Color.parseColor("#55A855F7"))
+        val maskDrawable = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            setCornerRadius(cornerRadius)
+            setColor(Color.WHITE)
+        }
+        val buttonDrawable = RippleDrawable(
+            rippleColor,
+            stateListDrawable,
+            maskDrawable,
+        )
+
+        val textColorStateList = ColorStateList(
+            arrayOf(
+                intArrayOf(-R.attr.state_enabled),
+                intArrayOf(),
+            ),
+            intArrayOf(
+                Color.parseColor("#8A6B9E"),
+                Color.parseColor("#E9C9FF"),
+            ),
+        )
+
         val button = Button(this).apply {
-            text = "شاهد إعلان للإكمال"; isAllCaps = false; minHeight = dp(52)
-            backgroundTintList = ColorStateList.valueOf(Color.rgb(112, 61, 190)); setTextColor(Color.WHITE)
-            content.addView(this, LinearLayout.LayoutParams(-1, -2))
+            text = "شاهد إعلان للإكمال"
+            isAllCaps = false
+            textSize = 17f
+            gravity = Gravity.CENTER
+            minHeight = dp(56)
+            minimumHeight = dp(56)
+            setPadding(dp(28), dp(14), dp(28), dp(14))
+            backgroundTintList = null
+            background = buttonDrawable
+            setTextColor(textColorStateList)
+            elevation = dp(6).toFloat()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                outlineAmbientShadowColor = Color.parseColor("#A855F7")
+                outlineSpotShadowColor = Color.parseColor("#A855F7")
+            }
+            stateListAnimator = null
+            val params = LinearLayout.LayoutParams(-1, -2).apply {
+                leftMargin = dp(16)
+                rightMargin = dp(16)
+                topMargin = dp(12)
+                bottomMargin = dp(8)
+                gravity = Gravity.CENTER_HORIZONTAL
+            }
+            content.addView(this, params)
         }
         setContentView(ScrollView(this).apply {
             isFillViewport = true; fitsSystemWindows = true; setBackgroundColor(purple)

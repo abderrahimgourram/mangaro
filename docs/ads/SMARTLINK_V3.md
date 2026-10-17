@@ -1,6 +1,6 @@
 # SmartLink V3 — private acceptance
 
-Publisher-supplied SmartLink ID: **31593088**. URL: `https://asiafilm.org/4/71f2337020da186c3958a071da292bec`.
+Publisher-supplied SmartLink ID: **31593088**. URL: `https://asiafilm.org/4/f6ae7ab4f2990fc7f8c59d3bff6a4431`.
 
 Approval provenance: the publisher reports an explicit account-specific exception under Adsterra support case **#481902**. This was NOT independently verified and is NOT general network permission. Adsterra's public [publisher requirements](https://adsterra.com/blog/set-up-publishers-dashboard/) ordinarily prohibit incentivized traffic. Preserve the actual account correspondence for compliance review before production activation; this implementation does not contact the support account or certify approval.
 
@@ -43,3 +43,27 @@ Final exact test/build/signature/checksum results and changed-file inventory are
 Manual acceptance: install over the current Release without clearing data; select 50 genuinely pending chapters and verify 0/2; open each labeled link explicitly and return; verify no double counting on rotations/repeated resumes, then enqueue. Recreate/restart and re-select the identical batch: reuse steps. Test offline/no-browser/unavailable fallback without deleting existing files. Check A → guest → B → A isolation. Read 20 genuinely new chapters independently in novels and manga/manhwa, verify optional footer only, back-and-forth deduplication and uninterrupted Next/Previous. Verify browser-specific split-screen behavior and destination safety manually; send no credentials or story text in diagnostics.
 
 Follow-up: [2026-10-16 strict download gate and durable reader-transition repair](SMARTLINK_GATE_REPAIR_20261016.md) supersedes the original optional/fail-open gate behavior described above.
+
+## Browser return recovery (2026-10-17, private code42)
+
+All Android placements read `AdsterraSmartLinkConfig.SMARTLINK_URL`. Changing that
+single source setting and rebuilding changes reader and download destinations; it
+is not a remote configuration service. Historical reports retain their original URLs.
+
+Reader gate completion now observes the initiating Activity pausing, with stopping
+as a fallback. Foreground return carries its exact launch token; late asynchronous
+callbacks cannot resolve a newer launch. Observed departure and return are
+reconciled atomically even if departure persistence arrives after resume.
+No local count is treated as proof of an impression/conversion.
+
+Novel restoration can consume a satisfied navigation row before the gate Activity
+is destroyed. Gate closure/verification now accepts the durable fulfilled page
+when the row has already been consumed, while rejecting a different active
+transition/destination. No persistence schema change or downloaded-file mutation.
+
+Focused tests simulate pause-without-stop, delayed acceptance/departure, replay,
+wrong owner/token, expiry, consumption before gate closure, restart and independent
+download batches. Runtime phone acceptance is still required. Online, undownloaded
+reading keeps the existing 20-chapter page policy; offline/downloaded exemptions,
+privacy opt-outs, device frequency caps and missing historical boundaries remain.
+InMobi stays removed. Existing opt-outs are never silently reset to restore ads.

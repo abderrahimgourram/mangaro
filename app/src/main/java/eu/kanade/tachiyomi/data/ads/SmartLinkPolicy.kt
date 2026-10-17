@@ -6,7 +6,7 @@ import java.security.MessageDigest
 /** No impression, view, conversion or reward claim is inferred from these local events. */
 object SmartLinkConfiguration {
     const val ID = 31593088L
-    const val URL = "https://asiafilm.org/4/71f2337020da186c3958a071da292bec"
+    const val URL = AdsterraSmartLinkConfig.SMARTLINK_URL
     const val APPROVAL_REFERENCE = "481902"
     const val APPROVAL_PROVENANCE = "PUBLISHER_REPORTED_ACCOUNT_SPECIFIC_EXCEPTION_NOT_INDEPENDENTLY_VERIFIED"
 }
@@ -223,6 +223,15 @@ internal class SmartLinkPolicy(var state: SmartLinkState = SmartLinkState(), val
         if(p.owner!=owner || now<p.created || now-p.created>15*60_000) { state=state.copy(pending=null); return }
         if(!p.away) return
         state=state.copy(pending=p.copy(returned=true));settle()
+    }
+    /** Called only after the initiating Activity actually paused for an accepted external launch.
+     * Reconcile the pair atomically if asynchronous departure persistence arrived late.
+     */
+    fun browserReturned(owner: String, token: String, now: Long) {
+        val pending = state.pending?.takeIf { it.owner == owner && it.token == token } ?: return
+        if (now < pending.created || now - pending.created > 15 * 60_000) { returned(owner, now); return }
+        away(token)
+        returned(owner, now)
     }
     private fun settle() {
         val p=state.pending?.takeIf {it.accepted && it.away && it.returned} ?: return

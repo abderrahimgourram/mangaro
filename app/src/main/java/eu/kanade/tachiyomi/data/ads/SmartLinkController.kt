@@ -48,6 +48,7 @@ internal class SmartLinkController private constructor(private val app: Applicat
     val problem=mutableProblem.asStateFlow()
     @Volatile private var launchingActivity: WeakReference<Activity>? = null
     @Volatile private var launchingToken: String? = null
+    @Volatile private var departedToken: String? = null
     private val lifecycleRevision=MutableStateFlow(0L)
     @Volatile private var resumed: WeakReference<Activity>? = null
     init {
@@ -102,7 +103,7 @@ internal class SmartLinkController private constructor(private val app: Applicat
         if(activity==null || activity.isFinishing || activity.isDestroyed) return "تعذّر فتح المتصفح؛ يمكنك المحاولة مجددًا"
         if(!online()) return "لا يوجد اتصال بالإنترنت؛ يمكنك الرجوع أو إعادة المحاولة"
         if(!SmartLinkPrivacy.get(app).enabled()) return "الإعلانات مرفوضة في اختيارات الخصوصية؛ يمكنك الرجوع أو إعادة المحاولة"
-        val navigation=Intent(Intent.ACTION_VIEW,Uri.parse(SmartLinkConfiguration.URL)).addCategory(Intent.CATEGORY_BROWSABLE)
+        val navigation=Intent(Intent.ACTION_VIEW,Uri.parse(AdsterraSmartLinkConfig.SMARTLINK_URL)).addCategory(Intent.CATEGORY_BROWSABLE)
         val manager=app.packageManager
         val browsers=manager.queryIntentActivities(Intent(Intent.ACTION_VIEW,Uri.parse("https://example.com")).addCategory(Intent.CATEGORY_BROWSABLE),android.content.pm.PackageManager.MATCH_DEFAULT_ONLY)
             .map { it.activityInfo.packageName }.filter { it!=app.packageName && it!="android" }
@@ -113,7 +114,7 @@ internal class SmartLinkController private constructor(private val app: Applicat
         val denied=edit { it.canLaunch(owner(token),target,System.currentTimeMillis()) }
         if(denied!=null) return denied
         edit { Account.check(token);it.prepare(owner(token),target,id,System.currentTimeMillis()) }
-        launchingActivity=WeakReference(activity);launchingToken=id
+        launchingActivity=WeakReference(activity);launchingToken=id;departedToken=null
         try {
             withContext(Dispatchers.Main.immediate) { Account.check(token);activity.startActivity(navigation) }
             edit { Account.check(token);it.accepted(id,System.currentTimeMillis()) }
@@ -156,9 +157,8 @@ internal class SmartLinkController private constructor(private val app: Applicat
     internal fun attachReaderPage(key: ReaderAdPageHost.Key, session: String) = readerPages.attach(key, session)
     internal fun closeReaderPage(key: ReaderAdPageHost.Key, session: String) {
         val account = Account.changes.value
-        val pending = state.value.readerTransitions[adHash(key.owner, key.kind)]
         val verified = account.ready && owner(account.token) == key.owner &&
-            pending?.id == key.boundary && pending.satisfied
+            SmartLinkReaderResolution.verified(state.value, key)
         readerPages.close(key, session, verified)
         if(!verified && account.ready && owner(account.token)==key.owner) abandon(key.boundary,account.token)
     }
@@ -190,7 +190,8 @@ internal class SmartLinkController private constructor(private val app: Applicat
         withContext(Dispatchers.Main.immediate) {
             Account.check(token)
             val key=ReaderAdPageHost.Key(transition.owner,kind,transition.id)
-            val current=currentReaderPage(key,token) ?: return@withContext false
+            val current=currentReaderPage(key,token)
+                ?: return@withContext SmartLinkReaderResolution.verified(state.value,key,destination)
             if(current.satisfied) return@withContext current.destination==destination
             val request=readerPages.request(key)
             if(request.launch) try {
@@ -201,7 +202,7 @@ internal class SmartLinkController private constructor(private val app: Applicat
             }
             val passed=request.page.result.await()
             Account.check(token)
-            val verified=passed && currentReaderPage(key,token)?.let { it.destination==destination && it.satisfied } == true
+            val verified=passed && SmartLinkReaderResolution.verified(state.value,key,destination)
             if(verified) readerPages.applied(key)
             verified
         }
@@ -210,18 +211,34 @@ internal class SmartLinkController private constructor(private val app: Applicat
         val caps=cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
         return caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) && caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED)
     }
-    private suspend fun returnToApp() {
+    private suspend fun returnToApp(expected: String? = departedToken ?: state.value.pending?.takeIf { it.away }?.token) {
         val token=Account.active()
-        if(!Account.changes.value.ready) return
-        edit { Account.check(token);it.returned(owner(token),System.currentTimeMillis()) }
+        if(!Account.changes.value.ready || expected == null || resumed?.get() == null) return
+        val departed = expected == departedToken
+        edit {
+            Account.check(token)
+            if (it.state.pending?.token != expected) return@edit
+            if (departed) it.browserReturned(owner(token),expected,System.currentTimeMillis())
+            // Durable departure evidence also supports process recreation without the in-memory token.
+            else it.returned(owner(token),System.currentTimeMillis())
+        }
     }
-    override fun onActivityStopped(activity: Activity) {
+    private fun browserDeparted(activity: Activity) {
         val token=launchingToken ?: return
         if(activity!==launchingActivity?.get() || activity.isChangingConfigurations) return
+        departedToken=token
         scope.launch { safely { edit {it.away(token)} } }
     }
-    override fun onActivityResumed(activity: Activity) { resumed=WeakReference(activity);lifecycleRevision.value++;scope.launch {safely {returnToApp()} } }
-    override fun onActivityPaused(activity: Activity) { if(resumed?.get()===activity) resumed=null }
+    override fun onActivityStopped(activity: Activity) = browserDeparted(activity)
+    override fun onActivityResumed(activity: Activity) {
+        resumed=WeakReference(activity);lifecycleRevision.value++
+        val expected=departedToken ?: state.value.pending?.takeIf { it.away }?.token
+        scope.launch {safely {returnToApp(expected)} }
+    }
+    override fun onActivityPaused(activity: Activity) {
+        browserDeparted(activity)
+        if(resumed?.get()===activity) resumed=null
+    }
     override fun onActivityCreated(a: Activity,b: Bundle?) = Unit
     override fun onActivityStarted(a: Activity) = Unit
     override fun onActivitySaveInstanceState(a: Activity,b: Bundle) = Unit

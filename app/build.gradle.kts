@@ -79,7 +79,7 @@ android {
         manifestPlaceholders["accountAuthScheme"] = "mangaro"
 
         buildConfigField("boolean", "SMARTLINK_V3_ENABLED", smartlinkV3PrivateAcceptance.toString())
-        versionCode = if (sunovelsPrivateAcceptance) 41 else 22
+        versionCode = if (sunovelsPrivateAcceptance) 42 else 22
         versionName = "2.0.4"
 
         buildConfigField("String", "COMMIT_COUNT", "\"${getLatestCommitCount()}\"")

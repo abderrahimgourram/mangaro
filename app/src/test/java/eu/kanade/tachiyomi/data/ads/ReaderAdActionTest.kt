@@ -12,7 +12,8 @@ class ReaderAdActionTest {
         val token = Account.Token("fixture-a", 1)
         val states = MutableStateFlow(Account.State(token))
         assertEquals(token, awaitReaderAdAccount(SmartLinkController.owner(token), states))
-        assertEquals("https://asiafilm.org/4/71f2337020da186c3958a071da292bec", SmartLinkConfiguration.URL)
+        assertEquals("https://asiafilm.org/4/f6ae7ab4f2990fc7f8c59d3bff6a4431", AdsterraSmartLinkConfig.SMARTLINK_URL)
+        assertEquals(AdsterraSmartLinkConfig.SMARTLINK_URL, SmartLinkConfiguration.URL)
     }
     @Test fun delayedWorkspaceIsBoundedAndCanBeRetriedWithoutGrantingAnAdStep() = runTest {
         val token = Account.Token("fixture-a", 1)
