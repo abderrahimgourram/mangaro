@@ -47,7 +47,6 @@ import eu.kanade.presentation.theme.MangaroDesignSystem
 import eu.kanade.tachiyomi.ui.home.HOME_DISCOVERY_PREVIEW_LIMIT
 import eu.kanade.tachiyomi.ui.home.HomeDiscoveryItem
 import eu.kanade.tachiyomi.ui.home.GroupDiscoveryItems
-import tachiyomi.domain.manga.service.CatalogSelectionContext
 
 @Composable
 fun MangaroPopularShelf(
@@ -118,8 +117,9 @@ private fun DiscoveryShelf(
     content: @Composable (HomeDiscoveryItem, Dp) -> Unit,
 ) {
     val previewItems = remember(items, category) {
-        val context = when (category) { "popular" -> CatalogSelectionContext.POPULAR; "latest" -> CatalogSelectionContext.LATEST; else -> CatalogSelectionContext.DEFAULT }
-        GroupDiscoveryItems.group(items, context).take(HOME_DISCOVERY_PREVIEW_LIMIT)
+        // HomeViewModel already projects verified groups off the UI thread.
+        // Drawing a shelf must not repeat identity resolution for the whole section.
+        items.take(HOME_DISCOVERY_PREVIEW_LIMIT)
     }
     val firstMangaId = previewItems.firstOrNull()?.mangaId ?: 0L
     val listState = rememberLazyListState()

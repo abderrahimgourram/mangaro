@@ -18,6 +18,7 @@ import eu.kanade.tachiyomi.ui.base.activity.BaseActivity
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.TimeoutCancellationException
 import tachiyomi.core.common.util.lang.LocalAccountScope as Account
 
 /** An inter-chapter page in the Activity back stack. It never has a chapter ID or page number. */
@@ -75,7 +76,6 @@ class ReaderAdPageActivity : BaseActivity() {
         val button = Button(this).apply {
             text = "شاهد إعلان للإكمال"; isAllCaps = false; minHeight = dp(52)
             backgroundTintList = ColorStateList.valueOf(gold); setTextColor(purple)
-            isEnabled = false
             content.addView(this, LinearLayout.LayoutParams(-1, -2))
         }
         setContentView(ScrollView(this).apply {
@@ -84,6 +84,36 @@ class ReaderAdPageActivity : BaseActivity() {
                 addView(content, FrameLayout.LayoutParams(-1, -2, Gravity.CENTER))
             }, FrameLayout.LayoutParams(-1, -1))
         })
+        // Install the action immediately. Waiting for workspace restoration must not leave
+        // a permanently disabled button with no click handler or useful feedback.
+        button.setOnClickListener {
+            if (button.isEnabled) lifecycleScope.launch {
+                button.isEnabled = false
+                message.text = "جار فتح الإعلان..."
+                try {
+                    val account = awaitReaderAdAccount(owner)
+                    Account.check(account)
+                    val pending = controller.currentReaderPage(key, account)
+                    if (pending == null) {
+                        message.text = "تعذّر استعادة الفاصل؛ ارجع وأعد المحاولة"
+                    } else if (pending.satisfied) {
+                        finish()
+                    } else {
+                        message.text = controller.launch(this@ReaderAdPageActivity, boundary, account).orEmpty()
+                    }
+                } catch (_: TimeoutCancellationException) {
+                    message.text = "تعذّر تجهيز الإعلان؛ اضغط لإعادة المحاولة"
+                } catch (_: Account.Changed) {
+                    finish()
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    message.text = "تعذّر فتح الرابط؛ أعد المحاولة"
+                } finally {
+                    button.isEnabled = true
+                }
+            }
+        }
         // Offline reading is exempt, including loss of connectivity while this page is visible.
         connectivity = getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
         val callback = object : android.net.ConnectivityManager.NetworkCallback() {
@@ -107,21 +137,11 @@ class ReaderAdPageActivity : BaseActivity() {
                 return@launch
             }
             if (transition == null) { finish(); return@launch }
-            button.isEnabled = !transition.satisfied
             launch {
                 controller.state.first { state ->
                     state.readerTransitions[adHash(owner, kind)]?.let { it.id != boundary || it.satisfied } != false
                 }
                 finish()
-            }
-            button.setOnClickListener {
-                if (button.isEnabled) lifecycleScope.launch {
-                    button.isEnabled = false
-                    try { message.text = controller.launch(this@ReaderAdPageActivity, boundary, account).orEmpty() }
-                    catch (cancelled: CancellationException) { throw cancelled }
-                    catch (_: Exception) { message.text = "تعذّر فتح الرابط؛ أعد المحاولة" }
-                    finally { button.isEnabled = true }
-                }
             }
             if (transition.satisfied) finish()
         }

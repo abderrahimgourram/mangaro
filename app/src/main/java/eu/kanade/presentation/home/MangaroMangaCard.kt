@@ -126,30 +126,7 @@ fun MangaroMangaCard(
                     ),
             )
 
-            // Multi-source Badge
-            if (item.availableVersions.size > 1) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(5.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(Color(0xEB0E0A14))
-                        .border(
-                            BorderStroke(0.5.dp, MangaroDesignSystem.GoldPrimary.copy(alpha = 0.6f)),
-                            RoundedCornerShape(6.dp),
-                        )
-                        .padding(horizontal = 5.dp, vertical = 2.dp),
-                ) {
-                    Text(
-                        text = "${item.availableVersions.size} مصادر",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Bold,
-                        ),
-                        color = MangaroDesignSystem.GoldPrimary,
-                    )
-                }
-            }
+
         }
 
         // Title Container - integrated into the same card shell

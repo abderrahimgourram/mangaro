@@ -111,11 +111,15 @@ object HomeTab : Tab {
         val tabNavigator = LocalTabNavigator.current
         val navigator = LocalNavigator.currentOrThrow
         var selectedCatalogId by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<Long?>(null) }
-        val catalogItems = state.popularManga + state.latestManga + state.newManga + state.completedManga + listOfNotNull(state.discoveryFeatured)
-        val catalogGroups = androidx.compose.runtime.remember(catalogItems) { GroupDiscoveryItems.group(catalogItems) }
-        val selectedCatalog = catalogGroups.firstOrNull { item -> (listOf(item) + item.alternatives).any { it.mangaId == selectedCatalogId } }
+        val catalogItems = androidx.compose.runtime.remember(state.popularManga, state.latestManga,
+            state.newManga, state.completedManga, state.discoveryFeatured) {
+            state.popularManga + state.latestManga + state.newManga + state.completedManga + listOfNotNull(state.discoveryFeatured)
+        }
+        val selectedCatalog = androidx.compose.runtime.remember(catalogItems, selectedCatalogId) {
+            selectedCatalogId?.let { GroupDiscoveryItems.forManga(catalogItems, it) }
+        }
         val openCatalog: (Long) -> Unit = { id ->
-            val group = catalogGroups.firstOrNull { item -> (listOf(item) + item.alternatives).any { it.mangaId == id } }
+            val group = GroupDiscoveryItems.forManga(catalogItems, id)
             // Preserve the clicked Popular/Latest representative unless an explicit preference exists.
             navigator.push(MangaScreen(group?.let { CatalogEditionOpening.preferred(it)?.mangaId } ?: id, true))
         }

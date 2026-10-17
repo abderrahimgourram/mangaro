@@ -27,6 +27,18 @@ object GroupDiscoveryItems {
             it.sourceId == selected?.sourceId && it.mangaId == selected?.mangaId
         } }
 
+    /** Home sections are already grouped. Reconcile only the selected work on a user action,
+     * never the entire multi-section catalog during composition. Keep all of its alternatives.
+     */
+    fun forManga(items: List<HomeDiscoveryItem>, mangaId: Long): HomeDiscoveryItem? {
+        fun contains(item: HomeDiscoveryItem) = item.mangaId == mangaId || item.alternatives.any { it.mangaId == mangaId }
+        val matches = items.filter(::contains)
+        if (matches.isEmpty()) return null
+        val keys = matches.map(::presentationKey).toSet()
+        val related = items.filter { contains(it) || presentationKey(it) in keys }
+        return group(related).firstOrNull(::contains)
+    }
+
     data class PopularProjection(val featured: HomeDiscoveryItem?, val items: List<HomeDiscoveryItem>)
     fun popularProjection(items: List<HomeDiscoveryItem>, selected: HomeDiscoveryItem?): PopularProjection {
         val grouped = group(items, CatalogSelectionContext.POPULAR)
