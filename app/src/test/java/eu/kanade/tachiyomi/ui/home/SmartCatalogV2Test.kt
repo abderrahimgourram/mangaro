@@ -144,7 +144,8 @@ class SmartCatalogV2Test {
         val selected=GroupDiscoveryItems.findSelectedWork(merged,a)!!
         selected.url shouldBe b.url;selected.sourceId shouldBe b.sourceId
     }
-    @Test fun retainedOtherworldlyPhoneReferencesAreUnverifiedNotSilentlyMerged() {
+    @Test fun retainedOtherworldlyReferencesStaySeparateBeforeReviewedRegistryIsInstalled() {
+        CatalogWorkEvidence.replaceReviewedRegistry("""{"schema":1,"records":[]}""")
         // Recorded 2026-10-14 phone backup references. No canonical/external relationship was present.
         val a=card(Manga.create().copy(id=11,source=6058166507489091982,url="/manga/otherworldly-evil-monarch",title="Otherworldly Evil Monarch"))
         val b=card(Manga.create().copy(id=57,source=918460697583900080,url="/manga/otherworldly-evil-monarch/#775",title="Otherworldly Evil Monarch"))

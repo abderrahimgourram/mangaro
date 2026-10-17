@@ -22,6 +22,7 @@ import uy.kohesive.injekt.api.get
 /** One batch for visible public edition keys; no title matching, image fetches or chapter probes. */
 internal object CatalogWorkEvidence {
     private val mappings = ReviewedCatalogMappings()
+    @Volatile private var registry = tachiyomi.domain.manga.service.ReviewedCatalogRegistry.empty()
     private val pending = linkedSetOf<String>()
     private val attempts = linkedMapOf<String, Long>()
     private val wake = Channel<Unit>(Channel.CONFLATED)
@@ -35,6 +36,12 @@ internal object CatalogWorkEvidence {
             CatalogDuplicateDiagnostics.logger = { row -> logcat(CatalogDuplicateDiagnostics.priority) { "CatalogReview: $row" } }
         val preferences = context.getSharedPreferences("catalog-reviewed-identities-v1", Context.MODE_PRIVATE)
         scope.launch(Dispatchers.IO) {
+            runCatching {
+                context.resources.openRawResource(eu.kanade.tachiyomi.R.raw.catalog_reviewed_links)
+                    .bufferedReader().use { replaceReviewedRegistry(it.readText()) }
+            }.onFailure {
+                logcat(logcat.LogPriority.WARN) { "Catalog review registry rejected; retaining last verified links" }
+            }
             runCatching {
                 val saved = Json.decodeFromString<List<Saved>>(preferences.getString("snapshot", null) ?: "[]")
                 mappings.restore(saved.associate { it.key to ReviewedCatalogMappings.Entry(it.work, it.checkedAt) })
@@ -70,6 +77,18 @@ internal object CatalogWorkEvidence {
         }
     }
 
+    internal fun replaceReviewedRegistry(text: String) {
+        // Parse/validate fully before publishing; malformed updates cannot erase last-good links.
+        val next = tachiyomi.domain.manga.service.ReviewedCatalogRegistry.parse(text)
+        registry = next
+        PreferredMangaVariants.changes.update { it + 1 }
+    }
+
+    internal fun withoutBundledReview(work: WorkMetadata): WorkMetadata = work.copy(reviewedWorkKey =
+        work.reference.url.takeIf { it.isNotBlank() }?.let {
+            mappings.resolve(CommunityMangaKey.fromSource(work.reference.sourceId, it).value)
+        })
+
     fun request(works: Collection<WorkMetadata>) {
         if (!installed) return
         val keys = mappings.pending(works.filter { it.reference.url.isNotBlank() }.map {
@@ -84,7 +103,8 @@ internal object CatalogWorkEvidence {
         val root = work.reference.url.takeIf { it.isNotBlank() }?.let {
             mappings.resolve(CommunityMangaKey.fromSource(work.reference.sourceId, it).value)
         }
-        return work.copy(reviewedWorkKey = root)
+        // Existing remote community decisions take precedence; local links never write community IDs.
+        return work.copy(reviewedWorkKey = root ?: registry.resolve(work))
     }
 
     fun from(manga: Manga): WorkMetadata {

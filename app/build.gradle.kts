@@ -79,7 +79,7 @@ android {
         manifestPlaceholders["accountAuthScheme"] = "mangaro"
 
         buildConfigField("boolean", "SMARTLINK_V3_ENABLED", smartlinkV3PrivateAcceptance.toString())
-        versionCode = if (sunovelsPrivateAcceptance) 38 else 22
+        versionCode = if (sunovelsPrivateAcceptance) 39 else 22
         versionName = "2.0.4"
 
         buildConfigField("String", "COMMIT_COUNT", "\"${getLatestCommitCount()}\"")
@@ -302,11 +302,11 @@ android {
         abi {
             // App bundles require a single resource output; APK-only builds retain ABI splits.
             isEnable = gradle.startParameter.taskNames.none { it.substringAfterLast(':').startsWith("bundle", ignoreCase = true) }
-            val selectedAbi = providers.gradleProperty("mangaroApkAbi").orNull
-            require(selectedAbi == null || selectedAbi in setOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64"))
-            isUniversalApk = selectedAbi == null
+            val selectedAbis = providers.gradleProperty("mangaroApkAbi").orNull?.split(',')?.map { it.trim() }?.distinct()
+            require(selectedAbis == null || selectedAbis.isNotEmpty() && selectedAbis.all { it in setOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64") })
+            isUniversalApk = selectedAbis == null
             reset()
-            if (selectedAbi != null) include(selectedAbi)
+            if (selectedAbis != null) include(*selectedAbis.toTypedArray())
             else if (sunovelsRuntimeAudit && gradle.startParameter.taskNames.any { it.contains("SunovelsAudit") }) include("x86_64")
             else include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
         }

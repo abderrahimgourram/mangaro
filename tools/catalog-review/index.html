@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'none'; img-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>Mangaro — مراجعة هوية الأعمال</title>
+<style>
+body{background:#1b1423;color:#ebdef4;font:17px system-ui;max-width:1000px;margin:auto;padding:24px}
+h1,h2{color:#e0b861}button,input,textarea{font:inherit;padding:10px;margin:6px;border-radius:8px}
+button{background:#e0b861;color:#1b1423;cursor:pointer}button:disabled{opacity:.5}
+article{border:1px solid #695279;padding:18px;margin:18px 0;border-radius:14px}
+textarea{width:95%;height:280px;direction:ltr;background:#2a2035;color:white}
+a{color:#e0b861;overflow-wrap:anywhere}li{margin:12px 0}#problem{color:#ffb4b4;white-space:pre-wrap}
+small{display:block;color:#baa8c8}label{display:block;margin:12px 0}
+</style>
+<h1>مراجعة هوية الأعمال</h1>
+<p>أداة محلية للمشرف. تشابه الاسم أو الغلاف اقتراح للمراجعة، وليس موافقة على الربط.</p>
+<small>لا تُرسل بيانات إلى خادم، ولا تُغيّر قاعدة البيانات أو الفصول أو حسابات المستخدمين.</small>
+<label>افتح سجل المراجعات <input id="file" type="file" accept=".json,application/json"></label>
+<label>اسم المراجع <input id="reviewer" value="Mangaro maintainer" maxlength="128"></label>
+<textarea id="editor" aria-label="سجل JSON"></textarea>
+<button id="load">تحقق واعرض السجل</button>
+<button id="add">إضافة علاقة للمراجعة</button>
+<button id="save" disabled>حفظ السجل المراجع</button>
+<div id="problem" role="alert"></div>
+<div id="records"></div>
+<script type="module" src="./review.mjs"></script>
+</html>

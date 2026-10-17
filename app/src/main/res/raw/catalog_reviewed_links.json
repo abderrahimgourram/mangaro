@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "records": [
+    {
+      "key": "87edc24c6b195a73496b1682a792acc5c544f3c7dbff955c634892d28f08741e",
+      "title": "Otherworldly Evil Monarch / عاهل الشر القادم من عالم آخر",
+      "state": "ACTIVE",
+      "editions": [
+        {
+          "sourceId": "6058166507489091982",
+          "url": "/manga/otherworldly-evil-monarch"
+        },
+        {
+          "sourceId": "918460697583900080",
+          "url": "/manga/otherworldly-evil-monarch/#775",
+          "providerId": "775"
+        }
+      ],
+      "evidence": [
+        "https://starzmanga.com/manga/otherworldly-evil-monarch/",
+        "https://mangalik.net/manga/otherworldly-evil-monarch/"
+      ],
+      "method": "MAINTAINER_CONFIRMED",
+      "reviewer": "Mangaro maintainer",
+      "reviewedAt": "2026-10-17"
+    }
+  ]
+}
