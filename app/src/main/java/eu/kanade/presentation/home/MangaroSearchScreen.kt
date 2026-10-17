@@ -303,7 +303,9 @@ fun MangaroSearchScreen(
                     }
                     items(results, key = { it.workKey }) { initial ->
                         val manga by getManga(initial.manga)
-                        SearchMangaCard(manga, initial, onClick = { keyboard?.hide(); focusManager.clearFocus(); if (initial.alternatives.isNotEmpty()) selectedWorkKey = initial.workKey else onClickManga(manga) })
+                        SearchMangaCard(manga, initial,
+                            onClick = { keyboard?.hide(); focusManager.clearFocus(); onClickManga(manga) },
+                            onLongClick = if (initial.alternatives.isNotEmpty()) ({ selectedWorkKey = initial.workKey }) else null)
                     }
                     item(key = "searchPaging", span = { GridItemSpan(maxLineSpan) }) {
                         Box(Modifier.fillMaxWidth().heightIn(min = 48.dp), contentAlignment = Alignment.Center) {
@@ -324,10 +326,11 @@ fun MangaroSearchScreen(
 }
 
 @Composable
-private fun SearchMangaCard(manga: Manga, result: eu.kanade.tachiyomi.ui.browse.source.globalsearch.RankedSearchResult, onClick: () -> Unit) {
+private fun SearchMangaCard(manga: Manga, result: eu.kanade.tachiyomi.ui.browse.source.globalsearch.RankedSearchResult, onClick: () -> Unit, onLongClick: (() -> Unit)? = null) {
     eu.kanade.presentation.components.MangaroWorkCard(
         title = manga.title,
         onClick = onClick,
+        onLongClick = onLongClick,
         modifier = Modifier.fillMaxWidth(),
         cover = { coverModifier ->
             Box(coverModifier.clip(MangaroDesignSystem.ShapeCover)) {

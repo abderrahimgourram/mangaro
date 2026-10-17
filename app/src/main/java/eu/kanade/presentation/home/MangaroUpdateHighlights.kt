@@ -8,9 +8,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Book
-import androidx.compose.material.icons.outlined.CollectionsBookmark
-import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -32,7 +29,7 @@ import eu.kanade.presentation.theme.MangaroDesignSystem
 import eu.kanade.tachiyomi.BuildConfig
 import eu.kanade.tachiyomi.R
 
-/** Upgrade-only local highlights for v2.0.1. No network, account, or ad dependency. */
+/** First-launch What's New release announcement for Mangaro 2.5.2. */
 @Composable
 fun MangaroUpdateHighlights(onContinue: () -> Unit) {
     BackHandler(onBack = onContinue)
@@ -61,18 +58,18 @@ fun MangaroUpdateHighlights(onContinue: () -> Unit) {
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        horizontalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
                         Image(painterResource(R.drawable.ic_splash_logo), null, Modifier.size(52.dp), contentScale = ContentScale.Fit)
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(
-                                "تم إصلاح المشاكل",
+                                "مرحبًا بك في Mangaro 2.5.2",
                                 color = Color(0xFFEEE3F5),
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                "Mangaro ${BuildConfig.VERSION_NAME}",
+                                "الإصدار ${BuildConfig.VERSION_NAME}",
                                 color = MangaroDesignSystem.GoldPrimary,
                                 style = MaterialTheme.typography.labelMedium.copy(textDirection = TextDirection.Ltr)
                             )
@@ -80,31 +77,16 @@ fun MangaroUpdateHighlights(onContinue: () -> Unit) {
                     }
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
-                            "في تحديث Mangaro 2.0.1، أصلحنا مجموعة من المشاكل وحسّنا تجربة القراءة لتكون أكثر استقرارًا وراحة.",
+                            "أحدث التحسينات والإصلاحات للتطبيقات.",
                             color = Color(0xFFBEABCD),
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Highlight(
-                            Icons.Outlined.Book,
-                            "قراءة الروايات",
-                            "- تحسين عرض الفصول وإزالة النصوص غير المرغوبة.\n- تحسين استقرار التنقل بين الفصول."
-                        )
-                        Highlight(
-                            Icons.Outlined.CollectionsBookmark,
-                            "المكتبة والحساب",
-                            "- تحسين المزامنة وحفظ تقدّم القراءة.\n- دعم عرض الروايات في الملف الشخصي مع عدد فصولها."
-                        )
-                        Highlight(
-                            Icons.Outlined.NotificationsActive,
-                            "الإشعارات والتحميلات",
-                            "- تحسين إشعارات تحميل الفصول.\n- تقليل تكرار إشعارات الأعمال الجديدة."
-                        )
-                        Highlight(
                             Icons.Outlined.Tune,
-                            "تحسينات أخرى",
-                            "- إصلاحات وتحسينات عامة لاستقرار التطبيق."
+                            "تحسينات وإصلاحات",
+                            "• تم اصلاح 50 خطا جديد"
                         )
                     }
                 }
@@ -124,7 +106,7 @@ fun MangaroUpdateHighlights(onContinue: () -> Unit) {
                             contentColor = MangaroDesignSystem.BackgroundDark
                         )
                     ) {
-                        Text("متابعة القراءة", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                        Text("ابدأ القراءة", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                     }
                     Text(
                         "شكرًا لاستخدامك Mangaro 💜",
@@ -159,3 +141,4 @@ private fun Highlight(icon: ImageVector, title: String, description: String) {
         }
     }
 }
+

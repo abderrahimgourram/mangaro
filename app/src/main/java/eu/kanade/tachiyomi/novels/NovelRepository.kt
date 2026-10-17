@@ -142,7 +142,7 @@ class NovelRepository private constructor(context: Context) {
         val http = chapterNetwork
         val sun = SunovelsSource(http)
         listOf(KolNovelSource(http), CeneleSource(http),
-            if (!SunovelsSource.directEnabled && SunovelsGatewayConfig.enabled) SunovelsGatewaySource(sun) else sun, SeaNovelSource(http))
+            if (!SunovelsSource.directEnabled && SunovelsGatewayConfig.enabled) SunovelsGatewaySource(sun) else sun, SeaNovelSource(http), MknovSource(http))
     }
     val activeSources get() = sources.filter { NovelSourceAvailability.active(it.id) }
     private val rules by lazy { NovelRuleStore(app) }

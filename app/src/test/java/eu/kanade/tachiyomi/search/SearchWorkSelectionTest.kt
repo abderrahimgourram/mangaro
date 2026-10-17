@@ -110,10 +110,10 @@ class SearchWorkSelectionTest {
     @Test fun franchiseAliasCannotEraseASequelSubtitle(){
         SearchWorkIdentity.matches(c("a",verified=false),c("b",title="Solo Leveling Ragnarok",aliases=setOf("Solo Leveling"),verified=false)) shouldBe false
     }
-    @Test fun partialIndexesDoNotSwitchWinnerOnEveryNewPage(){
+    @Test fun comicSelectionUsesTheGreatestCurrentlyIndexedCount(){
         val s=SearchWorkSelection();val a=c("a",count=400,complete=false);val b=c("b",count=390,complete=false)
         s.select(listOf(a,b)).single().winner.id shouldBe "a"
-        s.select(listOf(a,b.copy(chapters=SearchChapterEvidence(450,false)))).single().winner.id shouldBe "a"
+        s.select(listOf(a,b.copy(chapters=SearchChapterEvidence(450,false)))).single().winner.id shouldBe "b"
         s.select(listOf(a.copy(chapters=SearchChapterEvidence(400,true)),b.copy(chapters=SearchChapterEvidence(450,true)))).single().winner.id shouldBe "b"
     }
     @Test fun restoringWarmSearchKeepsItsCardKey(){

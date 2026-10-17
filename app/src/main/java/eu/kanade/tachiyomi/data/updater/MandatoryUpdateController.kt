@@ -78,7 +78,7 @@ internal class MandatoryUpdateController private constructor() :
                 else "يتوفر إصدار جديد من Mangaro. حدّث التطبيق للحصول على أحدث الإصلاحات والتحسينات.") +
                     "\n\nالإصدار ${config.latestVersionName}",
             )
-            .setPositiveButton(if (mandatory) "تحديث مانجارو" else "تحديث الآن", null)
+            .setPositiveButton("تحديث الآن", null)
         if (mandatory) builder.setNeutralButton("إعادة المحاولة", null)
         else builder.setNegativeButton("لاحقًا") { _, _ -> }
         val updateDialog = builder.create()

@@ -3,7 +3,7 @@ package eu.kanade.tachiyomi.novels
 /** Conservative transitions inside the existing source/cache pipeline; no inference from missing text. */
 internal object SunovelsAccess {
     fun state(chapter: NovelChapter): SunovelsChapterState = when {
-        chapter.publishedRows.size > 1 || chapter.unavailableReason == SunovelsSource.AMBIGUOUS_MESSAGE -> SunovelsChapterState.AMBIGUOUS
+        chapter.sunovelsState == SunovelsChapterState.AMBIGUOUS || chapter.unavailableReason == SunovelsSource.AMBIGUOUS_MESSAGE -> SunovelsChapterState.AMBIGUOUS
         chapter.sunovelsState == SunovelsChapterState.VERIFIED_READABLE && chapter.sunovelsEvidence != SunovelsChapterEvidence.PUBLIC_READER -> SunovelsChapterState.INDEXED_UNVERIFIED
         chapter.sunovelsState != null -> chapter.sunovelsState
         chapter.unavailableReason == SunovelsSource.LOCKED_MESSAGE -> SunovelsChapterState.EXPLICITLY_LOCKED
@@ -23,7 +23,7 @@ internal object SunovelsAccess {
             state(evidence) == SunovelsChapterState.VERIFIED_READABLE) readable(chapter) else chapter
     /** Validation projection only, used after an existing downloaded/memory copy passed integrity checks. */
     fun storedCandidate(chapter: NovelChapter): NovelChapter {
-        if (chapter.publishedRows.size > 1 || state(chapter) == SunovelsChapterState.AMBIGUOUS) return chapter
+        if (state(chapter) == SunovelsChapterState.AMBIGUOUS) return chapter
         val incompleteTitle = chapter.unavailableReason == SunovelsSource.MISSING_TITLE_MESSAGE &&
             chapter.publishedRows.all { it.url == chapter.url }
         if (chapter.unavailableReason in setOf(SunovelsSource.LOCKED_MESSAGE, SunovelsSource.REMOVED_MESSAGE) || incompleteTitle)

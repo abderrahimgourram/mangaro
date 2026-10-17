@@ -78,9 +78,9 @@ android {
         buildConfigField("String", "SUPABASE_PUBLISHABLE_KEY", "\"$supabaseKey\"")
         manifestPlaceholders["accountAuthScheme"] = "mangaro"
 
-        buildConfigField("boolean", "SMARTLINK_V3_ENABLED", smartlinkV3PrivateAcceptance.toString())
-        versionCode = if (sunovelsPrivateAcceptance) 42 else 22
-        versionName = "2.0.4"
+        buildConfigField("boolean", "SMARTLINK_V3_ENABLED", "true")
+        versionCode = if (sunovelsPrivateAcceptance) 45 else 27
+        versionName = "2.5.2"
 
         buildConfigField("String", "COMMIT_COUNT", "\"${getLatestCommitCount()}\"")
         buildConfigField("String", "COMMIT_SHA", "\"${getLatestCommitSha()}\"")

@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.novels
 
+import android.util.Log
 import eu.kanade.tachiyomi.BuildConfig
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -32,6 +33,6 @@ internal object SunovelsDiagnostics {
             generation?.let { put("indexGeneration", safe(it)) }; parserKey?.let { put("parserKey", safe(it)) }
             reason?.let { put("reason", safe(it)) }
         }
-        android.util.Log.d("MangaroSunovels", record.toString())
+        runCatching { Log.d("MangaroSunovels", record.toString()) }
     }
 }

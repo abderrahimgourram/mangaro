@@ -78,6 +78,7 @@ import eu.kanade.presentation.components.AppStateBanners
 import eu.kanade.presentation.components.DownloadedOnlyBannerBackgroundColor
 import eu.kanade.presentation.components.IncognitoModeBannerBackgroundColor
 import eu.kanade.presentation.components.IndexingBannerBackgroundColor
+import eu.kanade.presentation.home.MangaroUpdateHighlights
 import eu.kanade.presentation.more.settings.screen.data.RestoreBackupScreen
 import eu.kanade.presentation.util.AssistContentScreen
 import eu.kanade.presentation.util.DefaultNavigatorScreenTransition
@@ -192,6 +193,7 @@ class MainActivity : BaseActivity() {
             var navigationInitialized by remember { mutableStateOf(false) }
             var startupReady by remember { mutableStateOf(false) }
             val app = application as eu.kanade.tachiyomi.App
+            var showUpdateHighlights by remember(localInitialized) { mutableStateOf(localInitialized && app.updateHighlights.pendingVersion.get() > 0) }
             var initializationError by remember { mutableStateOf(false) }
             var startupAttempt by remember { mutableStateOf(0) }
             val view = LocalView.current
@@ -360,6 +362,14 @@ class MainActivity : BaseActivity() {
                             }
                         }
                     }
+                }
+                if (localInitialized && showUpdateHighlights) {
+                    MangaroUpdateHighlights(
+                        onContinue = {
+                            app.updateHighlights.acknowledge()
+                            showUpdateHighlights = false
+                        }
+                    )
                 }
                 if (initializationError) {
                     Column(Modifier.align(androidx.compose.ui.Alignment.Center).padding(24.dp),

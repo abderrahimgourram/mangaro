@@ -2,7 +2,7 @@ package eu.kanade.tachiyomi.novels
 
 /** Discovery policy only. Signed allowlists, stored edition IDs and legacy implementations remain intact. */
 internal object NovelSourceAvailability {
-    fun active(sourceId: String) = sourceId in NovelRules.domains &&
+    fun active(sourceId: String) = (sourceId in NovelRules.domains || sourceId == MknovSource.SOURCE_ID) &&
         (sourceId != SunovelsSource.SOURCE_ID || (SunovelsSource.directEnabled || SunovelsGatewayConfig.enabled))
 
     fun discoverable(work: UnifiedNovelWork): UnifiedNovelWork? {

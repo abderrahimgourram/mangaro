@@ -7,7 +7,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import tachiyomi.domain.chapter.model.Chapter
-import tachiyomi.domain.chapter.service.ChapterIdentity
 import tachiyomi.domain.chapter.service.ChapterListIntegrity
 import tachiyomi.domain.manga.interactor.GetManga
 import tachiyomi.domain.manga.model.Manga
@@ -29,8 +28,14 @@ internal class MangaSearchEvidence(private val getManga: GetManga, private val g
         return SearchWorkCandidate(key(manga), manga.source.toString(), SearchWorkKind.COMIC, manga.title,
             identity.aliases, identity.externalIds, identity.author, identity.artist, identity.format,
             identity.edition, identity.year, priority,
-            (counts[key(manga)] ?: SearchChapterEvidence()).copy(readable = PreferredMangaVariants.readerUsable(manga.id)),
+            (counts[key(manga)] ?: cachedChapters(manga)).copy(readable = PreferredMangaVariants.readerUsable(manga.id)),
             catalogIdentity = VerifiedCatalogIdentity.from(identity))
+    }
+    /** Same reconciled-index proof as Home; no chapter labels, advertised totals or new requests. */
+    private fun cachedChapters(manga: Manga): SearchChapterEvidence {
+        val count = ChapterListIntegrity.actualChapterCount(manga) ?: return SearchChapterEvidence()
+        return SearchChapterEvidence(count, ChapterListIntegrity.complete(manga),
+            checkedAt = ChapterListIntegrity.lastSuccessfulAt(manga))
     }
     suspend fun refresh(rows: List<RankedSearchResult>) = withContext(Dispatchers.IO) {
         for (row in rows.distinctBy { key(it.manga) }.take(12)) {
@@ -43,7 +48,7 @@ internal class MangaSearchEvidence(private val getManga: GetManga, private val g
             counts[key(manga)] = if (ChapterListIntegrity.proof(manga) == null) SearchChapterEvidence() else {
                 val chapters = getChapters(manga.id)
                 if (!ChapterListIntegrity.verifiedRows(manga, chapters)) SearchChapterEvidence() else SearchChapterEvidence(
-                    DistinctSearchChapters.count(chapters.map { DistinctSearchChapters.Identity(it.url, ChapterIdentity.remoteIds(it, manga.source)) }),
+                    ChapterListIntegrity.uniqueIndexedCount(chapters, manga.source),
                     ChapterListIntegrity.complete(manga), checkedAt = ChapterListIntegrity.lastSuccessfulAt(manga))
             }
         }

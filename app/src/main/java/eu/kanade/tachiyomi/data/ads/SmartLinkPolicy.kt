@@ -205,7 +205,7 @@ internal class SmartLinkPolicy(var state: SmartLinkState = SmartLinkState(), val
         if(batch==null && !readerPage && listOf("novel","manga").none { dueBoundary(owner,it)==target }) return "انتهت فرصة هذا الفاصل"
         val last=state.launches.lastOrNull()
         if(last!=null && (now<last || now-last<settings.minimumLaunchGapMs)) return "انتظر لحظة قبل فتح رابط إعلاني آخر"
-        if(state.launches.count { now-it in 0 until 3_600_000 }>=settings.maxLaunchesPerHour) return "بلغت حد الروابط الإعلانية لهذا الجهاز؛ حاول لاحقًا"
+        // No hourly/daily quota: retain only the short duplicate-launch guard above.
         return null
     }
     fun prepare(owner: String, target: String, token: String, now: Long) {

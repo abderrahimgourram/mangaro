@@ -135,7 +135,8 @@ internal class SearchWorkSelection {
             val replace=incumbent==null || incumbent.id==best.id || eligible.all{it.chapters.complete} ||
                 incumbent.chapters.distinct==null&&best.chapters.distinct!=null ||
                 incumbent.chapters.complete&&(best.chapters.distinct?:-1)>=(incumbent.chapters.distinct?:-1) ||
-                best.chapters.complete&&best.chapters.distinct==incumbent.chapters.distinct
+                best.chapters.complete&&best.chapters.distinct==incumbent.chapters.distinct ||
+                best.kind==SearchWorkKind.COMIC && (best.chapters.distinct?:-1)>(incumbent.chapters.distinct?:-1)
             val winner=if(replace)best else incumbent!!
             val base=if (winner.kind == SearchWorkKind.COMIC)
                 VerifiedCatalogIdentity.key(members.map(SearchWorkIdentity::catalog))

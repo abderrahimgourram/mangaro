@@ -46,6 +46,15 @@ class NovelCatalogCardsTest {
         saved.novel.id shouldBe arabic.id
         project(state).single().id shouldBe project(state.copy(evidence=emptyMap())).single().id
     }
+    @Test fun searchAndHomeUseTheSameCanonicalKeyAndRetainNonmatchingEditions() {
+        val catalog=NovelCatalogState(listOf(work("root",arabic,english)))
+        val home=project(catalog)
+        val search=NovelCatalogCards.select(home,listOf(english,arabic,english)) {true}
+        search.map {it.id} shouldBe home.map {it.id}
+        search.single().editions.map {it.id}.toSet() shouldBe setOf(arabic.id,english.id)
+        NovelCatalogCards.select(home,listOf(english)) {true}.single().editions.size shouldBe 2
+        catalog.works.single().editions.size shouldBe 2
+    }
     @Test fun revokedRelationshipSplitsPresentationAndInactiveSourcesStayHidden() {
         val grouped=NovelCatalogState(listOf(work("root",arabic,english)))
         project(grouped).size shouldBe 1

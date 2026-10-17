@@ -13,6 +13,7 @@ import eu.kanade.tachiyomi.search.SearchWorkIdentity
 import eu.kanade.tachiyomi.ui.home.PreferredMangaVariants
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
@@ -61,6 +62,7 @@ abstract class SearchViewModel(
     private var paginationJob: Job? = null
     private var enrichmentJob: Job? = null
     private var enrichmentGeneration = Long.MIN_VALUE
+    private val enrichmentRevision = AtomicLong()
     private var workSelection = SearchWorkSelection()
     internal fun workGroups() = workSelection.snapshot()
     private val searchEvidence = MangaSearchEvidence(getManga, chapterLookup)
@@ -75,20 +77,23 @@ abstract class SearchViewModel(
             provisional = group.provisional && group.members.size > 1,
             alternatives = group.members.filterNot { it.id == group.winner.id }.mapNotNull { byId[it.id] }) }
     }
-    private fun enrichResults(request: Long = generation.get()) {
-        if (!liveSearch || state.value.isSearching) return
+    @Synchronized private fun enrichResults(request: Long = generation.get()) {
+        if (!liveSearch || request != generation.get()) return
+        // Mapping updates must refresh visible results even while a different source is slow.
+        // Keep a revision when coalescing: an update during a running refresh is not disposable.
+        val revision = enrichmentRevision.incrementAndGet()
         // Metadata checks emit health events themselves. Coalesce the same query's
         // events instead of cancelling its own bounded verification halfway through.
         if (enrichmentJob?.isActive == true && enrichmentGeneration == request) return
         enrichmentJob?.cancel()
         enrichmentGeneration = request
         val selector = workSelection
-        enrichmentJob = viewModelScope.launchIO {
+        val job = viewModelScope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) {
             val snapshot = state.value
-            if (snapshot.resultQuery != snapshot.activeQuery) return@launchIO
+            if (snapshot.resultQuery != snapshot.activeQuery) return@launch
             val order = getSelectedSources().mapIndexed { i, s -> s.id to i }.toMap()
             val raw = SearchRelevance(snapshot.activeQuery.orEmpty()).rank(snapshot.items, order)
-            if (raw.isEmpty()) return@launchIO
+            if (raw.isEmpty()) return@launch
             val targets = withContext(Dispatchers.Default) { SearchWorkIdentity.enrichmentCandidates(raw.map { searchEvidence.candidate(it, order[it.source.id] ?: Int.MAX_VALUE) }) }
             searchEvidence.refresh(raw.filter { searchEvidence.key(it.manga) in targets })
             resultMutex.withLock {
@@ -100,6 +105,13 @@ abstract class SearchViewModel(
                 } }
             }
         }
+        enrichmentJob = job
+        job.invokeOnCompletion { cause ->
+            if (cause == null && generation.get() == request && enrichmentRevision.get() != revision) {
+                enrichResults(request)
+            }
+        }
+        job.start()
     }
     private data class CacheKey(val query: String, val filter: SourceFilter, val sources: List<Long>)
     private data class CachedQuery(val at: Long, val items: Map<Source, SearchItemResult>, var ranked: List<RankedSearchResult>, val pages: Map<Source, SearchPage>, var groups: List<eu.kanade.tachiyomi.search.SearchWorkGroup>)
@@ -289,6 +301,7 @@ abstract class SearchViewModel(
                                         )
                                     }
                                 }
+                                enrichResults(request)
                             }
                         }
                     }.awaitAll()

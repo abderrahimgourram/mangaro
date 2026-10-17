@@ -284,10 +284,10 @@ class NovelHomeScreen(private val initialGenre: String? = null) : Screen() {
                 val byEdition = activeWorks.flatMap { w -> w.editions.map { it.id to w } }.toMap()
                 val detailed = editions.map { n -> byEdition[n.id]?.editions?.firstOrNull {it.id == n.id} ?: n }.distinctBy {it.id}
                 val groups = if (querySnapshot.isNotBlank()) selection.groups(detailed) else emptyList()
-                val byId = detailed.associateBy {it.id}
-                val works = if (querySnapshot.isNotBlank()) groups.map { group ->
-                    UnifiedNovelWork(group.key, group.members.mapNotNull {byId[it.id]}, group.winner.id)
-                } else if (editions.isEmpty() && genreSnapshot == null) activeWorks.take(64)
+                // Search uses the same canonical projection and actual-index preference as Home.
+                // All editions stay available even if only one source title matched the query.
+                val works = if (querySnapshot.isNotBlank()) NovelCatalogCards.select(activeWorks, detailed)
+                    else if (editions.isEmpty() && genreSnapshot == null) activeWorks.take(64)
                     else NovelCatalogCards.select(activeWorks, editions)
                 val genres = (routesSnapshot.filterKeys(NovelSourceAvailability::active).values.flatten().map { it.name } + activeWorks.flatMap { it.editions }.flatMap { it.genres })
                     .distinctBy(NovelGenres::key).sortedBy(NovelGenres::key)

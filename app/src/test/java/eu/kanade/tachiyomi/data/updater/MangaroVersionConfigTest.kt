@@ -63,4 +63,18 @@ class MangaroVersionConfigTest {
         val parsed = requireNotNull(MangaroVersionConfig.parse(universalConfig))
         parsed.downloadUrl shouldBe "https://github.com/abderrahimgourram/mangaro/releases/download/v1.1.3/Mangaro-Universal.apk"
     }
+
+    @Test fun `production 2_5_2 mandatory configuration blocks older versions and accepts 27`() {
+        val v27Config = """{
+            "latestVersionName":"2.5.2","latestVersionCode":27,
+            "minSupportedVersionCode":27,"forceUpdate":true,
+            "downloadUrl":"https://github.com/abderrahimgourram/mangaro/releases/download/v2.5.2/Mangaro-Universal.apk"
+        }"""
+        val parsed = requireNotNull(MangaroVersionConfig.parse(v27Config))
+        parsed.requiresUpdate(21) shouldBe true
+        parsed.requiresUpdate(22) shouldBe true
+        parsed.requiresUpdate(26) shouldBe true
+        parsed.requiresUpdate(27) shouldBe false
+        parsed.requiresUpdate(28) shouldBe false
+    }
 }

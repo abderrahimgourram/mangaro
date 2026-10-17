@@ -9,6 +9,21 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.jsoup.nodes.Document
 import java.math.BigDecimal
 
+internal data class ChapterIdentitySpec(
+    val baseNumber: BigDecimal,
+    val suffix: String? = null
+)
+
+internal fun parseChapterIdentitySpec(title: String): ChapterIdentitySpec? {
+    val trimmed = title.trim()
+    val match = Regex("^(?:الفصل\\s*)?([0-9]+(?:[.,][0-9]+)?)(?:-([0-9]+))?(?:\\s*الفصل)?$").find(trimmed)
+        ?: return null
+    val baseStr = match.groupValues[1].replace(',', '.')
+    val baseNum = baseStr.toBigDecimalOrNull() ?: return null
+    val suf = match.groupValues[2].ifEmpty { null }
+    return ChapterIdentitySpec(baseNum, suf)
+}
+
 class SunovelsSource(http: NovelHttp, private val mobileDelivery: Boolean = mobileDeliveryEnabled, private val offlineStorageAuthorized: Boolean = mobileOfflineAuthorized) : HtmlNovelSource(http) {
     override val id = SOURCE_ID
     override val name = "شمس الروايات"
@@ -348,10 +363,33 @@ class SunovelsSource(http: NovelHttp, private val mobileDelivery: Boolean = mobi
             throw NovelSourceFailure("استجابة الفصل غير مكتملة. أعد المحاولة.", "Sun reader response interrupted", code = "RESPONSE_INTERRUPTED")
         val title = record.string("title")
         val headers = d.select("h2").map { it.text() }
-        // Ownership, the final route and the structured chapterNumber identify the chapter.
-        // A subtitle is presentation metadata, not an additional identity key.
-        if (headers.any { genericTitle(it) && number(it)?.compareTo(address.toBigDecimal()) != 0 })
-            throw NovelSourceFailure("تعذّر التحقق من رقم الفصل.", "Sun page number mismatch", code = "NUMBER_MISMATCH")
+        val expectedSpec = chapter.publishedRows.mapNotNull { parseChapterIdentitySpec(it.title) }
+            .firstOrNull { it.baseNumber.compareTo(address.toBigDecimal()) == 0 }
+            ?: parseChapterIdentitySpec(chapter.title)?.takeIf { it.baseNumber.compareTo(address.toBigDecimal()) == 0 }
+        val expectedSuffix = expectedSpec?.suffix
+
+        val recordSpec = parseChapterIdentitySpec(title)
+        if (recordSpec != null) {
+            if (recordSpec.baseNumber.compareTo(address.toBigDecimal()) != 0 ||
+                (recordSpec.suffix != null && recordSpec.suffix != expectedSuffix)) {
+                throw NovelSourceFailure("تعذّر التحقق من رقم الفصل.", "Sun reader title suffix mismatch", code = "NUMBER_MISMATCH")
+            }
+        }
+
+        for (h2 in headers) {
+            val h2Spec = parseChapterIdentitySpec(h2)
+            if (h2Spec != null) {
+                if (h2Spec.baseNumber.compareTo(address.toBigDecimal()) != 0 ||
+                    (h2Spec.suffix != null && h2Spec.suffix != expectedSuffix)) {
+                    throw NovelSourceFailure("تعذّر التحقق من رقم الفصل.", "Sun page number mismatch", code = "NUMBER_MISMATCH")
+                }
+            } else {
+                val h2Num = number(h2)
+                if (h2Num != null && h2Num.compareTo(address.toBigDecimal()) != 0) {
+                    throw NovelSourceFailure("تعذّر التحقق من رقم الفصل.", "Sun page number mismatch", code = "NUMBER_MISMATCH")
+                }
+            }
+        }
         val cleaned = d.clone()
         cleaned.select("$target header, $target footer, $target aside, $target .navigation").remove()
         // The shared walker already supports p/div/article/span/br and single-block stories.
@@ -528,11 +566,29 @@ class SunovelsSource(http: NovelHttp, private val mobileDelivery: Boolean = mobi
                 originalTitle = cleanOriginalTitle(optional("originalTitle", 1000)), alternativeTitles = labels("aliases"), genres = labels("categories"), chapterCount = count,
                 reliableUpdatedAt = optional("sourceUpdatedAt", 64)?.let { runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrNull() })
         }
-        private fun genericTitle(title: String) = Regex("^(?:الفصل\\s*[0-9]+(?:[.,][0-9]+)?|[0-9]+(?:[.,][0-9]+)?(?:\\s*الفصل)?)$").matches(title.trim())
+        internal fun parseChapterIdentitySpec(title: String) = eu.kanade.tachiyomi.novels.parseChapterIdentitySpec(title)
+        internal fun genericTitle(title: String): Boolean =
+            Regex("^(?:الفصل\\s*)?[0-9]+(?:[.,][0-9]+)?(?:-[0-9]+)?(?:\\s*الفصل)?$").matches(title.trim())
         internal fun bestTitle(saved: String, page: String?): String =
             saved.takeIf { it.isNotBlank() && !genericTitle(it) } ?: page?.takeIf { it.isNotBlank() } ?: saved
-        internal fun number(title: String): BigDecimal? = Regex("^(?:الفصل\\s*)?([0-9]+(?:[.,][0-9]+)?)(?=\\s|الفصل|$)").find(title)
+        internal fun number(title: String): BigDecimal? = Regex("^(?:الفصل\\s*)?([0-9]+(?:[.,][0-9]+)?)(?:-[0-9]+)?(?=\\s|الفصل|$)").find(title)
             ?.groupValues?.get(1)?.replace(',', '.')?.toBigDecimalOrNull()
+        internal fun normalizeDisplayTitle(rawTitle: String, routeNumber: BigDecimal): String {
+            val trimmed = rawTitle.trim()
+            if (trimmed.isBlank()) {
+                val numString = if (routeNumber.scale() <= 0) routeNumber.toBigInteger().toString() else routeNumber.toPlainString()
+                return "الفصل $numString"
+            }
+            val extractedNumber = number(trimmed)
+            if (extractedNumber != null && extractedNumber.compareTo(routeNumber) == 0) {
+                val isSuffixedGeneric = Regex("^(?:الفصل\\s*)?[0-9]+(?:[.,][0-9]+)?(?:-[0-9]+)?(?:\\s*الفصل)?$").matches(trimmed)
+                if (isSuffixedGeneric) {
+                    val numString = if (routeNumber.scale() <= 0) routeNumber.toBigInteger().toString() else routeNumber.toPlainString()
+                    return "الفصل $numString"
+                }
+            }
+            return trimmed
+        }
         private fun path(url: String, chapter: Boolean): Pair<String, String?> {
             val u = url.toHttpUrlOrNull() ?: invalid("Malformed Sun destination")
             val p = u.pathSegments.filter { it.isNotEmpty() }
@@ -549,35 +605,167 @@ class SunovelsSource(http: NovelHttp, private val mobileDelivery: Boolean = mobi
             // Confirmed public evidence; no fabricated fractional URL or equivalence assumption.
             return p.first == "reverend-insanity" && p.second in setOf("1153", "1154")
         }
+
+        internal fun areRowsEquivalent(row1: NovelPublishedChapterRow, row2: NovelPublishedChapterRow, routeNumber: BigDecimal): Boolean {
+            val t1 = row1.title.trim()
+            val t2 = row2.title.trim()
+            if (t1.equals(t2, ignoreCase = true)) return true
+
+            val s1 = parseChapterIdentitySpec(t1)
+            val s2 = parseChapterIdentitySpec(t2)
+            if (s1 != null && s2 != null) {
+                return s1.baseNumber.compareTo(routeNumber) == 0 &&
+                       s2.baseNumber.compareTo(routeNumber) == 0 &&
+                       s1.suffix == s2.suffix
+            }
+            return false
+        }
+
+        internal fun reconcilePublishedRows(
+            url: String,
+            rows: List<NovelPublishedChapterRow>,
+            availability: Map<String, String> = emptyMap(),
+            order: Int = 0,
+            sourcePage: Int = 1
+        ): NovelChapter {
+            val routeNumber = path(url, true).second!!.toBigDecimal()
+            val knownAmb = knownAmbiguous(url)
+            val stateAttr = availability[url]
+            val isLocked = stateAttr == "LOCKED"
+            val isMissingState = stateAttr in setOf("MISSING_IDENTITY", "REMOVED") || rows.any { it.title.isBlank() }
+            val isTempUnavailable = stateAttr in setOf("UNAVAILABLE", "TEMPORARILY_UNAVAILABLE")
+
+            val distinctRows = rows.distinctBy { Pair(it.url, it.title) }
+
+            val isAmbiguous = when {
+                knownAmb || stateAttr == "AMBIGUOUS_CHAPTER" -> true
+                distinctRows.isEmpty() -> false
+                distinctRows.size == 1 -> number(distinctRows.first().title)?.let { it.compareTo(routeNumber) != 0 } == true
+                else -> {
+                    val first = distinctRows.first()
+                    !distinctRows.all { row -> areRowsEquivalent(first, row, routeNumber) }
+                }
+            }
+
+            val missingTitle = distinctRows.any { it.title.isBlank() }
+            val blocked = stateAttr in setOf("LOCKED", "MISSING_IDENTITY", "REMOVED", "AMBIGUOUS_CHAPTER")
+
+            val finalAvailable = when {
+                isAmbiguous || missingTitle || isLocked || isMissingState || isTempUnavailable -> false
+                else -> !blocked
+            }
+
+            val finalState = when {
+                isAmbiguous -> SunovelsChapterState.AMBIGUOUS
+                missingTitle || isMissingState -> SunovelsChapterState.MISSING
+                isLocked -> SunovelsChapterState.EXPLICITLY_LOCKED
+                isTempUnavailable -> SunovelsChapterState.TEMPORARILY_UNAVAILABLE
+                else -> SunovelsChapterState.INDEXED_UNVERIFIED
+            }
+
+            val finalReason = when {
+                isAmbiguous -> AMBIGUOUS_MESSAGE
+                missingTitle || stateAttr == "MISSING_IDENTITY" -> MISSING_TITLE_MESSAGE
+                isLocked -> LOCKED_MESSAGE
+                stateAttr == "REMOVED" -> "هذا الفصل لم يعد متاحًا في فهرس المصدر."
+                else -> null
+            }
+
+            val displayTitle = if (distinctRows.isNotEmpty()) normalizeDisplayTitle(distinctRows.first().title, routeNumber)
+                               else "الفصل ${if (routeNumber.scale() <= 0) routeNumber.toBigInteger() else routeNumber}"
+
+            return NovelChapter(
+                url = url,
+                title = displayTitle,
+                order = order,
+                sourcePage = sourcePage,
+                available = finalAvailable,
+                publishedRows = distinctRows,
+                sunovelsState = finalState,
+                sunovelsEvidence = SunovelsChapterEvidence.INDEX,
+                unavailableReason = finalReason
+            )
+        }
+
+        internal fun reconcileChapter(
+            old: NovelChapter,
+            incoming: NovelChapter,
+            combinedRows: List<NovelPublishedChapterRow>
+        ): NovelChapter {
+            val url = old.url
+            val routeNumber = path(url, true).second!!.toBigDecimal()
+            val knownAmb = knownAmbiguous(url)
+
+            val isLocked = old.sunovelsState == SunovelsChapterState.EXPLICITLY_LOCKED ||
+                    incoming.sunovelsState == SunovelsChapterState.EXPLICITLY_LOCKED ||
+                    old.unavailableReason == LOCKED_MESSAGE ||
+                    incoming.unavailableReason == LOCKED_MESSAGE
+
+            val isMissingState = old.sunovelsState == SunovelsChapterState.MISSING ||
+                    incoming.sunovelsState == SunovelsChapterState.MISSING ||
+                    old.unavailableReason == REMOVED_MESSAGE ||
+                    incoming.unavailableReason == REMOVED_MESSAGE ||
+                    old.unavailableReason == MISSING_TITLE_MESSAGE ||
+                    incoming.unavailableReason == MISSING_TITLE_MESSAGE ||
+                    combinedRows.any { it.title.isBlank() }
+
+            val distinctRows = combinedRows.distinctBy { Pair(it.url, it.title) }
+
+            val isAmbiguous = when {
+                knownAmb -> true
+                distinctRows.isEmpty() -> false
+                distinctRows.size == 1 -> number(distinctRows.first().title)?.let { it.compareTo(routeNumber) != 0 } == true
+                else -> {
+                    val first = distinctRows.first()
+                    !distinctRows.all { row -> areRowsEquivalent(first, row, routeNumber) }
+                }
+            }
+
+            val finalAvailable = when {
+                isAmbiguous || isMissingState || isLocked -> false
+                SunovelsAccess.durableEvidence(old) -> old.available
+                else -> true
+            }
+
+            val finalState = when {
+                isAmbiguous -> SunovelsChapterState.AMBIGUOUS
+                isMissingState -> SunovelsChapterState.MISSING
+                isLocked -> SunovelsChapterState.EXPLICITLY_LOCKED
+                SunovelsAccess.durableEvidence(old) -> old.sunovelsState
+                else -> SunovelsChapterState.INDEXED_UNVERIFIED
+            }
+
+            val finalReason = when {
+                isAmbiguous -> AMBIGUOUS_MESSAGE
+                isMissingState -> if (old.unavailableReason == REMOVED_MESSAGE || incoming.unavailableReason == REMOVED_MESSAGE) "هذا الفصل لم يعد متاحًا في فهرس المصدر." else MISSING_TITLE_MESSAGE
+                isLocked -> LOCKED_MESSAGE
+                else -> null
+            }
+
+            val displayTitle = if (distinctRows.isNotEmpty()) normalizeDisplayTitle(distinctRows.first().title, routeNumber) else old.title
+
+            return old.copy(
+                title = displayTitle,
+                available = finalAvailable,
+                publishedRows = distinctRows,
+                sunovelsState = finalState,
+                sunovelsEvidence = if (finalState == old.sunovelsState) old.sunovelsEvidence else SunovelsChapterEvidence.INDEX,
+                unavailableReason = finalReason
+            )
+        }
+
         /** Same source-backed URL/progress identities for direct HTML and staging metadata. */
         internal fun indexPage(novel: Novel, page: Int, rows: List<NovelPublishedChapterRow>, declared: Int, total: Int,
             availability: Map<String, String> = emptyMap()): ChapterPage {
             val slug = requireNovel(novel)
             if (declared !in 0..100_000 || total !in 1..2000 || page !in 1..total ||
                 rows.any { path(it.url, true).first != slug }) invalid("Sun index page ownership/count mismatch")
-            if (rows.isEmpty() && declared != 0 || rows.size > 50 || page < total && rows.size != 50 || rows.distinct().size != rows.size)
+            if (rows.isEmpty() && declared != 0 || rows.size > 50 || page < total && rows.size != 50)
                 invalid("Sun incomplete or repeated published rows")
             val numbered = rows.mapNotNull { row -> number(row.title) }
             if (numbered.zipWithNext().any { (a,b) -> a > b }) invalid("Sun chapter ordering changed")
             val chapters = rows.groupBy { it.url }.values.mapIndexed { i, group ->
-                val first = group.first()
-                val routeNumber = path(first.url, true).second!!.toBigDecimal()
-                val ambiguous = group.size > 1 || number(first.title)?.let { it.compareTo(routeNumber) != 0 } == true || knownAmbiguous(first.url)
-                val missingTitle = first.title.isBlank()
-                val state = availability[first.url]
-                val blocked = state in setOf("LOCKED", "MISSING_IDENTITY", "REMOVED", "AMBIGUOUS_CHAPTER")
-                NovelChapter(first.url, first.title.ifBlank { "عنوان مفقود في المصدر" }, (page-1)*50+i, sourcePage = page,
-                    available = !ambiguous && !missingTitle && !blocked, publishedRows = group,
-                    sunovelsState = when { ambiguous -> SunovelsChapterState.AMBIGUOUS; missingTitle || state in setOf("MISSING_IDENTITY", "REMOVED") -> SunovelsChapterState.MISSING;
-                        state == "LOCKED" -> SunovelsChapterState.EXPLICITLY_LOCKED; state in setOf("UNAVAILABLE", "TEMPORARILY_UNAVAILABLE") -> SunovelsChapterState.TEMPORARILY_UNAVAILABLE;
-                        else -> SunovelsChapterState.INDEXED_UNVERIFIED }, sunovelsEvidence = SunovelsChapterEvidence.INDEX,
-                    unavailableReason = if (ambiguous) AMBIGUOUS_MESSAGE else if (missingTitle) MISSING_TITLE_MESSAGE else when (state) {
-                        "LOCKED" -> LOCKED_MESSAGE
-                        "AMBIGUOUS_CHAPTER" -> AMBIGUOUS_MESSAGE
-                        "MISSING_IDENTITY" -> MISSING_TITLE_MESSAGE
-                        "REMOVED" -> "هذا الفصل لم يعد متاحًا في فهرس المصدر."
-                        else -> null
-                    })
+                reconcilePublishedRows(group.first().url, group, availability, order = (page - 1) * 50 + i, sourcePage = page)
             }
             val evidence = buildJsonObject {
                 put("page", page); put("declared", declared); put("totalPages", total)
@@ -600,7 +788,7 @@ class SunovelsSource(http: NovelHttp, private val mobileDelivery: Boolean = mobi
             val p = path(chapter.url, true)
             if (chapter.title.isBlank() || chapter.publishedRows.any { it.title.isBlank() })
                 throw NovelSourceFailure(MISSING_TITLE_MESSAGE, "Sun published chapter identity missing", 422)
-            if (!chapter.available || SunovelsAccess.state(chapter) in setOf(SunovelsChapterState.EXPLICITLY_LOCKED, SunovelsChapterState.AMBIGUOUS, SunovelsChapterState.MISSING) || knownAmbiguous(chapter.url) || chapter.publishedRows.size > 1 ||
+            if (!chapter.available || SunovelsAccess.state(chapter) in setOf(SunovelsChapterState.EXPLICITLY_LOCKED, SunovelsChapterState.AMBIGUOUS, SunovelsChapterState.MISSING) || knownAmbiguous(chapter.url) ||
                 number(chapter.title)?.let { it.compareTo(p.second!!.toBigDecimal()) != 0 } == true)
                 throw NovelSourceFailure(chapter.unavailableReason ?: AMBIGUOUS_MESSAGE, "Sun unavailable/ambiguous chapter",
                     if (SunovelsAccess.state(chapter) == SunovelsChapterState.EXPLICITLY_LOCKED) 403 else 422,
@@ -611,11 +799,11 @@ class SunovelsSource(http: NovelHttp, private val mobileDelivery: Boolean = mobi
                 SunovelsAccess.probeCandidate(chapter) else SunovelsAccess.retryCandidate(chapter)
         internal fun requireResolutionOwnership(novel: Novel, chapter: NovelChapter, allowMobile: Boolean = mobileDeliveryEnabled) {
             if (requireNovel(novel) != path(chapter.url, true).first) invalid("Foreign Sun chapter edition")
-            if (knownAmbiguous(chapter.url) || chapter.publishedRows.size > 1 || SunovelsAccess.state(chapter) == SunovelsChapterState.AMBIGUOUS)
+            if (knownAmbiguous(chapter.url) || SunovelsAccess.state(chapter) == SunovelsChapterState.AMBIGUOUS)
                 throw NovelSourceFailure(AMBIGUOUS_MESSAGE, "Ambiguous chapter", code = "AMBIGUOUS_ROW")
             val candidate = resolutionCandidate(chapter, allowMobile)
-            if (!candidate.available || SunovelsAccess.state(candidate) in setOf(SunovelsChapterState.EXPLICITLY_LOCKED, SunovelsChapterState.MISSING)) requireChapter(candidate)
-            if (candidate.title.isBlank()) requireChapter(candidate)
+            if (!candidate.available || SunovelsAccess.state(candidate) in setOf(SunovelsChapterState.EXPLICITLY_LOCKED, SunovelsChapterState.MISSING)) requireChapter(chapter)
+            if (candidate.title.isBlank()) requireChapter(chapter)
         }
         internal fun requireOwnership(novel: Novel, chapter: NovelChapter) {
             if (requireNovel(novel) != path(chapter.url, true).first) invalid("Foreign Sun chapter edition")

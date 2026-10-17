@@ -116,12 +116,16 @@ internal object NovelChapterIndexer {
                 if (chapter.id !in seen) { seen[chapter.id] = chapter.copy(order = seen.size, sourcePage = page); added++ }
                 else if (isSun) {
                     val old = seen.getValue(chapter.id)
-                    val rows = (old.publishedRows.ifEmpty { listOf(NovelPublishedChapterRow(old.url, old.title)) } + chapter.publishedRows).distinct()
-                    if (rows.size > old.publishedRows.size.coerceAtLeast(1)) {
-                        seen[chapter.id] = old.copy(available = false, publishedRows = rows,
-                            unavailableReason = SunovelsSource.AMBIGUOUS_MESSAGE)
-                        notice = SunovelsSource.AMBIGUOUS_MESSAGE
-                        added++ // Newly observed published evidence, not a new progress identity.
+                    val rows = (old.publishedRows.ifEmpty { listOf(NovelPublishedChapterRow(old.url, old.title)) } + chapter.publishedRows).distinctBy { Pair(it.url, it.title) }
+                    if (rows.size > old.publishedRows.size.coerceAtLeast(1) || old.publishedRows != rows) {
+                        val reconciled = SunovelsSource.reconcileChapter(old, chapter, rows)
+                        seen[chapter.id] = reconciled
+                        if (reconciled.sunovelsState == SunovelsChapterState.AMBIGUOUS) {
+                            notice = SunovelsSource.AMBIGUOUS_MESSAGE
+                        }
+                        if (rows.size > old.publishedRows.size.coerceAtLeast(1)) {
+                            added++ // Newly observed published evidence, not a new progress identity.
+                        }
                     }
                 }
             }

@@ -14,6 +14,8 @@ import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.CookieJar
 import okhttp3.FormBody
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -35,6 +37,7 @@ class NovelHttp(private val clientOverride: OkHttpClient? = null) {
     private val requests = Semaphore(4)
     private val hosts = domains.associateWith { Semaphore(2) }.toMutableMap().apply {
         put("adminx.sunovels.com", getValue("sunovels.com"))
+        put("api.mknov.com", getValue("mknov.com"))
     }
     private data class CacheLock(val mutex: Mutex = Mutex(), var users: Int = 0)
     private val cacheLocks = mutableMapOf<String, CacheLock>()
@@ -67,8 +70,8 @@ class NovelHttp(private val clientOverride: OkHttpClient? = null) {
         private fun isSunovels(url: String) = runCatching {
             url.toHttpUrl().host.removePrefix("www.") == "sunovels.com" || sunovelsMobileUrl(url)
         }.getOrDefault(false)
-        private fun allowedRequest(url: String) = allowed(url) || sunovelsMobileUrl(url)
-        val domains = setOf("kolnovel.com", "cenele.com", "sunovels.com", "seanovel.org")
+        private fun allowedRequest(url: String) = allowed(url) || sunovelsMobileUrl(url) || MknovSource.apiUrlAllowed(url)
+        val domains = setOf("kolnovel.com", "cenele.com", "sunovels.com", "seanovel.org", "mknov.com")
         fun allowed(url: String): Boolean = runCatching {
             val parsed = url.toHttpUrl()
             parsed.isHttps && parsed.host.removePrefix("www.") in domains &&
@@ -114,22 +117,27 @@ class NovelHttp(private val clientOverride: OkHttpClient? = null) {
         synchronized(observations) { observations.remove(url) }
     }
     suspend fun post(url: String, fields: Map<String, String>): String = request(url, fields)
-    private suspend fun request(initial: String, fields: Map<String, String>?, cached: Cached? = null, cacheMetadata: Boolean = false): String {
+    /** Only the inspected anonymous Mknov content contracts may send JSON here. */
+    internal suspend fun mknovPost(url: String, json: String): String {
+        require(MknovSource.apiUrlAllowed(url) && json.length <= 16_384)
+        return request(url, null, jsonBody = json)
+    }
+    private suspend fun request(initial: String, fields: Map<String, String>?, cached: Cached? = null, cacheMetadata: Boolean = false, jsonBody: String? = null): String {
         val trace = SeaNovelReaderDiagnostics.current()?.takeIf { it.snapshot().chapterId == initial }
         try {
-            return kotlinx.coroutines.withTimeoutOrNull(25_000L) { requestWithRetry(initial, fields, cached, cacheMetadata) }
+            return kotlinx.coroutines.withTimeoutOrNull(25_000L) { requestWithRetry(initial, fields, cached, cacheMetadata, jsonBody) }
                 ?: throw NovelSourceFailure("استغرق التحميل وقتًا طويلًا. حاول مجددًا.", "Novel request deadline exceeded", code = "TIMEOUT")
         } catch (e: Exception) { trace?.failed(e, force = (e as? NovelSourceFailure)?.code == "TIMEOUT"); throw e }
     }
 
-    private suspend fun requestWithRetry(initial: String, fields: Map<String, String>?, cached: Cached?, cacheMetadata: Boolean): String {
+    private suspend fun requestWithRetry(initial: String, fields: Map<String, String>?, cached: Cached?, cacheMetadata: Boolean, jsonBody: String?): String {
         val trace = SeaNovelReaderDiagnostics.current()?.takeIf { it.snapshot().chapterId == initial }
         if (!allowedRequest(initial)) throw NovelSourceFailure("هذا الرابط غير متاح.", "Unapproved novel domain")
         var attempt = 0
         while (true) {
             // Backoff must not occupy a network slot needed by another provider or the reader.
             try { return FocusEngine.network(initial.toHttpUrl().host.removePrefix("www.").let { if (it == "adminx.sunovels.com") "sunovels.com" else it }) {
-                hosts.getValue(initial.toHttpUrl().host.removePrefix("www.")).withPermit { requests.withPermit { performRequest(initial, fields, cached, cacheMetadata) } }
+                hosts.getValue(initial.toHttpUrl().host.removePrefix("www.")).withPermit { requests.withPermit { performRequest(initial, fields, cached, cacheMetadata, jsonBody) } }
             } }
             catch (c: kotlinx.coroutines.CancellationException) {
                 if (c !is kotlinx.coroutines.TimeoutCancellationException) trace?.failed(c)
@@ -145,14 +153,14 @@ class NovelHttp(private val clientOverride: OkHttpClient? = null) {
                 // Retry only public GETs and transient failures, once. Never retry access barriers.
                 val transient = e is IOException || (e as? NovelSourceFailure)?.httpStatus in setOf(408, 429, 500, 502, 503, 504)
                 val wait = (e as? NovelSourceFailure)?.retryAfterMs ?: 750L
-                if (fields != null || !transient || attempt++ >= 1 || wait > 5_000L) throw e
+                if (fields != null || jsonBody != null || !transient || attempt++ >= 1 || wait > 5_000L) throw e
                 trace?.stage(SeaReaderStage.HTTP_RETRY_WAIT)
                 kotlinx.coroutines.delay(wait.coerceAtLeast(750L))
             }
         }
         @Suppress("UNREACHABLE_CODE") error("No response")
     }
-    private suspend fun performRequest(initial: String, fields: Map<String, String>?, cached: Cached?, cacheMetadata: Boolean): String =
+    private suspend fun performRequest(initial: String, fields: Map<String, String>?, cached: Cached?, cacheMetadata: Boolean, jsonBody: String?): String =
         withContext(Dispatchers.IO) {
             val trace = SeaNovelReaderDiagnostics.current()?.takeIf { it.snapshot().chapterId == initial }
             var url = initial
@@ -162,7 +170,8 @@ class NovelHttp(private val clientOverride: OkHttpClient? = null) {
                 val builder = Request.Builder().url(url).header("User-Agent", "MangaroNovelPrototype/0.1")
                     .header("Cache-Control", "no-store")
                 fields?.let { values -> builder.post(FormBody.Builder().apply { values.forEach { (k,v) -> add(k,v) } }.build()) }
-                if (url == initial && fields == null) {
+                jsonBody?.let { builder.post(it.toRequestBody("application/json; charset=utf-8".toMediaType())) }
+                if (url == initial && fields == null && jsonBody == null) {
                     cached?.etag?.let { builder.header("If-None-Match", it) }
                     cached?.lastModified?.let { builder.header("If-Modified-Since", it) }
                 }
@@ -196,6 +205,8 @@ class NovelHttp(private val clientOverride: OkHttpClient? = null) {
                             if (it.code in listOf(401,403)) "هذا المحتوى غير متاح حاليًا. يمكنك فتحه في الموقع."
                             else "تعذّر تحميل الروايات حاليًا. حاول مجددًا.", "Novel HTTP " + it.code, it.code, it.header("Retry-After")?.let { header -> header.toLongOrNull()?.takeIf { seconds -> seconds in 0..3600 }?.times(1000) ?: runCatching { java.time.ZonedDateTime.parse(header, java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME).toInstant().toEpochMilli() - System.currentTimeMillis() }.getOrDefault(60_000L).coerceIn(0, 3_600_000L) }, code = "HTTP_${it.code}")
                         val body = it.body
+                        if (MknovSource.apiUrlAllowed(initial) && body.contentType()?.let { type -> type.type == "application" && type.subtype == "json" } != true)
+                            throw NovelSourceFailure("تعذّر التحقق من استجابة مملكة الروايات.", "Mknov response is not JSON", code = "MKNOV_INVALID_RESPONSE")
                         if (isSunovels(initial) &&
                             body.contentType()?.let { type -> if (sunovelsMobileUrl(initial)) type.type == "application" && type.subtype == "json"
                                 else type.type == "text" && type.subtype == "html" || type.toString().startsWith("application/xhtml+xml") } != true)
