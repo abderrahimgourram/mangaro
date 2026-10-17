@@ -54,22 +54,48 @@ class SmartCatalogV2Test {
         Index.actualChapterCount(m.copy(memo=Index.memo(m,"COMPLETE",entries))) shouldBe 5
         entries.last().url shouldBe "" // Selection never edits stored rows.
     }
+    @Test fun bothFeedsKeepOneVerifiedBilingualGroupAcrossPagesAndPreferActualTotal() {
+        val arabic=card(manga(920001,850,"عنوان عربي",1000))
+        val highLabel=card(manga(920002,90,"English Title",2000))
+        for(context in listOf(CatalogSelectionContext.POPULAR,CatalogSelectionContext.LATEST)) {
+            val first=GroupDiscoveryItems.group(listOf(highLabel),context)
+            val merged=GroupDiscoveryItems.group(first+listOf(arabic,highLabel,arabic),context)
+            merged.size shouldBe 1
+            merged.single().mangaId shouldBe arabic.mangaId
+            merged.single().actualChapterCount shouldBe 850
+            merged.single().availableVersions.size shouldBe 2
+            val restored=GroupDiscoveryItems.group(merged+merged,context).single()
+            restored.canonicalWorkId shouldBe merged.single().canonicalWorkId
+            restored.mangaId shouldBe arabic.mangaId
+            restored.alternatives.single().mangaId shouldBe highLabel.mangaId
+        }
+    }
+    @Test fun unknownCountCannotOutrankVerifiedTotalUsingOnlyNewerPublication() {
+        for(context in listOf(CatalogSelectionContext.POPULAR,CatalogSelectionContext.LATEST)) {
+            CatalogEditionSelection.compare(context,CatalogEditionEvidence(indexedChapters=90,publishedAt=1000),
+                CatalogEditionEvidence(indexedChapters=null,publishedAt=999999)).let { it>0 } shouldBe true
+        }
+    }
     @Test fun popularDoesNotReorderWorksByChapterCount() {
         val first=card(manga(910004,3,verified=false));val later=card(manga(910005,850,verified=false))
         GroupDiscoveryItems.group(listOf(first,later),CatalogSelectionContext.POPULAR).map { it.mangaId } shouldBe listOf(first.mangaId,later.mangaId)
     }
-    @Test fun latestSelectsNewerActualPublicationRegardlessOfLanguageOrCount() {
+    @Test fun latestSelectsFullestEditionWhileWorkKeepsItsGenuineLatestPublication() {
         val arabic=card(manga(910006,90,"عنوان عربي",2000));val english=card(manga(910007,850,"English Title",1000))
-        GroupDiscoveryItems.group(listOf(english,arabic),CatalogSelectionContext.LATEST).single().mangaId shouldBe arabic.mangaId
+        val group=GroupDiscoveryItems.group(listOf(english,arabic),CatalogSelectionContext.LATEST).single()
+        group.mangaId shouldBe english.mangaId
+        group.actualChapterCount shouldBe 850
+        group.chapterPublishedAt shouldBe 2000L
+        group.alternatives.single().mangaId shouldBe arabic.mangaId
         GroupDiscoveryItems.group(listOf(english,arabic),CatalogSelectionContext.POPULAR).single().mangaId shouldBe english.mangaId
-        val newerEnglish=card(manga(910007,850,"English Title",3000))
-        GroupDiscoveryItems.group(listOf(arabic,newerEnglish),CatalogSelectionContext.LATEST).single().mangaId shouldBe newerEnglish.mangaId
+        val fullerArabic=card(manga(910006,900,"عنوان عربي",2000))
+        GroupDiscoveryItems.group(listOf(english,fullerArabic),CatalogSelectionContext.LATEST).single().mangaId shouldBe fullerArabic.mangaId
     }
     @Test fun cacheAndFetchTimestampsCannotInventOrWinPublicationFreshness() {
         val stale=manga(910008,850,"Old",1000)
         val refreshed=stale.copy(memo=JsonObject(stale.memo+(Index.KEY to JsonObject((stale.memo[Index.KEY] as JsonObject)+
             ("lastSuccessful" to buildJsonObject {put("count",850);put("at",Long.MAX_VALUE/4)})))))
-        val new=card(manga(910009,90,"New",2000))
+        val new=card(manga(910009,850,"New",2000))
         GroupDiscoveryItems.group(listOf(card(refreshed),new),CatalogSelectionContext.LATEST).single().mangaId shouldBe new.mangaId
         val noSourceDate=manga(910010,2).let { it.copy(lastUpdate=Long.MAX_VALUE/4) }
         Index.catalogPublishedAt(noSourceDate) shouldBe null

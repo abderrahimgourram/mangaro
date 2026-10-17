@@ -10,16 +10,16 @@ data class CatalogEditionEvidence(
     val indexSucceededAt: Long = 0,
 )
 
-/** Selects a representative only AFTER verified identity grouping; never ranks Popular works. */
+/** Prefer the fullest indexed edition after verified grouping, independently of feed ordering. */
 object CatalogEditionSelection {
     fun compare(context: CatalogSelectionContext, a: CatalogEditionEvidence, b: CatalogEditionEvidence): Int {
         if (context == CatalogSelectionContext.DEFAULT) return 0
-        val primary = when (context) {
-            CatalogSelectionContext.POPULAR -> compareValues(a.indexedChapters ?: -1, b.indexedChapters ?: -1)
-            CatalogSelectionContext.LATEST -> compareValues(a.publishedAt ?: -1L, b.publishedAt ?: -1L)
-            else -> 0
+        val chapters = compareValues(a.indexedChapters ?: -1, b.indexedChapters ?: -1)
+        if (chapters != 0) return chapters
+        if (context == CatalogSelectionContext.LATEST) {
+            val publication = compareValues(a.publishedAt ?: -1L, b.publishedAt ?: -1L)
+            if (publication != 0) return publication
         }
-        if (primary != 0) return primary
         val health = a.sourceReliability.compareTo(b.sourceReliability)
         if (health != 0) return health
         // Refresh time is index quality only. It cannot create a chapter publication date.
