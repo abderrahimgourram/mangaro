@@ -27,6 +27,38 @@ class AzoraParserTest {
         azora = Azora()
     }
 
+    @Test fun recordedVillainessIndexRetainsAllRowsButHidesOnlyExplicitLocks() {
+        val rows=azora.parseChaptersResponse(fixture("villainess-access-index.json"),"thats-how-i-became-a-villainess","2845")
+        rows.size shouldBe 20
+        val shown=rows.filter {AzoraChapterAvailability.visible(azora.id,it.memo)}
+        shown.size shouldBe 15
+        shown.maxOf {it.chapter_number} shouldBe 15f
+        rows.map {it.url}.distinct().size shouldBe 20
+        rows.all {AzoraChapterAvailability.PARSED in it.memo} shouldBe true
+        rows.filter {it.chapter_number>=16}.all {AzoraChapterAvailability.visible(azora.id,it.memo,downloaded=true)} shouldBe true
+        rows.filter {it.chapter_number>=16}.all {AzoraChapterAvailability.visible(99,it.memo)} shouldBe true
+    }
+    @Test fun availabilityRefreshRestoresSameIdentityWithoutChangingPersonalState() {
+        val rows=azora.parseChaptersResponse(fixture("villainess-access-index.json"),"thats-how-i-became-a-villainess","2845")
+        val locked=rows.first {it.chapter_number==20f}
+        val old=tachiyomi.domain.chapter.model.Chapter.create().copy(id=7,mangaId=10,url=locked.url,
+            bookmark=true,read=true,lastPageRead=9,memo=locked.memo)
+        val open=old.copy(memo=kotlinx.serialization.json.JsonObject(old.memo+
+            (AzoraChapterAvailability.LOCKED to kotlinx.serialization.json.JsonPrimitive(false))))
+        AzoraChapterAvailability.visible(azora.id,old.memo) shouldBe false
+        AzoraChapterAvailability.visible(azora.id,open.memo) shouldBe true
+        tachiyomi.domain.chapter.interactor.ShouldUpdateDbChapter().await(old,open) shouldBe true
+        open.id shouldBe old.id;open.url shouldBe old.url;open.lastPageRead shouldBe 9L
+        open.bookmark shouldBe true;open.read shouldBe true
+        AzoraChapterAvailability.needsMetadataRefresh(azora.id,old.memo) shouldBe false
+        AzoraChapterAvailability.needsMetadataRefresh(azora.id,kotlinx.serialization.json.JsonObject(emptyMap())) shouldBe true
+        AzoraChapterAvailability.needsMetadataRefresh(99,kotlinx.serialization.json.JsonObject(emptyMap())) shouldBe false
+    }
+    @Test fun explicitSourceLockRemainsRestrictedEvenIfImageFieldsArePresent() {
+        assertThrows<eu.kanade.tachiyomi.source.ChapterAccessRestrictedException> {
+            azora.parseChapterPagesResponse("""{"chapter":{"isLocked":true,"images":[{"url":"https://example.org/not-eligible.jpg"}]}}""")
+        }
+    }
     @Test
     fun `verify Azora source ID matches pinned baseline exact value`() {
         azora.id shouldBe 2482399499047903203L

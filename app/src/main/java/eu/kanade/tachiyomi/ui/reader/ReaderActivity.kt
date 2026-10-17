@@ -294,7 +294,7 @@ class ReaderActivity : BaseActivity() {
             state.initError?.let { failure ->
                 androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().background(eu.kanade.presentation.theme.MangaroDesignSystem.BackgroundDark), contentAlignment = Alignment.Center) {
                     eu.kanade.presentation.components.MangaroErrorState(
-                        "تعذر فتح الفصل\nحاول مجددًا بعد قليل", viewModel::retryInitialChapter, Modifier.padding(24.dp),
+                        if(failure is eu.kanade.tachiyomi.source.ChapterAccessRestrictedException) failure.message.orEmpty() else "تعذر فتح الفصل\nحاول مجددًا بعد قليل", viewModel::retryInitialChapter, Modifier.padding(24.dp),
                     )
                 }
             }

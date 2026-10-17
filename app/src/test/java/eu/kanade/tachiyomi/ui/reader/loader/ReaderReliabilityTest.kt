@@ -20,6 +20,15 @@ class ReaderReliabilityTest {
         override var isLocal=local
         override suspend fun getPages()=listOf(ReaderPage(0),ReaderPage(1))
     }
+    @Test fun explicitSourceDenialIsNotRetriedOrReportedAsNetworkFailure()=runBlocking {
+        var calls=0
+        val failure=eu.kanade.tachiyomi.source.ChapterAccessRestrictedException()
+        assertEquals("ACCESS_RESTRICTED",ReaderLoadRecovery.category(failure))
+        assertThrows(failure.javaClass) {runBlocking {
+            ReaderLoadRecovery.request({fail("source lock must not back off")}) {calls++;throw failure}
+        }}
+        assertEquals(1,calls)
+    }
     @Test fun unreadChapterWithSamePageCountStartsAtOwnFirstPage() {
         val p=ReaderPositionOwnership(1,9)
         assertEquals(9,p.enter(1,0,false,19));assertEquals(0,p.enter(2,0,false,19))

@@ -69,7 +69,7 @@ class SmartLinkFullscreenGateTest {
         assertTrue(controller.contains("dialog.setOnCancelListener { abandon(transition.id,token);result.complete(false) }"))
         assertFalse(controller.contains("AlertDialog.Builder"))
         assertTrue(controller.contains("متابعة القراءة"));assertTrue(controller.contains("افتح إعلانًا واحدًا للمتابعة"))
-        assertTrue(controller.contains("text=\"فتح إعلان\""));assertTrue(controller.contains("إعلان خارجي · Adsterra · asiafilm.org"))
+        assertTrue(controller.contains("text=\"شاهد إعلان للإكمال\""));assertTrue(controller.contains("إعلان خارجي · Adsterra · asiafilm.org"))
         assertFalse(controller.contains("وليست إثبات مشاهدة"))
         val novel=source("eu/kanade/presentation/novels/NovelReaderScreen.kt")
         val boundary=source("eu/kanade/tachiyomi/data/ads/NativeBoundaryAd.kt")

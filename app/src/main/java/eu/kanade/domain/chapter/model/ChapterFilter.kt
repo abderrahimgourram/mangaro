@@ -19,7 +19,9 @@ fun List<Chapter>.applyFilters(manga: Manga, downloadManager: DownloadManager): 
     val downloadedFilter = manga.downloadedFilter
     val bookmarkedFilter = manga.bookmarkedFilter
 
-    return filter { chapter -> applyFilter(unreadFilter) { !chapter.read } }
+    return filter { chapter -> eu.kanade.tachiyomi.source.internal.azora.AzoraChapterAvailability.visible(manga.source,chapter.memo) ||
+        downloadManager.isChapterDownloaded(chapter.name,chapter.scanlator,chapter.url,manga.title,manga.source) }
+        .filter { chapter -> applyFilter(unreadFilter) { !chapter.read } }
         .filter { chapter -> applyFilter(bookmarkedFilter) { chapter.bookmark } }
         .filter { chapter ->
             applyFilter(downloadedFilter) {
@@ -46,6 +48,7 @@ fun List<ChapterList.Item>.applyFilters(manga: Manga): Sequence<ChapterList.Item
     val downloadedFilter = manga.downloadedFilter
     val bookmarkedFilter = manga.bookmarkedFilter
     return asSequence()
+        .filter { eu.kanade.tachiyomi.source.internal.azora.AzoraChapterAvailability.visible(manga.source,it.chapter.memo,it.isDownloaded) }
         .filter { (chapter) -> applyFilter(unreadFilter) { !chapter.read } }
         .filter { (chapter) -> applyFilter(bookmarkedFilter) { chapter.bookmark } }
         .filter { applyFilter(downloadedFilter) { it.isDownloaded || isLocalManga } }

@@ -8,6 +8,7 @@ import java.io.IOException
 /** Two attempts only for transport/server failures; access denials/rate limits require user retry. */
 internal object ReaderLoadRecovery {
     fun category(error: Throwable): String = when(error) {
+        is eu.kanade.tachiyomi.source.ChapterAccessRestrictedException -> "ACCESS_RESTRICTED"
         is CancellationException -> "CANCELLED"
         is HttpException -> "HTTP_${error.code}"
         is java.net.SocketTimeoutException -> "TIMEOUT"

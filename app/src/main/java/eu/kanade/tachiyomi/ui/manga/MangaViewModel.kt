@@ -270,7 +270,8 @@ class MangaViewModel(
 
     fun refreshIfStale() {
         val state = successState ?: return
-        if (!state.manga.isLocal() && !UpdateMangaFromRemote.chaptersRefreshedRecently(state.manga)) {
+        if (!state.manga.isLocal() && (!UpdateMangaFromRemote.chaptersRefreshedRecently(state.manga) ||
+            state.chapters.any { eu.kanade.tachiyomi.source.internal.azora.AzoraChapterAvailability.needsMetadataRefresh(state.manga.source,it.chapter.memo) })) {
             fetchAllFromSource(manualFetch = false)
         }
     }
@@ -1223,7 +1224,11 @@ class MangaViewModel(
                 get() = excludedScanlators.intersect(availableScanlators).isNotEmpty()
 
             val filterActive: Boolean
-                get() = scanlatorFilterActive || manga.chaptersFiltered()
+                get() = scanlatorFilterActive || manga.chaptersFiltered() || sourceAvailabilityFiltered
+
+            private val sourceAvailabilityFiltered by lazy {
+                chapters.any { !eu.kanade.tachiyomi.source.internal.azora.AzoraChapterAvailability.visible(manga.source,it.chapter.memo,it.isDownloaded) }
+            }
 
             /**
              * Applies the view filters to the list of chapters obtained from the database.
@@ -1235,6 +1240,7 @@ class MangaViewModel(
                 val downloadedFilter = manga.downloadedFilter
                 val bookmarkedFilter = manga.bookmarkedFilter
                 return asSequence()
+                    .filter { eu.kanade.tachiyomi.source.internal.azora.AzoraChapterAvailability.visible(manga.source,it.chapter.memo,it.isDownloaded) }
                     .filter { (chapter) -> applyFilter(unreadFilter) { !chapter.read } }
                     .filter { (chapter) -> applyFilter(bookmarkedFilter) { chapter.bookmark } }
                     .filter { applyFilter(downloadedFilter) { it.isDownloaded || isLocalManga } }

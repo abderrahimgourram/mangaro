@@ -1,0 +1,146 @@
+{
+  "chapters": [
+    {
+      "id": 138709,
+      "number": 20,
+      "name": null,
+      "slug": "chapter-20",
+      "isLocked": true
+    },
+    {
+      "id": 138710,
+      "number": 19,
+      "name": null,
+      "slug": "chapter-19",
+      "isLocked": true
+    },
+    {
+      "id": 138707,
+      "number": 18,
+      "name": null,
+      "slug": "chapter-18",
+      "isLocked": true
+    },
+    {
+      "id": 138706,
+      "number": 17,
+      "name": null,
+      "slug": "chapter-17",
+      "isLocked": true
+    },
+    {
+      "id": 138708,
+      "number": 16,
+      "name": null,
+      "slug": "chapter-16",
+      "isLocked": true
+    },
+    {
+      "id": 138705,
+      "number": 15,
+      "name": null,
+      "slug": "chapter-15",
+      "isLocked": false
+    },
+    {
+      "id": 138690,
+      "number": 14,
+      "name": null,
+      "slug": "chapter-14",
+      "isLocked": false
+    },
+    {
+      "id": 138688,
+      "number": 13,
+      "name": null,
+      "slug": "chapter-13",
+      "isLocked": false
+    },
+    {
+      "id": 138683,
+      "number": 12,
+      "name": null,
+      "slug": "chapter-12",
+      "isLocked": false
+    },
+    {
+      "id": 138682,
+      "number": 11,
+      "name": null,
+      "slug": "chapter-11",
+      "isLocked": false
+    },
+    {
+      "id": 138681,
+      "number": 10,
+      "name": null,
+      "slug": "chapter-10",
+      "isLocked": false
+    },
+    {
+      "id": 138687,
+      "number": 9,
+      "name": null,
+      "slug": "chapter-9",
+      "isLocked": false
+    },
+    {
+      "id": 138689,
+      "number": 8,
+      "name": null,
+      "slug": "chapter-8",
+      "isLocked": false
+    },
+    {
+      "id": 138680,
+      "number": 7,
+      "name": null,
+      "slug": "chapter-7",
+      "isLocked": false
+    },
+    {
+      "id": 138685,
+      "number": 6,
+      "name": null,
+      "slug": "chapter-6",
+      "isLocked": false
+    },
+    {
+      "id": 138686,
+      "number": 5,
+      "name": null,
+      "slug": "chapter-5",
+      "isLocked": false
+    },
+    {
+      "id": 138684,
+      "number": 4,
+      "name": null,
+      "slug": "chapter-4",
+      "isLocked": false
+    },
+    {
+      "id": 138676,
+      "number": 3,
+      "name": null,
+      "slug": "chapter-3",
+      "isLocked": false
+    },
+    {
+      "id": 138642,
+      "number": 2,
+      "name": null,
+      "slug": "chapter-2",
+      "isLocked": false
+    },
+    {
+      "id": 138643,
+      "number": 1,
+      "name": null,
+      "slug": "chapter-1",
+      "isLocked": false
+    }
+  ],
+  "totalChapterCount": 20,
+  "captureSource": "https://api.azorafly.com/api/chapters?postId=2845"
+}

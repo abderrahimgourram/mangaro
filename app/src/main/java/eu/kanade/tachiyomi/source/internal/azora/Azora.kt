@@ -327,7 +327,11 @@ class Azora(
                     runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrNull()
                 } ?: 0L
                 scanlator = obj["scanlator"]?.jsonPrimitiveOrNull?.contentOrNull
-                memo = buildJsonObject { put("azora.id", chapterId); put("id", chapterId); put("slug", chapterSlug) }
+                memo = buildJsonObject {
+                    put("azora.id", chapterId); put("id", chapterId); put("slug", chapterSlug)
+                    put(AzoraChapterAvailability.PARSED,true)
+                    obj["isLocked"]?.jsonPrimitiveOrNull?.booleanOrNull?.let {put(AzoraChapterAvailability.LOCKED,it)}
+                }
             }
         }.sortedByDescending { it.chapter_number }
         if (parsed.map { it.url }.toSet().size != parsed.size) throw IOException("Azora duplicate chapter URL")
@@ -357,7 +361,7 @@ class Azora(
 
         val isLocked = chapterObj["isLocked"]?.jsonPrimitiveOrNull?.booleanOrNull == true
         if (isLocked) {
-            throw IOException("Azora chapter is locked")
+            throw eu.kanade.tachiyomi.source.ChapterAccessRestrictedException()
         }
 
         val pagesArray = chapterObj["images"]?.jsonArrayOrNull

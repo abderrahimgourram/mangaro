@@ -22,6 +22,7 @@ import eu.kanade.domain.manga.model.readingMode
 import eu.kanade.domain.source.interactor.GetIncognitoState
 import eu.kanade.domain.track.interactor.TrackChapter
 import eu.kanade.domain.track.service.TrackPreferences
+import eu.kanade.tachiyomi.BuildConfig
 import eu.kanade.tachiyomi.data.database.models.toDomainChapter
 import eu.kanade.tachiyomi.data.download.DownloadManager
 import eu.kanade.tachiyomi.data.download.DownloadProvider
@@ -201,10 +202,15 @@ class ReaderViewModel @JvmOverloads constructor(
      */
     private val chapterList by lazy {
         val manga = manga!!
-        val chapters = runBlocking { getChaptersByMangaId.await(manga.id, applyScanlatorFilter = true) }
+        val storedChapters = runBlocking { getChaptersByMangaId.await(manga.id, applyScanlatorFilter = true) }
 
-        val selectedChapter = chapters.find { it.id == chapterId }
+        val selectedChapter = storedChapters.find { it.id == chapterId }
             ?: error("Requested chapter of id $chapterId not found in chapter list")
+
+        val chapters=storedChapters.filter { row ->
+            row.id==selectedChapter.id || eu.kanade.tachiyomi.source.internal.azora.AzoraChapterAvailability.visible(manga.source,row.memo) ||
+                downloadManager.isChapterDownloaded(row.name,row.scanlator,row.url,manga.title,manga.source)
+        }
 
         val chaptersForReader = when {
             (readerPreferences.skipRead.get() || readerPreferences.skipFiltered.get()) -> {
@@ -294,7 +300,9 @@ class ReaderViewModel @JvmOverloads constructor(
                         eu.kanade.tachiyomi.data.ads.SmartLinkController.owner(accountToken),"manga")]
                     Triple(reader.currentChapter?.chapter?.id,reader.isLoadingAdjacentChapter,pending)
                 }.distinctUntilChanged().collect { (current,loading,pending) ->
-                    if(current!=null && !loading && pending!=null && manga?.let {smartWork(it)}==pending.work &&
+                    if(pending==null) {
+                        endPresentationAttempt=null
+                    } else if(current!=null && !loading && manga?.let {smartWork(it)}==pending.work &&
                         endPresentationAttempt!=pending.id) {
                         // One automatic presentation attempt per obligation in this reader.
                         // Back or a failed destination must not create an immediate dialog/retry loop.
@@ -380,12 +388,6 @@ class ReaderViewModel @JvmOverloads constructor(
                 throw CancellationException("Reader entry declined")
             }
         }
-        if(!incognitoMode && eu.kanade.tachiyomi.BuildConfig.SMARTLINK_V3_ENABLED && previous!=null && previous.chapter.id!=chapter.chapter.id) {
-            smartCompletionJob?.join()
-            val work=manga ?: return checkNotNull(state.value.viewerChapters)
-            if(!smartController.readerTransition("manga",smartWork(work),previous.chapter.id.toString(),chapter.chapter.id.toString(),selectedPage?.toString(),accountToken))
-                return checkNotNull(state.value.viewerChapters)
-        }
         chapter.chapter.id?.let { smartInitialRead.putIfAbsent(it,chapter.chapter.read) }
         focusChapter(chapter)
         loader.loadChapter(chapter)
@@ -461,6 +463,15 @@ class ReaderViewModel @JvmOverloads constructor(
         return try {
             chapterSelection.switch(chapterList, chapter.chapter.id ?: return false) { selected ->
                 if(eu.kanade.tachiyomi.BuildConfig.SMARTLINK_V3_ENABLED && getCurrentChapter()?.chapter?.id==selected.chapter.id) return@switch
+                if(!incognitoMode && BuildConfig.SMARTLINK_V3_ENABLED) {
+                    val previous=getCurrentChapter()
+                    if(previous!=null && previous.chapter.id!=selected.chapter.id) {
+                        smartCompletionJob?.join()
+                        val work=manga ?: return@switch
+                        if(!smartController.readerTransition("manga",smartWork(work),previous.chapter.id.toString(),selected.chapter.id.toString(),selectedPage?.toString(),accountToken))
+                            return@switch
+                    }
+                }
                 mutableState.update { it.copy(isLoadingAdjacentChapter = true) }
                 try {
                     withIOContext { loadChapter(loader, selected, selectedPage) }

@@ -176,7 +176,7 @@ internal class SmartLinkController private constructor(private val app: Applicat
                 label("إعلان خارجي · Adsterra · asiafilm.org").apply {textSize=12f}
                 val message=label("").apply {setTextColor(android.graphics.Color.rgb(255,180,180))}
                 val button=android.widget.Button(activity).apply {
-                    text="فتح إعلان";isAllCaps=false;minHeight=dp(52)
+                    text="شاهد إعلان للإكمال";isAllCaps=false;minHeight=dp(52)
                     backgroundTintList=android.content.res.ColorStateList.valueOf(gold)
                     setTextColor(purple)
                     content.addView(this,android.widget.LinearLayout.LayoutParams(-1,-2))
