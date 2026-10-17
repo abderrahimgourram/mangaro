@@ -275,11 +275,12 @@ class NovelHomeScreen(private val initialGenre: String? = null) : Screen() {
         val routesSnapshot = routes
         val querySnapshot = term
         val genreSnapshot = genre
-        val presentation by produceState(NovelBrowsePresentation(), catalogSnapshot, slotsSnapshot, routesSnapshot, querySnapshot to genreSnapshot, evidenceRevision) {
+        val resumeEdition = if (term.isBlank() && genre == null) library.firstOrNull { it.position != null }?.novel?.id else null
+        val presentation by produceState(NovelBrowsePresentation(), catalogSnapshot, slotsSnapshot, routesSnapshot, querySnapshot to genreSnapshot, evidenceRevision, resumeEdition) {
             value = withContext(Dispatchers.Default) {
                 val lists = repository.activeSources.map { slotsSnapshot[it.id].orEmpty() }
                 val editions = buildList { for (i in 0 until (lists.maxOfOrNull { it.size } ?: 0)) lists.forEach { it.getOrNull(i)?.let(::add) } }
-                val activeWorks = catalogSnapshot.works.mapNotNull(NovelSourceAvailability::discoverable)
+                val activeWorks = NovelCatalogCards.project(catalogSnapshot)
                 val byEdition = activeWorks.flatMap { w -> w.editions.map { it.id to w } }.toMap()
                 val detailed = editions.map { n -> byEdition[n.id]?.editions?.firstOrNull {it.id == n.id} ?: n }.distinctBy {it.id}
                 val groups = if (querySnapshot.isNotBlank()) selection.groups(detailed) else emptyList()
@@ -287,12 +288,14 @@ class NovelHomeScreen(private val initialGenre: String? = null) : Screen() {
                 val works = if (querySnapshot.isNotBlank()) groups.map { group ->
                     UnifiedNovelWork(group.key, group.members.mapNotNull {byId[it.id]}, group.winner.id)
                 } else if (editions.isEmpty() && genreSnapshot == null) activeWorks.take(64)
-                    else editions.mapNotNull { byEdition[it.id] }.distinctBy { it.id }
+                    else NovelCatalogCards.select(activeWorks, editions)
                 val genres = (routesSnapshot.filterKeys(NovelSourceAvailability::active).values.flatten().map { it.name } + activeWorks.flatMap { it.editions }.flatMap { it.genres })
                     .distinctBy(NovelGenres::key).sortedBy(NovelGenres::key)
-                val recent = (slotsSnapshot["novel.kolnovel"].orEmpty().take(3) + slotsSnapshot["novel.cenele"].orEmpty().take(3))
-                    .mapNotNull { byEdition[it.id] }.distinctBy { it.id }
-                NovelBrowsePresentation(works, genres, recent, groups)
+                val recent = NovelCatalogCards.select(activeWorks,
+                    slotsSnapshot["novel.kolnovel"].orEmpty().take(3) + slotsSnapshot["novel.cenele"].orEmpty().take(3))
+                val resume = activeWorks.filter { work -> work.editions.any { it.id == resumeEdition } }
+                val visibleRecent = if (querySnapshot.isBlank() && genreSnapshot == null) NovelCatalogCards.excluding(recent, resume) else emptyList()
+                NovelBrowsePresentation(NovelCatalogCards.excluding(works, visibleRecent + resume), genres, visibleRecent, groups)
             }
         }
         val works = presentation.works
@@ -371,7 +374,7 @@ class NovelHomeScreen(private val initialGenre: String? = null) : Screen() {
                 LazyVerticalGrid(columns = if (maxWidth < 600.dp) GridCells.Fixed(2) else GridCells.Adaptive(160.dp),
                     state = gridState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp),
                     horizontalArrangement = Arrangement.spacedBy(Design.CardGap), verticalArrangement = Arrangement.spacedBy(Design.CardGap)) {
-                    library.firstOrNull { it.position != null }?.let { current -> item(key = "continue", span = { GridItemSpan(maxLineSpan) }) {
+                    library.firstOrNull { it.position != null }?.takeIf { resumeEdition != null }?.let { current -> item(key = "continue", span = { GridItemSpan(maxLineSpan) }) {
                         Surface(Modifier.fillMaxWidth().clickable { openReader(current.novel, current.position!!.chapter) },
                             shape = RoundedCornerShape(14.dp), color = Design.SurfaceDark) {
                             Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -415,7 +418,7 @@ class NovelHomeScreen(private val initialGenre: String? = null) : Screen() {
                             TextButton(onClick = { memory.loadedKey = null; generation++ }) { Text("حاول مجددًا") }
                         }
                     }
-                    if (works.isEmpty() && busy.isEmpty() && failed.isEmpty()) item(key = "empty", span = { GridItemSpan(maxLineSpan) }) {
+                    if (works.isEmpty() && recent.isEmpty() && resumeEdition == null && busy.isEmpty() && failed.isEmpty()) item(key = "empty", span = { GridItemSpan(maxLineSpan) }) {
                         Text("لا توجد نتائج حاليًا.", color = Design.LavenderPrimary)
                     }
                     items(works, key = { it.id }) { work ->

@@ -31,7 +31,7 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.presentation.theme.MangaroDesignSystem as Design
 import eu.kanade.tachiyomi.novels.NovelRepository
-import eu.kanade.tachiyomi.novels.NovelSourceAvailability
+import eu.kanade.tachiyomi.novels.NovelCatalogCards
 import eu.kanade.tachiyomi.ui.home.HomeScreen
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.coroutineScope
@@ -76,7 +76,7 @@ fun HomeNovelShelf() {
     val repository = remember(context) { NovelRepository.get(context) }
     // Shelf presentation observes only its bounded cards, not every catalogue/evidence mutation.
     val shelf by remember(repository) {
-        repository.catalog.map { state -> state.works.mapNotNull(NovelSourceAvailability::discoverable).take(12).map { it.primary } }
+        repository.catalog.map { state -> NovelCatalogCards.project(state).take(12) }
             .distinctUntilChanged().flowOn(Dispatchers.Default)
     }.collectAsStateWithLifecycle(initialValue = emptyList())
     val navigator = LocalNavigator.currentOrThrow
@@ -121,7 +121,8 @@ fun HomeNovelShelf() {
         )
         if (shelf.isNotEmpty()) {
             LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(shelf, key = { it.id }) { novel ->
+                items(shelf, key = { it.id }) { work ->
+                    val novel = work.primary
                     eu.kanade.presentation.components.MangaroWorkCard(
                         title = novel.title,
                         onClick = { navigator.push(NovelDetailsScreen(novel)) },
