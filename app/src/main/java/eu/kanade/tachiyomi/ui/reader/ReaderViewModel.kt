@@ -116,13 +116,10 @@ class ReaderViewModel @JvmOverloads constructor(
     private val accountScope = kotlinx.coroutines.CoroutineScope(viewModelScope.coroutineContext + tachiyomi.core.common.util.lang.LocalAccountScope.Element(accountToken))
 
 
-    val adReadingSession = java.util.UUID.randomUUID().toString()
-    private val readerAdPolicy = eu.kanade.tachiyomi.data.ads.ReaderWebAdPolicy.get(Injekt.get<Application>()).also { it.startSession(adReadingSession) }
     private var smartAutomaticTransition: kotlinx.coroutines.Job? = null
     private var endPresentationAttempt: String? = null
     private val smartController get() = eu.kanade.tachiyomi.data.ads.SmartLinkController.get(Injekt.get<Application>())
     private fun smartWork(work: Manga) = eu.kanade.tachiyomi.data.ads.SmartLinkController.chapter("manga",work.source.toString(),work.url,"work")
-    private val adCompletion = eu.kanade.tachiyomi.data.ads.AdChapterCompletion()
     private val adPageReadyJobs = linkedMapOf<Long, kotlinx.coroutines.Job>()
 
     private val mutableState = MutableStateFlow(State())
@@ -331,7 +328,6 @@ class ReaderViewModel @JvmOverloads constructor(
 
     override fun onCleared() {
         focusLease?.close()
-        readerAdPolicy.endSession(adReadingSession)
         val currentChapters = state.value.viewerChapters
         if (currentChapters != null) {
             currentChapters.unref()
@@ -600,16 +596,12 @@ class ReaderViewModel @JvmOverloads constructor(
 
         // Only selected chapter ends count; opening an ordinary page does not.
         selectedChapter.chapter.id?.let { chapterId ->
-            adCompletion.selected(chapterId, page.index, pages.lastIndex)
             if (page.index != pages.lastIndex) {
                 adPageReadyJobs.remove(chapterId)?.cancel()
             } else {
                 fun recordReady() {
                     if (mihon.domain.sigils.SigilReadObservation.completed(page.status is Page.State.Ready,page.index,pages.lastIndex,sigilSelections[sigilSelection])) {
                         sigilReadingReceipt(selectedChapter,sigilOwner,true)
-                    }
-                    if (adCompletion.ready(chapterId, page.index, pages.lastIndex)) {
-                        readerAdPolicy.chapterCompleted(adReadingSession, chapterId)
                     }
                     // SmartLink is an edition-index page at navigation, not a completion counter.
 

@@ -17,14 +17,12 @@ import eu.kanade.tachiyomi.BuildConfig
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import tachiyomi.core.common.util.lang.LocalAccountScope as Account
-import java.util.UUID
 
 /** Stable batch gate. The existing queue receives work only through its original callback. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun rememberDownloadAdGate(readerActive: Boolean = false): (DownloadAdRequest, () -> Unit) -> Unit {
     val context=LocalContext.current
-    val ads=remember(context) {InMobiAds.get(context)}
     val activity=remember(context) {generateSequence(context) {(it as? ContextWrapper)?.baseContext}.filterIsInstance<Activity>().firstOrNull()}
     val controller=remember(context) {SmartLinkController.get(context)}
     val scope=rememberCoroutineScope()
@@ -39,9 +37,6 @@ fun rememberDownloadAdGate(readerActive: Boolean = false): (DownloadAdRequest, (
     val token=remember(account.token) {account.token}
     LaunchedEffect(account.token,account.ready) {
         if(!account.ready || pendingOwner!=null && pendingOwner!=SmartLinkController.owner(account.token)) {target=null;continuation=null}
-    }
-    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
-        if(!BuildConfig.SMARTLINK_V3_ENABLED && !readerActive) ads.prepareDownloadSurface(activity)
     }
     fun proceed() {
         if (state.batches[target]?.takeIf { it.owner==SmartLinkController.owner(token) }?.unlocked != true) return
@@ -94,7 +89,7 @@ fun rememberDownloadAdGate(readerActive: Boolean = false): (DownloadAdRequest, (
             if(!BuildConfig.SMARTLINK_V3_ENABLED) {
                 busy=true
                 val once=OnceAction {try {Account.check(captured);action()} finally {busy=false}}
-                if(readerActive) once.run() else ads.download(activity,request.unique.size,UUID.randomUUID().toString(),once::run)
+                once.run()
             } else {
                 busy=true
                 var invokingQueue=false

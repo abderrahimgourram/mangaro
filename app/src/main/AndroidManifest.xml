@@ -46,10 +46,6 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Tachiyomi">
 
-        <!-- CMP is entered only from our own privacy flow. -->
-        <activity android:name="com.inmobi.cmp.presentation.components.CmpActivity"
-            android:exported="false" tools:replace="android:exported" />
-
         <activity
             android:name=".ui.main.MainActivity"
             android:exported="true"

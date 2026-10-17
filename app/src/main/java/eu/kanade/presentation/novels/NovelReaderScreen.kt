@@ -171,9 +171,6 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
         var ceneleDiagRenderedTheft by remember { mutableIntStateOf(0) }
         var ceneleDiagRenderedCenele by remember { mutableIntStateOf(0) }
         val scroll=rememberLazyListState()
-        val chapterAd = remember(novel.id, chapter.id) {
-            NovelAdRequest("reader:" + novelDigest(novel.id + "|" + chapter.id))
-        }
         val smartController=remember(context) { eu.kanade.tachiyomi.data.ads.SmartLinkController.get(context) }
         val smartWork=remember(novel.id) { eu.kanade.tachiyomi.data.ads.SmartLinkController.chapter("novel",novel.sourceId,novel.id,"work") }
         val readerOwner = remember { tachiyomi.core.common.util.lang.LocalAccountScope.capture() }
@@ -377,7 +374,6 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                     storageError?.let { Text(it,Modifier.padding(horizontal=20.dp),color=gold,style=MaterialTheme.typography.labelSmall) }
                     if(error!=null) NovelFailure(error!!,chapter.url) {generation++}
                     SunovelsChapterDiagnostic(novel, chapter, seaReport = seaDiagnostic)
-                    val adVisible by remember { derivedStateOf { scroll.layoutInfo.visibleItemsInfo.any { it.key == "chapter-heading" } } }
                     LazyColumn(state=scroll,modifier=Modifier.fillMaxSize().pointerInput(tapLimit) {
                             awaitEachGesture {
                                 val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
@@ -407,9 +403,7 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                                         style=MaterialTheme.typography.titleLarge.copy(textDirection=TextDirection.ContentOrRtl),
                                         modifier=Modifier.padding(horizontal=appearance.margin.dp).alpha(if(controlsVisible) 1f else 0f).then(if(controlsVisible) Modifier else Modifier.clearAndSetSemantics { }))
                                     Box(Modifier.fillMaxWidth()) {
-                                        if (!BuildConfig.SMARTLINK_V3_ENABLED && !loading && !restoring && loadedChapter?.id == chapter.id && error == null && blocks.isNotEmpty()) {
-                                            NovelAdPlacement(chapterAd, visible = adVisible, allowStart = !scroll.isScrollInProgress)
-                                        }
+
                                     }
                                 }
                             }

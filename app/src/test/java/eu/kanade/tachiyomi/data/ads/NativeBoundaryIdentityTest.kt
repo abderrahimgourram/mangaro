@@ -20,15 +20,4 @@ class NativeBoundaryIdentityTest {
         assertNull(ChapterTransition.Prev(chapter(11), null).completedBoundaryChapterId)
     }
 
-    @Test fun bothSidesShareFrequencyGuards() {
-        val policy = AdPolicy { 1000L }
-        policy.startSession("reader")
-        (1L..4L).forEach { policy.chapterCompleted("reader", it) }
-        val next = ChapterTransition.Next(chapter(4), chapter(5))
-        val prev = ChapterTransition.Prev(chapter(5), chapter(4))
-        assertTrue(policy.claimNative("reader", next.completedBoundaryChapterId!!))
-        assertFalse(policy.claimNative("reader", prev.completedBoundaryChapterId!!))
-        (5L..7L).forEach { policy.chapterCompleted("reader", it) }
-        assertTrue(policy.nativeEligible("reader", 7))
-    }
 }

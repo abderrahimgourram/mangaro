@@ -79,7 +79,7 @@ android {
         manifestPlaceholders["accountAuthScheme"] = "mangaro"
 
         buildConfigField("boolean", "SMARTLINK_V3_ENABLED", smartlinkV3PrivateAcceptance.toString())
-        versionCode = if (sunovelsPrivateAcceptance) 40 else 22
+        versionCode = if (sunovelsPrivateAcceptance) 41 else 22
         versionName = "2.0.4"
 
         buildConfigField("String", "COMMIT_COUNT", "\"${getLatestCommitCount()}\"")
@@ -387,14 +387,10 @@ baselineProfile {
 }
 
 dependencies {
-    implementation("com.inmobi.monetization:inmobi-ads-kotlin:11.5.0")
-    // Certified consent UI; no personalized requests before its real IAB signals are available.
-    implementation("com.inmobi:inmobicmp:2.4.3")
-    // CMP POM contains no transitive dependency declarations: vendor-required runtime libraries.
+    // Preserve general Android/extension runtime compatibility; no advertising SDK dependency.
     implementation("androidx.cardview:cardview:1.0.0")
     implementation("androidx.lifecycle:lifecycle-livedata-ktx:${libs.versions.androidx.lifecycle.get()}")
     implementation("com.google.code.gson:gson:2.13.2")
-    implementation("com.iabgpp:iabgpp-encoder:3.2.3")
     // Phase 1 account modules only: no Community, Realtime, Functions or cloud library sync.
     implementation(platform("io.github.jan-tennert.supabase:bom:3.8.0"))
     implementation("io.github.jan-tennert.supabase:auth-kt")

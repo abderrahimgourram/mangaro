@@ -43,7 +43,6 @@ fun MangaroChapterTransition(
     transition: ChapterTransition,
     currChapterDownloaded: Boolean,
     goingToChapterDownloaded: Boolean,
-    nativeContent: @Composable () -> Unit,
 ) {
     val previous = transition is ChapterTransition.Prev
     val completed = if (previous) transition.to else transition.from
@@ -78,10 +77,6 @@ fun MangaroChapterTransition(
                     )
                 }
                 HorizontalDivider(color = BoundaryGold.copy(alpha = 0.18f))
-
-                // Emits no layout node until a genuine SDK NativeAd is available. No placeholder,
-                // loading indicator, fixed height or navigation dependency belongs in this slot.
-                nativeContent()
 
                 if (gap > 0) {
                     Text(

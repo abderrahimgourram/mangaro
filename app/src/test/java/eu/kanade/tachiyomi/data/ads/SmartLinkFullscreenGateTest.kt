@@ -72,7 +72,7 @@ class SmartLinkFullscreenGateTest {
         assertTrue(page.contains("شاهد إعلان للإكمال"));assertTrue(page.contains("إعلان خارجي · Adsterra · asiafilm.org"))
         assertFalse(page.contains("وليست إثبات مشاهدة"))
         val novel=source("eu/kanade/presentation/novels/NovelReaderScreen.kt")
-        val boundary=source("eu/kanade/tachiyomi/data/ads/NativeBoundaryAd.kt")
+        val boundary=source("eu/kanade/tachiyomi/ui/reader/viewer/ReaderTransitionView.kt")
         assertFalse(novel.contains("SmartLinkChapterBoundary"));assertFalse(boundary.contains("SmartLinkChapterBoundary"))
         val download=source("eu/kanade/tachiyomi/data/ads/DownloadAdGate.kt")
         assertFalse(download.contains("SmartLinkChapterBoundary"))

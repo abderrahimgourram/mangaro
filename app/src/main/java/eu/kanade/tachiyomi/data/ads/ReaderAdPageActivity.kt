@@ -18,7 +18,6 @@ import eu.kanade.tachiyomi.ui.base.activity.BaseActivity
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.TimeoutCancellationException
 import tachiyomi.core.common.util.lang.LocalAccountScope as Account
 
 /** An inter-chapter page in the Activity back stack. It never has a chapter ID or page number. */
@@ -75,7 +74,7 @@ class ReaderAdPageActivity : BaseActivity() {
         val message = label("").apply { setTextColor(Color.rgb(255, 180, 180)) }
         val button = Button(this).apply {
             text = "شاهد إعلان للإكمال"; isAllCaps = false; minHeight = dp(52)
-            backgroundTintList = ColorStateList.valueOf(gold); setTextColor(purple)
+            backgroundTintList = ColorStateList.valueOf(Color.rgb(112, 61, 190)); setTextColor(Color.WHITE)
             content.addView(this, LinearLayout.LayoutParams(-1, -2))
         }
         setContentView(ScrollView(this).apply {
@@ -91,20 +90,17 @@ class ReaderAdPageActivity : BaseActivity() {
                 button.isEnabled = false
                 message.text = "جار فتح الإعلان..."
                 try {
-                    val account = awaitReaderAdAccount(owner)
+                    val account = Account.capture()
                     Account.check(account)
-                    val pending = controller.currentReaderPage(key, account)
-                    if (pending == null) {
-                        message.text = "تعذّر استعادة الفاصل؛ ارجع وأعد المحاولة"
-                    } else if (pending.satisfied) {
+                    if (SmartLinkController.owner(account) != owner) {
                         finish()
-                    } else {
-                        message.text = controller.launch(this@ReaderAdPageActivity, boundary, account).orEmpty()
+                        return@launch
                     }
-                } catch (_: TimeoutCancellationException) {
-                    message.text = "تعذّر تجهيز الإعلان؛ اضغط لإعادة المحاولة"
+                    // The existing launcher opens SmartLinkConfiguration.URL in the external browser
+                    // and keeps the validated return tied to this exact reader boundary.
+                    message.text = controller.launch(this@ReaderAdPageActivity, boundary, account).orEmpty()
                 } catch (_: Account.Changed) {
-                    finish()
+                    message.text = "تعذّر فتح الإعلان الآن؛ أعد المحاولة"
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (_: Exception) {

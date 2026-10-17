@@ -101,7 +101,7 @@ internal class SmartLinkController private constructor(private val app: Applicat
         Account.check(token)
         if(activity==null || activity.isFinishing || activity.isDestroyed) return "تعذّر فتح المتصفح؛ يمكنك المحاولة مجددًا"
         if(!online()) return "لا يوجد اتصال بالإنترنت؛ يمكنك الرجوع أو إعادة المحاولة"
-        if(InMobiAds.get(app).privacyChoice()==AdPrivacyChoice.DISABLED) return "الإعلانات مرفوضة في اختيارات الخصوصية؛ يمكنك الرجوع أو إعادة المحاولة"
+        if(!SmartLinkPrivacy.get(app).enabled()) return "الإعلانات مرفوضة في اختيارات الخصوصية؛ يمكنك الرجوع أو إعادة المحاولة"
         val navigation=Intent(Intent.ACTION_VIEW,Uri.parse(SmartLinkConfiguration.URL)).addCategory(Intent.CATEGORY_BROWSABLE)
         val manager=app.packageManager
         val browsers=manager.queryIntentActivities(Intent(Intent.ACTION_VIEW,Uri.parse("https://example.com")).addCategory(Intent.CATEGORY_BROWSABLE),android.content.pm.PackageManager.MATCH_DEFAULT_ONLY)
@@ -137,7 +137,7 @@ internal class SmartLinkController private constructor(private val app: Applicat
         applied?.let { readerPages.applied(ReaderAdPageHost.Key(it.owner,it.kind,it.id)) }
     }
     suspend fun readerEntry(kind: String, work: String, destination: String, payload: String?, chapterKey: String, previouslyRead: Boolean, token: Account.Token): Boolean {
-        if(!BuildConfig.SMARTLINK_V3_ENABLED || InMobiAds.get(app).privacyChoice()==AdPrivacyChoice.DISABLED) return true
+        if(!BuildConfig.SMARTLINK_V3_ENABLED || !SmartLinkPrivacy.get(app).enabled()) return true
         Account.check(token)
         val pending=edit { Account.check(token);it.entry(owner(token),kind,work,destination,payload,chapterKey,previouslyRead) } ?: return true
         return readerTransition(kind,work,pending.from,pending.destination,pending.payload,token)
@@ -148,7 +148,7 @@ internal class SmartLinkController private constructor(private val app: Applicat
     suspend fun readerTransition(kind: String, work: String, from: String?, destination: String, payload: String?, token: Account.Token): Boolean {
         if(!BuildConfig.SMARTLINK_V3_ENABLED) return true
         Account.check(token)
-        if(InMobiAds.get(app).privacyChoice()==AdPrivacyChoice.DISABLED) return true
+        if(!SmartLinkPrivacy.get(app).enabled()) return true
         val transition=edit { Account.check(token);it.transition(owner(token),kind,work,from,destination,payload) } ?: return true
         return presentReaderPage(transition,token)
     }
@@ -169,7 +169,7 @@ internal class SmartLinkController private constructor(private val app: Applicat
     }
     suspend fun readerPage(kind: String, work: String, from: String?, destination: String, payload: String?,
         boundaries: List<ReaderAdPageBoundary>, token: Account.Token, downloaded: Boolean = false): Boolean {
-        if(!BuildConfig.SMARTLINK_V3_ENABLED || InMobiAds.get(app).privacyChoice()==AdPrivacyChoice.DISABLED) return true
+        if(!BuildConfig.SMARTLINK_V3_ENABLED || !SmartLinkPrivacy.get(app).enabled()) return true
         Account.check(token)
         if(!ReaderAdPages.required(online(),downloaded)) return true
         while(true) {
