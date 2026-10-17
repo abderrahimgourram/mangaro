@@ -171,6 +171,11 @@
                 android:resource="@xml/s_pen_actions" />
         </activity>
 
+        <!-- Virtual reader boundary: not a source chapter and never externally launchable. -->
+        <activity
+            android:name=".data.ads.ReaderAdPageActivity"
+            android:exported="false" />
+
         <activity
             android:name=".ui.security.UnlockActivity"
             android:exported="false"

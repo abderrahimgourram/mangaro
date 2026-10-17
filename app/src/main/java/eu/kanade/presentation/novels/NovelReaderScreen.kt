@@ -174,15 +174,19 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
         val chapterAd = remember(novel.id, chapter.id) {
             NovelAdRequest("reader:" + novelDigest(novel.id + "|" + chapter.id))
         }
-        var smartPreviouslyRead by remember(chapter.id) { mutableStateOf(true) }
         val smartController=remember(context) { eu.kanade.tachiyomi.data.ads.SmartLinkController.get(context) }
         val smartWork=remember(novel.id) { eu.kanade.tachiyomi.data.ads.SmartLinkController.chapter("novel",novel.sourceId,novel.id,"work") }
         val readerOwner = remember { tachiyomi.core.common.util.lang.LocalAccountScope.capture() }
         val smartAdState by smartController.state.collectAsState()
         val smartPending = smartAdState.readerTransitions[eu.kanade.tachiyomi.data.ads.adHash(
-            eu.kanade.tachiyomi.data.ads.SmartLinkController.owner(readerOwner),"novel")]
-        var smartCompletionJob by remember { mutableStateOf<Job?>(null) }
+            eu.kanade.tachiyomi.data.ads.SmartLinkController.owner(readerOwner),"novel")]?.takeIf { it.chapterPage }
         val scope=rememberCoroutineScope()
+        suspend fun advertisingChapterDownloaded(target: NovelChapter): Boolean =
+            withContext(Dispatchers.IO + tachiyomi.core.common.util.lang.LocalAccountScope.Element(readerOwner)) {
+                tachiyomi.core.common.util.lang.LocalAccountScope.check(readerOwner)
+                repository.disk.complete(novel.id,target.id)
+            }
+
         LaunchedEffect(chapter.id,generation) {
             loading=true;restoring=true;loadedChapter=null;error=null;paragraphs=emptyList();plain=emptyList();anchors=emptyList();blocks=emptyList();blockPositions=emptyList()
             val requestedChapter = chapter
@@ -199,9 +203,9 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                 withContext(seaTrace ?: kotlin.coroutines.EmptyCoroutineContext) {
                     seaTrace?.stage(SeaReaderStage.LOCAL_RESTORE)
                     repository.awaitLocal()
-                    if(BuildConfig.SMARTLINK_V3_ENABLED && !smartController.readerEntry("novel",smartWork,requestedChapter.id,
+                    if(BuildConfig.SMARTLINK_V3_ENABLED && !smartController.readerPage("novel",smartWork,null,requestedChapter.id,
                             kotlinx.serialization.json.Json.encodeToString(NovelChapter.serializer(),requestedChapter),
-                            eu.kanade.tachiyomi.data.ads.SmartLinkController.chapter("novel",novel.sourceId,novel.id,requestedChapter.id),false,readerOwner)) {
+                            eu.kanade.tachiyomi.data.ads.ReaderAdPages.pathTo(repository.indexSnapshot(novel)?.chapters.orEmpty().map { it.id },requestedChapter.id),readerOwner,downloaded=advertisingChapterDownloaded(requestedChapter))) {
                         navigator.pop();return@withContext
                     }
                     if (generation > 0) repository.prepareReaderChapter(novel, requestedChapter, manualRetry = true)
@@ -228,9 +232,6 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                     ceneleDiagRenderedCenele = countWord(paragraphs.map { it.text }, "فضاء")
                     seaTrace?.stage(SeaReaderStage.READER_RESTORE)
                     val position=repository.readingPosition(novel,requestedChapter)
-                    smartPreviouslyRead = position != null && position.paragraph >= text.paragraphs.size
-                    if (BuildConfig.SMARTLINK_V3_ENABLED) eu.kanade.tachiyomi.data.ads.SmartLinkController.get(context).observeChapter(
-                        "novel",eu.kanade.tachiyomi.data.ads.SmartLinkController.chapter("novel",novel.sourceId,novel.id,requestedChapter.id),smartPreviouslyRead,readerOwner)
                     val index = withContext(Dispatchers.Default) {
                         val anchor = position?.anchor?.takeIf { it.isNotEmpty() }?.let { hash ->
                             anchors.indices.filter { anchors[it] == hash }.minByOrNull { kotlin.math.abs(document.positions[it] - (position?.paragraph ?: 0)) } ?: -1
@@ -282,22 +283,6 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                 catch (e: Exception) { android.util.Log.d("MangaroNovels", "Optional adjacent chapter unavailable", e) }
             }
         }
-        LaunchedEffect(loadedChapter?.id,restoring,loading,error,blocks.size) {
-            if (!BuildConfig.SMARTLINK_V3_ENABLED || restoring || loading || error!=null || blocks.isEmpty()) return@LaunchedEffect
-            val shown=loadedChapter ?: return@LaunchedEffect
-            snapshotFlow {
-                val end=scroll.layoutInfo.viewportEndOffset
-                scroll.layoutInfo.visibleItemsInfo.any { it.key=="block-${blocks.lastIndex}" && it.offset+it.size<=end && it.size>0 } && !scroll.isScrollInProgress
-            }.first {it}
-            smartCompletionJob = smartController.completeChapter("novel",
-                eu.kanade.tachiyomi.data.ads.SmartLinkController.chapter("novel",novel.sourceId,novel.id,shown.id),smartPreviouslyRead,readerOwner,
-                repository.indexSnapshot(novel)?.chapters.let { rows ->
-                    val at=rows?.indexOfFirst {it.id==shown.id} ?: -1
-                    val target=if(at>=0) rows?.getOrNull(at+1) ?: shown else shown
-                    eu.kanade.tachiyomi.data.ads.ReaderEndDestination(smartWork,shown.id,target.id,
-                        kotlinx.serialization.json.Json.encodeToString(NovelChapter.serializer(),target))
-                })
-        }
         val currentChapter by rememberUpdatedState(loadedChapter)
         val currentRestoring by rememberUpdatedState(restoring)
         val currentPlain by rememberUpdatedState(plain)
@@ -325,9 +310,9 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
         suspend fun transitionTo(target: NovelChapter): Boolean {
             val from=chapter
             if(target.id==from.id) return true
-            smartCompletionJob?.join()
-            if(BuildConfig.SMARTLINK_V3_ENABLED && !smartController.readerTransition("novel",smartWork,from.id,target.id,
-                    kotlinx.serialization.json.Json.encodeToString(NovelChapter.serializer(),target),readerOwner)) return false
+            if(BuildConfig.SMARTLINK_V3_ENABLED && !smartController.readerPage("novel",smartWork,from.id,target.id,
+                    kotlinx.serialization.json.Json.encodeToString(NovelChapter.serializer(),target),
+                    eu.kanade.tachiyomi.data.ads.ReaderAdPages.pathTo(repository.indexSnapshot(novel)?.chapters.orEmpty().map { it.id },target.id),readerOwner,downloaded=advertisingChapterDownloaded(target))) return false
             tachiyomi.core.common.util.lang.LocalAccountScope.check(readerOwner)
             if(chapter.id!=from.id) return false
             repository.prepareReaderChapter(novel,target)
@@ -340,9 +325,11 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
             if(!BuildConfig.SMARTLINK_V3_ENABLED || loading || restoring || navigating) return@LaunchedEffect
             val shown=loadedChapter ?: return@LaunchedEffect
             val pending=smartController.pendingReader("novel",smartWork,readerOwner) ?: return@LaunchedEffect
+            if(pending.from!=shown.id && pending.destination!=shown.id) return@LaunchedEffect
             if(pending.destination==shown.id) {
-                if(pending.satisfied || smartController.readerTransition("novel",smartWork,pending.from,
-                        pending.destination,pending.payload,readerOwner))
+                if(smartController.readerPage("novel",smartWork,pending.from,
+                        pending.destination,pending.payload,eu.kanade.tachiyomi.data.ads.ReaderAdPages.pathTo(repository.indexSnapshot(novel)?.chapters.orEmpty().map { it.id },pending.destination),
+                        readerOwner,downloaded=advertisingChapterDownloaded(shown)))
                     smartController.readerApplied("novel",smartWork,shown.id,readerOwner)
                 return@LaunchedEffect
             }

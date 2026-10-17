@@ -48,7 +48,6 @@ internal class SmartLinkController private constructor(private val app: Applicat
     val problem=mutableProblem.asStateFlow()
     @Volatile private var launchingActivity: WeakReference<Activity>? = null
     @Volatile private var launchingToken: String? = null
-    private val destroyed=kotlinx.coroutines.flow.MutableSharedFlow<Activity>(extraBufferCapacity=2)
     private val lifecycleRevision=MutableStateFlow(0L)
     @Volatile private var resumed: WeakReference<Activity>? = null
     init {
@@ -124,10 +123,18 @@ internal class SmartLinkController private constructor(private val app: Applicat
     }
     suspend fun pendingReader(kind: String, work: String, token: Account.Token): ReaderAdTransition? {
         Account.check(token)
-        return edit { it.state.readerTransitions[adHash(owner(token),kind)]?.takeIf { row -> row.work==work } }
+        if(!online()) return null
+        return edit { it.state.readerTransitions[adHash(owner(token),kind)]?.takeIf { row -> row.chapterPage && row.work==work } }
     }
     suspend fun readerApplied(kind: String, work: String, destination: String, token: Account.Token) {
-        Account.check(token); edit { Account.check(token);it.applied(owner(token),kind,work,destination) }
+        Account.check(token)
+        val applied=edit {
+            Account.check(token)
+            val old=it.state.readerTransitions[adHash(owner(token),kind)]
+            it.applied(owner(token),kind,work,destination)
+            old?.takeIf { row -> row.satisfied && row.work==work && row.destination==destination }
+        }
+        applied?.let { readerPages.applied(ReaderAdPageHost.Key(it.owner,it.kind,it.id)) }
     }
     suspend fun readerEntry(kind: String, work: String, destination: String, payload: String?, chapterKey: String, previouslyRead: Boolean, token: Account.Token): Boolean {
         if(!BuildConfig.SMARTLINK_V3_ENABLED || InMobiAds.get(app).privacyChoice()==AdPrivacyChoice.DISABLED) return true
@@ -143,85 +150,60 @@ internal class SmartLinkController private constructor(private val app: Applicat
         Account.check(token)
         if(InMobiAds.get(app).privacyChoice()==AdPrivacyChoice.DISABLED) return true
         val transition=edit { Account.check(token);it.transition(owner(token),kind,work,from,destination,payload) } ?: return true
-        if(transition.satisfied) return true
+        return presentReaderPage(transition,token)
+    }
+    private val readerPages = ReaderAdPageHost()
+    internal fun attachReaderPage(key: ReaderAdPageHost.Key, session: String) = readerPages.attach(key, session)
+    internal fun closeReaderPage(key: ReaderAdPageHost.Key, session: String) {
+        val account = Account.changes.value
+        val pending = state.value.readerTransitions[adHash(key.owner, key.kind)]
+        val verified = account.ready && owner(account.token) == key.owner &&
+            pending?.id == key.boundary && pending.satisfied
+        readerPages.close(key, session, verified)
+        if(!verified && account.ready && owner(account.token)==key.owner) abandon(key.boundary,account.token)
+    }
+    internal suspend fun currentReaderPage(key: ReaderAdPageHost.Key, token: Account.Token): ReaderAdTransition? {
+        Account.check(token)
+        return edit { Account.check(token);it.state.readerTransitions[adHash(key.owner,key.kind)]
+            ?.takeIf { row -> owner(token)==key.owner && row.id==key.boundary } }
+    }
+    suspend fun readerPage(kind: String, work: String, from: String?, destination: String, payload: String?,
+        boundaries: List<ReaderAdPageBoundary>, token: Account.Token, downloaded: Boolean = false): Boolean {
+        if(!BuildConfig.SMARTLINK_V3_ENABLED || InMobiAds.get(app).privacyChoice()==AdPrivacyChoice.DISABLED) return true
+        Account.check(token)
+        if(!ReaderAdPages.required(online(),downloaded)) return true
         while(true) {
-            Account.check(token)
-            val activity=withTimeoutOrNull(2_000) { lifecycleRevision.map { resumed?.get() }.filterNotNull().first { !it.isFinishing && !it.isDestroyed } } ?: return false
-            showReaderGate(activity,transition,destination,kind,token)?.let { return it }
-            // Configuration recreation: keep the same durable intent and attach to the next Activity.
-            yield()
+            if(!online()) return true
+            val transition=edit { Account.check(token);it.pageRoute(owner(token),kind,work,from,destination,payload,boundaries) }
+                ?: return true
+            if(!presentReaderPage(transition,token)) return !online()
         }
     }
-    private suspend fun showReaderGate(activity: Activity, transition: ReaderAdTransition, destination: String, kind: String, token: Account.Token): Boolean? =
+    private suspend fun presentReaderPage(transition: ReaderAdTransition, token: Account.Token): Boolean {
+        if(transition.satisfied) return true
+        Account.check(token)
+        val activity=withTimeoutOrNull(2_000) { lifecycleRevision.map { resumed?.get() }.filterNotNull()
+            .first { !it.isFinishing && !it.isDestroyed } } ?: return false
+        return showReaderGate(activity,transition,transition.destination,transition.kind,token) == true
+    }
+    private suspend fun showReaderGate(activity: Activity, transition: ReaderAdTransition, destination: String, kind: String, token: Account.Token): Boolean =
         withContext(Dispatchers.Main.immediate) {
-            coroutineScope {
-                val result=CompletableDeferred<Boolean?>()
-                val purple=android.graphics.Color.rgb(27,20,35)
-                val gold=android.graphics.Color.rgb(224,184,97)
-                val density=activity.resources.displayMetrics.density
-                fun dp(value: Int)=(value*density).toInt()
-                val content=android.widget.LinearLayout(activity).apply {
-                    orientation=android.widget.LinearLayout.VERTICAL
-                    layoutDirection=android.view.View.LAYOUT_DIRECTION_RTL
-                    gravity=android.view.Gravity.CENTER_HORIZONTAL
-                    setPadding(dp(24),dp(32),dp(24),dp(32))
-                }
-                fun label(value: String)=android.widget.TextView(activity).apply {
-                    text=value;setTextColor(android.graphics.Color.rgb(235,222,244));textSize=16f
-                    gravity=android.view.Gravity.CENTER;setPadding(0,dp(8),0,dp(8))
-                    content.addView(this,android.widget.LinearLayout.LayoutParams(-1,-2))
-                }
-                label("متابعة القراءة").apply {textSize=28f;setTextColor(gold)}
-                label("افتح إعلانًا واحدًا للمتابعة")
-                label("إعلان خارجي · Adsterra · asiafilm.org").apply {textSize=12f}
-                val message=label("").apply {setTextColor(android.graphics.Color.rgb(255,180,180))}
-                val button=android.widget.Button(activity).apply {
-                    text="شاهد إعلان للإكمال";isAllCaps=false;minHeight=dp(52)
-                    backgroundTintList=android.content.res.ColorStateList.valueOf(gold)
-                    setTextColor(purple)
-                    content.addView(this,android.widget.LinearLayout.LayoutParams(-1,-2))
-                }
-                // A full-window gate, not a chapter-end card or a floating alert.
-                // Keep the same Activity so the validated external launch/return proof is unchanged.
-                val screen=android.widget.ScrollView(activity).apply {
-                    isFillViewport=true;setBackgroundColor(purple)
-                    addView(android.widget.FrameLayout(activity).apply {
-                        addView(content,android.widget.FrameLayout.LayoutParams(-1,-2,android.view.Gravity.CENTER))
-                    },android.widget.FrameLayout.LayoutParams(-1,-1))
-                }
-                val dialog=android.app.Dialog(activity,android.R.style.Theme_Material_NoActionBar).apply {
-                    requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
-                    setContentView(screen)
-                    setCancelable(true);setCanceledOnTouchOutside(false)
-                    window?.apply {
-                        setBackgroundDrawable(android.graphics.drawable.ColorDrawable(purple))
-                        statusBarColor=purple;navigationBarColor=purple
-                        decorView.layoutDirection=android.view.View.LAYOUT_DIRECTION_RTL
-                    }
-                }
-                dialog.setOnCancelListener { abandon(transition.id,token);result.complete(false) }
-                button.setOnClickListener {
-                    if(button.isEnabled) launch {
-                        button.isEnabled=false
-                        try { message.text=this@SmartLinkController.launch(activity,transition.id,token).orEmpty() }
-                        catch(cancelled:CancellationException) {throw cancelled}
-                        catch(_:Exception) {message.text="تعذّر فتح الرابط؛ لم تُحتسب خطوة. أعد المحاولة أو استخدم الرجوع"}
-                        finally {button.isEnabled=true}
-                    }
-                }
-                val proof=launch {
-                    state.first { it.readerTransitions[adHash(owner(token),kind)]?.let { row -> row.id==transition.id && row.destination==destination && row.satisfied }==true }
-                    result.complete(true)
-                }
-                val ownership=launch { Account.changes.first { !it.ready || it.token!=token };result.complete(false) }
-                val destruction=launch { destroyed.first { it===activity };result.complete(null) }
-                try {
-                    dialog.show()
-                    dialog.window?.setLayout(android.view.ViewGroup.LayoutParams.MATCH_PARENT,android.view.ViewGroup.LayoutParams.MATCH_PARENT)
-                    result.await().also { if(it==true) Account.check(token) }
-                }
-                finally { proof.cancel();ownership.cancel();destruction.cancel();dialog.dismiss() }
+            Account.check(token)
+            val key=ReaderAdPageHost.Key(transition.owner,kind,transition.id)
+            val current=currentReaderPage(key,token) ?: return@withContext false
+            if(current.satisfied) return@withContext current.destination==destination
+            val request=readerPages.request(key)
+            if(request.launch) try {
+                activity.startActivity(ReaderAdPageActivity.intent(activity,key,request.page.session))
+            } catch(_:Exception) {
+                readerPages.close(key,request.page.session,false)
+                mutableProblem.value="تعذّر فتح فاصل الإعلان؛ أعد المحاولة"
             }
+            val passed=request.page.result.await()
+            Account.check(token)
+            val verified=passed && currentReaderPage(key,token)?.let { it.destination==destination && it.satisfied } == true
+            if(verified) readerPages.applied(key)
+            verified
         }
     fun online(): Boolean {
         val cm=app.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager ?: return false
@@ -243,5 +225,5 @@ internal class SmartLinkController private constructor(private val app: Applicat
     override fun onActivityCreated(a: Activity,b: Bundle?) = Unit
     override fun onActivityStarted(a: Activity) = Unit
     override fun onActivitySaveInstanceState(a: Activity,b: Bundle) = Unit
-    override fun onActivityDestroyed(a: Activity) { destroyed.tryEmit(a) }
+    override fun onActivityDestroyed(a: Activity) = Unit
 }

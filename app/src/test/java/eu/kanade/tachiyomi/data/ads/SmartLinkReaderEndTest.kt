@@ -89,10 +89,10 @@ class SmartLinkReaderEndTest {
         fun source(name:String)=File(root,"app/src/main/java/$name").readText()
         val manga=source("eu/kanade/tachiyomi/ui/reader/ReaderViewModel.kt")
         val novel=source("eu/kanade/presentation/novels/NovelReaderScreen.kt")
-        assertTrue(manga.contains("combine(state,smartController.state)"));assertTrue(manga.contains("ReaderEndDestination"))
+        assertTrue(manga.contains("combine(state,smartController.state)"));assertTrue(manga.contains("ReaderAdPages.pathTo(advertisingChapterOrder"))
         assertFalse(manga.contains("currentChapter.requestedPage = chapterPageIndex"))
         assertTrue(manga.contains("ReaderPositionOwnership.owns"));assertTrue(manga.contains("pageOwnership.enter"))
-        assertTrue(novel.contains("loading,restoring,smartPending?.id"));assertTrue(novel.contains("ReaderEndDestination"))
+        assertTrue(novel.contains("loading,restoring,smartPending?.id"));assertTrue(novel.contains("ReaderAdPages.pathTo(repository.indexSnapshot"))
         assertTrue(source("eu/kanade/tachiyomi/ui/reader/ReaderActivity.kt").contains("key(state.currentChapter?.chapter?.id)"))
     }
 }

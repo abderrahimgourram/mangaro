@@ -45,13 +45,15 @@ data class DownloadAdRequest(val chapterKeys: List<String>) {
     val created: Long, val accepted: Boolean = false, val away: Boolean = false, val returned: Boolean = false)
 /** Local navigation intent, not chapter content. Applied only by its original account/work. */
 @Serializable internal data class ReaderAdTransition(val id: String, val owner: String, val kind: String,
-    val work: String, val from: String?, val destination: String, val payload: String? = null, val satisfied: Boolean = false)
+    val work: String, val from: String?, val destination: String, val payload: String? = null,
+    val satisfied: Boolean = false, val chapterPage: Boolean = false)
 /** Already resolved destination metadata, never fetched chapter content. */
 internal data class ReaderEndDestination(val work: String, val from: String, val destination: String, val payload: String? = null)
 @Serializable internal data class SmartLinkState(val schema: Int = 1, val batches: Map<String,UnlockBatch> = emptyMap(),
     val chapters: Map<String,ChapterAdvertising> = emptyMap(), val pending: BrowserNavigation? = null,
     val launches: List<Long> = emptyList(), val grantedChapters: Set<String> = emptySet(),
-    val readerTransitions: Map<String, ReaderAdTransition> = emptyMap())
+    val readerTransitions: Map<String, ReaderAdTransition> = emptyMap(),
+    val grantedReaderPages: Set<String> = emptySet())
 
 /** Mutate a candidate then durably save BEFORE publishing it. Controller serializes this machine. */
 internal class SmartLinkPolicy(var state: SmartLinkState = SmartLinkState(), val settings: SmartLinkSettings = SmartLinkSettings()) {
@@ -71,6 +73,39 @@ internal class SmartLinkPolicy(var state: SmartLinkState = SmartLinkState(), val
         val key = adHash(owner, kind); val data = state.chapters[key] ?: return null
         return if (data.count - serviced(data) >= settings.chapterInterval)
             "boundary:$key:${serviced(data) + settings.chapterInterval}" else null
+    }
+    /** A virtual page between actual edition index blocks, not a global completion obligation. */
+    fun page(owner: String, kind: String, work: String, from: String?, destination: String, payload: String?,
+        boundary: ReaderAdPageBoundary?): ReaderAdTransition? {
+        require(kind in setOf("novel", "manga") && work.isNotBlank() && destination.isNotBlank())
+        val key = adHash(owner, kind)
+        val prior = state.readerTransitions[key]
+        if (boundary == null) return null
+        val id = "reader-page:" + adHash(owner, kind, work, boundary.before, boundary.after)
+        if (prior?.chapterPage == true && prior.id == id && prior.work == work && prior.destination == destination) return prior
+        // Preserve an already-earned legacy step for this exact destination, without global debt.
+        if (prior?.chapterPage == false && prior.satisfied && prior.work == work && prior.destination == destination) {
+            state = state.copy(grantedReaderPages = state.grantedReaderPages + id,
+                readerTransitions = state.readerTransitions - key)
+            return null
+        }
+        if (id in state.grantedReaderPages) {
+            if (prior?.id == id) state = state.copy(readerTransitions = state.readerTransitions - key)
+            return null
+        }
+        val next = ReaderAdTransition(id, owner, kind, work, from, destination, payload, chapterPage = true)
+        state = state.copy(readerTransitions = state.readerTransitions + (key to next),
+            pending = state.pending?.takeUnless { it.owner == owner && it.target == prior?.id && prior?.id != id })
+        return next
+    }
+    fun pageRoute(owner: String, kind: String, work: String, from: String?, destination: String, payload: String?,
+        boundaries: List<ReaderAdPageBoundary>): ReaderAdTransition? {
+        for (boundary in boundaries) {
+            val id = "reader-page:" + adHash(owner, kind, work, boundary.before, boundary.after)
+            if (id in state.grantedReaderPages) continue
+            page(owner,kind,work,from,destination,payload,boundary)?.let { return it }
+        }
+        return null
     }
     fun transition(owner: String, kind: String, work: String, from: String?, destination: String, payload: String?): ReaderAdTransition? {
         require(kind in setOf("novel", "manga") && work.isNotBlank() && (from==null || from.isNotBlank()) && destination.isNotBlank())
@@ -145,6 +180,14 @@ internal class SmartLinkPolicy(var state: SmartLinkState = SmartLinkState(), val
             state=state.copy(pending=state.pending?.takeUnless {it.owner==owner && it.target==target})
     }
     private fun satisfy(target: String, owner: String) {
+        val page = state.readerTransitions.values.firstOrNull {
+            it.owner == owner && it.id == target && it.chapterPage && !it.satisfied
+        }
+        if (page != null) {
+            state = state.copy(grantedReaderPages = state.grantedReaderPages + target,
+                readerTransitions = state.readerTransitions + (adHash(owner, page.kind) to page.copy(satisfied = true)))
+            return
+        }
         for (kind in listOf("novel", "manga")) {
             val key=adHash(owner,kind);val data=state.chapters[key] ?: continue
             if (dueBoundary(owner,kind)==target) state=state.copy(
@@ -158,7 +201,8 @@ internal class SmartLinkPolicy(var state: SmartLinkState = SmartLinkState(), val
         if(state.pending!=null) return "يوجد رابط إعلاني مفتوح بالفعل"
         val batch=state.batches[target]
         if(batch!=null && (batch.owner!=owner || batch.unlocked)) return "الدفعة غير مؤهلة لخطوة أخرى"
-        if(batch==null && listOf("novel","manga").none { dueBoundary(owner,it)==target }) return "انتهت فرصة هذا الفاصل"
+        val readerPage = state.readerTransitions.values.any { it.owner == owner && it.id == target && it.chapterPage && !it.satisfied }
+        if(batch==null && !readerPage && listOf("novel","manga").none { dueBoundary(owner,it)==target }) return "انتهت فرصة هذا الفاصل"
         val last=state.launches.lastOrNull()
         if(last!=null && (now<last || now-last<settings.minimumLaunchGapMs)) return "انتظر لحظة قبل فتح رابط إعلاني آخر"
         if(state.launches.count { now-it in 0 until 3_600_000 }>=settings.maxLaunchesPerHour) return "بلغت حد الروابط الإعلانية لهذا الجهاز؛ حاول لاحقًا"
