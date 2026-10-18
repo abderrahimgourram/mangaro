@@ -12,6 +12,7 @@ internal class NovelSearchSelection(private val repository:NovelRepository) {
     data class Presentation(val works: List<UnifiedNovelWork>, val groups: List<SearchWorkGroup>)
     private val selection=SearchResultPresentationFilter()
     fun snapshot()=selection.snapshot()
+    fun restore(groups: List<SearchWorkGroup>) = selection.restore(groups)
     private val counts=ConcurrentHashMap<String,SearchChapterEvidence>()
     private val checked=ConcurrentHashMap.newKeySet<String>()
     private val remaining=java.util.concurrent.atomic.AtomicInteger(4)
@@ -37,10 +38,10 @@ internal class NovelSearchSelection(private val repository:NovelRepository) {
     }
     /** The real search grid consumes these exact groups and their selected source editions. */
     fun presentation(novels: List<Novel>, established: List<UnifiedNovelWork>): Presentation {
-        val byId = novels.associateBy { it.id }
         val groups = groups(novels, established)
-        return Presentation(groups.map { group ->
-            UnifiedNovelWork(group.key, group.members.mapNotNull { byId[it.id] }, group.winner.id)
+        val routes = novels.associateBy { SearchEditionKey(SearchWorkKind.NOVEL, it.sourceId, it.id) }
+        return Presentation(WorkPresentationProjection.project(groups, routes).map { work ->
+            UnifiedNovelWork(work.key, work.editions, work.selected.id)
         }, groups)
     }
     suspend fun cached(novels:List<Novel>) = withContext(Dispatchers.IO) {

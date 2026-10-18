@@ -149,7 +149,7 @@ class NovelContentTypePresentationTest {
         val screens=source("presentation/novels/NovelScreens.kt")
         screens.contains("val activeWorks = NovelCatalogCards.project(catalogSnapshot)") shouldBe true
         screens.contains("NovelCatalogCards.eligiblePage(catalogSnapshot, NovelPage(editions))") shouldBe true
-        screens.contains("selection.presentation(searchEditions.values.toList(), matched)") shouldBe true
+        screens.contains("NovelSearchProjection.project(catalogSnapshot, editions, selection, activeWorks)") shouldBe true
         screens.contains("if (search != null) search.works") shouldBe true
         val home=source("presentation/novels/MangaroNovelIntegration.kt")
         home.contains("NovelCatalogCards.project(state).take(12)") shouldBe true

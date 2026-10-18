@@ -95,7 +95,9 @@ class SearchEnrichmentLifecycleTest {
         val repo=mockk<NovelRepository>()
         every{repo.catalog} returns catalog
         every{repo.activeSources} returns rows.map {row->mockk<HtmlNovelSource>().also {every{it.id} returns row.sourceId}}
-        rows.forEach {n->coEvery{repo.indexSnapshot(n)} returns null}
+        // Repository indexes are edition-ID keyed; metadata legitimately changes mid-collection.
+        // Keep unknown identities unstubbed so an unrelated edition is still a test failure.
+        coEvery { repo.indexSnapshot(match { candidate -> rows.any { it.id == candidate.id } }) } returns null
         val entered=CompletableDeferred<Unit>();val finish=CompletableDeferred<Unit>()
         val interrupted=AtomicInteger()
         coEvery{repo.detail(any())} coAnswers {

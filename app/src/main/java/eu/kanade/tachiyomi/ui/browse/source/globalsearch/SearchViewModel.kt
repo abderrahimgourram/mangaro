@@ -10,6 +10,12 @@ import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.search.MangaSearchEvidence
 import eu.kanade.tachiyomi.search.SearchResultPresentationFilter
 import eu.kanade.tachiyomi.search.SearchWorkIdentity
+import eu.kanade.tachiyomi.search.SearchContext
+import eu.kanade.tachiyomi.search.SearchSessionCoordinator
+import eu.kanade.tachiyomi.search.SearchSnapshotCache
+import eu.kanade.tachiyomi.search.SearchWorkKind
+import eu.kanade.tachiyomi.search.SearchEditionKey
+import eu.kanade.tachiyomi.search.WorkPresentationProjection
 import eu.kanade.tachiyomi.ui.home.PreferredMangaVariants
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.Dispatchers
@@ -56,14 +62,14 @@ abstract class SearchViewModel(
 
     private val sourceSlots = Semaphore(4)
     private val resultMutex = Mutex()
-    private val generation = AtomicLong()
+    private val sessions = SearchSessionCoordinator()
     private var searchJob: Job? = null
     private var debounceJob: Job? = null
     private var paginationJob: Job? = null
     private var enrichmentJob: Job? = null
     private var enrichmentGeneration = Long.MIN_VALUE
     private val enrichmentRevision = AtomicLong()
-    private var workSelection = SearchResultPresentationFilter(generation.get())
+    private var workSelection = SearchResultPresentationFilter(sessions.generation())
     internal fun workGroups() = workSelection.snapshot()
     private val searchEvidence = MangaSearchEvidence(getManga, chapterLookup)
     private fun rankResults(items: Map<Source, SearchItemResult>, order: Map<Long, Int>, relevance: SearchRelevance, selector: SearchResultPresentationFilter): List<RankedSearchResult> {
@@ -71,16 +77,18 @@ abstract class SearchViewModel(
         if (!liveSearch) return raw
         searchEvidence.requestMappings(raw)
         val candidates = raw.map { searchEvidence.candidate(it, order[it.source.id] ?: Int.MAX_VALUE) }
-        val groups = selector.present(generation.get(), candidates) ?: return emptyList()
+        val groups = selector.present(sessions.generation(), candidates) ?: return emptyList()
         eu.kanade.tachiyomi.search.WorkIdentityDiagnostics.observe(state.value.activeQuery.orEmpty(), candidates, groups)
-        val byId = raw.associateBy { searchEvidence.key(it.manga) }
-        return groups.mapNotNull { group -> byId[group.winner.id]?.copy(workKey = group.key,
-            verifiedDistinctChapters = group.winner.chapters.distinct, indexComplete = group.winner.chapters.complete,
-            provisional = group.provisional && group.members.size > 1,
-            alternatives = group.members.filterNot { it.id == group.winner.id }.mapNotNull { byId[it.id] }) }
+        val routes = raw.associateBy { SearchEditionKey(SearchWorkKind.COMIC, it.manga.source.toString(), searchEvidence.key(it.manga)) }
+        return WorkPresentationProjection.project(groups, routes).map { work ->
+            work.selected.copy(workKey = work.key,
+                verifiedDistinctChapters = work.chapters.distinct, indexComplete = work.chapters.complete,
+                provisional = work.provisional && work.editions.size > 1,
+                alternatives = work.editions.filterNot { it.manga.source == work.selected.manga.source && it.manga.url == work.selected.manga.url })
+        }
     }
-    @Synchronized private fun enrichResults(request: Long = generation.get()) {
-        if (!liveSearch || request != generation.get()) return
+    @Synchronized private fun enrichResults(request: Long = sessions.generation()) {
+        if (!liveSearch || !sessions.accepts(request)) return
         // Mapping updates must refresh visible results even while a different source is slow.
         // Keep a revision when coalescing: an update during a running refresh is not disposable.
         val revision = enrichmentRevision.incrementAndGet()
@@ -110,28 +118,47 @@ abstract class SearchViewModel(
                 .count { it.result.isNotEmpty() } >= 2
             searchEvidence.refresh(interleaved, allowNetwork = crossSourceResults || !snapshot.isSearching)
             resultMutex.withLock {
-                if (!isActive || generation.get() != request || state.value.activeQuery != snapshot.activeQuery) return@withLock
+                if (!isActive || !sessions.accepts(request) || state.value.activeQuery != snapshot.activeQuery) return@withLock
                 val ranked = withContext(Dispatchers.Default) { rankResults(state.value.items, order, SearchRelevance(snapshot.activeQuery.orEmpty()), selector) }
-                mutableState.update { if (generation.get() == request) it.copy(rankedResults = ranked) else it }
-                synchronized(queryCache) { queryCache.entries.forEach { (_, value) ->
-                    if (value.items == state.value.items) { value.ranked = ranked; value.groups = selector.snapshot() }
-                } }
+                mutableState.update { if (sessions.accepts(request)) it.copy(rankedResults = ranked) else it }
+                // Cache stores raw source snapshots; identity enrichment is re-applied on every hit.
             }
         }
         enrichmentJob = job
         job.invokeOnCompletion { cause ->
-            if (cause == null && generation.get() == request && enrichmentRevision.get() != revision) {
+            if (cause == null && sessions.accepts(request) && enrichmentRevision.get() != revision) {
                 enrichResults(request)
             }
         }
         job.start()
     }
-    private data class CacheKey(val query: String, val filter: SourceFilter, val sources: List<Long>)
-    private data class CachedQuery(val at: Long, val items: Map<Source, SearchItemResult>, var ranked: List<RankedSearchResult>, val pages: Map<Source, SearchPage>, var groups: List<eu.kanade.tachiyomi.search.SearchWorkGroup>)
-    private val queryCache = LinkedHashMap<CacheKey, CachedQuery>(12, 0.75f, true)
-    private fun cacheKey(query: String) = CacheKey(query.trim(), state.value.sourceFilter, getSelectedSources().map { it.id })
-    private fun cached(key: CacheKey): CachedQuery? = synchronized(queryCache) {
-        queryCache[key]?.takeIf { (System.nanoTime() - it.at) in 0 until 60_000_000_000L }
+    private data class CachedQuery(val items: Map<Source, SearchItemResult>, val pages: Map<Source, SearchPage>,
+        val groups: List<eu.kanade.tachiyomi.search.SearchWorkGroup>)
+    private val queryCache = SearchSnapshotCache<CachedQuery>()
+    private fun cacheKey(query: String, sources: List<Source> = getSelectedSources()) = SearchContext(SearchWorkKind.COMIC, query,
+        sources.map { it.id.toString() }, enabledLanguages,
+        mapOf("sourceFilter" to state.value.sourceFilter.name, "extension" to extensionFilter.orEmpty()))
+    private fun beginSession(query: String, sources: List<Source> = getSelectedSources()) = sessions.begin(cacheKey(query, sources)).generation
+    private fun cached(key: SearchContext): CachedQuery? = queryCache.get(key)
+
+    /** Raw cached rows become visible only after current identity rules run off the UI thread. */
+    private fun restoreCached(query: String, request: Long, recent: CachedQuery) {
+        val selector = workSelection
+        val token = sessions.current() ?: return
+        val order = token.context.providers.mapIndexed { i, id -> id.toLong() to i }.toMap()
+        mutableState.update { it.copy(searchQuery = query, items = recent.items, rankedResults = emptyList(),
+            resultQuery = null, activeQuery = query.trim(), generation = request, isSearching = true,
+            pages = recent.pages, isLoadingMore = false, paginationFailed = false, useWorkSelection = true) }
+        searchJob = viewModelScope.launch(Dispatchers.Default) {
+            selector.restore(recent.groups) // Hints only; resolution below rechecks every membership.
+            val ranked = rankResults(recent.items, order, SearchRelevance(query), selector)
+            resultMutex.withLock {
+                if (!isActive || !sessions.accepts(token)) return@withLock
+                mutableState.update { if (sessions.accepts(token)) it.copy(rankedResults = ranked,
+                    resultQuery = query.trim(), isSearching = false) else it }
+            }
+            if (sessions.accepts(token)) enrichResults(request)
+        }
     }
 
     private val enabledLanguages = sourcePreferences.enabledLanguages.get()
@@ -196,23 +223,25 @@ abstract class SearchViewModel(
 
     fun updateSearchQuery(query: String?) {
         if (state.value.searchQuery == query) return
-        generation.incrementAndGet()
+        beginSession(query.orEmpty())
         searchJob?.cancel()
         debounceJob?.cancel()
         paginationJob?.cancel()
         enrichmentJob?.cancel()
-        workSelection = SearchResultPresentationFilter(generation.get())
+        workSelection = SearchResultPresentationFilter(sessions.generation())
         searchEvidence.resetBudget()
         lastQuery = null
         val recent = if (liveSearch && !query.isNullOrBlank()) cached(cacheKey(query)) else null
-        recent?.let { workSelection.restore(it.groups) }
+        if (recent != null) {
+            restoreCached(query.orEmpty(), sessions.generation(), recent)
+            return
+        }
         mutableState.update { current ->
             when {
                 query.isNullOrBlank() -> current.copy(searchQuery = query, items = emptyMap(), rankedResults = emptyList(), resultQuery = null, activeQuery = null, isSearching = false, pages = emptyMap(), isLoadingMore = false, paginationFailed = false)
-                recent != null -> current.copy(searchQuery = query, items = recent.items, rankedResults = rankResults(recent.items, getSelectedSources().mapIndexed { i, source -> source.id to i }.toMap(), SearchRelevance(query.orEmpty()), workSelection), resultQuery = query.trim(), activeQuery = query.trim(), generation = generation.get(), isSearching = false, pages = recent.pages, isLoadingMore = false, paginationFailed = false)
                 !liveSearch -> current.copy(searchQuery = query, isSearching = false, pages = emptyMap(), isLoadingMore = false, paginationFailed = false)
                 else -> current.copy(searchQuery = query, activeQuery = query.trim(), resultQuery = null,
-                    items = emptyMap(), rankedResults = emptyList(), generation = generation.get(),
+                    items = emptyMap(), rankedResults = emptyList(), generation = sessions.generation(),
                     isSearching = liveSearch, pages = emptyMap(), isLoadingMore = false, paginationFailed = false)
             }
         }
@@ -222,7 +251,6 @@ abstract class SearchViewModel(
                 search()
             }
         }
-        if (recent != null) enrichResults()
     }
 
     fun setSourceFilter(filter: SourceFilter) {
@@ -246,35 +274,40 @@ abstract class SearchViewModel(
         val sourceFilter = state.value.sourceFilter
         paginationJob?.cancel()
         if (query.isBlank()) {
-            generation.incrementAndGet()
+            beginSession(query.orEmpty())
             searchJob?.cancel()
             lastQuery = null
             mutableState.update { it.copy(items = emptyMap(), rankedResults = emptyList(), resultQuery = null, activeQuery = null, isSearching = false, pages = emptyMap(), isLoadingMore = false, paginationFailed = false) }
             return
         }
-        if (!force && lastQuery == query && lastSourceFilter == sourceFilter && searchJob?.isActive == true) return
+        val selectedSources = getSelectedSources()
+        val context = cacheKey(query, selectedSources)
+        if (!force && lastQuery == query && lastSourceFilter == sourceFilter &&
+            sessions.current()?.context == context && searchJob?.isActive == true) return
         onQueryAccepted(query)
         lastQuery = query
         lastSourceFilter = sourceFilter
         searchJob?.cancel()
         enrichmentJob?.cancel()
         searchEvidence.resetBudget(force)
-        val request = generation.incrementAndGet()
+        val sources = selectedSources
+        val key = context
+        val preserveLastGood = sessions.current()?.context == key.snapshot() && state.value.resultQuery == query
+        val request = sessions.begin(key).generation
         workSelection = SearchResultPresentationFilter(request)
         val selector = workSelection
-        val sources = getSelectedSources()
         if (force) sources.forEach { mihon.domain.source.health.SourceHealthMonitor.shared.requestProbe(it.id) }
-        val key = CacheKey(query, sourceFilter, sources.map { it.id })
         val recent = if (liveSearch && !force) cached(key) else null
         if (recent != null) {
-            workSelection.restore(recent.groups)
-            mutableState.update { it.copy(items = recent.items, rankedResults = rankResults(recent.items, getSelectedSources().mapIndexed { i, source -> source.id to i }.toMap(), SearchRelevance(query.orEmpty()), workSelection), resultQuery = query, activeQuery = query, generation = request, isSearching = false, pages = recent.pages, isLoadingMore = false, paginationFailed = false) }
-            enrichResults(request)
+            restoreCached(query, request, recent)
             return
         }
         val sourceOrder = sources.mapIndexed { index, source -> source.id to index }.toMap()
         val relevance = SearchRelevance(query)
-        mutableState.update { it.copy(items = sources.associateWith { SearchItemResult.Loading }, activeQuery = query, isSearching = true, generation = request, pages = emptyMap(), isLoadingMore = false, paginationFailed = false, useWorkSelection = liveSearch) }
+        mutableState.update { it.copy(items = sources.associateWith { SearchItemResult.Loading },
+            rankedResults = if (preserveLastGood) it.rankedResults else emptyList(),
+            resultQuery = if (preserveLastGood) it.resultQuery else null,
+            activeQuery = query, isSearching = true, generation = request, pages = emptyMap(), isLoadingMore = false, paginationFailed = false, useWorkSelection = liveSearch) }
 
         searchJob = viewModelScope.launchIO {
             try {
@@ -302,13 +335,13 @@ abstract class SearchViewModel(
                                 // Serialize publication, not source requests. An old request can never
                                 // publish into a newer query, including A -> B -> A transitions.
                                 resultMutex.withLock {
-                                    if (!isActive || generation.get() != request) return@withLock
+                                    if (!isActive || !sessions.accepts(request)) return@withLock
                                     if (result is SearchItemResult.Success) result.result.forEach(PreferredMangaVariants::remember)
                                     val items = state.value.items + (source to result)
                                     val ranked = withContext(Dispatchers.Default) { rankResults(items, sourceOrder, relevance, selector) }
                                     mutableState.update { current ->
-                                        if (generation.get() != request) current else current.copy(
-                                            items = items.toSortedMap(sortComparator(items)),
+                                        if (!sessions.accepts(request)) current else current.copy(
+                                            items = items.toSortedMap(sortComparator(items).thenBy { it.id }),
                                             pages = nextPage?.let { current.pages + (source to it) } ?: current.pages,
                                             // Keep useful previous-query rows until the new query yields
                                             // rows or finishes. Counts use resultQuery, never stale rows.
@@ -323,25 +356,22 @@ abstract class SearchViewModel(
                     }.awaitAll()
                 }
                 resultMutex.withLock {
-                    if (!isActive || generation.get() != request) return@withLock
+                    if (!isActive || !sessions.accepts(request)) return@withLock
                     val items = state.value.items
                     val ranked = withContext(Dispatchers.Default) { rankResults(items, sourceOrder, relevance, selector) }
                     mutableState.update { current ->
-                        if (generation.get() != request) current else {
+                        if (!sessions.accepts(request)) current else {
                             val allFailed = items.isNotEmpty() && items.values.all { it is SearchItemResult.Error }
                             current.copy(rankedResults = if (allFailed) current.rankedResults else ranked,
                                 resultQuery = if (allFailed && current.rankedResults.isNotEmpty()) current.resultQuery else query, generation = request, isSearching = false)
                         }
                     }
-                    if (generation.get() == request && items.values.all { it is SearchItemResult.Success }) {
-                        synchronized(queryCache) {
-                            queryCache[key] = CachedQuery(System.nanoTime(), items, ranked, state.value.pages, selector.snapshot())
-                            while (queryCache.size > 12) queryCache.remove(queryCache.keys.first())
-                        }
+                    if (sessions.accepts(request) && items.values.all { it is SearchItemResult.Success }) {
+                        queryCache.put(key, CachedQuery(items, state.value.pages, selector.snapshot()))
                     }
                 }
             } finally {
-                if (generation.get() == request) {
+                if (sessions.accepts(request)) {
                     mutableState.update { if (it.generation == request) it.copy(isSearching = false) else it }
                     enrichResults(request)
                 }
@@ -356,8 +386,10 @@ abstract class SearchViewModel(
         val query = current.activeQuery?.takeIf { it.isNotBlank() } ?: return
         val pending = current.pages.filterValues { it.hasMore }
         if (pending.isEmpty()) return
-        val request = generation.get()
+        val token = sessions.current() ?: return
+        val request = token.generation
         val selector = workSelection
+        val sourceOrder = token.context.providers.mapIndexed { i, id -> id.toLong() to i }.toMap()
         if (current.paginationFailed) pending.keys.forEach { mihon.domain.source.health.SourceHealthMonitor.shared.requestProbe(it.id) }
         mutableState.update { it.copy(isLoadingMore = true, paginationFailed = false) }
         paginationJob = viewModelScope.launchIO {
@@ -372,32 +404,32 @@ abstract class SearchViewModel(
                                 val titles = networkToLocalManga(page.mangas.map { it.toDomainManga(source.id) }.distinctBy { it.url })
                                     .filter { tachiyomi.domain.manga.model.DiscoveryEligibility.valid(it.title, it.url) }
                                 resultMutex.withLock {
-                                    if (!isActive || generation.get() != request) return@withLock
+                                    if (!isActive || !sessions.accepts(request)) return@withLock
                                     val latest = state.value
                                     val previous = (latest.items[source] as? SearchItemResult.Success)?.result.orEmpty()
                                     val combined = (previous + titles).distinctBy { it.source to it.url }
                                     val items = latest.items + (source to SearchItemResult.Success(combined))
                                     val ranked = withContext(Dispatchers.Default) {
-                                        rankResults(items, getSelectedSources().mapIndexed { i, s -> s.id to i }.toMap(), SearchRelevance(query), selector)
+                                        rankResults(items, sourceOrder, SearchRelevance(query), selector)
                                     }
-                                    mutableState.update { value -> if (generation.get() != request) value else value.copy(
+                                    mutableState.update { value -> if (!sessions.accepts(request)) value else value.copy(
                                         items = items, rankedResults = ranked,
                                         pages = latest.pages + (source to SearchPage(progress.next + 1, page.hasNextPage)),
                                     ) }
                                 }
                             } catch (cancelled: CancellationException) { throw cancelled }
                             catch (_: Exception) {
-                                mutableState.update { if (generation.get() == request) it.copy(paginationFailed = true) else it }
+                                mutableState.update { if (sessions.accepts(request)) it.copy(paginationFailed = true) else it }
                             }
                         }
                     } }.awaitAll()
                 }
             } finally {
-                mutableState.update { if (generation.get() == request) it.copy(isLoadingMore = false) else it }
-                if (generation.get() == request) {
+                mutableState.update { if (sessions.accepts(request)) it.copy(isLoadingMore = false) else it }
+                if (sessions.accepts(request)) {
                     val latest = state.value
-                    if (latest.items.values.all { it is SearchItemResult.Success }) synchronized(queryCache) {
-                        queryCache[cacheKey(query)] = CachedQuery(System.nanoTime(), latest.items, latest.rankedResults, latest.pages, selector.snapshot())
+                    if (latest.items.values.all { it is SearchItemResult.Success }) {
+                        queryCache.put(token.context, CachedQuery(latest.items, latest.pages, selector.snapshot()))
                     }
                     enrichResults(request)
                 }
@@ -410,7 +442,8 @@ abstract class SearchViewModel(
         searchJob?.cancel()
         paginationJob?.cancel()
         enrichmentJob?.cancel()
-        synchronized(queryCache) { queryCache.clear() }
+        sessions.invalidate()
+        queryCache.clear()
         super.onCleared()
     }
 

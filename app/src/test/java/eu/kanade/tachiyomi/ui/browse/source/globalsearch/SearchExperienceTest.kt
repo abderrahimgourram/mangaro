@@ -11,6 +11,7 @@ import io.mockk.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.*
+import kotlinx.serialization.json.*
 import mihon.domain.source.health.SourceHealthMonitor
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
@@ -38,11 +39,18 @@ class SearchExperienceTest {
         every { it.getFilterList() } returns FilterList()
         coEvery { it.getSearchManga(any(), any(), any()) } coAnswers { search(firstArg(), secondArg()) }
     }
+    // Authored positive fixture: shared identity is explicit, never inferred from the title.
+    private fun identity(id: String = "fixture-naruto-original") = buildJsonObject {
+        put("mangaro.workIdentity", buildJsonObject { put("externalIds", buildJsonObject { put("anilist", id) }) })
+    }
     private fun page(vararg urls: String, more: Boolean = false) = MangasPage(urls.map {
-        SManga.create().apply { url = it; title = "ناروتو Naruto" }
+        SManga.create().apply { url = it; title = "ناروتو Naruto"; memo = identity() }
     }, more)
     private fun distinctWorksPage(vararg urls:String,more:Boolean=false)=page(*urls,more=more).also{p->
-        p.mangas.forEach{it.title=if(it.url=="/one")"Naruto Original Story" else "Naruto Separate Adventure"}
+        p.mangas.forEach {
+            it.title = if (it.url == "/one") "Naruto Original Story" else "Naruto Separate Adventure"
+            it.memo = identity("fixture-distinct-${it.url}")
+        }
     }
     private fun model(vararg sources: Source, fixtures: Map<Long,Pair<Manga,List<Chapter>>> = emptyMap()): SearchViewModel {
         val preferences = SourcePreferences(InMemoryPreferenceStore())
@@ -62,7 +70,7 @@ class SearchExperienceTest {
         return model
     }
     private fun proof(source:Long,url:String,count:Int,lastNumber:Double):Pair<Manga,List<Chapter>> {
-        val m=Manga.create().copy(id=source*1_000_000+(url.hashCode().toLong() and 0xfffff),source=source,url=url,title="ناروتو Naruto",initialized=true)
+        val m=Manga.create().copy(id=source*1_000_000+(url.hashCode().toLong() and 0xfffff),source=source,url=url,title="ناروتو Naruto",initialized=true,memo=identity())
         val rows=(1..count).map {Chapter.create().copy(id=it.toLong(),mangaId=m.id,url="$url/chapter/$it",name="Chapter $it",
             chapterNumber=if(it==count)lastNumber else it.toDouble())}
         return m.copy(memo=ChapterListIntegrity.memo(m,"COMPLETE",rows)) to rows
@@ -103,7 +111,7 @@ class SearchExperienceTest {
         model.updateSearchQuery("one");model.search();val first=model.finished("one").rankedResults.single().workKey
         model.updateSearchQuery("two");model.search();model.finished("two")
         model.updateSearchQuery("one")
-        model.state.value.rankedResults.single().workKey shouldBe first
+        model.finished("one").rankedResults.single().workKey shouldBe first
     }
     private suspend fun SearchViewModel.finished(query: String, expectedGen: Long? = null): SearchViewModel.State {
         return state.first {

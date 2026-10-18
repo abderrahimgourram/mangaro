@@ -35,7 +35,7 @@ class MangaTimeSearchEvidenceTest {
         coEvery { db.await(any()) } answers { entries.first { it.first.id == firstArg<Long>() }.first }
         val evidence = MangaSearchEvidence(db, { id -> entries.first { it.first.id == id }.second })
         val rows = entries.map { RankedSearchResult(source, it.first) }
-        evidence.refresh(rows)
+        evidence.refresh(rows, allowNetwork = false) // SQL/identity-only mode; explicit metadata probes have separate coverage.
         val groups = SearchWorkSelection().select(rows.map { evidence.candidate(it, 0) })
         groups.size shouldBe 2
         groups.map { it.winner.chapters.distinct }.toSet() shouldBe setOf(304, 999)

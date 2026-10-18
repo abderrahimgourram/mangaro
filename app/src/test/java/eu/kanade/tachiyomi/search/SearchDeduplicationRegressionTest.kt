@@ -91,6 +91,7 @@ class SearchDeduplicationRegressionTest {
     @Test fun cacheReturnCannotSplitAPreviouslyCorroboratedGroupWhileSqlHydrationIsPending() = runTest {
         Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
         val h = Harness(detailsOnly = true)
+        val previousObserver = WorkIdentityDiagnostics.observer
         try {
             h.search("A")
             val joined = withContext(Dispatchers.Default) { withTimeout(8000) {
@@ -99,13 +100,23 @@ class SearchDeduplicationRegressionTest {
             val key = joined.rankedResults.single().workKey
             h.pauseSql.set(true)
             h.search("B")
+            val callerThread = Thread.currentThread()
+            val projectionThread = java.util.concurrent.atomic.AtomicReference<Thread>()
+            WorkIdentityDiagnostics.observer = { projectionThread.compareAndSet(null, Thread.currentThread()) }
             h.model.updateSearchQuery("A")
-            val restored = h.model.state.value.rankedResults.single()
+            val restored = withContext(Dispatchers.Default) { withTimeout(8000) {
+                h.model.state.first { !it.isSearching && it.resultQuery == "A" }.rankedResults.single()
+            } }
+            (projectionThread.get() === callerThread) shouldBe false
+            (projectionThread.get() != null) shouldBe true
+            WorkIdentityDiagnostics.observer = previousObserver
             restored.workKey shouldBe key
             restored.alternatives.size shouldBe 1
             restored.verifiedDistinctChapters shouldBe 85
             h.model.search() // second cache entry point must preserve the same evidence too
-            h.model.state.value.rankedResults.single().alternatives.size shouldBe 1
+            withContext(Dispatchers.Default) { withTimeout(8000) {
+                h.model.state.first { !it.isSearching && it.resultQuery == "A" }.rankedResults.single().alternatives.size
+            } } shouldBe 1
             h.model.loadMore()
             val paged = withContext(Dispatchers.Default) { withTimeout(8000) {
                 h.model.state.first { !it.isLoadingMore && !it.hasMore }
@@ -113,7 +124,7 @@ class SearchDeduplicationRegressionTest {
             paged.rankedResults.single().workKey shouldBe key
             paged.rankedResults.single().alternatives.size shouldBe 1
             h.sources.forEach { source -> coVerify(exactly = 1) { source.getMangaUpdate(any(), any(), true, false) } }
-        } finally { h.close(); Dispatchers.resetMain() }
+        } finally { WorkIdentityDiagnostics.observer = previousObserver; h.close(); Dispatchers.resetMain() }
     }
 
     @Test fun shortNovelTitleWithMatchingNamedCreatorAgainReachesOneNovelGridWork() {

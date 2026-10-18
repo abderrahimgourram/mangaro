@@ -12,18 +12,19 @@ internal data class SearchContext(
         languages = languages.toSet(), filters = filters.toMap())
 }
 
-internal data class SearchSessionToken(val generation: Long, val context: SearchContext)
+internal data class SearchSessionToken(val generation: Long, val context: SearchContext, internal val owner: Any)
 
 /** Retained by the search owner, never by a composition-local epoch.
  * Coroutine owners cancel transport; this fence also rejects non-cooperative late callbacks.
  * Starting the same context again creates a new token (including A -> B -> A/cache hits).
  */
 internal class SearchSessionCoordinator {
+    private val owner = Any()
     private var sequence = 0L
     private var active: SearchSessionToken? = null
 
     @Synchronized fun begin(context: SearchContext): SearchSessionToken =
-        SearchSessionToken(++sequence, context.snapshot()).also { active = it }
+        SearchSessionToken(++sequence, context.snapshot(), owner).also { active = it }
 
     @Synchronized fun current(): SearchSessionToken? = active
     @Synchronized fun generation(): Long = sequence

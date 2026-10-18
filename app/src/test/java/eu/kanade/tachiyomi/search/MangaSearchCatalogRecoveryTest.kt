@@ -121,7 +121,7 @@ class MangaSearchCatalogRecoveryTest {
             model.state.value.rankedResults shouldBe emptyList()
             model.search();finished("B").rankedResults.single().manga.url shouldBe "/work/B"
             model.updateSearchQuery("A")
-            model.state.value.rankedResults.single().let {
+            finished("A").rankedResults.single().let {
                 it.workKey shouldBe first.workKey;it.manga.url shouldBe "/work/A";it.alternatives.size shouldBe 1
             }
         } finally { store.clear();Dispatchers.resetMain() }

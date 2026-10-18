@@ -25,6 +25,14 @@ class SearchFoundationTest {
         token.context shouldBe SearchContext(SearchWorkKind.NOVEL, "A", listOf("a"), setOf("ar"), mapOf("status" to "all"))
     }
 
+    @Test fun `different screen owners cannot accept each others tokens`() {
+        val first = SearchSessionCoordinator(); val second = SearchSessionCoordinator()
+        val firstToken = first.begin(context()); val secondToken = second.begin(context())
+        firstToken.generation shouldBe secondToken.generation
+        first.accepts(secondToken) shouldBe false
+        second.accepts(firstToken) shouldBe false
+    }
+
     @Test fun `cache isolates content kind providers order languages and filters`() {
         val cache = SearchSnapshotCache<String>(); val key = context(); cache.put(key, "raw")
         cache.get(key.copy(query = " A ")) shouldBe "raw"
@@ -47,7 +55,7 @@ class SearchFoundationTest {
     @Test fun `terminal projection preserves every provider route and real chapter evidence`() {
         val a = SearchWorkCandidate("a:/work", "a", SearchWorkKind.COMIC, "Title", chapters = SearchChapterEvidence(850, true))
         val b = a.copy(id = "b:/work", source = "b", chapters = SearchChapterEvidence(90, true))
-        val group = SearchWorkGroup("verified-work", listOf(a, b), a, false)
+        val group = SearchWorkGroup("verified-work", listOf(a, b, a), a, false)
         val card = WorkPresentationProjection.project(listOf(group), mapOf(a.editionKey to "a-route", b.editionKey to "b-route")).single()
         card.selected shouldBe "a-route"; card.editions shouldBe listOf("a-route", "b-route")
         card.chapters.distinct shouldBe 850
