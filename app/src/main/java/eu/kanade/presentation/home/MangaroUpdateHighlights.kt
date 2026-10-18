@@ -77,7 +77,7 @@ fun MangaroUpdateHighlights(onContinue: () -> Unit) {
                     }
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
-                            "إصلاحات وإضافات للبحث والحساب والمزامنة.",
+                            "إصلاحات لقراءة الفصول وعرض الصور.",
                             color = Color(0xFFBEABCD),
                             style = MaterialTheme.typography.bodyMedium
                         )
@@ -85,8 +85,8 @@ fun MangaroUpdateHighlights(onContinue: () -> Unit) {
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Highlight(
                             Icons.Outlined.Tune,
-                            "بحث أوضح",
-                            "تجميع طبعات العمل المرتبطة بدليل، مع إبقاء خيارات القراءة متاحة."
+                            "فصول الصور",
+                            "دعم فصول صور الشخصيات والرسوم المرافقة دون اشتراط وجود نص طويل."
                         )
                         Highlight(
                             Icons.Outlined.Tune,

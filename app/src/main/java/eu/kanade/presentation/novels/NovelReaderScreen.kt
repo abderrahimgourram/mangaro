@@ -288,14 +288,14 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
         fun saveCurrent() {
             if (runCatching { tachiyomi.core.common.util.lang.LocalAccountScope.check(readerOwner) }.isFailure) return
             val shown = currentChapter ?: return
-            if(!currentRestoring && currentPlain.isNotEmpty()) {
+            if(!currentRestoring && currentAnchors.isNotEmpty()) {
                 val index=scroll.firstVisibleItemIndex.coerceAtMost(currentAnchors.size)
                 repository.savePosition(novel,shown,currentBlockPositions.getOrElse(index - 1) { 0 },scroll.firstVisibleItemScrollOffset,
                     currentAnchors.getOrNull(index-1).orEmpty())
             }
         }
         LaunchedEffect(loadedChapter?.id,restoring) {
-            if(loadedChapter != null && !restoring && paragraphs.isNotEmpty()) snapshotFlow {Triple(scroll.firstVisibleItemIndex,scroll.firstVisibleItemScrollOffset,scroll.isScrollInProgress)}
+            if(loadedChapter != null && !restoring && anchors.isNotEmpty()) snapshotFlow {Triple(scroll.firstVisibleItemIndex,scroll.firstVisibleItemScrollOffset,scroll.isScrollInProgress)}
                 .debounce(600).distinctUntilChanged().collect {if(!it.third) saveCurrent()}
         }
         val owner=LocalLifecycleOwner.current

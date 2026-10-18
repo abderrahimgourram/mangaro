@@ -7,7 +7,7 @@ import org.jsoup.nodes.TextNode
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 /** Walk only the already-sanitized story container. No scripts, browser or document-body scraping. */
-internal fun extractNovelContent(content: Element, allowShortText: Boolean = false): NovelText {
+internal fun extractNovelContent(content: Element, allowShortText: Boolean = false, allowIllustrations: Boolean = false): NovelText {
     val paragraphs = mutableListOf<String>()
     val markup = mutableListOf<String>()
     val blocks = mutableListOf<NovelContentBlock>()
@@ -69,9 +69,16 @@ internal fun extractNovelContent(content: Element, allowShortText: Boolean = fal
         }
     }
     visit(content, 0); flush()
-    if (if (allowShortText) paragraphs.isEmpty() || paragraphs.none { p -> p.any(Char::isLetter) }
-        else paragraphs.size < 3 || paragraphs.sumOf { it.length } < 200)
+    val result = NovelText(paragraphs, markup, blocks.takeIf { list -> list.any { it.kind != NovelBlockKind.TEXT } }.orEmpty())
+    if (!(allowIllustrations && result.hasReadableIllustration()) &&
+        (if (allowShortText) paragraphs.isEmpty() || paragraphs.none { p -> p.any(Char::isLetter) }
+        else paragraphs.size < 3 || paragraphs.sumOf { it.length } < 200))
         throw NovelSourceFailure("هذا الفصل غير متاح حاليًا. يمكنك فتحه في الموقع.", "Empty or incomplete novel text")
     // Omit new fields on ordinary text-only chapters, preserving legacy file checksums/positions.
-    return NovelText(paragraphs, markup, blocks.takeIf { list -> list.any { it.kind != NovelBlockKind.TEXT } }.orEmpty())
+    return result
+}
+
+/** Image availability is checked by the existing loader; missing images never fabricate prose. */
+internal fun NovelText.hasReadableIllustration(): Boolean = blocks.any {
+    it.kind == NovelBlockKind.IMAGE && it.imageUrl?.let(NovelHttp::allowed) == true
 }

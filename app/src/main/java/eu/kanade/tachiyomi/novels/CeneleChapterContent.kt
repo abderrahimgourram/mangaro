@@ -38,7 +38,10 @@ internal object CeneleChapterContent {
             throw NovelSourceFailure("الفصل غير متاح من المصدر حاليًا. حاول مجددًا لاحقًا.",
                 "Cenele public unavailable notice", code = "CENELE_PUBLIC_UNAVAILABLE")
         return try {
-            CeneleSanitizer.sanitize(extractNovelContent(content))
+            // Character sheets may contain only illustrations. Explicit webtoon panels do
+            // not gain this exception; discovery's separate comic policy remains unchanged.
+            CeneleSanitizer.sanitize(extractNovelContent(content,
+                allowIllustrations = content.select(".nhv-webtoon-page").isEmpty()))
         } catch (failure: NovelSourceFailure) {
             if (failure.message != "Empty or incomplete novel text") throw failure
             throw NovelSourceFailure("لم يكتمل نص الفصل. أعد المحاولة.", "Cenele empty or incomplete reader", code = "CENELE_READER_PARSE")
