@@ -1,0 +1,78 @@
+{
+  "observedAt": "2026-10-18",
+  "method": "anonymous official search.searchSeries public metadata; first three rows of two queries; no descriptions/chapter bodies/account values",
+  "host": "mangatime.org",
+  "sourceId": "215553151312092548",
+  "queries": [
+    {
+      "query": "Solo Leveling",
+      "rows": [
+        {
+          "id": "697df7610c5d340ac154401b",
+          "title": "سولو ليفلينج",
+          "nameAr": "سولو ليفلينج",
+          "nameEn": "Solo Leveling",
+          "slug": "solo-leveling",
+          "type": "manhwa",
+          "author": "Chugong; h-goon",
+          "artist": "DUBU (REDICE STUDIO); DISCIPLES (REDICE STUDIO)"
+        },
+        {
+          "id": "697df7af0c5d340ac1547225",
+          "title": "سولو ليفلينج: راغناروك",
+          "nameAr": "سولو ليفلينج: راغناروك",
+          "nameEn": "Solo Leveling: Ragnarok",
+          "slug": "solo-leveling-ragnarok",
+          "type": "manhwa",
+          "author": "Daul",
+          "artist": "JIN (REDICE STUDIO); Brix (REDICE STUDIO)"
+        },
+        {
+          "id": "6a398a7acc417cd3a157a4a6",
+          "title": "أنا المبتدئ ذو المستوى الأقصى",
+          "nameAr": "أنا المبتدئ ذو المستوى الأقصى",
+          "nameEn": "Solo Max-Level Newbie",
+          "slug": "solo-max-level-newbie",
+          "type": "manhwa",
+          "author": "WAN.Z; Maslow",
+          "artist": "swingbat"
+        }
+      ]
+    },
+    {
+      "query": "The Beginning After The End",
+      "rows": [
+        {
+          "id": "697df7d00c5d340ac1548142",
+          "title": "البداية بعد النهاية",
+          "nameAr": "البداية بعد النهاية",
+          "nameEn": "The Beginning After the End",
+          "slug": "the-beginning-after-the-end",
+          "type": "webtoon",
+          "author": "TurtleMe",
+          "artist": "Fuyuki23; MGK-Story"
+        },
+        {
+          "id": "69c747aa0472419cc8a90fdd",
+          "title": "بعد أن أصبحت طفلة صغيرة، عائلة الأشرار تريد قتلي!",
+          "nameAr": "بعد أن أصبحت طفلة صغيرة، عائلة الأشرار تريد قتلي!",
+          "nameEn": "After Becoming a Dumpling, the Villain Family All Wants to Kill Me!",
+          "slug": "after-becoming-a-dumpling-the-villain-family-all-wants-to-kill-me",
+          "type": "manhua",
+          "author": "Zhu Qiqi (竹七七)",
+          "artist": "A Zhuai; Super Bird Comics Studio"
+        },
+        {
+          "id": "6a44f986b141ade445e05ddc",
+          "title": "Player Who Returned 10,000 Years Later",
+          "nameAr": "اللاعب الذي عاد بعد عشرة آلاف عام",
+          "nameEn": "Player Who Returned 10,000 Years Later",
+          "slug": "player-who-returned-10000-years-later",
+          "type": "manhwa",
+          "author": "Butterfly Valley (나비계곡)، Maeng JuKyung (맹주경)",
+          "artist": "Team 4PLAYER"
+        }
+      ]
+    }
+  ]
+}

@@ -264,18 +264,18 @@ class NovelRepository private constructor(context: Context) {
         val key = discoveryKey(source, term, page, genre)
         if (source.id == SunovelsSource.SOURCE_ID && source !is SunovelsGatewaySource) ensureSunBootstrap()
         val store = if (source.id == SunovelsSource.SOURCE_ID && source !is SunovelsGatewaySource) metadata else indexCache
-        synchronized(discoveryCache) { discoveryCache[key]?.takeIf { System.currentTimeMillis() - it.at in 0..86_400_000L }?.let { return@withContext it.result } }
+        synchronized(discoveryCache) { discoveryCache[key]?.takeIf { System.currentTimeMillis() - it.at in 0..86_400_000L }?.let { return@withContext NovelCatalogCards.eligiblePage(catalog.value,it.result) } }
         val restored = runCatching { store.read("discovery/" + novelDigest(key) + ".json")?.let { json.decodeFromString<DiscoveryCache>(it).let { cached -> cached.copy(result = cached.result.copy(novels = cached.result.novels.map(SunovelsSource::cleanMetadata))) } } }
             .getOrNull()?.takeIf { System.currentTimeMillis() - it.at in 0..86_400_000L } ?: return@withContext null
         synchronized(discoveryCache) {
             discoveryCache[key] = restored
             while (discoveryCache.size > 16) discoveryCache.remove(discoveryCache.keys.first())
         }
-        restored.result
+        NovelCatalogCards.eligiblePage(catalog.value,restored.result)
     }
     suspend fun discover(source: NovelSource, term: String, page: Int, genre: String?): NovelPage = withContext(Dispatchers.IO) {
         val key = discoveryKey(source, term, page, genre)
-        return@withContext coalesce("discovery:" + key) {
+        val pageResult = coalesce("discovery:" + key) {
         // Sea paginates a single validated metadata snapshot. Re-enter its session even
         // when a persisted page is visible, so pages from different snapshots cannot mix.
         // The adapter coalesces/cache-bounds metadata requests; snapshot display stays instant.
@@ -313,6 +313,7 @@ class NovelRepository private constructor(context: Context) {
         }
         result
         }
+        NovelCatalogCards.eligiblePage(catalog.value,pageResult)
     }
     val libraryRestoreFailed: Boolean get() = !libraryReadable
     suspend fun retryLibraryRestore() = withContext(Dispatchers.IO) {

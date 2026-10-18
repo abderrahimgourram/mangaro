@@ -23,6 +23,55 @@
       "method": "MAINTAINER_CONFIRMED",
       "reviewer": "Mangaro maintainer",
       "reviewedAt": "2026-10-17"
+    },
+    {
+      "key": "b955e56408a056c896f62909eebf6985865e7690c80de8393c7f9c5e475dca56",
+      "title": "Solo Leveling / سولو ليفلينج",
+      "state": "ACTIVE",
+      "editions": [
+        {
+          "sourceId": "6058166507489091982",
+          "url": "/manga/solo-leveling"
+        },
+        {
+          "sourceId": "4110737012647435874",
+          "url": "/series/SL"
+        },
+        {
+          "sourceId": "215553151312092548",
+          "url": "/manhwa/solo-leveling#697df7610c5d340ac154401b"
+        }
+      ],
+      "evidence": [
+        "https://starzmanga.com/manga/solo-leveling/",
+        "https://olympustaff.com/series/SL",
+        "https://mangatime.org/manhwa/solo-leveling"
+      ],
+      "method": "MAINTAINER_CONFIRMED",
+      "reviewer": "Mangaro maintainer",
+      "reviewedAt": "2026-10-18"
+    },
+    {
+      "key": "81e63342a698e9de565ca6f2bfb384f2c65bdd71183d80212c0535b459faf6f9",
+      "title": "The Beginning After the End",
+      "state": "ACTIVE",
+      "editions": [
+        {
+          "sourceId": "6058166507489091982",
+          "url": "/manga/the-beginning-after-the-end"
+        },
+        {
+          "sourceId": "4110737012647435874",
+          "url": "/series/BATE"
+        }
+      ],
+      "evidence": [
+        "https://starzmanga.com/manga/the-beginning-after-the-end/",
+        "https://olympustaff.com/series/BATE"
+      ],
+      "method": "MAINTAINER_CONFIRMED",
+      "reviewer": "Mangaro maintainer",
+      "reviewedAt": "2026-10-18"
     }
   ]
 }

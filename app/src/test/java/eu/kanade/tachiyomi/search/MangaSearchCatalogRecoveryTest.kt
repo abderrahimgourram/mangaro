@@ -26,6 +26,106 @@ import tachiyomi.domain.manga.model.Manga
 /** Authored local fixtures; never contacts providers or modifies account/library state. */
 @OptIn(ExperimentalCoroutinesApi::class)
 class MangaSearchCatalogRecoveryTest {
+    @Test fun realViewModelReprojectsShortSearchCardsWhenBoundedSourceDetailsArrive() = runTest {
+        Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
+        val store=ViewModelStore()
+        val preferences=SourcePreferences(InMemoryPreferenceStore())
+        val sources=listOf(85001L,85002L).map {id->mockk<Source>().also {s->
+            every{s.id} returns id;every{s.name} returns "Fixture $id";every{s.lang} returns "ar"
+            every{s.getFilterList()} returns FilterList()
+            coEvery{s.getSearchManga(any(),any(),any())} returns MangasPage(listOf(SManga.create().apply {
+                url="/public-work";title=if(id==85001L)"Distinctive original story" else "عنوان مترجم فريد"
+            }),false)
+            coEvery{s.getMangaUpdate(any(),any(),true,false)} answers {
+                eu.kanade.tachiyomi.source.model.SMangaUpdate(firstArg<SManga>().apply {
+                    author="Fixture creator"
+                    memo=buildJsonObject {put("mangaro.workIdentity",buildJsonObject {
+                        put("aliases",buildJsonArray {add("Distinctive original story")})
+                    })}
+                },emptyList())
+            }
+        }}
+        val network=mockk<NetworkToLocalManga>()
+        coEvery{network.invoke(any<List<Manga>>())} answers {firstArg<List<Manga>>().map {it.copy(id=it.source)}}
+        val db=mockk<GetManga>();coEvery{db.await(any())} returns null
+        val model=object:SearchViewModel(liveSearch=true,sourcePreferences=preferences,sourceManager=mockk(relaxed=true),
+            extensionManager=mockk(relaxed=true),networkToLocalManga=network,getManga=db,preferences=preferences,
+            chapterLookup={error("No index request allowed")}) {override fun getEnabledSources()=sources}
+        store.put("v2-metadata",model)
+        try {
+            model.updateSearchQuery("Distinctive");model.search()
+            val result=withContext(Dispatchers.Default) {withTimeout(6000) {
+                model.state.first {it.rankedResults.singleOrNull()?.alternatives?.size==1}
+            }}
+            result.rankedResults.single().let {card->
+                card.alternatives.single().manga.source.let {it!=card.manga.source} shouldBe true
+                card.manga.url shouldBe "/public-work"
+            }
+            model.workGroups().single().identityDecision!!.verdict shouldBe WorkIdentityVerdict.LIKELY_SAME_WORK
+            sources.forEach {coVerify(exactly=1){it.getMangaUpdate(any(),any(),true,false)}}
+        } finally {store.clear();Dispatchers.resetMain()}
+    }
+    @Test fun actualSearchStateKeepsOneVerifiedCardAcrossPagesAndQueryCacheRestoration() = runTest {
+        Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
+        val store = ViewModelStore()
+        val preferences = SourcePreferences(InMemoryPreferenceStore())
+        val sources = listOf(34021L,34022L).map { id -> mockk<Source>().also { source ->
+            every { source.id } returns id
+            every { source.name } returns "Fixture provider $id"
+            every { source.lang } returns "ar"
+            every { source.getFilterList() } returns FilterList()
+            coEvery { source.getSearchManga(any(),any(),any()) } coAnswers {
+                val page = firstArg<Int>();val query = secondArg<String>()
+                MangasPage(List(2) { SManga.create().apply {
+                    url="/work/$query";title="Fixture $query"
+                } },page==1)
+            }
+        } }
+        val network = mockk<NetworkToLocalManga>()
+        val chapterRows=java.util.concurrent.ConcurrentHashMap<Long,List<Chapter>>()
+        coEvery { network.invoke(any<List<Manga>>()) } answers {
+            firstArg<List<Manga>>().map { input ->
+                val manga=input.copy(id=input.source*1000+input.url.hashCode())
+                val count=if(manga.source==34021L)10 else 85
+                val chapters=(1..count).map { Chapter.create().copy(id=it.toLong(),mangaId=manga.id,
+                    url="${manga.url}/$it",name="Chapter $it",chapterNumber=if(count==10&&it==10)33333.0 else it.toDouble()) }
+                chapterRows[manga.id]=chapters
+                manga.copy(memo=JsonObject(ChapterListIntegrity.memo(manga,"COMPLETE",chapters)+
+                    ("mangaro.workIdentity" to buildJsonObject {
+                        put("externalIds",buildJsonObject { put("anilist","fixture-${manga.url}") })
+                    })))
+            }
+        }
+        val database=mockk<GetManga>()
+        coEvery { database.await(any()) } returns null
+        val model=object : SearchViewModel(liveSearch=true,sourcePreferences=preferences,
+            sourceManager=mockk(relaxed=true),extensionManager=mockk(relaxed=true),
+            networkToLocalManga=network,getManga=database,preferences=preferences,chapterLookup={chapterRows[it].orEmpty()}) {
+            override fun getEnabledSources()=sources
+        }
+        store.put("presentation",model)
+        suspend fun finished(query:String)=withContext(Dispatchers.Default) { withTimeout(5000) {
+            model.state.first { !it.isSearching&&it.activeQuery==query&&it.progress==2 }
+        } }
+        try {
+            model.updateSearchQuery("A");model.search()
+            val first=finished("A").rankedResults.single()
+            first.manga.source shouldBe 34022L
+            first.verifiedDistinctChapters shouldBe 85
+            first.alternatives.size shouldBe 1
+            model.loadMore()
+            val paged=withContext(Dispatchers.Default) { withTimeout(5000) { model.state.first { !it.isLoadingMore&&!it.hasMore } } }
+            paged.rankedResults.single().workKey shouldBe first.workKey
+            paged.rankedResults.single().alternatives.size shouldBe 1
+            model.updateSearchQuery("B")
+            model.state.value.rankedResults shouldBe emptyList()
+            model.search();finished("B").rankedResults.single().manga.url shouldBe "/work/B"
+            model.updateSearchQuery("A")
+            model.state.value.rankedResults.single().let {
+                it.workKey shouldBe first.workKey;it.manga.url shouldBe "/work/A";it.alternatives.size shouldBe 1
+            }
+        } finally { store.clear();Dispatchers.resetMain() }
+    }
     @Test fun cachedCountsWorkBeyondTwelveRowsAndDoNotUseLastChapterNumber() = runBlocking {
         val source = mockk<Source> { every { id } returns 34001L }
         fun entry(id: Int, count: Int, lastNumber: Double): Manga {

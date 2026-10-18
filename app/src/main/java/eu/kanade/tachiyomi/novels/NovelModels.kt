@@ -8,8 +8,13 @@ data class Novel(val sourceId: String, val url: String, val title: String, val c
     val description: String = "", val author: String? = null, val status: String? = null,
     val genres: List<String> = emptyList(), val chapterCount: Int? = null,
     val originalTitle: String? = null, val alternativeTitles: List<String> = emptyList(),
-    val workIdentifiers: List<String> = emptyList(), val reliableUpdatedAt: Long? = null) : java.io.Serializable {
+    val workIdentifiers: List<String> = emptyList(), val reliableUpdatedAt: Long? = null,
+    val contentFormat: NovelContentFormat? = null) : java.io.Serializable {
     val id: String get() = sourceId + ":" + url
+    companion object {
+        // Preserve Java-serialized navigation state written before optional format metadata.
+        private const val serialVersionUID: Long = -7532512653567989702L
+    }
 }
 @Serializable
 data class NovelChapter(val url: String, val title: String, val order: Int, val volume: String? = null,

@@ -19,9 +19,10 @@ internal data class SearchWorkCandidate(val id: String, val source: String, val 
     val author: String? = null, val artist: String? = null, val format: String? = null,
     val edition: String? = null, val year: Int? = null, val priority: Int = Int.MAX_VALUE,
     val chapters: SearchChapterEvidence = SearchChapterEvidence(), val coverDigest: String? = null,
-    val catalogIdentity: CatalogIdentity? = null)
+    val catalogIdentity: CatalogIdentity? = null,
+    val originalTitle: String? = null, val metadataOrigin: String = "source-result")
 internal data class SearchWorkGroup(val key: String, val members: List<SearchWorkCandidate>,
-    val winner: SearchWorkCandidate, val provisional: Boolean)
+    val winner: SearchWorkCandidate, val provisional: Boolean, val identityDecision: WorkIdentityDecision? = null)
 
 internal object SearchWorkIdentity {
     data class Thresholds(val exactCharacters: Int = 10, val exactTokens: Int = 2, val fuzzySimilarity: Double = .92,
@@ -52,13 +53,34 @@ internal object SearchWorkIdentity {
     fun enrichmentCandidates(input:List<SearchWorkCandidate>):Set<String> = (
         input.flatMap { c -> names(c).filter{it.length>=5}.map{(c.kind to it) to c} }.groupBy{it.first}
             .values.filter{rows->rows.map{it.second.id}.distinct().size>1}.flatten().map{it.second.id} +
-            input.filter {a->input.any{b->possibleSameSourceTitles(a,b)}}.map{it.id}).toSet()
+            input.take(128).let { bounded -> bounded.filter {a->bounded.any{b->possibleSameSourceTitles(a,b)}}.map{it.id} }).toSet()
     private fun declared(s:String?) = s?.let(::normalize)?.takeIf { it.isNotBlank() && it !in unknown }
     private fun creator(s:String?) = declared(s)?.takeIf {it.length>=3}
     private fun contradictory(a:String?,b:String?) = declared(a)?.let {x -> declared(b)?.let {x!=it} }==true
     internal fun catalog(c: SearchWorkCandidate) = c.catalogIdentity ?: CatalogIdentity(
         c.source, c.id, c.id, c.externalIds, format = c.format, edition = c.edition,
     )
+    /** Veto contradictory independent evidence even in an established presentation group. */
+    internal fun conflicts(a: SearchWorkCandidate, b: SearchWorkCandidate): Boolean =
+        a.kind != b.kind || contradictory(a.format,b.format) || contradictory(a.edition,b.edition) ||
+            a.externalIds.keys.intersect(b.externalIds.keys).intersect(trusted).any { key ->
+                val x=a.externalIds[key]; val y=b.externalIds[key]
+                !x.isNullOrBlank() && !y.isNullOrBlank() && normalize(x) !in unknown && normalize(y) !in unknown && x != "0" && y != "0" && x != y
+            }
+
+    /** Candidate lookup only; matches() remains the authority/conflict decision. */
+    internal fun verifiedLookupKeys(c: SearchWorkCandidate): Set<String> {
+        val value = catalog(c)
+        return buildSet {
+            add("route:${value.source}:${value.route}")
+            value.providerId?.takeIf { it.isNotBlank() }?.let { add("provider:${value.source}:$it") }
+            value.reviewedWorkKey?.takeIf { Regex("[a-f0-9]{64}").matches(it) }?.let { add("work:$it") }
+            value.externalIds.forEach { (authority, id) ->
+                if (authority in setOf("anilist", "myanimelist", "mangadex", "mangaupdates", "kitsu") && id.isNotBlank())
+                    add("external:$authority:${id.trim()}")
+            }
+        }
+    }
     fun matches(a:SearchWorkCandidate,b:SearchWorkCandidate,t:Thresholds=Thresholds()):Boolean {
         if(a.kind==SearchWorkKind.COMIC && b.kind==SearchWorkKind.COMIC)
             return VerifiedCatalogIdentity.matches(catalog(a), catalog(b))
@@ -102,7 +124,7 @@ internal object SearchWorkIdentity {
 }
 
 /** One session per accepted query, retained across pages. Complete-link clustering prevents alias bridges. */
-internal class SearchWorkSelection {
+internal class SearchWorkSelection(private val readableFirst: Boolean = false) {
     private data class Previous(val key:String,val ids:Set<String>,val winner:String)
     private var previous=emptyList<Previous>()
     private var current=emptyList<SearchWorkGroup>()
@@ -111,43 +133,65 @@ internal class SearchWorkSelection {
         current=groups
         previous=groups.map{Previous(it.key,it.members.map{c->c.id}.toSet(),it.winner.id)}
     }
-    @Synchronized fun select(input:List<SearchWorkCandidate>):List<SearchWorkGroup> {
+    @Synchronized fun select(input:List<SearchWorkCandidate>, established: Map<String, List<SearchWorkCandidate>>? = null):List<SearchWorkGroup> {
         val clusters=mutableListOf<MutableList<SearchWorkCandidate>>()
+        val lookup = mutableMapOf<String, MutableSet<Int>>()
+        val establishedKeys = mutableMapOf<String, String>()
+        if (established != null) established.forEach { (key, members) ->
+            if (members.isNotEmpty()) {
+                clusters += members.distinctBy { it.id }.toMutableList()
+                members.forEach { establishedKeys[it.id] = key }
+            }
+        }
+        if (established == null)
         input.distinctBy{it.id}.sortedWith(compareBy<SearchWorkCandidate>({ it.kind.ordinal },
             { if (it.kind == SearchWorkKind.COMIC) 0 else it.priority },
             { if (it.kind == SearchWorkKind.COMIC) SearchWorkIdentity.catalog(it).editionKey else it.source }, { it.id })).forEach { c ->
-            val group=clusters.firstOrNull { g->g.all {SearchWorkIdentity.matches(it,c)} }
-            if(group==null)clusters+=mutableListOf(c) else group+=c
+            val keys = if (c.kind == SearchWorkKind.COMIC) SearchWorkIdentity.verifiedLookupKeys(c) else emptySet()
+            val possible = if (c.kind == SearchWorkKind.COMIC) keys.flatMap { lookup[it].orEmpty() }.distinct().sorted()
+                else clusters.indices.toList()
+            val found = possible.firstOrNull { index -> clusters[index].all { SearchWorkIdentity.matches(it,c) } }
+            val index = found ?: clusters.size.also { clusters += mutableListOf<SearchWorkCandidate>() }
+            clusters[index] += c
+            keys.forEach { lookup.getOrPut(it) { linkedSetOf() }.add(index) }
         }
         val comicKeys = clusters.filter { it.first().kind == SearchWorkKind.COMIC }
             .map { VerifiedCatalogIdentity.key(it.map(SearchWorkIdentity::catalog)) }.groupingBy { it }.eachCount()
+        val oldOrder = previous.mapIndexed { i, p -> p.key to i }.toMap()
+        val inputOrder = input.mapIndexed { i, c -> c.id to i }.toMap()
+        val previousByMember = previous.flatMap { p -> p.ids.map { it to p } }.toMap()
         val claimed=mutableSetOf<String>()
         val result=clusters.map { members ->
-            val old=previous.firstOrNull { p->p.key !in claimed && members.any{it.id in p.ids} }
+            val old=members.mapNotNull { previousByMember[it.id] }.filter { it.key !in claimed }.minByOrNull { oldOrder[it.key] ?: Int.MAX_VALUE }
             val readable=members.filter{it.chapters.readable!=false && it.chapters.indexUsable!=false && it.chapters.verifiedCount!=0}
             val eligible=readable.filterNot{it.chapters.indexUncertain}.ifEmpty{readable}.ifEmpty{members}
-            val best=eligible.sortedWith(compareByDescending<SearchWorkCandidate>{it.chapters.distinct?:-1}
+            val best=eligible.sortedWith(compareByDescending<SearchWorkCandidate>{ if ((readableFirst || established != null) && it.chapters.readable == true) 1 else 0 }
+                .thenByDescending{it.chapters.distinct?:-1}
                 .thenByDescending{it.chapters.readable==true}.thenByDescending{it.chapters.complete}
                 .thenByDescending{it.chapters.checkedAt}.thenBy{it.priority}.thenBy{it.source}.thenBy{it.id}).first()
             val incumbent=eligible.firstOrNull{it.id==old?.winner}
             // Lower bounds can dominate a known complete count, but two unfinished indexes
             // cannot prove their final ordering. Keep the incumbent until stronger evidence arrives.
             val replace=incumbent==null || incumbent.id==best.id || eligible.all{it.chapters.complete} ||
+                (readableFirst || established != null) && best.chapters.readable == true && incumbent.chapters.readable != true ||
                 incumbent.chapters.distinct==null&&best.chapters.distinct!=null ||
                 incumbent.chapters.complete&&(best.chapters.distinct?:-1)>=(incumbent.chapters.distinct?:-1) ||
                 best.chapters.complete&&best.chapters.distinct==incumbent.chapters.distinct ||
                 best.kind==SearchWorkKind.COMIC && (best.chapters.distinct?:-1)>(incumbent.chapters.distinct?:-1)
             val winner=if(replace)best else incumbent!!
-            val base=if (winner.kind == SearchWorkKind.COMIC)
-                VerifiedCatalogIdentity.key(members.map(SearchWorkIdentity::catalog))
-                else old?.key?:"search:${winner.kind}:${members.first().id}"
-            val key=if (winner.kind == SearchWorkKind.COMIC && comicKeys.getValue(base) > 1)
+            val comicBase = if (winner.kind == SearchWorkKind.COMIC) VerifiedCatalogIdentity.key(members.map(SearchWorkIdentity::catalog)) else null
+            val retainedKey = old?.key?.takeIf { readableFirst && winner.kind == SearchWorkKind.COMIC && members.any {
+                itKey -> itKey.let { SearchWorkIdentity.verifiedLookupKeys(it) + "edition:${SearchWorkIdentity.catalog(it).editionKey}" }.contains(old.key)
+            } }
+            val base=if (winner.kind == SearchWorkKind.COMIC) retainedKey ?: establishedKeys[members.first().id] ?: comicBase!!
+                else establishedKeys[members.first().id] ?: old?.key?:"search:${winner.kind}:${members.first().id}"
+            val key=if (winner.kind == SearchWorkKind.COMIC && comicKeys.getValue(comicBase!!) > 1)
                 base+":separate:"+members.minOf { SearchWorkIdentity.catalog(it).editionKey }
                 else if(base !in claimed)base else base+":separate:"+members.first().id
             claimed+=key
             SearchWorkGroup(key,members,winner,readable.isEmpty()||members.any{it.chapters.indexUncertain}||eligible.any{it.chapters.verifiedCount==null})
-        }.sortedWith(compareBy<SearchWorkGroup> { g -> previous.indexOfFirst{it.key==g.key}.takeIf{it>=0}?:Int.MAX_VALUE }
-            .thenBy { g -> g.members.minOf { member -> input.indexOfFirst { it.id==member.id } } })
+        }.sortedWith(compareBy<SearchWorkGroup> { g -> oldOrder[g.key] ?: Int.MAX_VALUE }
+            .thenBy { g -> g.members.minOf { member -> inputOrder[member.id] ?: Int.MAX_VALUE } })
         previous=result.map{Previous(it.key,it.members.map{c->c.id}.toSet(),it.winner.id)}
         current=result
         return result

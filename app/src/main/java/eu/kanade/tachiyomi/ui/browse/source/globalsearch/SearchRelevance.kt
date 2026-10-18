@@ -22,8 +22,11 @@ internal class SearchRelevance(query: String) {
             (result as? SearchItemResult.Success)?.result.orEmpty()
                 .distinctBy { it.url }
                 .mapIndexed { index, manga ->
-                    val title = titles.getOrPut(manga.title) { normalize(manga.title) }
-                    val (tier, penalty) = score(title)
+                    // Supplied Arabic/English names rank the SAME edition. This is not a
+                    // cross-provider merge and adds no requests or persistent identities.
+                    val (tier, penalty) = eu.kanade.tachiyomi.search.AtlasDeclaredNames.forSearch(manga)
+                        .map { name -> score(titles.getOrPut(name) { normalize(name) }) }
+                        .minWithOrNull(compareBy<Pair<Int, Int>>({ it.first }, { it.second })) ?: (7 to 0)
                     Candidate(RankedSearchResult(source, manga), tier, penalty, sourceOrder[source.id] ?: Int.MAX_VALUE, index)
                 }
         }.sortedWith(compareBy<Candidate>({ it.tier }, { it.penalty }, { it.sourceOrder }, { it.itemOrder }))

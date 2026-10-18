@@ -204,18 +204,8 @@ class CeneleSource(http: NovelHttp) : HtmlNovelSource(http) {
         ChapterPage(chapters,next,volumes=volumes,allowEmpty=!more && chapters.isEmpty(),declaredTotal=total)
     }
     override suspend fun chapter(chapter: NovelChapter) = withContext(Dispatchers.IO) {
-        val raw = http.get(chapter.url)
-        // Jsoup repairs interrupted HTML into a plausible tree. Do not persist a partial
-        // Cenele response just because its first paragraphs satisfy the ordinary text gate.
-        if (!raw.contains("</html>", ignoreCase = true)) throw NovelSourceFailure(
-            "لم يكتمل تحميل الفصل. أعد المحاولة.", "Cenele reader document interrupted", code = "CENELE_DOCUMENT_TRUNCATED",
-        )
-        val d = doc(raw, chapter.url)
-        val content = d.selectFirst(selector("text", ".reading-content"))?.clone()
-            ?: throw NovelSourceFailure("هذا الفصل غير متاح حاليًا. يمكنك فتحه في الموقع.", "Missing novel text container")
-        content.select(".nhv-reading-chapter-head, .nhv-reading-volume-name, .nhv-reading-meta-strip, .nhv-reading-chapter-progress, .nhv-reading-progress-text, .chapter-warning, .nhv-reader-promo, .nhv-reader-store-promo").remove()
-        val parsed = extractNovelContent(content)
-        CeneleSanitizer.sanitize(parsed)
+        CeneleChapterContent.requireRoute(chapter.url)
+        CeneleChapterContent.parse(http.get(chapter.url), chapter, selector("text", ".reading-content"))
     }
 
     companion object {

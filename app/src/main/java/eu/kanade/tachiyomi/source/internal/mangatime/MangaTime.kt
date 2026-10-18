@@ -140,6 +140,13 @@ class MangaTime(
                 this.thumbnail_url = cover?.let { if (it.startsWith("http")) it else "$baseUrl$it" }
                 author = obj["author"]?.jsonPrimitiveOrNull?.contentOrNull
                 artist = obj["artist"]?.jsonPrimitiveOrNull?.contentOrNull
+                // Both fields are returned by the public searchSeries contract. Preserve
+                // them before search ranking/enrichment; titles alone are not work IDs.
+                memo = eu.kanade.tachiyomi.search.AtlasDeclaredNames.retain(memo, this@MangaTime.id.toString(),
+                    "MangaTime.searchSeries.public-names", mapOf(
+                        "nameAr" to obj["nameAr"]?.jsonPrimitiveOrNull?.contentOrNull,
+                        "nameEn" to obj["nameEn"]?.jsonPrimitiveOrNull?.contentOrNull,
+                    ))
             }
         }
 
@@ -242,12 +249,16 @@ class MangaTime(
             description = descriptionText
             author = seriesData["author"]?.jsonPrimitiveOrNull?.contentOrNull ?: author
             artist = seriesData["artist"]?.jsonPrimitiveOrNull?.contentOrNull ?: artist
+            val priorIdentity = memo[tachiyomi.domain.manga.service.WorkMetadata.MEMO_KEY]?.jsonObjectOrNull
             memo = kotlinx.serialization.json.JsonObject(memo + (tachiyomi.domain.manga.service.WorkMetadata.MEMO_KEY to buildJsonObject {
+                priorIdentity?.forEach { (key, value) -> put(key, value) }
                 put("format", seriesData["type"]?.jsonPrimitiveOrNull?.contentOrNull ?: type)
                 seriesData["year"]?.jsonPrimitiveOrNull?.intOrNull?.let { put("year", it) }
-                put("aliases", kotlinx.serialization.json.JsonArray(seriesData["alternativeTitles"]?.jsonArrayOrNull.orEmpty().mapNotNull {
-                    it.jsonObjectOrNull?.get("title")?.jsonPrimitiveOrNull?.contentOrNull?.takeIf(String::isNotBlank)?.let(::JsonPrimitive)
-                }))
+                val names = priorIdentity?.get("aliases")?.jsonArrayOrNull.orEmpty().mapNotNull { it.jsonPrimitiveOrNull?.contentOrNull } +
+                    seriesData["alternativeTitles"]?.jsonArrayOrNull.orEmpty().mapNotNull {
+                        it.jsonObjectOrNull?.get("title")?.jsonPrimitiveOrNull?.contentOrNull?.takeIf(String::isNotBlank)
+                    }
+                put("aliases", kotlinx.serialization.json.JsonArray(names.distinct().take(24).map(::JsonPrimitive)))
             }))
             coverUrl?.let { thumbnail_url = if (it.startsWith("http")) it else "$baseUrl$it" }
             status = when {

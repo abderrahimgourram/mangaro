@@ -1,0 +1,26 @@
+{
+  "observedAt": "2026-10-18",
+  "method": "two anonymous source.details calls after actual source.search; public metadata only; no chapter requests",
+  "rows": [
+    {
+      "source": "novel.cenele",
+      "editionReference": "https://cenele.com/cont/shadow-novel/",
+      "title": "عبد الظل",
+      "originalTitle": "shadow slave",
+      "aliases": [
+        "shadow slave"
+      ],
+      "creator": "guiltythree"
+    },
+    {
+      "source": "novel.kolnovel",
+      "editionReference": "https://kolnovel.com/series/عبد-الظل/",
+      "title": "عبد الظل",
+      "originalTitle": "shadow slave",
+      "aliases": [
+        "shadow slave"
+      ],
+      "creator": null
+    }
+  ]
+}

@@ -8,7 +8,7 @@ import eu.kanade.domain.source.service.SourcePreferences
 import eu.kanade.tachiyomi.extension.ExtensionManager
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.search.MangaSearchEvidence
-import eu.kanade.tachiyomi.search.SearchWorkSelection
+import eu.kanade.tachiyomi.search.SearchResultPresentationFilter
 import eu.kanade.tachiyomi.search.SearchWorkIdentity
 import eu.kanade.tachiyomi.ui.home.PreferredMangaVariants
 import java.util.concurrent.atomic.AtomicLong
@@ -63,14 +63,16 @@ abstract class SearchViewModel(
     private var enrichmentJob: Job? = null
     private var enrichmentGeneration = Long.MIN_VALUE
     private val enrichmentRevision = AtomicLong()
-    private var workSelection = SearchWorkSelection()
+    private var workSelection = SearchResultPresentationFilter(generation.get())
     internal fun workGroups() = workSelection.snapshot()
     private val searchEvidence = MangaSearchEvidence(getManga, chapterLookup)
-    private fun rankResults(items: Map<Source, SearchItemResult>, order: Map<Long, Int>, relevance: SearchRelevance, selector: SearchWorkSelection): List<RankedSearchResult> {
+    private fun rankResults(items: Map<Source, SearchItemResult>, order: Map<Long, Int>, relevance: SearchRelevance, selector: SearchResultPresentationFilter): List<RankedSearchResult> {
         val raw = relevance.rank(items, order)
         if (!liveSearch) return raw
         searchEvidence.requestMappings(raw)
-        val groups = selector.select(raw.map { searchEvidence.candidate(it, order[it.source.id] ?: Int.MAX_VALUE) })
+        val candidates = raw.map { searchEvidence.candidate(it, order[it.source.id] ?: Int.MAX_VALUE) }
+        val groups = selector.present(generation.get(), candidates) ?: return emptyList()
+        eu.kanade.tachiyomi.search.WorkIdentityDiagnostics.observe(state.value.activeQuery.orEmpty(), candidates, groups)
         val byId = raw.associateBy { searchEvidence.key(it.manga) }
         return groups.mapNotNull { group -> byId[group.winner.id]?.copy(workKey = group.key,
             verifiedDistinctChapters = group.winner.chapters.distinct, indexComplete = group.winner.chapters.complete,
@@ -95,7 +97,18 @@ abstract class SearchViewModel(
             val raw = SearchRelevance(snapshot.activeQuery.orEmpty()).rank(snapshot.items, order)
             if (raw.isEmpty()) return@launch
             val targets = withContext(Dispatchers.Default) { SearchWorkIdentity.enrichmentCandidates(raw.map { searchEvidence.candidate(it, order[it.source.id] ?: Int.MAX_VALUE) }) }
-            searchEvidence.refresh(raw.filter { searchEvidence.key(it.manga) in targets })
+            // Names can differ completely across translations. Reserve bounded metadata
+            // coverage for visible providers too, rather than requiring an alias we never fetched.
+            val shortlist=(raw.filter {searchEvidence.key(it.manga) in targets}.take(24)+
+                raw.distinctBy {it.source.id}.take(8)+raw.take(24))
+                .distinctBy {searchEvidence.key(it.manga)}.groupBy {it.source.id}.values.toList()
+            val interleaved=buildList {
+                for(i in 0 until (shortlist.maxOfOrNull {it.size} ?: 0))
+                    shortlist.forEach {it.getOrNull(i)?.let(::add)}
+            }.take(12)
+            val crossSourceResults = snapshot.items.values.filterIsInstance<SearchItemResult.Success>()
+                .count { it.result.isNotEmpty() } >= 2
+            searchEvidence.refresh(interleaved, allowNetwork = crossSourceResults || !snapshot.isSearching)
             resultMutex.withLock {
                 if (!isActive || generation.get() != request || state.value.activeQuery != snapshot.activeQuery) return@withLock
                 val ranked = withContext(Dispatchers.Default) { rankResults(state.value.items, order, SearchRelevance(snapshot.activeQuery.orEmpty()), selector) }
@@ -188,7 +201,7 @@ abstract class SearchViewModel(
         debounceJob?.cancel()
         paginationJob?.cancel()
         enrichmentJob?.cancel()
-        workSelection = SearchWorkSelection()
+        workSelection = SearchResultPresentationFilter(generation.get())
         searchEvidence.resetBudget()
         lastQuery = null
         val recent = if (liveSearch && !query.isNullOrBlank()) cached(cacheKey(query)) else null
@@ -196,8 +209,11 @@ abstract class SearchViewModel(
         mutableState.update { current ->
             when {
                 query.isNullOrBlank() -> current.copy(searchQuery = query, items = emptyMap(), rankedResults = emptyList(), resultQuery = null, activeQuery = null, isSearching = false, pages = emptyMap(), isLoadingMore = false, paginationFailed = false)
-                recent != null -> current.copy(searchQuery = query, items = recent.items, rankedResults = rankResults(recent.items, getSelectedSources().mapIndexed { i, source -> source.id to i }.toMap(), SearchRelevance(query.orEmpty()), workSelection), resultQuery = query.trim(), activeQuery = query.trim(), isSearching = false, pages = recent.pages, isLoadingMore = false, paginationFailed = false)
-                else -> current.copy(searchQuery = query, isSearching = liveSearch, pages = emptyMap(), isLoadingMore = false, paginationFailed = false)
+                recent != null -> current.copy(searchQuery = query, items = recent.items, rankedResults = rankResults(recent.items, getSelectedSources().mapIndexed { i, source -> source.id to i }.toMap(), SearchRelevance(query.orEmpty()), workSelection), resultQuery = query.trim(), activeQuery = query.trim(), generation = generation.get(), isSearching = false, pages = recent.pages, isLoadingMore = false, paginationFailed = false)
+                !liveSearch -> current.copy(searchQuery = query, isSearching = false, pages = emptyMap(), isLoadingMore = false, paginationFailed = false)
+                else -> current.copy(searchQuery = query, activeQuery = query.trim(), resultQuery = null,
+                    items = emptyMap(), rankedResults = emptyList(), generation = generation.get(),
+                    isSearching = liveSearch, pages = emptyMap(), isLoadingMore = false, paginationFailed = false)
             }
         }
         if (liveSearch && !query.isNullOrBlank() && recent == null) {
@@ -242,9 +258,9 @@ abstract class SearchViewModel(
         lastSourceFilter = sourceFilter
         searchJob?.cancel()
         enrichmentJob?.cancel()
-        workSelection = SearchWorkSelection()
         searchEvidence.resetBudget(force)
         val request = generation.incrementAndGet()
+        workSelection = SearchResultPresentationFilter(request)
         val selector = workSelection
         val sources = getSelectedSources()
         if (force) sources.forEach { mihon.domain.source.health.SourceHealthMonitor.shared.requestProbe(it.id) }
@@ -252,7 +268,7 @@ abstract class SearchViewModel(
         val recent = if (liveSearch && !force) cached(key) else null
         if (recent != null) {
             workSelection.restore(recent.groups)
-            mutableState.update { it.copy(items = recent.items, rankedResults = rankResults(recent.items, getSelectedSources().mapIndexed { i, source -> source.id to i }.toMap(), SearchRelevance(query.orEmpty()), workSelection), resultQuery = query, activeQuery = query, isSearching = false, pages = recent.pages, isLoadingMore = false, paginationFailed = false) }
+            mutableState.update { it.copy(items = recent.items, rankedResults = rankResults(recent.items, getSelectedSources().mapIndexed { i, source -> source.id to i }.toMap(), SearchRelevance(query.orEmpty()), workSelection), resultQuery = query, activeQuery = query, generation = request, isSearching = false, pages = recent.pages, isLoadingMore = false, paginationFailed = false) }
             enrichResults(request)
             return
         }

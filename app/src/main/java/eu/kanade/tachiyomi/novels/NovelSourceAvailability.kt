@@ -6,7 +6,7 @@ internal object NovelSourceAvailability {
         (sourceId != SunovelsSource.SOURCE_ID || (SunovelsSource.directEnabled || SunovelsGatewayConfig.enabled))
 
     fun discoverable(work: UnifiedNovelWork): UnifiedNovelWork? {
-        val editions = work.editions.filter { active(it.sourceId) }
+        val editions = work.editions.filter { active(it.sourceId) && NovelContentTypeClassifier.eligible(it) }
         if (editions.isEmpty()) return null
         return work.copy(editions = editions, primaryEditionId =
             work.primaryEditionId.takeIf { id -> editions.any { it.id == id } } ?: editions.first().id)

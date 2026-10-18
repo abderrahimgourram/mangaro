@@ -1,0 +1,137 @@
+{
+  "observation": "2026-10-18",
+  "catalogUrl": "https://cenele.com/?s=%D9%85%D8%A7%D9%86%D9%87%D9%88%D8%A7&post_type=wp-manga",
+  "status": 200,
+  "entries": [
+    {
+      "sourceId": "novel.cenele",
+      "url": "https://cenele.com/cont/shadow-sl-manhwa/",
+      "title": "مانهوا عبد الظل"
+    },
+    {
+      "sourceId": "novel.cenele",
+      "url": "https://cenele.com/cont/shoujo-hater/",
+      "title": "كاره الشوجو"
+    },
+    {
+      "sourceId": "novel.cenele",
+      "url": "https://cenele.com/cont/murim-psycho/",
+      "title": "مجنون في عالم الموريم"
+    },
+    {
+      "sourceId": "novel.cenele",
+      "url": "https://cenele.com/cont/knight-eternally-regresses/",
+      "title": "الفارس الذي يتراجع إلى الأبد"
+    },
+    {
+      "sourceId": "novel.cenele",
+      "url": "https://cenele.com/cont/genius-martial-arts-trainer/",
+      "title": "المدرب العبقري للفنون القتالية"
+    },
+    {
+      "sourceId": "novel.cenele",
+      "url": "https://cenele.com/cont/king-of-beas/",
+      "title": "مَلِكُ الوحوشْ"
+    },
+    {
+      "sourceId": "novel.cenele",
+      "url": "https://cenele.com/cont/my-mh-mam/",
+      "title": "الغموض القوة الفوضى"
+    },
+    {
+      "sourceId": "novel.cenele",
+      "url": "https://cenele.com/cont/rear-moon/",
+      "title": "رواية حاصد القمر المنجرف"
+    },
+    {
+      "sourceId": "novel.cenele",
+      "url": "https://cenele.com/cont/the-return-of-the-crazy-demon/",
+      "title": "عودة الشيطان المجنون"
+    },
+    {
+      "sourceId": "novel.cenele",
+      "url": "https://cenele.com/cont/sword-youngest-son/",
+      "title": "رواية الإبن الأصغر لسيد السيف"
+    },
+    {
+      "sourceId": "novel.cenele",
+      "url": "https://cenele.com/cont/the-demon-life/",
+      "title": "لا يستطيع الشيطان السماوي أن يعيش حياة طبيعية"
+    },
+    {
+      "sourceId": "novel.cenele",
+      "url": "https://cenele.com/cont/i-am-villain/",
+      "title": "أنا الشرير المقدر"
+    }
+  ],
+  "verifiedReadingSample": {
+    "source": "novel.cenele",
+    "work": "https://cenele.com/cont/shadow-sl-manhwa/",
+    "chapter": "https://cenele.com/cont/shadow-sl-manhwa/%d8%a7%d9%84%d9%81%d8%b5%d9%84-1/",
+    "status": 200,
+    "content_type": "text/html; charset=UTF-8",
+    "canonical": "https://cenele.com/cont/shadow-sl-manhwa/%d8%a7%d9%84%d9%81%d8%b5%d9%84-1/",
+    "reader_present": true,
+    "reader_classes": [
+      "reading-content",
+      "current"
+    ],
+    "paragraph_count": 0,
+    "text_characters": 0,
+    "image_count": 37,
+    "top_level_tags": [
+      "input",
+      "div"
+    ],
+    "image_hosts": [
+      "cenele.com"
+    ],
+    "panels": [
+      {
+        "width": "800",
+        "height": "5000",
+        "class": [
+          "nhv-webtoon-page",
+          "wp-image-108707"
+        ],
+        "url_sha256": "e8531c5311fc88c528a045ad0b46a9e89d0bc3f245421e826e94d694cebe68ad"
+      },
+      {
+        "width": "384",
+        "height": "2400",
+        "class": [
+          "nhv-webtoon-page",
+          "wp-image-108708"
+        ],
+        "url_sha256": "7cf089283387e5d5e8d4fb0f854eb4392d432e60982538ac4aad89cffbddc80c"
+      },
+      {
+        "width": "384",
+        "height": "2400",
+        "class": [
+          "nhv-webtoon-page",
+          "wp-image-108709"
+        ],
+        "url_sha256": "cfd6d0fb10c9ee22f18ca3cc5dd127d86b8ec8584cbcec8fe8529e83548b2350"
+      },
+      {
+        "width": "384",
+        "height": "2400",
+        "class": [
+          "nhv-webtoon-page",
+          "wp-image-108710"
+        ],
+        "url_sha256": "fb055392b20b8f5e49f8eed356abfad9b4283654fc74080100289f4c82724f57"
+      },
+      {
+        "width": "1080",
+        "height": "2093",
+        "class": [
+          "nhv-webtoon-page",
+          "wp-image-108674"
+        ],
+        "url_sha256": "fdcc3933579a94e73f01775e59a6e15f5253ce6e0ea0253c98bcbc619634c136"
+      }
+    ]
+  }
+}

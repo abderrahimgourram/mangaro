@@ -1,0 +1,36 @@
+package eu.kanade.tachiyomi.search
+
+/** Query-owned presentation boundary. No network, persistent identities or account data writes.
+ * V2 adds reversible, corroborated relationships to the existing authoritative identities.
+ * The older title-only novel matching path is never used. */
+internal class SearchResultPresentationFilter(val generation: Long = 0) {
+    private val selection = SearchWorkSelection(readableFirst = true)
+    private val resolver = WorkIdentityResolverV2()
+    private var lastCandidates:List<SearchWorkCandidate>? = null
+    private var lastEstablished:Map<String,List<SearchWorkCandidate>>? = null
+
+    @Synchronized fun snapshot(): List<SearchWorkGroup> = selection.snapshot()
+    @Synchronized fun restore(groups: List<SearchWorkGroup>) {
+        lastCandidates=null;lastEstablished=null;selection.restore(groups)
+    }
+
+    @Synchronized fun present(
+        request: Long,
+        candidates: List<SearchWorkCandidate>,
+        establishedNovelGroups: Map<String, List<SearchWorkCandidate>>? = null,
+    ): List<SearchWorkGroup>? {
+        if (request != generation) return null
+        require(candidates.map { it.kind }.distinct().size <= 1) { "Separate comic and novel search sessions" }
+        val unique = candidates.distinctBy { Triple(it.kind, it.source, it.id) }
+        if(lastCandidates==unique && lastEstablished==establishedNovelGroups)return selection.snapshot()
+        val resolution = resolver.resolve(unique, establishedNovelGroups,selection.snapshot())
+        val decisionByMember=resolution.groups.flatMap { (key,rows) -> rows.map {it.id to resolution.decisions.getValue(key)} }.toMap()
+        return selection.select(unique, resolution.groups).map { group ->
+            val decision=decisionByMember[group.members.first().id]
+            group.copy(provisional=group.provisional||decision?.verdict==WorkIdentityVerdict.LIKELY_SAME_WORK,identityDecision=decision)
+        }.also {
+            selection.restore(it);lastCandidates=unique
+            lastEstablished=establishedNovelGroups?.mapValues { (_,rows)->rows.toList() }
+        }
+    }
+}

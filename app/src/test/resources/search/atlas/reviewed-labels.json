@@ -1,0 +1,68 @@
+{
+  "schema": 1,
+  "labels": [
+    {
+      "left": "6058166507489091982:/manga/solo-leveling",
+      "right": "4110737012647435874:/series/SL",
+      "decision": "SAME",
+      "provenance": "owner-explicit-confirmation-2026-10-18",
+      "scope": "original Solo Leveling; excludes Ragnarok and ARISE"
+    },
+    {
+      "left": "6058166507489091982:/manga/solo-leveling",
+      "right": "215553151312092548:/manhwa/solo-leveling#697df7610c5d340ac154401b",
+      "decision": "SAME",
+      "provenance": "owner-explicit-confirmation-2026-10-18",
+      "scope": "original Solo Leveling; excludes Ragnarok and ARISE"
+    },
+    {
+      "left": "4110737012647435874:/series/SL",
+      "right": "215553151312092548:/manhwa/solo-leveling#697df7610c5d340ac154401b",
+      "decision": "SAME",
+      "provenance": "owner-explicit-confirmation-2026-10-18",
+      "scope": "original Solo Leveling; excludes Ragnarok and ARISE"
+    },
+    {
+      "left": "6058166507489091982:/manga/the-beginning-after-the-end",
+      "right": "4110737012647435874:/series/BATE",
+      "decision": "SAME",
+      "provenance": "owner-explicit-confirmation-2026-10-18",
+      "scope": "original TBATE; excludes Jasmine side story"
+    },
+    {
+      "left": "novel.cenele:https://cenele.com/cont/shadow-novel/",
+      "right": "novel.kolnovel:https://kolnovel.com/series/%d8%b9%d8%a8%d8%af-%d8%a7%d9%84%d8%b8%d9%84/",
+      "decision": "CORROBORATED",
+      "provenance": "observed-public-original-title-Arabic-title-and-compatible-creator-2026-10-18",
+      "scope": "prose Shadow Slave; presentation-only"
+    },
+    {
+      "left": "novel.cenele:https://cenele.com/cont/shadow-novel/",
+      "right": "novel.mknov:https://mknov.com/novel/96",
+      "decision": "CORROBORATED",
+      "provenance": "observed-public-original-title-Arabic-title-and-compatible-creator-2026-10-18",
+      "scope": "prose Shadow Slave; presentation-only"
+    },
+    {
+      "left": "novel.kolnovel:https://kolnovel.com/series/%d8%b9%d8%a8%d8%af-%d8%a7%d9%84%d8%b8%d9%84/",
+      "right": "novel.mknov:https://mknov.com/novel/96",
+      "decision": "CORROBORATED",
+      "provenance": "observed-public-original-title-Arabic-title-and-compatible-creator-2026-10-18",
+      "scope": "prose Shadow Slave; presentation-only"
+    },
+    {
+      "left": "6058166507489091982:/manga/solo-leveling",
+      "right": "6058166507489091982:/manga/solo-leveling-ragnarok",
+      "decision": "DISTINCT",
+      "provenance": "engineer-reviewed-public-sequel-or-side-story-route-and-title-2026-10-18",
+      "scope": "separate work, no alias bridge"
+    },
+    {
+      "left": "6058166507489091982:/manga/the-beginning-after-the-end",
+      "right": "6058166507489091982:/manga/the-beginning-after-the-end-side-story-jasmine-wind-borne",
+      "decision": "DISTINCT",
+      "provenance": "engineer-reviewed-public-sequel-or-side-story-route-and-title-2026-10-18",
+      "scope": "separate work, no alias bridge"
+    }
+  ]
+}

@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.LazyColumn
@@ -126,8 +127,10 @@ internal fun NovelCover(novel: Novel, modifier: Modifier) {
 }
 
 @Composable
-private fun NovelCard(novel: Novel, metadata: String? = null, onOpen: () -> Unit) {
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Design.SurfaceDark).clickable(onClick = onOpen).padding(8.dp),
+private fun NovelCard(novel: Novel, metadata: String? = null, onAlternatives: (() -> Unit)? = null, onOpen: () -> Unit) {
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Design.SurfaceDark)
+        .then(if(onAlternatives==null) Modifier.clickable(onClick=onOpen) else
+            Modifier.combinedClickable(onClick=onOpen,onLongClick=onAlternatives)).padding(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)) {
         NovelCover(novel, Modifier.fillMaxWidth().aspectRatio(.72f))
         Text(novel.title, style = MaterialTheme.typography.bodyMedium.copy(textDirection = TextDirection.ContentOrRtl),
@@ -193,7 +196,7 @@ private class NovelBrowseMemory {
     var loadedKey: Pair<String, String?>? = null
 }
 private data class NovelBrowsePresentation(val works: List<UnifiedNovelWork> = emptyList(), val genres: List<String> = emptyList(),
-    val recent: List<UnifiedNovelWork> = emptyList(), val groups: List<eu.kanade.tachiyomi.search.SearchWorkGroup> = emptyList())
+    val recent: List<UnifiedNovelWork> = emptyList(), val groups: List<eu.kanade.tachiyomi.search.SearchWorkGroup> = emptyList(), val query: String? = null)
 
 class NovelHomeScreen(private val initialGenre: String? = null) : Screen() {
     @Transient private var browseMemory: NovelBrowseMemory? = null
@@ -282,35 +285,62 @@ class NovelHomeScreen(private val initialGenre: String? = null) : Screen() {
                 val editions = buildList { for (i in 0 until (lists.maxOfOrNull { it.size } ?: 0)) lists.forEach { it.getOrNull(i)?.let(::add) } }
                 val activeWorks = NovelCatalogCards.project(catalogSnapshot)
                 val byEdition = activeWorks.flatMap { w -> w.editions.map { it.id to w } }.toMap()
-                val detailed = editions.map { n -> byEdition[n.id]?.editions?.firstOrNull {it.id == n.id} ?: n }.distinctBy {it.id}
-                val groups = if (querySnapshot.isNotBlank()) selection.groups(detailed) else emptyList()
-                // Search uses the same canonical projection and actual-index preference as Home.
-                // All editions stay available even if only one source title matched the query.
-                val works = if (querySnapshot.isNotBlank()) NovelCatalogCards.select(activeWorks, detailed)
+                val eligibleEditions = NovelCatalogCards.eligiblePage(catalogSnapshot, NovelPage(editions)).novels
+                val detailed = eligibleEditions.map { n -> byEdition[n.id]?.editions?.firstOrNull {it.id == n.id} ?: n }.distinctBy {it.id}
+                val search = if (querySnapshot.isNotBlank()) {
+                    val matched = NovelCatalogCards.select(activeWorks, detailed)
+                    val searchEditions = matched.flatMap { it.editions }.associateBy { it.id }
+                    selection.presentation(searchEditions.values.toList(), matched)
+                } else null
+                val groups = search?.groups.orEmpty()
+                // Render the same verified groups whose winners/counts were selected. Alternatives
+                // remain catalog editions; selecting a card never rewrites the catalog or progress.
+                val works = if (search != null) search.works
                     else if (editions.isEmpty() && genreSnapshot == null) activeWorks.take(64)
-                    else NovelCatalogCards.select(activeWorks, editions)
+                    else NovelCatalogCards.select(activeWorks, eligibleEditions)
                 val genres = (routesSnapshot.filterKeys(NovelSourceAvailability::active).values.flatten().map { it.name } + activeWorks.flatMap { it.editions }.flatMap { it.genres })
                     .distinctBy(NovelGenres::key).sortedBy(NovelGenres::key)
-                val recent = NovelCatalogCards.select(activeWorks,
-                    slotsSnapshot["novel.kolnovel"].orEmpty().take(3) + slotsSnapshot["novel.cenele"].orEmpty().take(3))
+                val recent = NovelCatalogCards.select(activeWorks, NovelCatalogCards.eligiblePage(catalogSnapshot, NovelPage(
+                    slotsSnapshot["novel.kolnovel"].orEmpty().take(3) + slotsSnapshot["novel.cenele"].orEmpty().take(3))).novels)
                 val resume = activeWorks.filter { work -> work.editions.any { it.id == resumeEdition } }
                 val visibleRecent = if (querySnapshot.isBlank() && genreSnapshot == null) NovelCatalogCards.excluding(recent, resume) else emptyList()
-                NovelBrowsePresentation(NovelCatalogCards.excluding(works, visibleRecent + resume), genres, visibleRecent, groups)
+                NovelBrowsePresentation(NovelCatalogCards.excluding(works, visibleRecent + resume), genres, visibleRecent, groups, querySnapshot)
             }
         }
-        val works = presentation.works
+        val works = if (term.isNotBlank() && presentation.query != term) emptyList() else presentation.works
         val genres = presentation.genres
         val recent = presentation.recent
-        LaunchedEffect(selection, slots, catalog.evidence) {
-            if (term.isBlank()) return@LaunchedEffect
-            val grouped = withContext(Dispatchers.Default) {
-                val detailed = slots.values.flatten().filter {NovelSourceAvailability.active(it.sourceId)}.distinctBy {it.id}
-                    .map { n -> repository.catalog.value.work(n.id)?.editions?.firstOrNull {it.id==n.id} ?: n }
-                val ids = eu.kanade.tachiyomi.search.SearchWorkIdentity.enrichmentCandidates(detailed.map {selection.candidate(it,0)})
-                detailed.filter {it.id in ids}
+        val searchGroupsByKey = remember(presentation.groups) { presentation.groups.associateBy { it.key } }
+        var alternativesKey by remember(term) { mutableStateOf<String?>(null) }
+        val searchAlternatives = works.firstOrNull { it.id==alternativesKey }
+        if(term.isNotBlank() && searchAlternatives!=null) ModalBottomSheet(
+            onDismissRequest={alternativesKey=null},containerColor=Design.SurfaceDark,
+        ) {
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+                Text("اختر الطبعة",Modifier.padding(16.dp),color=Color.White,style=MaterialTheme.typography.titleMedium)
+                LazyColumn(Modifier.fillMaxWidth().heightIn(max=480.dp)) {
+                    items(searchAlternatives.editions,key={it.id}) { edition ->
+                        TextButton(onClick={alternativesKey=null;navigator.push(NovelDetailsScreen(edition))},
+                            modifier=Modifier.fillMaxWidth()) {
+                            Text(edition.title+" — "+repository.activeSources.firstOrNull{it.id==edition.sourceId}?.name.orEmpty(),
+                                color=Design.LavenderPrimary)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(24.dp))
             }
-            selection.enrich(grouped)
-            memory.evidenceRevision.intValue++
+        }
+        val visibleSearchEditions = remember(term, works) {
+            if (term.isBlank()) emptyList() else works.flatMap { it.editions }.distinctBy { it.id }
+        }
+        val currentSearchEditions by rememberUpdatedState(visibleSearchEditions)
+        LaunchedEffect(selection) {
+            if (term.isBlank()) return@LaunchedEffect
+            selection.observeEvidence(snapshotFlow {
+                eu.kanade.tachiyomi.search.NovelSearchSelection.EvidenceInput(
+                    slots.values.flatten(), currentSearchEditions, catalog,
+                )
+            }) { memory.evidenceRevision.intValue++ }
         }
         LaunchedEffect(gridState, term) {
             snapshotFlow {
@@ -422,9 +452,10 @@ class NovelHomeScreen(private val initialGenre: String? = null) : Screen() {
                         Text("لا توجد نتائج حاليًا.", color = Design.LavenderPrimary)
                     }
                     items(works, key = { it.id }) { work ->
-                        val group = presentation.groups.firstOrNull {it.key==work.id}
+                        val group = searchGroupsByKey[work.id]
                         val info = group?.winner?.chapters?.label()
-                        NovelCard(work.primary, info) { navigator.push(NovelDetailsScreen(work.primary)) }
+                        NovelCard(work.primary, info, onAlternatives=if(term.isNotBlank()&&work.editions.size>1)
+                            ({alternativesKey=work.id}) else null) { navigator.push(NovelDetailsScreen(work.primary)) }
                     }
                     if (pages.values.any { it != null }) item(key = "more", span = { GridItemSpan(maxLineSpan) }) {
                         TextButton(onClick = ::more, enabled = pages.any { (id, page) -> page != null && id !in busy }, modifier = Modifier.fillMaxWidth()) { Text("عرض المزيد", color = Design.GoldPrimary) }

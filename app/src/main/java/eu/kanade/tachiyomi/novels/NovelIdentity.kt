@@ -38,6 +38,8 @@ object NovelIdentity {
 
     fun conflicts(a: Novel, b: Novel): Boolean {
         if (a.id == b.id) return false
+        if ((NovelContentTypeClassifier.classify(a).type == NovelContentType.COMIC) !=
+            (NovelContentTypeClassifier.classify(b).type == NovelContentType.COMIC)) return true
         if (a.sourceId == b.sourceId) return true
         val authorA = a.author?.let(::authorKey)?.takeIf { it.isNotBlank() }
         val authorB = b.author?.let(::authorKey)?.takeIf { it.isNotBlank() }
@@ -109,6 +111,7 @@ object NovelWorkReconciler {
                 genres = incoming.genres.ifEmpty { old.genres },
                 reliableUpdatedAt = incoming.reliableUpdatedAt ?: old.reliableUpdatedAt,
                 chapterCount = incoming.chapterCount ?: old.chapterCount,
+                contentFormat = incoming.contentFormat ?: old.contentFormat,
             )
             if (novel == old) continue
             val incomingKeys = NovelIdentity.matchingKeys(novel)
