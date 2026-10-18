@@ -74,6 +74,9 @@ class SupabaseAccountAuth internal constructor(
     private val mutations = Mutex()
     private val logoutGate = Any()
     private var logoutInFlight: Deferred<Unit>? = null
+    @Volatile private var profileRecovery: kotlinx.coroutines.Job? = null
+    private var profileRecoveryOwner: String? = null
+    private var lastAuthorizationLaunch: Long? = null
     private val session = MutableStateFlow<AccountSession>(AccountSession.Loading)
     private val errors = MutableStateFlow<String?>(null)
     override val error = errors.asStateFlow()
@@ -95,10 +98,43 @@ class SupabaseAccountAuth internal constructor(
         session.value = AccountSession.Guest
     }
     private suspend fun retainOfflineIdentity() {
-        val user = client.auth.currentUserOrNull()
+        // RefreshFailure has no currentUserOrNull in SDK 3.8.0. Its encrypted session
+        // can identify a LOCAL workspace, but cannot authorize privileged cloud work.
+        val status = client.auth.sessionStatus.value
+        val user = client.auth.currentUserOrNull() ?: if (status is SessionStatus.RefreshFailure || status == SessionStatus.Initializing) {
+            try { credentials.loadSession().user }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { null }
+        } else null
         if (user != null && user.isAnonymous != true && (user.appMetadata?.get("provider") as? JsonPrimitive)?.content == "google") {
             bindLocal(user.id)
+            if (status is SessionStatus.Authenticated) scheduleProfileRecovery(user.id)
+            else session.value = AccountSession.Loading // Local identity is not an authenticated SDK session.
         } else if (session.value !is AccountSession.Authenticated) publishGuest()
+    }
+
+    /** Bounded retry owned by the application, not a transient account-screen composition.
+     * Every attempt rechecks SDK ownership under the existing mutation mutex.
+     * No cache, token fabrication, guest merge or account migration is involved.
+     */
+    private fun scheduleProfileRecovery(owner: String) {
+        if (profileRecoveryOwner == owner && profileRecovery?.isActive == true) return
+        profileRecovery?.cancel()
+        profileRecoveryOwner = owner
+        profileRecovery = scope.launch {
+            for (wait in listOf(2_000L, 5_000L, 15_000L)) {
+                kotlinx.coroutines.delay(wait)
+                val recovered = mutations.withLock {
+                    val user = client.auth.currentUserOrNull()?.takeIf { it.id == owner } ?: return@launch
+                    try {
+                        withTimeoutOrNull(12_000) { loadProfile(user); true } == true
+                    } catch (cancelled: CancellationException) { throw cancelled }
+                    catch (_: Exception) { false }
+                }
+                if (recovered) return@launch
+            }
+            // UI retains the error and an explicit retry; local data remains usable.
+        }
     }
 
     init {
@@ -127,10 +163,14 @@ class SupabaseAccountAuth internal constructor(
                                         publishGuest()
                                     } else {
                                         if ((session.value as? AccountSession.Authenticated)?.profile?.userId != user.id) {
+                                            profileRecovery?.cancel()
                                             session.value = AccountSession.Loading
                                             bindLocal(user.id)
                                         }
-                                        loadProfile(user)
+                                        if (withTimeoutOrNull(12_000) { loadProfile(user); true } != true) {
+                                            retainOfflineIdentity()
+                                            errors.value = "تعذّر تحميل ملفك الشخصي، حاول مجددًا"
+                                        }
                                     }
                                 } catch (cancelled: CancellationException) { throw cancelled }
                                 catch (_: Exception) {
@@ -139,6 +179,7 @@ class SupabaseAccountAuth internal constructor(
                                 }
                             }
                             is SessionStatus.NotAuthenticated -> {
+                                profileRecovery?.cancel()
                                 rankMilestones.reset()
                                 // Explicit logout already committed the guest workspace. Retain its
                                 // truthful offline-revocation warning instead of clearing it here.
@@ -168,10 +209,15 @@ class SupabaseAccountAuth internal constructor(
     }
 
     override suspend fun signInWithGoogle(): AccountOperation = mutations.withLock {
+        val now = System.nanoTime()
+        if (lastAuthorizationLaunch?.let { now - it in 0L..1_500_000_000L } == true) {
+            return@withLock AccountOperation.Failed("جارٍ فتح تسجيل الدخول")
+        }
         attempt {
             errors.value = null
             credentials.beginAuthorization()
             client.auth.signInWith(Google, redirectUrl = redirectUri) { queryParams["prompt"] = "select_account" }
+            lastAuthorizationLaunch = System.nanoTime()
             // Launching the browser is not authentication success. Only the session stream decides.
         }
     }
@@ -218,6 +264,7 @@ class SupabaseAccountAuth internal constructor(
     }
 
     override suspend fun signOut() {
+        profileRecovery?.cancel()
         // AccountPanel leaves composition as soon as workspace.ready becomes false;
         // its rememberCoroutineScope is cancelled at that point. The existing application
         // auth scope owns logout, so that cancellation cannot interrupt token deletion or
@@ -259,8 +306,12 @@ class SupabaseAccountAuth internal constructor(
 
     override suspend fun getCurrentProfile(): MangaroProfile? = mutations.withLock {
         val user = client.auth.currentUserOrNull() ?: return@withLock null
-        try { loadProfile(user) } catch (cancelled: CancellationException) { throw cancelled }
-        catch (_: Exception) { errors.value = "تعذّر تحميل ملفك الشخصي"; null }
+        try {
+            withTimeoutOrNull(12_000) { loadProfile(user) }.also {
+                if (it == null) { scheduleProfileRecovery(user.id); errors.value = "تعذّر تحميل ملفك الشخصي، حاول مجددًا" }
+            }
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { scheduleProfileRecovery(user.id); errors.value = "تعذّر تحميل ملفك الشخصي، حاول مجددًا"; null }
     }
 
     override suspend fun refreshProgression(): AccountOperation = mutations.withLock {

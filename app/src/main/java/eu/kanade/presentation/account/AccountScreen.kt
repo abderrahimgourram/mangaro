@@ -202,6 +202,17 @@ fun AccountPanel(onBack: () -> Unit) {
                     }
                 }
                 (error ?: authError)?.let { eu.kanade.presentation.components.MangaroErrorState(it) }
+                if (session == AccountSession.Loading && authError != null) {
+                    TextButton(enabled = !submitting, onClick = {
+                        if (actionGate.tryStart()) {
+                            submitting = true
+                            scope.launch {
+                                try { account.auth.getCurrentProfile() }
+                                finally { submitting = false; actionGate.finish() }
+                            }
+                        }
+                    }) { Text("إعادة المحاولة") }
+                }
             }
         }
 }
