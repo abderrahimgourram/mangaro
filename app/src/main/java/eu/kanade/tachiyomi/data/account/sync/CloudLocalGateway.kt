@@ -67,7 +67,11 @@ class CloudLocalGateway(private val mangas:MangaRepository, private val chapters
         LocalCloudChanges.Kind.MANGA,LocalCloudChanges.Kind.HISTORY_MANGA -> "manga/${change.id}"
         else -> change.kind.name
     }
-    suspend fun capture(user:String,change:LocalCloudChanges.Change):Map<String,JsonObject> {
+    suspend fun capture(user:String,change:LocalCloudChanges.Change):Map<String,JsonObject> = owned(user) {
+        if(change.owner != null && change.owner != user) throw tachiyomi.core.common.util.lang.LocalAccountScope.Changed()
+        captureOwned(user,change)
+    }
+    private suspend fun captureOwned(user:String,change:LocalCloudChanges.Change):Map<String,JsonObject> {
         if(change.kind==LocalCloudChanges.Kind.NOVEL) return novelRows(user)
         if(change.kind==LocalCloudChanges.Kind.COLLECTIONS || change.kind==LocalCloudChanges.Kind.COLLECTION_DELETED) return collectionRows(user)
         if(change.kind==LocalCloudChanges.Kind.HISTORY_ALL) return historyRows(user)
@@ -79,12 +83,18 @@ class CloudLocalGateway(private val mangas:MangaRepository, private val chapters
         } ?: return emptyMap()
         return mangaRows(user,m)
     }
-    suspend fun all(user:String):Map<String,JsonObject> {
+    suspend fun all(user:String):Map<String,JsonObject> = owned(user) {
+        allOwned(user)
+    }
+    private suspend fun allOwned(user:String):Map<String,JsonObject> {
         val historyMangas=history.getHistory("").first().map {it.mangaId}.distinct().map {mangas.getMangaById(it)}
         val ms=(mangas.getFavorites()+mangas.getReadMangaNotInLibrary()+historyMangas).distinctBy { it.id }
         return collectionRows(user)+ms.flatMap { mangaRows(user,it).entries }.associate { it.key to it.value }
     }
-    suspend fun knownSnapshot(user:String):Map<String,JsonObject> {
+    suspend fun knownSnapshot(user:String):Map<String,JsonObject> = owned(user) {
+        knownSnapshotOwned(user)
+    }
+    private suspend fun knownSnapshotOwned(user:String):Map<String,JsonObject> {
         val rows=all(user).toMutableMap()
         val known=(store.rows(user,"remote/cloud_library_entries/").values+store.rows(user,"remote/cloud_manga_history/").values)
             .map {Json.parseToJsonElement(it).jsonObject}.distinctBy {it.text("manga_key")}
@@ -128,7 +138,10 @@ class CloudLocalGateway(private val mangas:MangaRepository, private val chapters
         val at=progressClock(user,key,ck,c.read,c.lastPageRead,CloudSyncPolicy.sqliteEventMillis(c.lastModifiedAt))
         return buildJsonObject {put("manga_key",key);put("chapter_key",ck);put("source_chapter_url",c.url);put("chapter_name_snapshot",c.name.take(512));put("chapter_number_snapshot",c.chapterNumber.takeIf { it.isFinite() });put("last_page_index",c.lastPageRead.coerceAtLeast(0));put("total_pages",c.totalPages.takeIf {it>0});put("is_read",c.read);put("completed_at",if(c.read) stamp(at) else null);put("state_changed_at",stamp(at));put("deleted_at",JsonNull)}
     }
-    suspend fun baseline(user:String,table:String,row:JsonObject):JsonObject? {
+    suspend fun baseline(user:String,table:String,row:JsonObject):JsonObject? = owned(user) {
+        baselineOwned(user,table,row)
+    }
+    private suspend fun baselineOwned(user:String,table:String,row:JsonObject):JsonObject? {
         val key="$table/${rowKey(table,row)}"
         if(table in eu.kanade.tachiyomi.novels.NovelCloudState.tables) return novelRows(user)[key] ?: clientRow(row)
         if(table=="cloud_library_collections") return collectionRows(user)[key] ?: clientRow(row)

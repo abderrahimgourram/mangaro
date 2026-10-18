@@ -3,6 +3,7 @@ package eu.kanade.tachiyomi.data.account.sync
 import android.content.Context
 import io.kotest.matchers.shouldBe
 import io.mockk.*
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.*
@@ -21,6 +22,18 @@ import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.domain.source.service.SourceManager
 
 class CloudLocalGatewayTest {
+    private val priorOwner = tachiyomi.core.common.util.lang.LocalAccountScope.active().owner
+    private val priorInstalled = tachiyomi.core.common.util.lang.LocalAccountScope.javaClass.getDeclaredField("installed").apply {isAccessible=true}
+        .getBoolean(tachiyomi.core.common.util.lang.LocalAccountScope)
+    @org.junit.jupiter.api.BeforeEach fun bindFixtureOwner() {
+        tachiyomi.core.common.util.lang.LocalAccountScope.commit("A")
+    }
+    @org.junit.jupiter.api.AfterEach fun restoreFixtureOwner() {
+        val scope=tachiyomi.core.common.util.lang.LocalAccountScope
+        scope.commit(priorOwner)
+        scope.javaClass.getDeclaredField("installed").apply {isAccessible=true}.setBoolean(scope,priorInstalled)
+    }
+
     private val mangas=mockk<MangaRepository>(relaxed=true)
     private val chapters=mockk<ChapterRepository>(relaxed=true)
     private val categories=mockk<CategoryRepository>(relaxed=true)
@@ -53,6 +66,33 @@ class CloudLocalGatewayTest {
     private fun entry()=buildJsonObject {
         put("manga_key",mk.value);put("source_id",m.source);put("source_manga_url",m.url)
         put("title_snapshot",m.title);put("deleted_at",JsonNull)
+    }
+    @Test fun `foreign account cannot snapshot current private library`()=runTest {
+        val failure=runCatching { gateway.all("B") }.exceptionOrNull()
+        (failure is tachiyomi.core.common.util.lang.LocalAccountScope.Changed) shouldBe true
+        coVerify(exactly=0) {mangas.getFavorites()}
+        coVerify(exactly=0) {categories.getAll()}
+    }
+    @Test fun `foreign and obsolete mutation hints cannot snapshot the current account`()=runTest {
+        val foreign=runCatching {gateway.capture("B",LocalCloudChanges.Change(LocalCloudChanges.Kind.MANGA,42))}.exceptionOrNull()
+        (foreign is tachiyomi.core.common.util.lang.LocalAccountScope.Changed) shouldBe true
+        val stale=runCatching {gateway.capture("A",LocalCloudChanges.Change(LocalCloudChanges.Kind.MANGA,42,"B"))}.exceptionOrNull()
+        (stale is tachiyomi.core.common.util.lang.LocalAccountScope.Changed) shouldBe true
+        val baseline=runCatching {gateway.baseline("B","cloud_library_entries",entry())}.exceptionOrNull()
+        (baseline is tachiyomi.core.common.util.lang.LocalAccountScope.Changed) shouldBe true
+        coVerify(exactly=0) {mangas.getMangaById(any())}
+        coVerify(exactly=0) {mangas.getMangaByUrlAndSourceId(any(),any())}
+    }
+    @Test fun `an account switch during capture invalidates its returned snapshot`()=runTest {
+        val entered=kotlinx.coroutines.CompletableDeferred<Unit>()
+        val release=kotlinx.coroutines.CompletableDeferred<Unit>()
+        coEvery {mangas.getFavorites()} coAnswers {entered.complete(Unit);release.await();emptyList()}
+        val pending=async {runCatching {gateway.all("A")}}
+        entered.await()
+        tachiyomi.core.common.util.lang.LocalAccountScope.commit("B")
+        release.complete(Unit)
+        (pending.await().exceptionOrNull() is tachiyomi.core.common.util.lang.LocalAccountScope.Changed) shouldBe true
+        values.keys.none {it.first=="B"} shouldBe true
     }
     @Test fun `restoring same work twice uses existing source scoped manga without duplicates`()=runTest {
         gateway.apply("A","cloud_library_entries",entry(),false) shouldBe true
@@ -115,6 +155,7 @@ class CloudLocalGatewayTest {
         val first=gateway.all("A")
         gateway.all("A") shouldBe first
         first.size shouldBe 2
+        tachiyomi.core.common.util.lang.LocalAccountScope.commit("B")
         (gateway.all("B").keys intersect first.keys).size shouldBe 0
     }
     @Test fun `first merge honors cloud tombstone and archives original guest membership`()=runTest {
@@ -126,9 +167,23 @@ class CloudLocalGatewayTest {
         coVerify(exactly=0) {history.resetHistoryByMangaId(any())}
     }
     @Test fun `canonical built in shelf UUID follows internal identifier despite rename and account`()=runTest {
-        every {preferences.getLong("mangaro.library.shelf.favorite",-1L).get()} returns 4
+        // This fixture now installs ownership like the real app. Built-in shelf preferences
+        // must therefore be set through the real account-scoped preference adapter.
+        val initial=listOf("A","B").map { owner ->
+            tachiyomi.core.common.util.lang.LocalAccountScope.commit(owner)
+            val key=tachiyomi.core.common.preference.AccountPreferenceStore(tachiyomi.core.common.preference.InMemoryPreferenceStore())
+                .getLong("mangaro.library.shelf.favorite",-1L).key()
+            tachiyomi.core.common.preference.InMemoryPreferenceStore.InMemoryPreference(key,4L,-1L)
+        }
+        // InMemoryPreferenceStore is a snapshot factory: seed it instead of assuming
+        // set() on a returned copy persists into a later getLong() call.
+        val raw=tachiyomi.core.common.preference.InMemoryPreferenceStore(initial.asSequence())
+        val shelfGateway=CloudLocalGateway(mangas,chapters,categories,history,sources,store,raw,context)
+        tachiyomi.core.common.util.lang.LocalAccountScope.commit("A")
         coEvery {categories.getAll()} returns listOf(Category(4,"Renamed",0,0))
-        gateway.all("A").keys shouldBe gateway.all("B").keys
+        val aKeys=shelfGateway.all("A").keys
+        tachiyomi.core.common.util.lang.LocalAccountScope.commit("B")
+        aKeys shouldBe shelfGateway.all("B").keys
     }
 
 }

@@ -126,7 +126,11 @@ class SupabaseCloudSync(private val context:Context,private val client:SupabaseC
         runCatching {
             scope.launch(Dispatchers.Main.immediate) { ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
                 override fun onStart(owner: LifecycleOwner) {
-                    scope.launch { active()?.takeIf {enabled(it)}?.let {schedule(it, immediate=true)} }
+                    scope.launch { active()?.takeIf {enabled(it)}?.let { user ->
+                        if (CloudSyncSchedulePolicy.foregroundDue(store.get(user,"success")?.toLongOrNull(),
+                            store.count(user,"pending/") + store.count(user,"dirty/"), System.currentTimeMillis()))
+                            schedule(user, immediate=true)
+                    } }
                 }
             }) }
         }
@@ -136,7 +140,7 @@ class SupabaseCloudSync(private val context:Context,private val client:SupabaseC
                 val user=(session as? AccountSession.Authenticated)?.profile?.userId
                 if(previous!=user) {
                     try {
-                        previous?.let {WorkManager.getInstance(context).cancelUniqueWork(workName(it))}
+                        previous?.let {cancelScheduled(it)}
                         previous=user
                         if(user==null) bindNovels(null)
                         if(user!=null) {
@@ -144,6 +148,11 @@ class SupabaseCloudSync(private val context:Context,private val client:SupabaseC
                             val ambiguous = requiresDecision(user)
                             if(ambiguous) {
                                 store.put(user,"enabled","false")
+                                cancelScheduled(user)
+                                publish(user)
+                            } else if (store.get(user,"decision") != null && store.get(user,"enabled") == "false") {
+                                // Explicit opt-out survives login, token refresh and process restart.
+                                cancelScheduled(user)
                                 publish(user)
                             } else {
                                 configureInternal(user,true,false)
@@ -190,11 +199,23 @@ class SupabaseCloudSync(private val context:Context,private val client:SupabaseC
             if(active()!=userId)return@withContext AccountOperation.Failed("تغير الحساب، حاول مجددًا")
             if(enabled) store.put("_device","bound",userId)
             store.put(userId,"decision","made");store.put(userId,"enabled",enabled.toString());publish(userId)
-            if(enabled) schedule(userId,immediate=true) else WorkManager.getInstance(context).cancelUniqueWork(workName(userId))
+            if(enabled) { schedulePeriodic(userId); schedule(userId,immediate=true) } else cancelScheduled(userId)
             AccountOperation.Completed
         } catch(cancelled:CancellationException) {throw cancelled}
         catch(_:Exception) {publish(userId,error="تعذر تفعيل المزامنة، حاول مجددًا");AccountOperation.Failed("تعذر تفعيل المزامنة")}
         finally {configuration.unlock()}
+    }
+
+    private fun cancelScheduled(user: String) {
+        WorkManager.getInstance(context).apply {
+            cancelUniqueWork(workName(user))
+            cancelUniqueWork(periodicWorkName(user))
+        }
+    }
+    internal fun schedulePeriodic(user: String) {
+        if (!enabled(user) || active() != user || !tachiyomi.core.common.util.lang.LocalAccountScope.matchesOwner(user)) return
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork(periodicWorkName(user),
+            ExistingPeriodicWorkPolicy.KEEP, periodicRequest(user))
     }
 
     fun schedule(user:String,immediate:Boolean=false,append:Boolean=false) {
@@ -457,7 +478,15 @@ class SupabaseCloudSync(private val context:Context,private val client:SupabaseC
     override suspend fun prepareFirstLogin(userId:String,snapshot:GuestLibrarySnapshot)=MigrationPreparation.Offered(GuestMigrationPlan(userId,snapshot))
     override suspend fun applyMigration(plan:GuestMigrationPlan,choice:GuestMigrationChoice)=configure(plan.userId,choice==GuestMigrationChoice.ATTACH_TO_ACCOUNT)
     override suspend fun sync(userId:String,snapshot:GuestLibrarySnapshot)=syncNow(userId)
-    companion object {fun workName(user:String)="mangaro-cloud-$user"}
+    companion object {
+        fun workName(user:String)="mangaro-cloud-$user"
+        internal fun periodicWorkName(user:String)="mangaro-cloud-periodic-$user"
+        internal fun periodicRequest(user:String) = PeriodicWorkRequestBuilder<CloudSyncWorker>(6,TimeUnit.HOURS)
+            .setInputData(workDataOf("account" to user))
+            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).setRequiresBatteryNotLow(true).build())
+            .setInitialDelay(6,TimeUnit.HOURS)
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL,30,TimeUnit.SECONDS).build()
+    }
 }
 
 class CloudSyncWorker(context:Context,parameters:WorkerParameters):CoroutineWorker(context,parameters) {
@@ -466,14 +495,15 @@ class CloudSyncWorker(context:Context,parameters:WorkerParameters):CoroutineWork
         return try {
             val auth=Injekt.get<AccountAuth>()
             val restored=withTimeoutOrNull(15_000) {auth.observeSession().first {it!=AccountSession.Loading}}
-            if(restored==null)return Result.retry()
+            if(restored==null)return retryOrStop()
             if((auth.observeSession().value as? AccountSession.Authenticated)?.profile?.userId!=user)return Result.success()
             val repo=Injekt.get<AccountCloudSync>()
             when(val result=repo.syncNow(user)) {
                 AccountOperation.Completed,AccountOperation.NotConfigured -> Result.success()
-                is AccountOperation.Failed -> if(result.message.startsWith("تعذّر مزامنة بعض تغييرات الروايات") && runAttemptCount>=6) Result.failure() else Result.retry()
+                is AccountOperation.Failed -> retryOrStop()
             }
         } catch(cancelled:CancellationException) {throw cancelled}
-        catch(_:Exception) {Result.retry()}
+        catch(_:Exception) {retryOrStop()}
     }
+    private fun retryOrStop(): Result = if (CloudSyncSchedulePolicy.mayRetry(runAttemptCount)) Result.retry() else Result.failure()
 }

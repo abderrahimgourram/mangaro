@@ -57,10 +57,39 @@ class AutomaticCloudSyncTest {
             coVerify(exactly=0) {local.all("B")}
             session.value=AccountSession.Guest
             delay(20)
-            verify {work.cancelUniqueWork(SupabaseCloudSync.workName("A"));work.cancelUniqueWork(SupabaseCloudSync.workName("B"))}
+            verify {
+                work.cancelUniqueWork(SupabaseCloudSync.workName("A"));work.cancelUniqueWork(SupabaseCloudSync.workName("B"))
+                work.cancelUniqueWork(SupabaseCloudSync.periodicWorkName("A"));work.cancelUniqueWork(SupabaseCloudSync.periodicWorkName("B"))
+            }
             coVerify(exactly=0) {local.all(any())}
         } finally {scope.cancel();LocalCloudChanges.capture=null;unmockkObject(WorkManager.Companion)}
     }
+    @Test fun `restored account respects an explicitly disabled automatic sync choice`() = runBlocking {
+        val context=mockk<Context>(); val auth=mockk<AccountAuth>(); val work=mockk<WorkManager>(relaxed=true)
+        val store=mockk<CloudSyncStore>(relaxed=true); val local=mockk<CloudLocalGateway>(relaxed=true)
+        val sessions=MutableStateFlow<AccountSession>(AccountSession.Loading)
+        val values=java.util.concurrent.ConcurrentHashMap<Pair<String,String>,String>()
+        values["A" to "baseline"]="true"; values["A" to "decision"]="made"; values["A" to "enabled"]="false"
+        every { auth.observeSession() } returns sessions
+        every { store.get(any(),any()) } answers {values[firstArg<String>() to secondArg<String>()]}
+        every { store.put(any(),any(),any()) } answers {values[firstArg<String>() to secondArg<String>()]=thirdArg<String>()}
+        every { store.configuredAccounts() } returns setOf("A")
+        mockkObject(WorkManager.Companion); every { WorkManager.getInstance(context) } returns work
+        val scope=CoroutineScope(SupervisorJob()+Dispatchers.Unconfined)
+        val sync=spyk(SupabaseCloudSync(context,mockk(),auth,store,local,scope))
+        every { sync.schedule(any(),any(),any()) } just Runs
+        try {
+            sync.start()
+            sessions.value=AccountSession.Authenticated(MangaroProfile("A",null,"Fixture",null,null,0,1))
+            withTimeout(3_000) {sync.observe("A").first {it.loaded}}
+            delay(100)
+            values["A" to "enabled"] shouldBe "false"
+            sync.observe("A").value.enabled shouldBe false
+            verify(exactly=0) {sync.schedule("A",any(),any())}
+            coVerify(exactly=0) {local.all(any())}
+        } finally {scope.cancel();LocalCloudChanges.capture=null;unmockkObject(WorkManager.Companion)}
+    }
+
     @Test fun `fresh login waits for explicit guest merge then offline progress hints coalesce`()=runBlocking {
         val context=mockk<Context>();val client=mockk<SupabaseClient>();val auth=mockk<AccountAuth>()
         val store=mockk<CloudSyncStore>(relaxed=true);val local=mockk<CloudLocalGateway>();val work=mockk<WorkManager>(relaxed=true)
