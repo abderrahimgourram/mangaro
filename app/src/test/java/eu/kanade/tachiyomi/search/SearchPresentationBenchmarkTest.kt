@@ -74,4 +74,3 @@ private class LegacySearchSelectionReference {
     }
     @Synchronized fun reset(){previous=emptyList();current=emptyList()}
 }
-
