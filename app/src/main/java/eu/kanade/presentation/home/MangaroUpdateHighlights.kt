@@ -29,7 +29,7 @@ import eu.kanade.presentation.theme.MangaroDesignSystem
 import eu.kanade.tachiyomi.BuildConfig
 import eu.kanade.tachiyomi.R
 
-/** First-launch What's New release announcement for Mangaro 2.5.2. */
+/** First-launch release notes; account state and remote mandatory updates are separate. */
 @Composable
 fun MangaroUpdateHighlights(onContinue: () -> Unit) {
     BackHandler(onBack = onContinue)
@@ -63,7 +63,7 @@ fun MangaroUpdateHighlights(onContinue: () -> Unit) {
                         Image(painterResource(R.drawable.ic_splash_logo), null, Modifier.size(52.dp), contentScale = ContentScale.Fit)
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(
-                                "مرحبًا بك في Mangaro 2.5.2",
+                                "مرحبًا بك في Mangaro ${BuildConfig.VERSION_NAME}",
                                 color = Color(0xFFEEE3F5),
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold
@@ -77,7 +77,7 @@ fun MangaroUpdateHighlights(onContinue: () -> Unit) {
                     }
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
-                            "أحدث التحسينات والإصلاحات للتطبيقات.",
+                            "إصلاحات وإضافات للبحث والحساب والمزامنة.",
                             color = Color(0xFFBEABCD),
                             style = MaterialTheme.typography.bodyMedium
                         )
@@ -85,8 +85,18 @@ fun MangaroUpdateHighlights(onContinue: () -> Unit) {
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Highlight(
                             Icons.Outlined.Tune,
-                            "تحسينات وإصلاحات",
-                            "• تم اصلاح 50 خطا جديد"
+                            "بحث أوضح",
+                            "تجميع طبعات العمل المرتبطة بدليل، مع إبقاء خيارات القراءة متاحة."
+                        )
+                        Highlight(
+                            Icons.Outlined.Tune,
+                            "الحساب والمزامنة",
+                            "تحسين استعادة الحساب عند انقطاع الاتصال، واحترام إعداد المزامنة التلقائية."
+                        )
+                        Highlight(
+                            Icons.Outlined.Tune,
+                            "حماية بيانات القراءة",
+                            "تعزيز عزل الحسابات والحفاظ على المكتبة والتقدم أثناء التحديث."
                         )
                     }
                 }
