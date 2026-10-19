@@ -1,0 +1,102 @@
+{
+  "schema": 1,
+  "records": [
+    {
+      "id": "solo-leveling-original",
+      "adaptation": {
+        "work": {
+          "format": "MANHWA",
+          "key": "work:b955e56408a056c896f62909eebf6985865e7690c80de8393c7f9c5e475dca56"
+        },
+        "editions": [
+          {
+            "format": "MANHWA",
+            "source": "6058166507489091982",
+            "url": "/manga/solo-leveling"
+          },
+          {
+            "format": "MANHWA",
+            "source": "4110737012647435874",
+            "url": "/series/SL"
+          },
+          {
+            "format": "MANHWA",
+            "source": "215553151312092548",
+            "url": "/manhwa/solo-leveling#697df7610c5d340ac154401b"
+          }
+        ]
+      },
+      "original": {
+        "work": {
+          "format": "TEXT_NOVEL",
+          "key": "novel.work.f7726eb5-5517-369b-870e-15fc082ee736"
+        },
+        "editions": [
+          {
+            "format": "TEXT_NOVEL",
+            "source": "novel.seanovel",
+            "url": "https://seanovel.org/novels/solo-leveling"
+          }
+        ]
+      },
+      "type": "ADAPTATION_OF",
+      "status": "VERIFIED",
+      "evidence": [
+        "https://www.tappytoon.com/en/book/solo-leveling-official",
+        "https://yenpress.com/series/solo-leveling-novel",
+        "https://seanovel.org/novels/solo-leveling"
+      ],
+      "reviewedAt": "2026-10-19",
+      "reviewer": "Mangaro interoperability review"
+    },
+    {
+      "id": "tbate-original",
+      "adaptation": {
+        "work": {
+          "format": "MANHWA",
+          "key": "work:81e63342a698e9de565ca6f2bfb384f2c65bdd71183d80212c0535b459faf6f9"
+        },
+        "editions": [
+          {
+            "format": "MANHWA",
+            "source": "6058166507489091982",
+            "url": "/manga/the-beginning-after-the-end"
+          },
+          {
+            "format": "MANHWA",
+            "source": "4110737012647435874",
+            "url": "/series/BATE"
+          }
+        ]
+      },
+      "original": {
+        "work": {
+          "format": "TEXT_NOVEL",
+          "key": "novel.work.2c7debb8-4a25-3730-ba23-e4d6bb427790"
+        },
+        "editions": [
+          {
+            "format": "TEXT_NOVEL",
+            "source": "novel.mknov",
+            "url": "https://mknov.com/novel/618"
+          },
+          {
+            "format": "TEXT_NOVEL",
+            "source": "novel.seanovel",
+            "url": "https://seanovel.org/novels/novel-618"
+          }
+        ]
+      },
+      "type": "ADAPTATION_OF",
+      "status": "VERIFIED",
+      "evidence": [
+        "https://www.turtleme.com/tbate-comic",
+        "https://tapas.io/series/tbate-comic/info",
+        "https://mknov.com/novel/618",
+        "https://seanovel.org/novels/novel-618"
+      ],
+      "reviewedAt": "2026-10-19",
+      "reviewer": "Mangaro interoperability review"
+    }
+  ]
+}

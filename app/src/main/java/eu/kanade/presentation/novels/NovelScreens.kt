@@ -1,5 +1,7 @@
 package eu.kanade.presentation.novels
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+
 import eu.kanade.tachiyomi.focus.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
@@ -498,15 +500,18 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
         val repository = remember(context) { NovelRepository.get(context) }
         val navigator = LocalNavigator.currentOrThrow
         val catalog by repository.catalog.collectAsState()
-        val workIds = remember(catalog, initial.id) {
-            catalog.work(initial.id)?.editions?.map { it.id }?.toSet() ?: setOf(initial.id)
+        val connectedGraph = eu.kanade.presentation.stories.rememberConnectedStoryGraph()
+        val connectedRegistry = connectedGraph?.collectAsStateWithLifecycle()?.value
+        val work = remember(catalog, initial.id, connectedRegistry) {
+            val existing = catalog.work(initial.id) ?: UnifiedNovelWork(NovelIdentity.initialWorkId(initial.id), listOf(initial), initial.id)
+            eu.kanade.tachiyomi.data.stories.ConnectedNovelEditions.project(connectedRegistry, initial, existing, catalog)
         }
+        val workIds = remember(work) { work.editions.map { it.id }.toSet() }
         val library by remember(repository, workIds) {
             repository.library.map { entries -> entries.filter { it.novel.id in workIds } }
                 .distinctUntilChanged().flowOn(Dispatchers.Default)
         }.collectAsState(initial = emptyList())
         val storageError by repository.storageError.collectAsState()
-        val work = remember(catalog, initial.id) { catalog.work(initial.id) ?: UnifiedNovelWork(NovelIdentity.initialWorkId(initial.id), listOf(initial), initial.id) }
         val scope = rememberCoroutineScope()
         val downloadAdGate = rememberNovelDownloadAdGate()
         var selectedId by rememberSaveable { mutableStateOf<String?>(initial.id) }
@@ -685,6 +690,10 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
                     FilledTonalButton(onClick = { openDownloads() }, enabled = index.chapters.isNotEmpty() && !enqueueing, modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Outlined.Download, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("تحميل الفصول")
                     }
+                }
+                item(key = "connected-stories") {
+                    eu.kanade.presentation.stories.ConnectedStoriesSection(
+                        eu.kanade.tachiyomi.data.stories.StoryDestination.Prose(novel))
                 }
                 item(key = "work-community") {
                     eu.kanade.presentation.community.WorkCommunitySection(novelWorkCommunityContext(novel))
