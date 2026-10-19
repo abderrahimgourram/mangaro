@@ -23,9 +23,6 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.runtime.LaunchedEffect
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.distinctUntilChanged
-import tachiyomi.domain.manga.interactor.GetLibraryManga
 import mihon.domain.account.ProfileStatistics
 import eu.kanade.tachiyomi.data.account.prepareAccountCover
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -99,8 +96,6 @@ import mihon.domain.account.AccountActionGate
 import mihon.domain.account.AccountFoundation
 import mihon.domain.account.AccountOperation
 import mihon.domain.account.AccountSession
-import mihon.domain.account.MangaroRanks
-import mihon.domain.account.MangaroLevelProgress
 import mihon.domain.account.MangaroProfile
 import tachiyomi.core.common.util.lang.WesternDigits
 import uy.kohesive.injekt.Injekt
@@ -138,6 +133,7 @@ fun AccountPanel(onBack: () -> Unit) {
                 }
                 when (val current = session) {
                     is AccountSession.Authenticated -> {
+                        androidx.compose.runtime.key(current.profile.userId) {
                         AccountProfileEditor(current.profile, account, submitting, error ?: authError,
                             onAction = { action ->
                                 if (actionGate.tryStart()) {
@@ -156,9 +152,11 @@ fun AccountPanel(onBack: () -> Unit) {
                                     }
                                 }
                             })
+                        }
                     }
                     else -> {
                         GuestAccountIntroduction()
+                        if (current == AccountSession.Guest) ProfileReadingStatistics(rememberProfileReadingStatistics(tachiyomi.core.common.util.lang.LocalAccountScope.GUEST))
                         Button(
                             enabled = account.auth.googleSignInAvailable && !loading,
                             onClick = {
@@ -350,36 +348,17 @@ private fun AccountProfileEditor(
             }
         },
     ) {
-        eu.kanade.presentation.sigils.OwnProfileSigils()
         levelNotice?.let { message ->
             Text(message, Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
                 .background(Color(mihon.domain.account.RankVisuals.resolve(profile.level).surface)).padding(12.dp),
                 color = rankAccent(profile.level), style = MaterialTheme.typography.labelMedium)
         }
     }
-    AccountProfileStatistics(profile.userId, account)
-    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp), color = Color(0xFF1B1523)) {
-        Column(Modifier.padding(horizontal = 18.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("تقدّم المستوى", style = MaterialTheme.typography.titleSmall, color = Color.White, fontWeight = FontWeight.SemiBold)
-                Text("Lv.${profile.level}", style = MaterialTheme.typography.labelMedium.copy(textDirection = androidx.compose.ui.text.style.TextDirection.Ltr), color = rankAccent(profile.level))
-            }
-            if (profile.level == MangaroRanks.MAX_LEVEL) {
-                Text("المستوى الأقصى", color = secondary, style = MaterialTheme.typography.bodySmall)
-            } else {
-                val earned = MangaroLevelProgress.earned(profile)
-                val required = MangaroLevelProgress.required(profile.level)
-                LinearProgressIndicator(progress = { (earned.toFloat() / required).coerceIn(0f, 1f) },
-                    modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)), color = rankAccent(profile.level),
-                    trackColor = MangaroDesignSystem.SurfaceHigh)
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("إلى المستوى التالي", color = secondary, style = MaterialTheme.typography.labelSmall)
-                    Text("$earned / $required XP", color = rankAccent(profile.level), style = MaterialTheme.typography.labelMedium.copy(textDirection = androidx.compose.ui.text.style.TextDirection.Ltr))
-                }
-            }
-            Text("إجمالي الخبرة: ${profile.xp} XP", color = muted, style = MaterialTheme.typography.labelSmall)
-        }
-    }
+    ProfileProgressCard(profile)
+    val reading = rememberProfileReadingStatistics(profile.userId)
+    ProfileReadingStatistics(reading)
+    eu.kanade.presentation.sigils.OwnProfileSigils()
+    AccountProfileStatistics(profile.userId, account, reading.library)
     ProfileShowcaseControls(profile, account)
     if (editing) {
         ModalBottomSheet(onDismissRequest = { editing = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
@@ -493,10 +472,7 @@ internal fun ProfileCoverImage(coverUrl: String?, modifier: Modifier) {
 }
 
 @Composable
-private fun AccountProfileStatistics(userId: String, account: AccountFoundation) {
-    val library = remember { Injekt.get<GetLibraryManga>() }
-    val libraryCount by remember(library) { library.subscribe().map { rows -> rows.map { it.id }.distinct().size.toLong() }.distinctUntilChanged() }
-        .collectAsState(initial = null)
+private fun AccountProfileStatistics(userId: String, account: AccountFoundation, libraryCount: Long?) {
     var counts by remember(userId) { mutableStateOf<ProfileStatistics?>(null) }
     var loading by remember(userId) { mutableStateOf(true) }
     var retry by remember(userId) { mutableStateOf(0) }

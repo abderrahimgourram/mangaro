@@ -1,0 +1,15 @@
+-- Read-only owner projection. No migration, history replay, or provider requests.
+-- Exact edition identity only: chapter numbers and work grouping are not chapter identity.
+readStatistics:
+SELECT A.owner, A.transitioning,
+       (SELECT count(*) FROM (
+           SELECT M.source, M.url, C.url
+           FROM chapters C JOIN mangas M ON M._id = C.manga_id
+           WHERE C.read = 1 AND trim(C.url) != '' AND trim(M.url) != ''
+           GROUP BY M.source, M.url, C.url
+       )) AS comic_count,
+       (SELECT count(*) FROM chapters C JOIN mangas M ON M._id = C.manga_id
+        WHERE C.read = 1 AND (trim(C.url) = '' OR trim(M.url) = '')) AS invalid_count,
+       (SELECT count(*) FROM mangas WHERE favorite = 1) AS library_count
+FROM local_account_context A
+WHERE A.id = 1 AND A.owner = :owner AND A.transitioning = 0;

@@ -14,7 +14,7 @@ import kotlinx.coroutines.runBlocking
 import java.net.InetSocketAddress
 
 class PublicProfileIdentityAdapterTest {
-    @Test fun `public adapter keeps trusted role aggregate and stable favorite even when cover signing fails`() = runBlocking {
+    @Test fun `public adapter keeps trusted role aggregate and stable favorite even when cover signing fails`(): Unit = runBlocking {
         val server=HttpServer.create(InetSocketAddress("127.0.0.1",0),0)
         val uid="00000000-0000-0000-0000-000000000001"
         val key="a".repeat(64)

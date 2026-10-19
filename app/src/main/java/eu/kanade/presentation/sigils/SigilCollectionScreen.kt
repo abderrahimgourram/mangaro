@@ -191,9 +191,11 @@ class SigilCollectionScreen(private val initialBadgeId: String? = null) : Screen
 
 @Composable fun OwnProfileSigils() {
     val repo=remember {Injekt.get<SigilRepository>()};val snapshot=activeSnapshot(repo);val navigator=LocalNavigator.currentOrThrow
-    Column {
-        Text("الأختام المجهزة",color=Color(0xFFC4B2D3),style=MaterialTheme.typography.labelMedium)
-        EquippedSigils(snapshot.slots,onEmpty={navigator.push(SigilCollectionScreen())},onTap={navigator.push(SigilCollectionScreen(it))})
+    Surface(Modifier.fillMaxWidth(), color=Color(0xFF1B1523), shape=RoundedCornerShape(22.dp)) {
+        Column(Modifier.padding(16.dp), verticalArrangement=Arrangement.spacedBy(4.dp)) {
+            Text("أختامك المميزة",color=Color(0xFFD4C5E0),style=MaterialTheme.typography.titleSmall)
+            EquippedSigils(snapshot.slots,onEmpty={navigator.push(SigilCollectionScreen())},onTap={navigator.push(SigilCollectionScreen(it))})
+        }
     }
 }
 @Composable fun PublicProfileSigils(userId: String) {
