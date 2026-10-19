@@ -1070,6 +1070,7 @@ class NovelRepository private constructor(context: Context) {
         val seaTrace = SeaNovelReaderDiagnostics.current() ?: SeaNovelReaderDiagnostics.begin(novel, chapter)
         seaTrace?.stage(SeaReaderStage.REPOSITORY_OWNERSHIP)
         if (novel.sourceId == SeaNovelSource.SOURCE_ID) SeaNovelSource.requireOwnership(novel, chapter)
+        if (novel.sourceId == MknovSource.SOURCE_ID) MknovSource.requireOwnership(novel, chapter)
         disk.read(novel.id, chapter.id)?.takeIf { disk.complete(it) }?.let { stored ->
             requireSunChapter(novel, chapter, storedContent = true)
             val validated = if (isCenele) CeneleSanitizer.sanitize(stored) else stored

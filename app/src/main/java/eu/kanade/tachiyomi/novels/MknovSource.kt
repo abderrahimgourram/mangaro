@@ -37,6 +37,20 @@ class MknovSource(private val http: NovelHttp, private val nowNanos: () -> Long 
                 ?.takeIf { it.length <= 18 && it.all(Char::isDigit) } ?: fail("Invalid Mknov identity: $key")
         private fun free(value: JsonObject): Boolean = (value["is_free"] as? JsonPrimitive)?.booleanOrNull
             ?: fail("Mknov availability flag missing")
+        internal fun requireOwnership(novel: Novel, chapter: NovelChapter) {
+            if (novel.sourceId != SOURCE_ID || route(novel.url, false).first != route(chapter.url, true).first)
+                fail("Foreign Mknov chapter edition", "MKNOV_IDENTITY")
+        }
+        private fun route(value: String, chapter: Boolean): Pair<String, String?> {
+            val u = value.toHttpUrlOrNull() ?: fail("Invalid Mknov URL", "MKNOV_IDENTITY")
+            if (!u.isHttps || u.host != "mknov.com" || u.port != 443 || u.username.isNotEmpty() || u.password.isNotEmpty() ||
+                u.query != null || u.fragment != null) fail("Foreign or ambiguous Mknov URL", "MKNOV_IDENTITY")
+            val pattern = if (chapter) Regex("/novel/([1-9][0-9]{0,17})/chapter/([1-9][0-9]{0,17})")
+                else Regex("/novel/([1-9][0-9]{0,17})")
+            val match = pattern.matchEntire(u.encodedPath) ?: fail("Invalid Mknov route", "MKNOV_IDENTITY")
+            return match.groupValues[1] to if (chapter) match.groupValues[2] else null
+        }
+
         private fun workUrl(id: String) = "$WEB/novel/$id"
         private fun chapterUrl(work: String, chapter: String) = "${workUrl(work)}/chapter/$chapter"
         internal fun validateText(text: NovelText) {
@@ -107,15 +121,6 @@ class MknovSource(private val http: NovelHttp, private val nowNanos: () -> Long 
     private fun workId(novel: Novel): String {
         if (novel.sourceId != id) fail("Foreign source edition", "MKNOV_IDENTITY")
         return route(novel.url, false).first
-    }
-    private fun route(value: String, chapter: Boolean): Pair<String, String?> {
-        val u = value.toHttpUrlOrNull() ?: fail("Invalid Mknov URL", "MKNOV_IDENTITY")
-        if (!u.isHttps || u.host != "mknov.com" || u.port != 443 || u.username.isNotEmpty() || u.password.isNotEmpty() ||
-            u.query != null || u.fragment != null) fail("Foreign or ambiguous Mknov URL", "MKNOV_IDENTITY")
-        val pattern = if (chapter) Regex("/novel/([1-9][0-9]{0,17})/chapter/([1-9][0-9]{0,17})")
-            else Regex("/novel/([1-9][0-9]{0,17})")
-        val match = pattern.matchEntire(u.encodedPath) ?: fail("Invalid Mknov route", "MKNOV_IDENTITY")
-        return match.groupValues[1] to if (chapter) match.groupValues[2] else null
     }
     private fun records(root: JsonObject, key: String) =
         (root[key] as? JsonArray)?.takeIf { it.size <= if (key == "chapters") 100_000 else 10_000 }?.map(::obj) ?: fail("Missing or oversized Mknov list")

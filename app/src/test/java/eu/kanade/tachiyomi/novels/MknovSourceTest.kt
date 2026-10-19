@@ -234,4 +234,12 @@ class MknovSourceTest {
             calls shouldBe if(status==503) 2 else 1
         }
     }
+
+    @Test fun chapterOwnershipIsValidatedAgainstTheSelectedWorkNotOnlyItsOwnUrl() {
+        MknovSource.requireOwnership(novel,NovelChapter("https://mknov.com/novel/96/chapter/65671","",0))
+        assertThrows<NovelSourceFailure> {MknovSource.requireOwnership(novel,
+            NovelChapter("https://mknov.com/novel/108/chapter/41602","",0))}.code shouldBe "MKNOV_IDENTITY"
+        assertThrows<NovelSourceFailure> {MknovSource.requireOwnership(novel.copy(sourceId="novel.seanovel"),
+            NovelChapter("https://mknov.com/novel/96/chapter/65671","",0))}.code shouldBe "MKNOV_IDENTITY"
+    }
 }
