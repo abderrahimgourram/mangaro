@@ -214,7 +214,7 @@ class SeaNovelSource(http: NovelHttp) : HtmlNovelSource(http) {
             rejectAccessNotice(content.paragraphs.take(2).map(String::trim))
             val navigationWords = setOf("السابق", "التالي", "فهرس", "الفهرس", "Show", "Commits")
             val story = content.paragraphs.filterNot { p -> p.trim().split(Regex("\\s+")).all { it in navigationWords } }
-            if (story.sumOf { it.trim().length } < 200 || story.sumOf { p -> p.count(Char::isLetter) } < 100)
+            if (story.sumOf { it.trim().length } < 40 || story.sumOf { p -> p.count(Char::isLetter) } < 20)
                 throw NovelSourceFailure("تعذّر التحقق من بيانات بحر الروايات. أعد المحاولة أو افتح الموقع الأصلي.", "Sea reader text empty or incomplete", code = "SEA_CONTENT_INVALID")
             NovelContentQuality.requireReadable(content)
         }

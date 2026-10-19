@@ -37,7 +37,7 @@ internal object NovelContentQuality {
                 totalWords++
                 if (word in phonetic) { markers++; localMarkers++; distinct += word }
                 if (word.any(::arabic) && word.any(::eastAsian)) {
-                    mixed++; localMixed++; mixedNames += word
+                    mixed++; localMixed++; if (mixedNames.size < 12) mixedNames += word
                     word.filter(::eastAsian).forEach { eastScripts += when (it) {
                         in '\u3040'..'\u30ff' -> 1
                         in '\uac00'..'\ud7af' -> 2

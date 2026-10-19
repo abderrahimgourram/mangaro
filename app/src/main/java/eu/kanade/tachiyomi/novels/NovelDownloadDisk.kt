@@ -63,7 +63,7 @@ class NovelDownloadDisk(private val root: File) {
                 text = CeneleSanitizer.sanitize(text)
             }
             val sea = editionId.startsWith(SeaNovelSource.SOURCE_ID + ":")
-            validate(text, allowShortText = sea || (editionId.startsWith(SunovelsSource.SOURCE_ID + ":") &&
+            validate(text, allowShortText = sea || editionId.startsWith(MknovSource.SOURCE_ID + ":") || (editionId.startsWith(SunovelsSource.SOURCE_ID + ":") &&
                 stored.sourceContract == SunovelsSource.PARSER_VERSION), allowIllustrations = isCenele(editionId))
             if (sea) SeaNovelSource.validateText(text)
             if (editionId.startsWith(MknovSource.SOURCE_ID + ":")) MknovSource.validateText(text)
@@ -104,7 +104,7 @@ class NovelDownloadDisk(private val root: File) {
             CeneleSanitizer.sanitize(text)
         } else text
         val sea = editionId.startsWith(SeaNovelSource.SOURCE_ID + ":")
-        validate(sanitized, allowShortText = sea || editionId.startsWith(SunovelsSource.SOURCE_ID + ":"), allowIllustrations = isCenele(editionId))
+        validate(sanitized, allowShortText = sea || editionId.startsWith(MknovSource.SOURCE_ID + ":") || editionId.startsWith(SunovelsSource.SOURCE_ID + ":"), allowIllustrations = isCenele(editionId))
         if (sea) SeaNovelSource.validateText(sanitized)
         if (editionId.startsWith(MknovSource.SOURCE_ID + ":")) MknovSource.validateText(sanitized)
         if (editionId.startsWith(SunovelsSource.SOURCE_ID + ":")) SunovelsSource.validateText(sanitized)

@@ -96,4 +96,16 @@ class NovelContentQualityTest {
         a.contains(good.paragraphs.first()) shouldBe false
         a.contains("فتح المسافر") shouldBe false
     }
+
+    @Test fun verifiedShortNotesAndGlossariesRetainUnknownQualityAndOfflineCompatibility() {
+        val short=NovelText(listOf("هذه ملاحظة أصلية قصيرة أعدها الناشر لتوضيح ترتيب الفصول قبل بدء القصة."))
+        NovelContentQuality.assess(short).verdict shouldBe NovelContentQuality.Verdict.UNKNOWN
+        for(source in listOf(MknovSource.SOURCE_ID,SeaNovelSource.SOURCE_ID)) {
+            validateNovelRepositoryContent(source,short)
+            NovelDownloadDisk(root).write(source+":work","short-note",short)
+            (NovelDownloadDisk(root).read(source+":work","short-note")==short) shouldBe true
+        }
+        runCatching {validateNovelRepositoryContent("novel.cenele",short)}.isFailure shouldBe true
+        runCatching {validateNovelRepositoryContent("novel.kolnovel",short)}.isFailure shouldBe true
+    }
 }

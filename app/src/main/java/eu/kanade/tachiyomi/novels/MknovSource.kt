@@ -11,7 +11,7 @@ import java.math.BigDecimal
 /** Independent adapter for the anonymous JSON contracts inspected in official Android 1.9.
  * Website IDs remain the edition/chapter identities; no account, ad or tracking APIs are used.
  */
-class MknovSource(private val http: NovelHttp) : NovelSource {
+class MknovSource(private val http: NovelHttp, private val nowNanos: () -> Long = System::nanoTime) : NovelSource {
     companion object {
         const val SOURCE_ID = "novel.mknov"
         private const val WEB = "https://mknov.com"
@@ -40,7 +40,13 @@ class MknovSource(private val http: NovelHttp) : NovelSource {
         private fun workUrl(id: String) = "$WEB/novel/$id"
         private fun chapterUrl(work: String, chapter: String) = "${workUrl(work)}/chapter/$chapter"
         internal fun validateText(text: NovelText) {
-            if (text.paragraphs.size < 3 || text.paragraphs.sumOf { it.length } < 200)
+            // Public indexes include legitimate short glossaries and publisher notes. They
+            // retain UNKNOWN quality rather than pretending to be a full prose chapter.
+            if (text.paragraphs.sumOf { it.trim().length } < 40 ||
+                text.paragraphs.sumOf { p -> p.count(Char::isLetter) } < 20 ||
+                text.paragraphs.take(2).any { p -> listOf("يرجى تسجيل الدخول", "يجب تسجيل الدخول",
+                    "Chapter not found", "Access denied", "لا يوجد محتوى", "هذا الفصل غير متاح",
+                    "تعذر تحميل الفصل", "تعذّر تحميل الفصل", "نعتذر، الفصل غير متاح").any { p.trim().startsWith(it, ignoreCase = true) } })
                 fail("Empty or incomplete Mknov chapter", "MKNOV_INVALID_CONTENT")
             NovelContentQuality.requireReadable(text)
         }
@@ -53,11 +59,29 @@ class MknovSource(private val http: NovelHttp) : NovelSource {
     private val locks = Array(8) { Mutex() }
     private data class IndexedChapter(val chapter: NovelChapter, val number: BigDecimal)
     private data class IndexSnapshot(val page: ChapterPage, val bindings: Map<String, IndexedChapter>)
-    private val membership = LinkedHashMap<String, Map<String, IndexedChapter>>(8, .75f, true)
+    private data class Membership(val bindings: Map<String, IndexedChapter>, val at: Long)
+    private val membership = LinkedHashMap<String, Membership>(8, .75f, true)
     private val tags = linkedSetOf<String>()
 
+    /** These allowlisted POSTs are anonymous reads. Retry transport/5xx once, never access,
+     * rate-limit, identity, parser or quality failures. Backoff holds no HTTP network slot. */
+    private suspend fun publicPayload(endpoint: String, body: JsonObject): String {
+        var attemptedRetry = false
+        while (true) {
+            try { return http.mknovPost(API + endpoint, body.toString()) }
+            catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (failure: Exception) {
+                val source = failure as? NovelSourceFailure
+                val transient = failure is java.io.IOException || source?.httpStatus in setOf(408, 500, 502, 503, 504)
+                val wait = source?.retryAfterMs ?: 750L
+                if (!transient || attemptedRetry || wait !in 0..5_000L) throw failure
+                attemptedRetry = true
+                kotlinx.coroutines.delay(wait)
+            }
+        }
+    }
     private suspend fun request(endpoint: String, body: JsonObject): JsonObject {
-        val raw = http.mknovPost(API + endpoint, body.toString())
+        val raw = publicPayload(endpoint, body)
         val root = try { obj(Json.parseToJsonElement(raw)) }
             catch (e: NovelSourceFailure) { throw e }
             catch (_: Exception) { fail("Malformed Mknov JSON") }
@@ -69,10 +93,10 @@ class MknovSource(private val http: NovelHttp) : NovelSource {
         val key = endpoint + body.toString()
         return locks[(key.hashCode() and Int.MAX_VALUE) % locks.size].withLock {
             val old = synchronized(snapshots) { snapshots[key] }
-            if (old != null && System.nanoTime() - old.at in 0..120_000_000_000L) return@withLock parse(old.root)
+            if (old != null && nowNanos() - old.at in 0..120_000_000_000L) return@withLock parse(old.root)
             val root = request(endpoint, body)
             val result = parse(root)
-            val row = Cached(root, System.nanoTime(), root.toString().length)
+            val row = Cached(root, nowNanos(), root.toString().length)
             synchronized(snapshots) {
                 snapshots[key] = row
                 while (snapshots.size > 16 || snapshots.values.sumOf { it.size } > 2_000_000) snapshots.remove(snapshots.keys.first())
@@ -197,8 +221,8 @@ class MknovSource(private val http: NovelHttp) : NovelSource {
     private suspend fun index(work: String): IndexSnapshot =
         cached("getChaptersByWorkId", buildJsonObject { put("id", work.toLong()) }) { parseIndex(work, it) }.also { snapshot ->
             synchronized(membership) {
-                membership[work] = snapshot.bindings
-                while (membership.size > 8 || membership.values.sumOf { it.size } > 100_000)
+                membership[work] = Membership(snapshot.bindings, nowNanos())
+                while (membership.size > 8 || membership.values.sumOf { it.bindings.size } > 100_000)
                     membership.remove(membership.keys.first())
             }
         }
@@ -210,7 +234,7 @@ class MknovSource(private val http: NovelHttp) : NovelSource {
         val (work, rawId) = route(chapter.url, true)
         val chapterId = checkNotNull(rawId)
         // Retain immutable request-owned evidence even if another work evicts the shared LRU.
-        val bindings = synchronized(membership) { membership[work] } ?: index(work).bindings
+        val bindings = synchronized(membership) { membership[work]?.takeIf { nowNanos() - it.at in 0..120_000_000_000L }?.bindings } ?: index(work).bindings
         val expected = bindings[chapterId]
             ?: fail("Requested chapter does not belong to Mknov work", "MKNOV_IDENTITY")
         if (!expected.chapter.available) throw NovelSourceFailure("هذا الفصل غير متاح للقراءة العامة.",
@@ -226,8 +250,6 @@ class MknovSource(private val http: NovelHttp) : NovelSource {
         if (content.length > 1_000_000 || Regex("<(html|script|form|body)\\b", RegexOption.IGNORE_CASE).containsMatchIn(content))
             fail("Invalid Mknov story payload")
         val paragraphs = content.replace("\r\n", "\n").split('\n').map(String::trim).filter(String::isNotBlank)
-        if (paragraphs.size < 3 || paragraphs.sumOf { it.length } < 200)
-            fail("Empty or incomplete Mknov chapter", "MKNOV_INVALID_CONTENT")
         val text = NovelText(paragraphs)
         validateNovelRepositoryContent(id, text)
         text

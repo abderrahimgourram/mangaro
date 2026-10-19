@@ -19,7 +19,7 @@ class MknovSourceTest {
     }
     private fun fixture(name: String) = Json.parseToJsonElement(replay(name)).jsonObject
     private data class Call(val endpoint: String, val body: JsonObject, val method: String, val type: String?)
-    private class Harness(val handler: (String, JsonObject) -> String) {
+    private class Harness(val clock: () -> Long = System::nanoTime, val handler: (String, JsonObject) -> String) {
         val calls = Collections.synchronizedList(mutableListOf<Call>())
         val http = NovelHttp(OkHttpClient.Builder().addInterceptor { chain ->
             val request = chain.request()
@@ -30,7 +30,7 @@ class MknovSourceTest {
             Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(200).message("OK")
                 .body(handler(endpoint, body).toResponseBody("application/json".toMediaType())).build()
         }.build())
-        val source = MknovSource(http)
+        val source = MknovSource(http, clock)
     }
     private fun harness() = Harness { endpoint, _ -> replay(when(endpoint) {
         "getWorks" -> "catalog-10.json"
@@ -198,5 +198,40 @@ class MknovSourceTest {
         }
         assertThrows<NovelSourceFailure> {runBlocking {h.source.chapter(NovelChapter("https://mknov.com/novel/96/chapter/65671","",0))}}.code shouldBe "MKNOV_ACCESS_RESTRICTED"
         h.calls.map {it.endpoint} shouldBe listOf("getChaptersByWorkId")
+    }
+
+    @Test fun expiredIndexAvailabilityCanRefreshWithoutRestartOrRepeatedBodyRequests() = runBlocking<Unit> {
+        var now=0L;var free=false
+        val h=Harness(clock={now}) { endpoint,_->
+            if(endpoint=="getChapterBatch") replay("chapter-96-first.json") else {
+                val root=fixture("index-96.json.gz")
+                val volumes=root["data"]!!.jsonArray.map {v -> val volume=v.jsonObject
+                    JsonObject(volume+("chapters" to JsonArray(volume["chapters"]!!.jsonArray.map {c -> JsonObject(c.jsonObject+("is_free" to JsonPrimitive(free))) }))) }
+                JsonObject(root+("data" to JsonArray(volumes))).toString()
+            }
+        }
+        val chapter=NovelChapter("https://mknov.com/novel/96/chapter/65671","",0)
+        assertThrows<NovelSourceFailure> {runBlocking {h.source.chapter(chapter)}}.code shouldBe "MKNOV_ACCESS_RESTRICTED"
+        free=true;now=121_000_000_000L
+        h.source.chapter(chapter).paragraphs.size shouldBe 5
+        h.calls.map {it.endpoint} shouldBe listOf("getChaptersByWorkId","getChaptersByWorkId","getChapterBatch")
+    }
+
+    @Test fun transientAnonymousReadRecoversWithOneBoundedRetry() = runBlocking<Unit> {
+        val http=io.mockk.mockk<NovelHttp>();var calls=0
+        io.mockk.coEvery {http.mknovPost(any(),any())} coAnswers {
+            if(++calls==1)throw NovelSourceFailure("retry","temporary",503)
+            replay("catalog-10.json")
+        }
+        MknovSource(http).catalog(1,false,null).novels.size shouldBe 10
+        calls shouldBe 2
+    }
+    @Test fun accessAndRateLimitsAreNeverRetriedAndServerRetriesAreBounded() = runBlocking<Unit> {
+        for(status in listOf(403,429,503)) {
+            val http=io.mockk.mockk<NovelHttp>();var calls=0
+            io.mockk.coEvery {http.mknovPost(any(),any())} coAnswers {calls++;throw NovelSourceFailure("retry","upstream",status)}
+            assertThrows<NovelSourceFailure> {runBlocking {MknovSource(http).catalog(1,false,null)}}.httpStatus shouldBe status
+            calls shouldBe if(status==503) 2 else 1
+        }
     }
 }
