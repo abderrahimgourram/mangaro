@@ -1058,6 +1058,13 @@ class NovelRepository private constructor(context: Context) {
         if (SunovelsSource.mobileOfflineAuthorized) return@withContext chapterText(novel, chapter).also { SunovelsSource.validateText(it) }
         (source(novel.sourceId) as SunovelsSource).chapterForDownload(chapter).also { SunovelsSource.validateText(it) }
     }
+    /** An invalid memory entry cannot trap Retry on an obsolete successful result. */
+    private suspend fun validatedMemoryText(key: String, sourceId: String): NovelText? {
+        val candidate = memoryCacheLock.withLock { texts[key] } ?: return null
+        if (validatedNovelCachedText(sourceId, candidate) != null) return candidate
+        memoryCacheLock.withLock { if (texts[key] === candidate) texts.remove(key) }
+        return null
+    }
     suspend fun chapterText(novel: Novel, chapter: NovelChapter): NovelText = withContext(Dispatchers.IO) {
         val isCenele = novel.sourceId == "novel.cenele" || novel.id == "novel.cenele" || novel.id.startsWith("novel.cenele:") || novel.id.startsWith("novel.cenele/")
         val seaTrace = SeaNovelReaderDiagnostics.current() ?: SeaNovelReaderDiagnostics.begin(novel, chapter)
@@ -1090,7 +1097,7 @@ class NovelRepository private constructor(context: Context) {
         val identity = Triple(requestOwner, novel.id, chapter.id)
         val key = novelTextCacheKey(offlineOwner(), novel.id, chapter.id)
         seaTrace?.stage(SeaReaderStage.CACHE_LOOKUP)
-        memoryCacheLock.withLock { texts[key] }?.let {
+        validatedMemoryText(key, novel.sourceId)?.let {
             if (novel.sourceId == SunovelsSource.SOURCE_ID) SunovelsSource.validateText(it)
             lastDataOrigin = "memory"
             seaTrace?.cache("VERIFIED_MEMORY", it)
@@ -1104,7 +1111,7 @@ class NovelRepository private constructor(context: Context) {
             chapterFlights[identity]?.also { it.readers++ } ?: ChapterFlight(io.async(context = requestTask + tachiyomi.core.common.util.lang.LocalAccountScope.StorageElement(requestOwner) + (fetchTrace ?: kotlin.coroutines.EmptyCoroutineContext), start = CoroutineStart.LAZY) {
                 try {
                     fetchTrace?.stage(SeaReaderStage.CACHE_LOOKUP)
-                    memoryCacheLock.withLock { texts[key] }?.let {
+                    validatedMemoryText(key, novel.sourceId)?.let {
                         if (novel.sourceId == SunovelsSource.SOURCE_ID) SunovelsSource.validateText(it)
                         lastDataOrigin = "memory"
                         fetchTrace?.cache("VERIFIED_MEMORY", it)

@@ -39,6 +39,11 @@ class MknovSource(private val http: NovelHttp) : NovelSource {
             ?: fail("Mknov availability flag missing")
         private fun workUrl(id: String) = "$WEB/novel/$id"
         private fun chapterUrl(work: String, chapter: String) = "${workUrl(work)}/chapter/$chapter"
+        internal fun validateText(text: NovelText) {
+            if (text.paragraphs.size < 3 || text.paragraphs.sumOf { it.length } < 200)
+                fail("Empty or incomplete Mknov chapter", "MKNOV_INVALID_CONTENT")
+            NovelContentQuality.requireReadable(text)
+        }
     }
     override val id = SOURCE_ID
     override val name = "مملكة الروايات"

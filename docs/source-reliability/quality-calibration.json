@@ -1,0 +1,36 @@
+{
+  "observedAt": "2026-10-19",
+  "method": "Public rendered-container count evidence, without prose; source parser additionally removes hidden filler",
+  "samples": [
+    {
+      "slug": "invincible",
+      "chapter": "1979",
+      "words": 1446,
+      "markers": 103,
+      "distinctMarkers": 12,
+      "affectedParagraphs": 39,
+      "paragraphs": 50,
+      "unquotedAffectedParagraphs": 39
+    },
+    {
+      "slug": "invincible",
+      "chapter": "1620",
+      "words": 1277,
+      "markers": 0,
+      "distinctMarkers": 0,
+      "affectedParagraphs": 0,
+      "paragraphs": 55,
+      "unquotedAffectedParagraphs": 0
+    },
+    {
+      "slug": "terra-nova-online-rise-of-the-strongest-player",
+      "chapter": "1",
+      "words": 848,
+      "markers": 1,
+      "distinctMarkers": 1,
+      "affectedParagraphs": 1,
+      "paragraphs": 40,
+      "unquotedAffectedParagraphs": 1
+    }
+  ]
+}

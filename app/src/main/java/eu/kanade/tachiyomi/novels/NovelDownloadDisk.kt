@@ -66,6 +66,7 @@ class NovelDownloadDisk(private val root: File) {
             validate(text, allowShortText = sea || (editionId.startsWith(SunovelsSource.SOURCE_ID + ":") &&
                 stored.sourceContract == SunovelsSource.PARSER_VERSION), allowIllustrations = isCenele(editionId))
             if (sea) SeaNovelSource.validateText(text)
+            if (editionId.startsWith(MknovSource.SOURCE_ID + ":")) MknovSource.validateText(text)
             if (editionId.startsWith(SunovelsSource.SOURCE_ID + ":")) SunovelsSource.validateText(text)
             text
         }.getOrNull()
@@ -105,6 +106,7 @@ class NovelDownloadDisk(private val root: File) {
         val sea = editionId.startsWith(SeaNovelSource.SOURCE_ID + ":")
         validate(sanitized, allowShortText = sea || editionId.startsWith(SunovelsSource.SOURCE_ID + ":"), allowIllustrations = isCenele(editionId))
         if (sea) SeaNovelSource.validateText(sanitized)
+        if (editionId.startsWith(MknovSource.SOURCE_ID + ":")) MknovSource.validateText(sanitized)
         if (editionId.startsWith(SunovelsSource.SOURCE_ID + ":")) SunovelsSource.validateText(sanitized)
         val value = StoredChapter(editionId, chapterId, novelDigest(json.encodeToString(sanitized)), sanitized,
             sourceContract = SunovelsSource.PARSER_VERSION.takeIf { editionId.startsWith(SunovelsSource.SOURCE_ID + ":") })
