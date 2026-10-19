@@ -173,4 +173,30 @@ class MknovSourceTest {
         java.net.URLDecoder.decode(encoded,"UTF-8") shouldBe "action=test action"
         type shouldBe "application/x-www-form-urlencoded"
     }
+
+    @Test fun responseChapterNumberMustMatchTheIndexBinding() = runBlocking<Unit> {
+        val h=Harness { endpoint,_-> if(endpoint=="getChaptersByWorkId") replay("index-96.json.gz") else {
+            val root=fixture("chapter-96-first.json")
+            JsonObject(root+("data" to JsonObject(root["data"]!!.jsonObject+("chapter_number" to JsonPrimitive(999))))).toString()
+        } }
+        assertThrows<NovelSourceFailure> {runBlocking {h.source.chapter(NovelChapter("https://mknov.com/novel/96/chapter/65671","",0))}}.code shouldBe "MKNOV_IDENTITY"
+    }
+    @Test fun returnedWorkIdWhenPresentMustMatchRequestedEdition() = runBlocking<Unit> {
+        val h=Harness { endpoint,_-> if(endpoint=="getChaptersByWorkId") replay("index-96.json.gz") else {
+            val root=fixture("chapter-96-first.json")
+            JsonObject(root+("data" to JsonObject(root["data"]!!.jsonObject+("work_id" to JsonPrimitive(108))))).toString()
+        } }
+        assertThrows<NovelSourceFailure> {runBlocking {h.source.chapter(NovelChapter("https://mknov.com/novel/96/chapter/65671","",0))}}.code shouldBe "MKNOV_IDENTITY"
+    }
+    @Test fun explicitlyRestrictedIndexDoesNotFetchTheChapterBody() = runBlocking<Unit> {
+        val h=Harness { endpoint,_->
+            check(endpoint=="getChaptersByWorkId") {"Restricted chapter body must not be requested"}
+            val root=fixture("index-96.json.gz")
+            val volumes=root["data"]!!.jsonArray.map {v -> val volume=v.jsonObject
+                JsonObject(volume+("chapters" to JsonArray(volume["chapters"]!!.jsonArray.map {c -> JsonObject(c.jsonObject+("is_free" to JsonPrimitive(false))) }))) }
+            JsonObject(root+("data" to JsonArray(volumes))).toString()
+        }
+        assertThrows<NovelSourceFailure> {runBlocking {h.source.chapter(NovelChapter("https://mknov.com/novel/96/chapter/65671","",0))}}.code shouldBe "MKNOV_ACCESS_RESTRICTED"
+        h.calls.map {it.endpoint} shouldBe listOf("getChaptersByWorkId")
+    }
 }

@@ -46,7 +46,9 @@ class MknovSource(private val http: NovelHttp) : NovelSource {
     private data class Cached(val root: JsonObject, val at: Long, val size: Int)
     private val snapshots = LinkedHashMap<String, Cached>(16, .75f, true)
     private val locks = Array(8) { Mutex() }
-    private val membership = LinkedHashMap<String, Map<String, NovelChapter>>(8, .75f, true)
+    private data class IndexedChapter(val chapter: NovelChapter, val number: BigDecimal)
+    private data class IndexSnapshot(val page: ChapterPage, val bindings: Map<String, IndexedChapter>)
+    private val membership = LinkedHashMap<String, Map<String, IndexedChapter>>(8, .75f, true)
     private val tags = linkedSetOf<String>()
 
     private suspend fun request(endpoint: String, body: JsonObject): JsonObject {
@@ -163,7 +165,7 @@ class MknovSource(private val http: NovelHttp) : NovelSource {
                 originalTitle = fresh.originalTitle, alternativeTitles = fresh.alternativeTitles)
         }
     }
-    private fun parseIndex(work: String, root: JsonObject): ChapterPage {
+    private fun parseIndex(work: String, root: JsonObject): IndexSnapshot {
         val total = integer(root, "total_chapters").takeIf { it <= 100_000 } ?: fail("Mknov index exceeds bound")
         data class Row(val data: JsonObject, val number: BigDecimal, val volume: String?, val volumeId: String?)
         val rows = records(root, "data").flatMap { volume ->
@@ -182,28 +184,37 @@ class MknovSource(private val http: NovelHttp) : NovelSource {
                 available = available, unavailableReason = if (available) null else "هذا الفصل يتطلب إتاحة من المصدر")
         }
         if (chapters.size != total || chapters.map { it.id }.distinct().size != total) fail("Mknov index count/identity mismatch")
-        synchronized(membership) {
-            membership[work] = chapters.associateBy { route(it.url, true).second!! }
-            while (membership.size > 8 || membership.values.sumOf { it.size } > 100_000)
-                membership.remove(membership.keys.first())
+        val bindings = chapters.zip(rows).associate { (chapter, row) ->
+            route(chapter.url, true).second!! to IndexedChapter(chapter, row.number)
         }
-        return ChapterPage(chapters, declaredTotal = total, allowEmpty = total == 0)
+        return IndexSnapshot(ChapterPage(chapters, declaredTotal = total, allowEmpty = total == 0), bindings)
     }
+    private suspend fun index(work: String): IndexSnapshot =
+        cached("getChaptersByWorkId", buildJsonObject { put("id", work.toLong()) }) { parseIndex(work, it) }.also { snapshot ->
+            synchronized(membership) {
+                membership[work] = snapshot.bindings
+                while (membership.size > 8 || membership.values.sumOf { it.size } > 100_000)
+                    membership.remove(membership.keys.first())
+            }
+        }
     override suspend fun chapters(novel: Novel, page: Int): ChapterPage = withContext(Dispatchers.IO) {
-        require(page == 1) // The official endpoint supplies one full index; no invented continuation.
-        val work = workId(novel)
-        cached("getChaptersByWorkId", buildJsonObject { put("id", work.toLong()) }) { parseIndex(work, it) }
+        require(page == 1) // Official endpoint supplies one complete index.
+        index(workId(novel)).page
     }
     override suspend fun chapter(chapter: NovelChapter): NovelText = withContext(Dispatchers.IO) {
         val (work, rawId) = route(chapter.url, true)
         val chapterId = checkNotNull(rawId)
-        if (synchronized(membership) { membership[work] } == null)
-            chapters(Novel(id, workUrl(work), ""), 1)
-        synchronized(membership) { membership[work]?.get(chapterId) }
+        // Retain immutable request-owned evidence even if another work evicts the shared LRU.
+        val bindings = synchronized(membership) { membership[work] } ?: index(work).bindings
+        val expected = bindings[chapterId]
             ?: fail("Requested chapter does not belong to Mknov work", "MKNOV_IDENTITY")
+        if (!expected.chapter.available) throw NovelSourceFailure("هذا الفصل غير متاح للقراءة العامة.",
+            "Mknov explicit index access restriction", httpStatus = 403, code = "MKNOV_ACCESS_RESTRICTED", sourceVerified = true)
         val root = request("getChapterBatch", buildJsonObject { put("id", chapterId.toLong()) })
         val data = obj(root["data"])
-        if (serverId(data) != chapterId) fail("Mknov returned a different chapter", "MKNOV_IDENTITY")
+        if (serverId(data) != chapterId || number(data, "chapter_number").compareTo(expected.number) != 0 ||
+            (data["work_id"] != null && serverId(data, "work_id") != work))
+            fail("Mknov returned a different chapter/work binding", "MKNOV_IDENTITY")
         if (!free(data)) throw NovelSourceFailure("هذا الفصل غير متاح للقراءة العامة.", "Mknov explicit access restriction",
             httpStatus = 403, code = "MKNOV_ACCESS_RESTRICTED", sourceVerified = true)
         val content = str(data, "content")
