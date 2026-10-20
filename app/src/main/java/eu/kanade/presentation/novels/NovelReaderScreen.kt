@@ -468,7 +468,7 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween, verticalAlignment=Alignment.CenterVertically) {
                                 TextButton(onClick={adjacent(false)},enabled=!loading && !navigating) {Text("السابق",color=gold)}
                                 if (loadedChapter?.id == chapter.id && blocks.isNotEmpty())
-                                    ReaderProgress(contentProgress, blocks.size, gold)
+                                    ReaderProgress(contentProgress, gold)
                                 TextButton(onClick={adjacent(true)},enabled=!loading && !navigating) {Text("التالي",color=gold)}
                             }
                             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.Center,verticalAlignment=Alignment.CenterVertically) {
@@ -620,11 +620,10 @@ private fun styledParagraph(markup: String?, plain: String): AnnotatedString {
 }
 
 @Composable
-private fun ReaderProgress(progress: NovelChapterProgress, count: Int, color: Color) {
+private fun ReaderProgress(progress: NovelChapterProgress, color: Color) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(WesternDigits.isolate("${progress.segment} / $count"), color = color, style = MaterialTheme.typography.labelSmall)
         progress.percent?.let { percent ->
-            Text("تقدم الفصل " + WesternDigits.isolate("$percent%"), color = color, style = MaterialTheme.typography.labelSmall)
+            Text(WesternDigits.isolate("$percent%"), color = color, style = MaterialTheme.typography.labelSmall)
             LinearProgressIndicator(progress = { percent / 100f }, modifier = Modifier.width(90.dp).height(2.dp), color = color)
         }
     }

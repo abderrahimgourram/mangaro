@@ -88,7 +88,7 @@ internal fun Instrumentation.runNovelReaderEndAudit(connectedOnly: Boolean = fal
                 }
             }
             check(contains("MANGARO_FINAL_$count")) {"Final text not accessible at 100% for $count"}
-            check(contains("$count / $count")) {"Actual last segment not displayed for $count"}
+            check(!contains(" / $count")) {"Internal page fraction leaked for $count"}
             withTimeout(5_000) { while(repository.readingPosition(novel,chapter)?.completed!=true)delay(50) }
             val saved=repository.readingPosition(novel,chapter)!!
             check(saved.paragraph in 1..count)
