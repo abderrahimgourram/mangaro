@@ -97,6 +97,49 @@
       ],
       "reviewedAt": "2026-10-19",
       "reviewer": "Mangaro interoperability review"
+    },
+    {
+      "id": "overgeared-2020",
+      "adaptation": {
+        "work": {
+          "format": "MANHWA",
+          "key": "external:anilist:117460"
+        },
+        "editions": [
+          {
+            "format": "MANHWA",
+            "source": "215553151312092548",
+            "url": "/manhwa/overgeared#6a8f5babf1a5e87af68c564b"
+          }
+        ],
+        "externalIds": {
+          "anilist": "117460"
+        }
+      },
+      "original": {
+        "work": {
+          "format": "TEXT_NOVEL",
+          "key": "novel.work.ca69b0ec-c5a4-3bd6-9f33-48e125d7e57e"
+        },
+        "editions": [
+          {
+            "format": "TEXT_NOVEL",
+            "source": "novel.seanovel",
+            "url": "https://seanovel.org/novels/overgeared"
+          }
+        ]
+      },
+      "type": "ADAPTATION_OF",
+      "status": "VERIFIED",
+      "evidence": [
+        "https://tapas.io/series/overgeared-novel/info",
+        "https://tapas.io/series/overgeared/info",
+        "https://anilist.co/manga/117460",
+        "https://mangatime.org/manhwa/overgeared",
+        "https://seanovel.org/novels/overgeared"
+      ],
+      "reviewedAt": "2026-10-20",
+      "reviewer": "Mangaro publisher and source metadata review"
     }
   ]
 }

@@ -9,7 +9,7 @@ internal object ConnectedNovelEditions {
     fun project(registry: VerifiedStoryRelationshipRegistry?, initial: Novel,
         base: UnifiedNovelWork, catalog: NovelCatalogState,
         active: (String) -> Boolean = NovelSourceAvailability::active): UnifiedNovelWork {
-        val relation = registry?.relationship(StoryEditionRef(StoryFormat.TEXT_NOVEL,initial.sourceId,initial.url)) ?: return base
+        val relation = registry?.relationship(StoryDestination.Prose(initial).identityEvidence()) ?: return base
         val endpoint = relation.original
         val enrolled = endpoint.editions.mapNotNull { ref ->
             val id=ref.source+":"+ref.url

@@ -49,6 +49,46 @@ internal class VerifiedStoryRelationshipRegistry private constructor(val records
         return record.takeIf { routes.all { route -> byEdition[route.lookupKey()]?.size == 1 } }
     }
 
+    private val byAuthority = records.flatMap { record ->
+        listOf(record.original, record.adaptation).flatMap { endpoint ->
+            endpoint.externalIds.map { (authority, id) -> Triple(endpoint.work.format, authority, id) to record }
+        }
+    }.groupBy({ it.first }, { it.second })
+
+    /** Only existing reviewed work keys or trusted same-format IDs may extend exact enrollment.
+     * A revoked exact edition cannot re-enter through another identity key.
+     */
+    fun relationship(candidate: StoryCandidate): StoryRelationship? {
+        if (!candidate.eligible || !candidate.formatCompatible) return null
+        val edition = candidate.destination.edition
+        val direct = relationship(edition)
+        if (byEdition.containsKey(edition.lookupKey())) return direct?.takeIf {
+            accepts(if (edition.format == StoryFormat.MANHWA) it.adaptation else it.original, candidate)
+        }
+        val matches = buildList {
+            candidate.reviewedComicKey?.takeIf { edition.format == StoryFormat.MANHWA }?.let {
+                addAll(byWork[StoryWorkRef(StoryFormat.MANHWA, "work:$it")].orEmpty())
+            }
+            candidate.externalIds.forEach { (authority, id) ->
+                addAll(byAuthority[Triple(edition.format, authority, id)].orEmpty())
+            }
+        }.distinct()
+        val relation = matches.singleOrNull() ?: return null
+        val endpoint = if (edition.format == StoryFormat.MANHWA) relation.adaptation else relation.original
+        // Reuse full ambiguity/revocation checks, even when the incoming route is not enrolled.
+        if (relationship(endpoint.editions.first()) != relation) return null
+        return relation.takeIf { accepts(endpoint, candidate) }
+    }
+
+    internal fun accepts(endpoint: StoryWorkEndpoint, candidate: StoryCandidate): Boolean {
+        if (endpoint.work.format != candidate.destination.edition.format) return false
+        if (!ConnectedStoryResolver.compatible(endpoint, listOf(candidate))) return false
+        if (endpoint.enrolls(candidate.destination.edition)) return true
+        return (candidate.reviewedComicKey != null && endpoint.work.format == StoryFormat.MANHWA &&
+            endpoint.work.key == "work:${candidate.reviewedComicKey}") ||
+            endpoint.externalIds.any { (authority, id) -> candidate.externalIds[authority] == id }
+    }
+
     companion object {
         @Serializable private data class Document(val schema: Int, val records: List<StoryRelationship>)
         fun empty() = VerifiedStoryRelationshipRegistry(emptyList())
@@ -60,7 +100,10 @@ internal class VerifiedStoryRelationshipRegistry private constructor(val records
             doc.records.forEach { record ->
                 require(record.id.matches(Regex("[a-z0-9-]{1,80}")))
                 require(record.adaptation.work.format == StoryFormat.MANHWA && record.original.work.format == StoryFormat.TEXT_NOVEL)
-                require(record.adaptation.work.key.matches(Regex("work:[a-f0-9]{64}")))
+                require(record.adaptation.work.key.matches(Regex("work:[a-f0-9]{64}")) ||
+                    record.adaptation.externalIds.any { (authority, id) ->
+                        authority in authorities && record.adaptation.work.key == "external:$authority:$id"
+                    })
                 require(record.reviewer.isNotBlank() && record.reviewer.length <= 120)
                 LocalDate.parse(record.reviewedAt)
                 require(record.evidence.size in 1..8 && record.evidence.all(::publicEvidence))

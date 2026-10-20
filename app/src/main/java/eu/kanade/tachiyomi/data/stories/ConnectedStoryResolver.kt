@@ -36,6 +36,7 @@ internal data class ConnectedStoryUiModel(
     val selected: StoryDestination,
     val alternatives: List<StoryDestination>,
     val token: LocalAccountScope.Token,
+    val originEvidence: StoryCandidate,
 ) {
     val relationshipId get() = relationship.id
     val heading get() = if (targetWork.format == StoryFormat.TEXT_NOVEL) "إصدار رواية" else "إصدار مانهوا"
@@ -50,19 +51,19 @@ internal object ConnectedStoryResolver {
         candidates: List<StoryCandidate>,
         token: LocalAccountScope.Token,
     ): ConnectedStoryUiModel? {
-        val relation = registry.relationship(origin.destination.edition) ?: return null
+        val relation = registry.relationship(origin) ?: return null
         val from = if (origin.destination.edition.format == StoryFormat.MANHWA) relation.adaptation else relation.original
         val to = if (from == relation.adaptation) relation.original else relation.adaptation
-        val origins = (listOf(origin) + candidates.filter { from.enrolls(it.destination.edition) })
-        val targets = candidates.filter { to.enrolls(it.destination.edition) }
-        if (!origin.eligible || !from.enrolls(origin.destination.edition) || !compatible(from,origins) || !compatible(to,targets)) return null
+        val origins = (listOf(origin) + candidates.filter { registry.accepts(from,it) })
+        val targets = candidates.filter { registry.accepts(to,it) }
+        if (!origin.eligible || !registry.accepts(from,origin) || !compatible(from,origins) || !compatible(to,targets)) return null
         val usable = targets.distinctBy { it.destination.edition }.filter { it.eligible && it.readable != false && it.destination.title.isNotBlank() &&
             tachiyomi.domain.manga.model.CoverUrl.valid(it.destination.cover) != null }
         val ordered = usable.sortedWith(compareByDescending<StoryCandidate> { it.readable == true }
             .thenByDescending { it.verifiedCount ?: -1 }
             .thenBy { to.editions.indexOfFirst { route -> route.lookupKey()==it.destination.edition.lookupKey() } })
         val best = ordered.firstOrNull() ?: return null
-        return ConnectedStoryUiModel(relation,origin.destination.edition,to.work,best.destination,ordered.map { it.destination },token)
+        return ConnectedStoryUiModel(relation,origin.destination.edition,to.work,best.destination,ordered.map { it.destination },token,origin)
     }
 
     internal fun compatible(endpoint: StoryWorkEndpoint, candidates: List<StoryCandidate>): Boolean {
@@ -75,4 +76,10 @@ internal object ConnectedStoryResolver {
                 listOfNotNull(endpoint.externalIds[namespace])).distinct().size <= 1
         }
     }
+}
+
+/** Local metadata lookup only. This does not request enrichment or create identity evidence. */
+internal fun StoryDestination.identityEvidence(): StoryCandidate = when (this) {
+    is StoryDestination.Comic -> connectedComicCandidate(manga)
+    is StoryDestination.Prose -> connectedProseCandidate(novel, eu.kanade.tachiyomi.novels.NovelCatalogState()) { true }
 }

@@ -50,7 +50,7 @@ internal fun openConnectedStory(navigator: Navigator, originScreenKey: String, m
     registry: VerifiedStoryRelationshipRegistry, workspace: LocalAccountScope.State,
     available: (StoryDestination) -> Boolean): Boolean {
     if (navigator.lastItem.key != originScreenKey || !model.current(workspace) ||
-        registry.relationship(model.originEdition) != model.relationship || !available(model.selected)) return false
+        registry.relationship(model.originEvidence) != model.relationship || !available(model.selected)) return false
     when (val target = model.selected) {
         is StoryDestination.Comic -> navigator.push(MangaScreen(target.manga.id))
         is StoryDestination.Prose -> navigator.push(NovelDetailsScreen(target.novel))
@@ -75,7 +75,9 @@ internal fun ConnectedStoriesSection(origin: StoryDestination, inset: Boolean = 
     val graph = rememberConnectedStoryGraph() ?: return
     val reviewed by graph.collectAsStateWithLifecycle()
     // An unregistered work costs an indexed lookup, no SQL/source/catalog observers.
-    if (reviewed.relationship(origin.edition) == null) return
+    val identityRevision by PreferredMangaVariants.changes.collectAsStateWithLifecycle()
+    val originEvidence = remember(origin,identityRevision) { origin.identityEvidence() }
+    val relation = reviewed.relationship(originEvidence) ?: return
     val workspace by LocalAccountScope.changes.collectAsStateWithLifecycle()
     val repository = remember(graph,context) {
         val sources = Injekt.get<SourceManager>()
@@ -83,7 +85,7 @@ internal fun ConnectedStoriesSection(origin: StoryDestination, inset: Boolean = 
             comicAvailable = { sources.get(it) is HttpSource },
             sourceChanges = merge(sources.sources.map { Unit },PreferredMangaVariants.changes.map { Unit }))
     }
-    LaunchedEffect(reviewed,origin.edition,workspace) {
+    LaunchedEffect(reviewed,origin.edition,workspace,relation) {
         if (!workspace.ready) return@LaunchedEffect
         val token=workspace.token
         withContext(Dispatchers.IO + LocalAccountScope.Element(token)) {
@@ -103,7 +105,9 @@ internal fun ConnectedStoriesSection(origin: StoryDestination, inset: Boolean = 
                 }
             }
             try {
-                connectedStoryMetadata.prepare(reviewed,origin.edition,token,usable={ route ->
+                connectedStoryMetadata.prepare(reviewed,
+                    (if (origin.edition.format == StoryFormat.MANHWA) relation.adaptation else relation.original).editions.first(),
+                    token,usable={ route ->
                     val target=local(route)
                     target!=null && target.title.isNotBlank() && tachiyomi.domain.manga.model.CoverUrl.valid(target.cover)!=null
                 },fetch={ route ->
@@ -130,7 +134,7 @@ internal fun ConnectedStoriesSection(origin: StoryDestination, inset: Boolean = 
         }
     }
     val related by remember(repository,origin,workspace.token) { repository.observe(origin) }.collectAsStateWithLifecycle(initialValue = null)
-    val model = related?.takeIf { it.current(workspace) && reviewed.relationship(origin.edition) == it.relationship } ?: return
+    val model = related?.takeIf { it.current(workspace) && reviewed.relationship(originEvidence) == it.relationship } ?: return
     Box(Modifier.fillMaxWidth().then(if (inset) Modifier.padding(horizontal = 16.dp,vertical = 12.dp) else Modifier)) {
         ConnectedStoryCard(model) {
             openConnectedStory(navigator,screenKey,model,graph.value,LocalAccountScope.changes.value) { target ->

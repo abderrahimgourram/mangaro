@@ -1,0 +1,80 @@
+{
+  "observedAt": "2026-10-20",
+  "editions": [
+    {
+      "format": "TEXT_NOVEL",
+      "source": "novel.seanovel",
+      "url": "https://seanovel.org/novels/overgeared",
+      "publicUrl": "https://seanovel.org/novels/overgeared",
+      "names": [
+        "مدجج بالعتاد",
+        ""
+      ]
+    },
+    {
+      "format": "MANHWA",
+      "source": "215553151312092548",
+      "url": "/manhwa/overgeared#6a8f5babf1a5e87af68c564b",
+      "publicUrl": "https://mangatime.org/manhwa/overgeared",
+      "names": [
+        "أوفرغيرد",
+        "Overgeared"
+      ]
+    },
+    {
+      "format": "TEXT_NOVEL",
+      "source": "novel.seanovel",
+      "url": "https://seanovel.org/novels/return-of-the-blossoming-blade",
+      "publicUrl": "https://seanovel.org/novels/return-of-the-blossoming-blade",
+      "names": [
+        "عودة طائفة جبل هوا",
+        "Return of the Blossoming Blade"
+      ]
+    },
+    {
+      "format": "MANHWA",
+      "source": "215553151312092548",
+      "url": "/manhwa/return-of-the-mount-hua-sect#6a49e00234c268b77054833e",
+      "publicUrl": "https://mangatime.org/manhwa/return-of-the-mount-hua-sect",
+      "names": [
+        "عودة طائفة جبل هوا",
+        "Return of the Mount Hua Sect"
+      ]
+    }
+  ],
+  "relations": [
+    {
+      "id": "overgeared",
+      "type": "ADAPTATION_OF",
+      "original": {
+        "format": "TEXT_NOVEL",
+        "source": "novel.seanovel",
+        "url": "https://seanovel.org/novels/overgeared"
+      },
+      "adaptation": {
+        "format": "MANHWA",
+        "source": "215553151312092548",
+        "url": "/manhwa/overgeared#6a8f5babf1a5e87af68c564b"
+      },
+      "publisherOriginal": "https://tapas.io/series/overgeared-novel/info",
+      "publisherAdaptation": "https://tapas.io/series/overgeared/info",
+      "evidence": [
+        "https://tapas.io/series/overgeared-novel/info"
+      ]
+    },
+    {
+      "id": "return-of-the-blossoming-blade",
+      "type": "ADAPTATION_OF",
+      "original": {
+        "format": "TEXT_NOVEL",
+        "source": "novel.seanovel",
+        "url": "https://seanovel.org/novels/return-of-the-blossoming-blade"
+      },
+      "adaptation": {
+        "format": "MANHWA",
+        "source": "215553151312092548",
+        "url": "/manhwa/return-of-the-mount-hua-sect#6a49e00234c268b77054833e"
+      }
+    }
+  ]
+}

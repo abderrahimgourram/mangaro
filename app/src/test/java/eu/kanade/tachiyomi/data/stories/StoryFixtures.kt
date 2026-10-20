@@ -14,9 +14,9 @@ internal object StoryFixtures {
     val solo get() = registry.records.first { it.id == "solo-leveling-original" }
     val tbate get() = registry.records.first { it.id == "tbate-original" }
     fun comic(ref: StoryEditionRef, id: Long = 10): Manga = Manga.create().copy(
-        id=id,source=ref.source.toLong(),url=ref.url,title=if ("BATE" in ref.url || "beginning" in ref.url) "The Beginning After the End" else "Solo Leveling",initialized=true,
+        id=id,source=ref.source.toLong(),url=ref.url,title=if ("BATE" in ref.url || "beginning" in ref.url) "The Beginning After the End" else if ("overgeared" in ref.url) "أوفرغيرد" else "Solo Leveling",initialized=true,
         thumbnailUrl="https://starzmanga.com/wp-content/uploads/public-cover.jpg")
-    fun novel(ref: StoryEditionRef): Novel = Novel(ref.source,ref.url,if ("618" in ref.url) "البداية بعد النهاية" else "رفع المستوى منفرداً",
+    fun novel(ref: StoryEditionRef): Novel = Novel(ref.source,ref.url,if ("618" in ref.url) "البداية بعد النهاية" else if ("overgeared" in ref.url) "مدجج بالعتاد" else "رفع المستوى منفرداً",
         cover="https://seanovel.org/covers/solo-leveling.webp",originalTitle="Solo Leveling")
     fun comics(record: StoryRelationship = solo) = record.adaptation.editions.mapIndexed { i,r ->
         StoryCandidate(StoryDestination.Comic(comic(r,10L+i)))

@@ -29,8 +29,12 @@ internal class ConnectedStoriesRepository(
     private val comicReadable: (Long) -> Boolean? = PreferredMangaVariants::readerUsable,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
-    fun observe(origin: StoryDestination): Flow<ConnectedStoryUiModel?> = registry.flatMapLatest { reviewed ->
-        val relation = reviewed.relationship(origin.edition)
+    fun observe(origin: StoryDestination): Flow<ConnectedStoryUiModel?> = combine(registry,sourceChanges) { reviewed, _ -> reviewed }.flatMapLatest { reviewed ->
+        val from = when (origin) {
+            is StoryDestination.Comic -> comic(origin.manga)
+            is StoryDestination.Prose -> prose(origin.novel,novels.value)
+        }
+        val relation = reviewed.relationship(from)
         if (relation == null) flowOf(null) else workspace.flatMapLatest { state ->
             if (!state.ready) flowOf(null) else {
                 // At most eight enrolled comic routes, not an unrestricted library scan or source search.
@@ -42,7 +46,7 @@ internal class ConnectedStoriesRepository(
                         emit(null)
                     }
                 }
-                combine(combine(comicFlows) { it.filterNotNull() }, novels, sourceChanges) { comics, catalog, _ ->
+                combine(combine(comicFlows) { it.filterNotNull() }, novels) { comics, catalog ->
                     val known = relation.original.editions.mapNotNull { route ->
                         val id = route.source + ":" + route.url
                         catalog.work(id)?.editions?.firstOrNull { it.id == id }
@@ -64,7 +68,14 @@ internal class ConnectedStoriesRepository(
         emit(null)
     }.distinctUntilChanged().flowOn(dispatcher)
 
-    private fun comic(manga: Manga): StoryCandidate {
+    private fun comic(manga: Manga): StoryCandidate = connectedComicCandidate(manga, metadata, comicAvailable, comicReadable)
+    private fun prose(novel: Novel, catalog: NovelCatalogState) = connectedProseCandidate(novel,catalog,novelActive)
+}
+
+internal fun connectedComicCandidate(manga: Manga,
+    metadata: (Manga) -> WorkMetadata = CatalogWorkEvidence::from,
+    comicAvailable: (Long) -> Boolean = { true },
+    comicReadable: (Long) -> Boolean? = { null }): StoryCandidate {
         val proof = metadata(manga)
         return StoryCandidate(StoryDestination.Comic(manga),proof.externalIds,proof.reviewedWorkKey,
             eligible = manga.id > 0 && comicAvailable(manga.source) && DiscoveryEligibility.valid(manga.title,manga.url),
@@ -75,5 +86,3 @@ internal class ConnectedStoriesRepository(
             readable = comicReadable(manga.id),
             verifiedCount = ChapterListIntegrity.actualChapterCount(manga).takeIf { ChapterListIntegrity.complete(manga) })
     }
-    private fun prose(novel: Novel, catalog: NovelCatalogState) = connectedProseCandidate(novel,catalog,novelActive)
-}
