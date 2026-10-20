@@ -149,7 +149,7 @@ internal fun Instrumentation.runNovelReaderEndAudit(connectedOnly: Boolean = fal
             }
         }
         fun tapTitle(text:String):Boolean=nodes(uiAutomation.rootInActiveWindow) {node ->
-            if(node.text?.toString()!=text) false else {
+            if(node.text?.toString()?.trim()!=text.trim()) false else {
                 var clickable:AccessibilityNodeInfo?=node
                 while(clickable!=null && !clickable.isClickable)clickable=clickable.parent
                 clickable?.performAction(AccessibilityNodeInfo.ACTION_CLICK)==true
@@ -171,6 +171,12 @@ internal fun Instrumentation.runNovelReaderEndAudit(connectedOnly: Boolean = fal
         record("PASS novelDetailsToComicDetails actualUI=true backStack=true noLibraryOrProgressMutation=true")
         // A new publisher-reviewed pair traverses the same production detail screens.
         val extraPairs=listOf(
+            Triple("orv",Novel("novel.seanovel","https://seanovel.org/novels/the-all-encompassing-reader","القارئ المحيط بكل شيء ",
+                "https://seanovel.org/api/novel/the-all-encompassing-reader/cover?type=webp",author="سينغ شونغ"),
+                tachiyomi.domain.manga.model.Manga.create().copy(source=215553151312092548L,
+                    url="/manhwa/omniscient-readers-viewpoint#6a8fb9a47d3207cb2faf20a0",title="وجهة نظر القارئ كلّي المعرفة",initialized=true,
+                    author="sing N song (싱숑)",artist="Sleepy-C (슬리피-C)",
+                    thumbnailUrl="https://mangatime.org/uploads/series/6a8fb9a47d3207cb2faf20a0-1ce9cd693210fcac.webp")),
             Triple("overgeared",Novel("novel.seanovel","https://seanovel.org/novels/overgeared","مدجج بالعتاد",
                 "https://seanovel.org/api/novel/overgeared/cover?type=webp",author="Park Saenal"),
                 tachiyomi.domain.manga.model.Manga.create().copy(source=215553151312092548L,
@@ -187,6 +193,16 @@ internal fun Instrumentation.runNovelReaderEndAudit(connectedOnly: Boolean = fal
             repository.ingest(listOf(extraNovel))
             cacheCover("$storyId-novel",extraNovel.cover!!,true)
             cacheCover("$storyId-comic",extraComic.thumbnailUrl!!,false)
+            if (storyId == "mount-hua") {
+                // Seed the known bad old key as well as the reviewed publisher key: stale cache must not win.
+                val corrected = tachiyomi.domain.manga.model.ReviewedCoverArtwork.MOUNT_HUA_OFFICIAL
+                cacheCover("mount-hua-official", corrected, false)
+                val imageLoader = coil3.SingletonImageLoader.get(targetContext)
+                val result = imageLoader.execute(coil3.request.ImageRequest.Builder(targetContext)
+                    .data(extraComic).networkCachePolicy(coil3.request.CachePolicy.DISABLED).build())
+                check(result is coil3.request.SuccessResult && result.memoryCacheKey?.key == "$corrected;0")
+                record("PASS MountHua publisherArtwork=true staleWrongCacheBypassed=true storedSourceUrlUnchanged=true")
+            }
             phase="$storyId-comic-details"
             showScreen(eu.kanade.tachiyomi.ui.manga.MangaScreen(extraComic.id))
             awaitHeading("إصدار رواية")
