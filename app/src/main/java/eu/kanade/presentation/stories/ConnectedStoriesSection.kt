@@ -19,6 +19,7 @@ import eu.kanade.tachiyomi.novels.NovelRepository
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.ui.home.PreferredMangaVariants
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
+import mihon.domain.manga.model.toDomainManga
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.withContext
@@ -29,6 +30,8 @@ import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
 /** One immutable bundled public metadata graph per process. No feed or backend activation. */
+private val connectedStoryMetadata = ConnectedStoryMetadata()
+
 private object BundledStories {
     @Volatile private var loaded: StateFlow<VerifiedStoryRelationshipRegistry>? = null
     @Synchronized fun load(context: Context): StateFlow<VerifiedStoryRelationshipRegistry> {
@@ -79,6 +82,52 @@ internal fun ConnectedStoriesSection(origin: StoryDestination, inset: Boolean = 
         ConnectedStoriesRepository(graph,Injekt.get<MangaRepository>(),NovelRepository.get(context).catalog,
             comicAvailable = { sources.get(it) is HttpSource },
             sourceChanges = merge(sources.sources.map { Unit },PreferredMangaVariants.changes.map { Unit }))
+    }
+    LaunchedEffect(reviewed,origin.edition,workspace) {
+        if (!workspace.ready) return@LaunchedEffect
+        val token=workspace.token
+        withContext(Dispatchers.IO + LocalAccountScope.Element(token)) {
+            val mangaRepository=Injekt.get<MangaRepository>()
+            val novelRepository=NovelRepository.get(context)
+            val sources=Injekt.get<SourceManager>()
+            suspend fun local(route: StoryEditionRef): StoryDestination? {
+                LocalAccountScope.check(token)
+                return if (route.format==StoryFormat.TEXT_NOVEL) {
+                    novelRepository.catalog.value.work(route.source+":"+route.url)?.editions
+                        ?.firstOrNull { it.id==route.source+":"+route.url }?.let(StoryDestination::Prose)
+                } else {
+                    val found=mangaRepository.getMangaByUrlAndSourceId(route.url,route.source.toLong())
+                        ?: if (route.lookupKey().url==route.url && '?' !in route.url && '#' !in route.url)
+                            mangaRepository.getMangaByUrlAndSourceId(route.url+"/",route.source.toLong()) else null
+                    found?.let(StoryDestination::Comic)
+                }
+            }
+            try {
+                connectedStoryMetadata.prepare(reviewed,origin.edition,token,usable={ route ->
+                    val target=local(route)
+                    target!=null && target.title.isNotBlank() && tachiyomi.domain.manga.model.CoverUrl.valid(target.cover)!=null
+                },fetch={ route ->
+                    LocalAccountScope.check(token)
+                    if (route.format==StoryFormat.TEXT_NOVEL) {
+                        if (eu.kanade.tachiyomi.novels.NovelSourceAvailability.active(route.source))
+                            novelRepository.detail(eu.kanade.tachiyomi.novels.Novel(route.source,route.url,""))
+                    } else {
+                        val source=sources.get(route.source.toLong()) as? HttpSource
+                        if (source!=null) {
+                            val request=eu.kanade.tachiyomi.source.model.SManga.create().apply { url=route.url;title="" }
+                            val fresh=source.getMangaUpdate(request,emptyList(),true,false).manga
+                            LocalAccountScope.check(token)
+                            check(StoryEditionRef(route.format,route.source,fresh.url).lookupKey()==route.lookupKey())
+                            check(fresh.title.isNotBlank() && tachiyomi.domain.manga.model.CoverUrl.valid(fresh.thumbnail_url)!=null)
+                            // Existing catalog insertion does not favorite, read, download, or award XP.
+                            mangaRepository.insertNetworkManga(listOf(fresh.toDomainManga(source.id)))
+                        }
+                    }
+                })
+            } catch (changed: LocalAccountScope.Changed) { /* Old account cannot update the active destination. */ }
+            catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (_: Exception) { /* Optional metadata failure never blocks details or reader access. */ }
+        }
     }
     val related by remember(repository,origin,workspace.token) { repository.observe(origin) }.collectAsStateWithLifecycle(initialValue = null)
     val model = related?.takeIf { it.current(workspace) && reviewed.relationship(origin.edition) == it.relationship } ?: return

@@ -35,7 +35,9 @@ internal class ConnectedStoriesRepository(
             if (!state.ready) flowOf(null) else {
                 // At most eight enrolled comic routes, not an unrestricted library scan or source search.
                 val comicFlows = relation.adaptation.editions.map { route ->
-                    mangas.getMangaByUrlAndSourceIdAsFlow(route.url, route.source.toLong()).catch { failure ->
+                    combine((listOf(route.url) + listOf(route.url + "/").filter { route.lookupKey().url == route.url && '?' !in route.url && '#' !in route.url }).distinct().map { url ->
+                        mangas.getMangaByUrlAndSourceIdAsFlow(url,route.source.toLong())
+                    }) { variants -> variants.firstOrNull { it != null } }.catch { failure ->
                         if (failure is CancellationException && failure !is LocalAccountScope.Changed) throw failure
                         emit(null)
                     }

@@ -11,6 +11,11 @@ import java.time.LocalDate
 @Serializable internal enum class StoryVerification { VERIFIED, PENDING, REVOKED, CONFLICTED }
 @Serializable internal data class StoryWorkRef(val format: StoryFormat, val key: String)
 @Serializable internal data class StoryEditionRef(val format: StoryFormat, val source: String, val url: String)
+internal fun StoryEditionRef.lookupKey(): StoryEditionRef =
+    if (format == StoryFormat.MANHWA && source in setOf("6058166507489091982","4110737012647435874","215553151312092548") &&
+        '?' !in url && '#' !in url) copy(url = url.trimEnd('/')) else this
+internal fun StoryWorkEndpoint.enrolls(ref: StoryEditionRef): Boolean = editions.any { it.lookupKey() == ref.lookupKey() }
+
 @Serializable internal data class StoryWorkEndpoint(
     val work: StoryWorkRef,
     val editions: List<StoryEditionRef>,
@@ -30,18 +35,18 @@ import java.time.LocalDate
 /** Separate relation graph. Does not add same-work identities to Atlas or a database. */
 internal class VerifiedStoryRelationshipRegistry private constructor(val records: List<StoryRelationship>) {
     private val byEdition = records.flatMap { record ->
-        (record.adaptation.editions + record.original.editions).map { it to record }
+        (record.adaptation.editions + record.original.editions).map { it.lookupKey() to record }
     }.groupBy({ it.first }, { it.second })
     private val byWork = records.flatMap { listOf(it.adaptation.work to it, it.original.work to it) }
         .groupBy({ it.first }, { it.second })
 
     /** Ambiguity, revocation or conflicting editorial records fail closed, never pick a random edge. */
     fun relationship(edition: StoryEditionRef): StoryRelationship? {
-        val record = byEdition[edition]?.singleOrNull() ?: return null
+        val record = byEdition[edition.lookupKey()]?.singleOrNull() ?: return null
         if (record.status != StoryVerification.VERIFIED) return null
         if (byWork[record.adaptation.work]?.size != 1 || byWork[record.original.work]?.size != 1) return null
         val routes = record.adaptation.editions + record.original.editions
-        return record.takeIf { routes.all { route -> byEdition[route]?.size == 1 } }
+        return record.takeIf { routes.all { route -> byEdition[route.lookupKey()]?.size == 1 } }
     }
 
     companion object {

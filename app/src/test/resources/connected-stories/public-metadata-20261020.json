@@ -1,0 +1,61 @@
+[
+  {
+    "url": "https://seanovel.org/api/novel/solo-leveling",
+    "status": 200,
+    "final_url": "https://seanovel.org/api/novel/solo-leveling",
+    "content_type": "application/json",
+    "sha256": "4d4a39d14f62b30ebec9e7248c33cb9a4fcb869488a4f1ec8c602b8301864bfd",
+    "metadata": {
+      "slug": "solo-leveling",
+      "title": null,
+      "title_ar": "رفع المستوى منفرداً",
+      "title_original": "Solo Leveling",
+      "author": "",
+      "status": "completed",
+      "chapters_count": 270,
+      "cover_version": null
+    },
+    "index_rows": 270
+  },
+  {
+    "url": "https://seanovel.org/api/novel/novel-618",
+    "status": 200,
+    "final_url": "https://seanovel.org/api/novel/novel-618",
+    "content_type": "application/json",
+    "sha256": "38e6bcf96fffb77b49dbca870f915e36c6a29441dc47a360b101e06dfc3eabb2",
+    "metadata": {
+      "slug": "novel-618",
+      "title": null,
+      "title_ar": "البداية بعد النهاية",
+      "title_original": "",
+      "author": "",
+      "status": "ongoing",
+      "chapters_count": 531,
+      "cover_version": null
+    },
+    "index_rows": 534
+  },
+  {
+    "url": "https://starzmanga.com/manga/solo-leveling/",
+    "error": "HTTPError",
+    "status": 403
+  },
+  {
+    "url": "https://olympustaff.com/series/SL",
+    "status": 200,
+    "final_url": "https://olympustaff.com/series/SL",
+    "content_type": "text/html; charset=utf-8",
+    "sha256": "8037ff11be34088afaccf28001c5a8fc490eca6ba4adb8245289d7fce5cddd43",
+    "metadata": {
+      "og:title": [
+        "    Solo Leveling - مانجا مترجمة\n"
+      ],
+      "og:image": [
+        "https://olympustaff.com/images/manga/b05147568d52f22c663c084172fc0dac.png"
+      ],
+      "og:url": [
+        "https://olympustaff.com/series/SL"
+      ]
+    }
+  }
+]
