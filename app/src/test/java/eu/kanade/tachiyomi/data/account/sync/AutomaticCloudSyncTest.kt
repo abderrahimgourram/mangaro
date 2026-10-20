@@ -4,133 +4,207 @@ import android.content.Context
 import androidx.work.WorkManager
 import io.github.jan.supabase.SupabaseClient
 import io.kotest.matchers.shouldBe
-import io.mockk.*
-import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.*
-import mihon.domain.account.*
+import io.mockk.Runs
+import io.mockk.coEvery
+import io.mockk.coVerify
+import io.mockk.every
+import io.mockk.just
+import io.mockk.mockk
+import io.mockk.mockkObject
+import io.mockk.spyk
+import io.mockk.unmockkObject
+import io.mockk.verify
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.yield
+import mihon.domain.account.AccountAuth
+import mihon.domain.account.AccountOperation
+import mihon.domain.account.AccountSession
+import mihon.domain.account.LocalCloudChanges
+import mihon.domain.account.MangaroProfile
 import org.junit.jupiter.api.Test
 
 class AutomaticCloudSyncTest {
     // Mock AccountAuth emits sessions without the real workspace binder. Install the same
     // owner explicitly; otherwise preceding isolation tests correctly fence these fake writes.
     private val priorOwner = tachiyomi.core.common.util.lang.LocalAccountScope.active().owner
-    private val installedField = tachiyomi.core.common.util.lang.LocalAccountScope.javaClass.getDeclaredField("installed").apply {isAccessible=true}
+    private val installedField = tachiyomi.core.common.util.lang.LocalAccountScope.javaClass.getDeclaredField(
+        "installed",
+    ).apply {
+        isAccessible =
+            true
+    }
     private val priorInstalled = installedField.getBoolean(tachiyomi.core.common.util.lang.LocalAccountScope)
+
     @org.junit.jupiter.api.BeforeEach fun bindFixtureOwner() {
         tachiyomi.core.common.util.lang.LocalAccountScope.commit("A")
     }
+
     @org.junit.jupiter.api.AfterEach fun releaseFixtureOwner() {
-        val local=tachiyomi.core.common.util.lang.LocalAccountScope
+        val local = tachiyomi.core.common.util.lang.LocalAccountScope
         local.commit(priorOwner)
-        installedField.setBoolean(local,priorInstalled)
+        installedField.setBoolean(local, priorInstalled)
     }
 
-    @Test fun `session restore automatically schedules once then switch pauses without snapshot leakage`()=runBlocking {
-        val context=mockk<Context>()
-        val client=mockk<SupabaseClient>()
-        val auth=mockk<AccountAuth>()
-        val store=mockk<CloudSyncStore>(relaxed=true)
-        val local=mockk<CloudLocalGateway>(relaxed=true)
-        val work=mockk<WorkManager>(relaxed=true)
-        val session=MutableStateFlow<AccountSession>(AccountSession.Loading)
-        val values=java.util.concurrent.ConcurrentHashMap<Pair<String,String>,String>()
-        values["A" to "baseline"]="true"
-        every {auth.observeSession()} returns session
-        every {store.get(any(),any())} answers {values[firstArg<String>() to secondArg<String>()]}
-        every {store.put(any(),any(),any())} answers {values[firstArg<String>() to secondArg<String>()]=thirdArg<String>()}
-        every {store.configuredAccounts()} returns setOf("A")
-        mockkObject(WorkManager.Companion)
-        every {WorkManager.getInstance(context)} returns work
-        val scope=CoroutineScope(SupervisorJob()+Dispatchers.Unconfined)
-        val sync=spyk(SupabaseCloudSync(context,client,auth,store,local,scope))
-        every {sync.schedule(any(),any(),any())} just Runs
-        fun logged(user:String,name:String="Reader")=AccountSession.Authenticated(MangaroProfile(user,null,name,user.lowercase(),null,0,1))
-        try {
-            sync.start();sync.start()
-            session.value=logged("A")
-            withTimeout(3_000) {sync.observe("A").first {it.loaded && it.enabled}}
-            // configure publishes immediately before scheduling; wait until its launch completes.
-            withTimeout(3_000) {while(values["_device" to "bound"]!="A") yield()}
-            delay(20)
-            session.value=logged("A","Updated")
-            delay(20)
-            verify(exactly=1) {sync.schedule("A",true,false)}
-            session.value=logged("B")
-            withTimeout(3_000) {sync.observe("B").first {it.loaded && it.needsMerge}}
-            sync.observe("B").value.enabled shouldBe false
-            verify(exactly=0) {sync.schedule("B",any(),any())}
-            coVerify(exactly=0) {local.all("B")}
-            session.value=AccountSession.Guest
-            delay(20)
-            verify {
-                work.cancelUniqueWork(SupabaseCloudSync.workName("A"));work.cancelUniqueWork(SupabaseCloudSync.workName("B"))
-                work.cancelUniqueWork(SupabaseCloudSync.periodicWorkName("A"));work.cancelUniqueWork(SupabaseCloudSync.periodicWorkName("B"))
+    @Test
+    fun `session restore automatically schedules once then switch pauses without snapshot leakage`() =
+        runBlocking {
+            val context = mockk<Context>()
+            val client = mockk<SupabaseClient>()
+            val auth = mockk<AccountAuth>()
+            val store = mockk<CloudSyncStore>(relaxed = true)
+            val local = mockk<CloudLocalGateway>(relaxed = true)
+            val work = mockk<WorkManager>(relaxed = true)
+            val session = MutableStateFlow<AccountSession>(AccountSession.Loading)
+            val values = java.util.concurrent.ConcurrentHashMap<Pair<String, String>, String>()
+            values["A" to "baseline"] = "true"
+            every { auth.observeSession() } returns session
+            every { store.get(any(), any()) } answers { values[firstArg<String>() to secondArg<String>()] }
+            every { store.put(any(), any(), any()) } answers
+                { values[firstArg<String>() to secondArg<String>()] = thirdArg<String>() }
+            every { store.configuredAccounts() } returns setOf("A")
+            mockkObject(WorkManager.Companion)
+            every { WorkManager.getInstance(context) } returns work
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+            val sync = spyk(SupabaseCloudSync(context, client, auth, store, local, scope))
+            every { sync.schedule(any(), any(), any()) } just Runs
+            fun logged(
+                user: String,
+                name: String = "Reader",
+            ) = AccountSession.Authenticated(MangaroProfile(user, null, name, user.lowercase(), null, 0, 1))
+            try {
+                sync.start()
+                sync.start()
+                session.value = logged("A")
+                withTimeout(3_000) { sync.observe("A").first { it.loaded && it.enabled } }
+                // configure publishes immediately before scheduling; wait until its launch completes.
+                withTimeout(3_000) { while (values["_device" to "bound"] != "A") yield() }
+                delay(20)
+                session.value = logged("A", "Updated")
+                delay(20)
+                verify(exactly = 1) { sync.schedule("A", true, false) }
+                session.value = logged("B")
+                withTimeout(3_000) { sync.observe("B").first { it.loaded && it.needsMerge } }
+                sync.observe("B").value.enabled shouldBe false
+                verify(exactly = 0) { sync.schedule("B", any(), any()) }
+                coVerify(exactly = 0) { local.all("B") }
+                session.value = AccountSession.Guest
+                delay(20)
+                verify {
+                    work.cancelUniqueWork(SupabaseCloudSync.workName("A"))
+                    work.cancelUniqueWork(SupabaseCloudSync.workName("B"))
+                    work.cancelUniqueWork(SupabaseCloudSync.periodicWorkName("A"))
+                    work.cancelUniqueWork(SupabaseCloudSync.periodicWorkName("B"))
+                }
+                coVerify(exactly = 0) { local.all(any()) }
+            } finally {
+                scope.cancel()
+                LocalCloudChanges.capture = null
+                unmockkObject(WorkManager.Companion)
             }
-            coVerify(exactly=0) {local.all(any())}
-        } finally {scope.cancel();LocalCloudChanges.capture=null;unmockkObject(WorkManager.Companion)}
-    }
-    @Test fun `restored account respects an explicitly disabled automatic sync choice`() = runBlocking {
-        val context=mockk<Context>(); val auth=mockk<AccountAuth>(); val work=mockk<WorkManager>(relaxed=true)
-        val store=mockk<CloudSyncStore>(relaxed=true); val local=mockk<CloudLocalGateway>(relaxed=true)
-        val sessions=MutableStateFlow<AccountSession>(AccountSession.Loading)
-        val values=java.util.concurrent.ConcurrentHashMap<Pair<String,String>,String>()
-        values["A" to "baseline"]="true"; values["A" to "decision"]="made"; values["A" to "enabled"]="false"
-        every { auth.observeSession() } returns sessions
-        every { store.get(any(),any()) } answers {values[firstArg<String>() to secondArg<String>()]}
-        every { store.put(any(),any(),any()) } answers {values[firstArg<String>() to secondArg<String>()]=thirdArg<String>()}
-        every { store.configuredAccounts() } returns setOf("A")
-        mockkObject(WorkManager.Companion); every { WorkManager.getInstance(context) } returns work
-        val scope=CoroutineScope(SupervisorJob()+Dispatchers.Unconfined)
-        val sync=spyk(SupabaseCloudSync(context,mockk(),auth,store,local,scope))
-        every { sync.schedule(any(),any(),any()) } just Runs
-        try {
-            sync.start()
-            sessions.value=AccountSession.Authenticated(MangaroProfile("A",null,"Fixture",null,null,0,1))
-            withTimeout(3_000) {sync.observe("A").first {it.loaded}}
-            delay(100)
-            values["A" to "enabled"] shouldBe "false"
-            sync.observe("A").value.enabled shouldBe false
-            verify(exactly=0) {sync.schedule("A",any(),any())}
-            coVerify(exactly=0) {local.all(any())}
-        } finally {scope.cancel();LocalCloudChanges.capture=null;unmockkObject(WorkManager.Companion)}
-    }
+        }
 
-    @Test fun `fresh login waits for explicit guest merge then offline progress hints coalesce`()=runBlocking {
-        val context=mockk<Context>();val client=mockk<SupabaseClient>();val auth=mockk<AccountAuth>()
-        val store=mockk<CloudSyncStore>(relaxed=true);val local=mockk<CloudLocalGateway>();val work=mockk<WorkManager>(relaxed=true)
-        val session=MutableStateFlow<AccountSession>(AccountSession.Guest)
-        val values=java.util.concurrent.ConcurrentHashMap<Pair<String,String>,String>()
-        every {auth.observeSession()} returns session
-        every {store.get(any(),any())} answers {values[firstArg<String>() to secondArg<String>()]}
-        every {store.put(any(),any(),any())} answers {values[firstArg<String>() to secondArg<String>()]=thirdArg<String>()}
-        every {store.atomic(any())} answers {firstArg<()->Unit>().invoke()}
-        every {store.configuredAccounts()} returns emptySet()
-        coEvery {local.all("A")} returns mapOf("cloud_library_entries/real-key" to kotlinx.serialization.json.buildJsonObject {put("user_id",kotlinx.serialization.json.JsonPrimitive("A"))})
-        mockkObject(WorkManager.Companion);every {WorkManager.getInstance(context)} returns work
-        val scope=CoroutineScope(SupervisorJob()+Dispatchers.Unconfined)
-        val sync=spyk(SupabaseCloudSync(context,client,auth,store,local,scope))
-        every {sync.schedule(any(),any(),any())} just Runs
-        try {
-            sync.start()
-            session.value=AccountSession.Authenticated(MangaroProfile("A",null,"Reader","reader",null,0,1))
-            withTimeout(3_000) {sync.observe("A").first {it.loaded && it.needsMerge}}
-            coVerify(exactly=0) {local.all("A")}
-            values["A" to "enabled"] shouldBe "false"
-            sync.configure("A",true) shouldBe AccountOperation.Completed
-            withTimeout(3_000) {sync.observe("A").first {it.loaded && it.enabled}}
-            delay(20)
-            values["A" to "seeded"] shouldBe "true"
-            values.containsKey("A" to "seed/cloud_library_entries/real-key") shouldBe true
-            coVerify(exactly=1) {local.all("A")}
-            verify(exactly=1) {sync.schedule("A",true,false)}
-            repeat(3) {LocalCloudChanges.changed(LocalCloudChanges.Kind.CHAPTER,42)}
-            values.keys.count {it.first=="A" && it.second.startsWith("dirty/")} shouldBe 1
-            session.value=AccountSession.Guest
-            delay(20)
-            val captured=values.toMap()
-            LocalCloudChanges.changed(LocalCloudChanges.Kind.CHAPTER,42)
-            values.toMap() shouldBe captured
-            verify {work.cancelUniqueWork(SupabaseCloudSync.workName("A"))}
-        } finally {scope.cancel();LocalCloudChanges.capture=null;unmockkObject(WorkManager.Companion)}
-    }
+    @Test
+    fun `restored account respects an explicitly disabled automatic sync choice`() =
+        runBlocking {
+            val context = mockk<Context>()
+            val auth = mockk<AccountAuth>()
+            val work = mockk<WorkManager>(relaxed = true)
+            val store = mockk<CloudSyncStore>(relaxed = true)
+            val local = mockk<CloudLocalGateway>(relaxed = true)
+            val sessions = MutableStateFlow<AccountSession>(AccountSession.Loading)
+            val values = java.util.concurrent.ConcurrentHashMap<Pair<String, String>, String>()
+            values["A" to "baseline"] = "true"
+            values["A" to "decision"] = "made"
+            values["A" to "enabled"] = "false"
+            every { auth.observeSession() } returns sessions
+            every { store.get(any(), any()) } answers { values[firstArg<String>() to secondArg<String>()] }
+            every { store.put(any(), any(), any()) } answers
+                { values[firstArg<String>() to secondArg<String>()] = thirdArg<String>() }
+            every { store.configuredAccounts() } returns setOf("A")
+            mockkObject(WorkManager.Companion)
+            every { WorkManager.getInstance(context) } returns work
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+            val sync = spyk(SupabaseCloudSync(context, mockk(), auth, store, local, scope))
+            every { sync.schedule(any(), any(), any()) } just Runs
+            try {
+                sync.start()
+                sessions.value = AccountSession.Authenticated(MangaroProfile("A", null, "Fixture", null, null, 0, 1))
+                withTimeout(3_000) { sync.observe("A").first { it.loaded } }
+                delay(100)
+                values["A" to "enabled"] shouldBe "false"
+                sync.observe("A").value.enabled shouldBe false
+                verify(exactly = 0) { sync.schedule("A", any(), any()) }
+                coVerify(exactly = 0) { local.all(any()) }
+            } finally {
+                scope.cancel()
+                LocalCloudChanges.capture = null
+                unmockkObject(WorkManager.Companion)
+            }
+        }
+
+    @Test
+    fun `fresh login waits for explicit guest merge then offline progress hints coalesce`() =
+        runBlocking {
+            val context = mockk<Context>()
+            val client = mockk<SupabaseClient>()
+            val auth = mockk<AccountAuth>()
+            val store = mockk<CloudSyncStore>(relaxed = true)
+            val local = mockk<CloudLocalGateway>()
+            val work = mockk<WorkManager>(relaxed = true)
+            val session = MutableStateFlow<AccountSession>(AccountSession.Guest)
+            val values = java.util.concurrent.ConcurrentHashMap<Pair<String, String>, String>()
+            every { auth.observeSession() } returns session
+            every { store.get(any(), any()) } answers { values[firstArg<String>() to secondArg<String>()] }
+            every { store.put(any(), any(), any()) } answers
+                { values[firstArg<String>() to secondArg<String>()] = thirdArg<String>() }
+            every { store.atomic(any()) } answers { firstArg<() -> Unit>().invoke() }
+            every { store.configuredAccounts() } returns emptySet()
+            coEvery { local.all("A") } returns
+                mapOf(
+                    "cloud_library_entries/real-key" to
+                        kotlinx.serialization.json.buildJsonObject {
+                            put("user_id", kotlinx.serialization.json.JsonPrimitive("A"))
+                        },
+                )
+            mockkObject(WorkManager.Companion)
+            every { WorkManager.getInstance(context) } returns work
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+            val sync = spyk(SupabaseCloudSync(context, client, auth, store, local, scope))
+            every { sync.schedule(any(), any(), any()) } just Runs
+            try {
+                sync.start()
+                session.value = AccountSession.Authenticated(MangaroProfile("A", null, "Reader", "reader", null, 0, 1))
+                withTimeout(3_000) { sync.observe("A").first { it.loaded && it.needsMerge } }
+                coVerify(exactly = 0) { local.all("A") }
+                values["A" to "enabled"] shouldBe "false"
+                sync.configure("A", true) shouldBe AccountOperation.Completed
+                withTimeout(3_000) { sync.observe("A").first { it.loaded && it.enabled } }
+                delay(20)
+                values["A" to "seeded"] shouldBe "true"
+                values.containsKey("A" to "seed/cloud_library_entries/real-key") shouldBe true
+                coVerify(exactly = 1) { local.all("A") }
+                verify(exactly = 1) { sync.schedule("A", true, false) }
+                repeat(3) { LocalCloudChanges.changed(LocalCloudChanges.Kind.CHAPTER, 42) }
+                values.keys.count { it.first == "A" && it.second.startsWith("dirty/") } shouldBe 1
+                session.value = AccountSession.Guest
+                delay(20)
+                val captured = values.toMap()
+                LocalCloudChanges.changed(LocalCloudChanges.Kind.CHAPTER, 42)
+                values.toMap() shouldBe captured
+                verify { work.cancelUniqueWork(SupabaseCloudSync.workName("A")) }
+            } finally {
+                scope.cancel()
+                LocalCloudChanges.capture = null
+                unmockkObject(WorkManager.Companion)
+            }
+        }
 }

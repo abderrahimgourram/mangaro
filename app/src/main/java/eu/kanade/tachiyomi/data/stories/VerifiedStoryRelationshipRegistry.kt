@@ -7,20 +7,33 @@ import java.net.URI
 import java.time.LocalDate
 
 @Serializable internal enum class StoryFormat { MANHWA, TEXT_NOVEL }
+
 @Serializable internal enum class StoryRelationshipType { ADAPTATION_OF }
+
 @Serializable internal enum class StoryVerification { VERIFIED, PENDING, REVOKED, CONFLICTED }
+
 @Serializable internal data class StoryWorkRef(val format: StoryFormat, val key: String)
+
 @Serializable internal data class StoryEditionRef(val format: StoryFormat, val source: String, val url: String)
 internal fun StoryEditionRef.lookupKey(): StoryEditionRef =
-    if (format == StoryFormat.MANHWA && source in setOf("6058166507489091982","4110737012647435874","215553151312092548") &&
-        '?' !in url && '#' !in url) copy(url = url.trimEnd('/')) else this
-internal fun StoryWorkEndpoint.enrolls(ref: StoryEditionRef): Boolean = editions.any { it.lookupKey() == ref.lookupKey() }
+    if (format == StoryFormat.MANHWA &&
+        source in setOf("6058166507489091982", "4110737012647435874", "215553151312092548") &&
+        '?' !in url && '#' !in url
+    ) {
+        copy(url = url.trimEnd('/'))
+    } else {
+        this
+    }
+internal fun StoryWorkEndpoint.enrolls(
+    ref: StoryEditionRef,
+): Boolean = editions.any { it.lookupKey() == ref.lookupKey() }
 
 @Serializable internal data class StoryWorkEndpoint(
     val work: StoryWorkRef,
     val editions: List<StoryEditionRef>,
     val externalIds: Map<String, String> = emptyMap(),
 )
+
 @Serializable internal data class StoryRelationship(
     val id: String,
     val adaptation: StoryWorkEndpoint,
@@ -62,8 +75,10 @@ internal class VerifiedStoryRelationshipRegistry private constructor(val records
         if (!candidate.eligible || !candidate.formatCompatible) return null
         val edition = candidate.destination.edition
         val direct = relationship(edition)
-        if (byEdition.containsKey(edition.lookupKey())) return direct?.takeIf {
-            accepts(if (edition.format == StoryFormat.MANHWA) it.adaptation else it.original, candidate)
+        if (byEdition.containsKey(edition.lookupKey())) {
+            return direct?.takeIf {
+                accepts(if (edition.format == StoryFormat.MANHWA) it.adaptation else it.original, candidate)
+            }
         }
         val matches = buildList {
             candidate.reviewedComicKey?.takeIf { edition.format == StoryFormat.MANHWA }?.let {
@@ -84,8 +99,10 @@ internal class VerifiedStoryRelationshipRegistry private constructor(val records
         if (endpoint.work.format != candidate.destination.edition.format) return false
         if (!ConnectedStoryResolver.compatible(endpoint, listOf(candidate))) return false
         if (endpoint.enrolls(candidate.destination.edition)) return true
-        return (candidate.reviewedComicKey != null && endpoint.work.format == StoryFormat.MANHWA &&
-            endpoint.work.key == "work:${candidate.reviewedComicKey}") ||
+        return (
+            candidate.reviewedComicKey != null && endpoint.work.format == StoryFormat.MANHWA &&
+                endpoint.work.key == "work:${candidate.reviewedComicKey}"
+            ) ||
             endpoint.externalIds.any { (authority, id) -> candidate.externalIds[authority] == id }
     }
 
@@ -99,26 +116,50 @@ internal class VerifiedStoryRelationshipRegistry private constructor(val records
             require(doc.records.map { it.id }.distinct().size == doc.records.size)
             doc.records.forEach { record ->
                 require(record.id.matches(Regex("[a-z0-9-]{1,80}")))
-                require(record.adaptation.work.format == StoryFormat.MANHWA && record.original.work.format == StoryFormat.TEXT_NOVEL)
-                require(record.adaptation.work.key.matches(Regex("work:[a-f0-9]{64}")) ||
-                    record.adaptation.externalIds.any { (authority, id) ->
-                        authority in authorities && record.adaptation.work.key == "external:$authority:$id"
-                    })
+                require(
+                    record.adaptation.work.format == StoryFormat.MANHWA &&
+                        record.original.work.format == StoryFormat.TEXT_NOVEL,
+                )
+                require(
+                    record.adaptation.work.key.matches(Regex("work:[a-f0-9]{64}")) ||
+                        record.adaptation.externalIds.any { (authority, id) ->
+                            authority in authorities && record.adaptation.work.key == "external:$authority:$id"
+                        },
+                )
                 require(record.reviewer.isNotBlank() && record.reviewer.length <= 120)
                 LocalDate.parse(record.reviewedAt)
                 require(record.evidence.size in 1..8 && record.evidence.all(::publicEvidence))
                 listOf(record.adaptation, record.original).forEach { endpoint ->
-                    require(endpoint.editions.size in 1..8 && endpoint.editions.distinct().size == endpoint.editions.size)
-                    require(endpoint.externalIds.keys.all { it in authorities } && endpoint.externalIds.values.all { it.isNotBlank() && it.length <= 160 })
+                    require(
+                        endpoint.editions.size in 1..8 && endpoint.editions.distinct().size == endpoint.editions.size,
+                    )
+                    require(
+                        endpoint.externalIds.keys.all { it in authorities } &&
+                            endpoint.externalIds.values.all { it.isNotBlank() && it.length <= 160 },
+                    )
                     endpoint.editions.forEach { edition ->
-                        require(edition.format == endpoint.work.format && edition.source.isNotBlank() && edition.url.length in 1..2048)
+                        require(
+                            edition.format == endpoint.work.format && edition.source.isNotBlank() &&
+                                edition.url.length in 1..2048,
+                        )
                         val uri = URI(edition.url)
-                        require(uri.rawUserInfo == null && uri.rawQuery == null && uri.rawPath.startsWith('/') && !uri.rawPath.contains("//"))
+                        require(
+                            uri.rawUserInfo == null && uri.rawQuery == null && uri.rawPath.startsWith('/') &&
+                                !uri.rawPath.contains("//"),
+                        )
                         if (edition.format == StoryFormat.MANHWA) {
-                            require(edition.source.toLongOrNull()?.let { it != 0L && it.toString() == edition.source } == true)
+                            require(
+                                edition.source.toLongOrNull()?.let {
+                                    it != 0L && it.toString() == edition.source
+                                } ==
+                                    true,
+                            )
                             require(uri.scheme == null && uri.rawAuthority == null)
                         } else {
-                            require(edition.source.startsWith("novel.") && publicEvidence(edition.url) && uri.rawFragment == null)
+                            require(
+                                edition.source.startsWith("novel.") && publicEvidence(edition.url) &&
+                                    uri.rawFragment == null,
+                            )
                         }
                     }
                 }
@@ -129,6 +170,7 @@ internal class VerifiedStoryRelationshipRegistry private constructor(val records
             return VerifiedStoryRelationshipRegistry(doc.records)
         }
         internal val authorities = setOf("anilist", "myanimelist", "mangadex", "mangaupdates", "kitsu")
+
         // These publisher work IDs are meaningful canonical URL parts, never credentials.
         // All other evidence queries (including extra parameters) remain rejected.
         private fun publicEvidenceQuery(uri: URI): Boolean {
@@ -144,7 +186,7 @@ internal class VerifiedStoryRelationshipRegistry private constructor(val records
         }
         private fun publicEvidence(value: String) = runCatching {
             val uri = URI(value)
-            uri.scheme == "https" && !uri.host.isNullOrBlank() && uri.port in listOf(-1,443) &&
+            uri.scheme == "https" && !uri.host.isNullOrBlank() && uri.port in listOf(-1, 443) &&
                 uri.rawUserInfo == null && publicEvidenceQuery(uri) && uri.rawFragment == null
         }.getOrDefault(false)
     }

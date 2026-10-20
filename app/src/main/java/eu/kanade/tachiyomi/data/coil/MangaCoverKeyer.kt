@@ -15,7 +15,9 @@ class MangaKeyer(
 ) : Keyer<DomainManga> {
     override fun key(data: DomainManga, options: Options): String {
         return if (data.hasCustomCover(coverCache ?: Injekt.get())) {
-            "${tachiyomi.core.common.util.lang.LocalAccountScope.segment(data.accountToken.fileOwner)};${data.id};${data.coverLastModified}"
+            "${tachiyomi.core.common.util.lang.LocalAccountScope.segment(
+                data.accountToken.fileOwner,
+            )};${data.id};${data.coverLastModified}"
         } else {
             "${ReviewedCoverArtwork.resolve(data.source, data.thumbnailUrl)};${data.coverLastModified}"
         }
@@ -27,7 +29,9 @@ class MangaCoverKeyer(
 ) : Keyer<MangaCover> {
     override fun key(data: MangaCover, options: Options): String {
         return if (coverCache.getCustomCoverFile(data.mangaId, data.owner).exists()) {
-            "${tachiyomi.core.common.util.lang.LocalAccountScope.segment(data.owner)};${data.mangaId};${data.lastModified}"
+            "${tachiyomi.core.common.util.lang.LocalAccountScope.segment(
+                data.owner,
+            )};${data.mangaId};${data.lastModified}"
         } else {
             "${ReviewedCoverArtwork.resolve(data.sourceId, data.url)};${data.lastModified}"
         }
