@@ -61,10 +61,12 @@ This gate does not change branch protections or enable release publication.
 
 ## Review policy
 
-The PR explicitly proposes this supported alternative to the unsupported internal
-Dependency Review step. The existing `Build & Test App` status identity, full
-Spotless gate, unit tests and migration checks remain. No branch protection or
+The PR uses this supported alternative to the unsupported internal Dependency
+Review step. The existing `Build & Test App` status identity, unit tests and
+migration checks remain. Formatting uses the separately owner-approved strict
+exact-content legacy policy documented in `docs/stabilization/formatting-policy.md`;
+the ordinary full Spotless check remains visibly non-clean. No branch protection or
 required-check setting is changed. A successful OSV response is not a successful
-run of GitHub Dependency Review. This proposed workflow change must be assessed
-under repository security policy before a merge; it is not permission to bypass
+run of GitHub Dependency Review. The actual status requirements must be inspected
+under repository security policy before a merge; this is not permission to bypass
 another failing gate or to publish a release.
