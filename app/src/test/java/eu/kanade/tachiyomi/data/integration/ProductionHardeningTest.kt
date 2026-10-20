@@ -25,6 +25,10 @@ import java.util.concurrent.atomic.AtomicInteger
 class ProductionHardeningTest {
     private class Fixture : AutoCloseable {
         val owner = "00000000-0000-0000-0000-000000000001"
+        private val localScope = tachiyomi.core.common.util.lang.LocalAccountScope
+        private val priorOwner = localScope.active().owner
+        private val installedField = localScope.javaClass.getDeclaredField("installed").apply { isAccessible = true }
+        private val priorInstalled = installedField.getBoolean(localScope)
         val session = MutableStateFlow<AccountSession>(AccountSession.Authenticated(MangaroProfile(owner,null,"Reader","reader",null,0,1)))
         val auth = mockk<AccountAuth>(relaxed = true)
         val account: AccountFoundation
@@ -34,6 +38,9 @@ class ProductionHardeningTest {
         val client: io.github.jan.supabase.SupabaseClient
         val target = CommunityTarget(CommunityTargetType.MANGA,CommunityMangaKey.fromSource(7,"/unit-work"))
         init {
+            // The fake authenticated session must own the local workspace, just like production Auth.
+            // Previous tests may have installed a guest or a different account scope.
+            localScope.commit(owner)
             // Android's clock is a JVM stub; model monotonic time for SDK capability caching.
             mockkStatic(android.os.SystemClock::class)
             every {android.os.SystemClock.elapsedRealtime()} answers {System.nanoTime()/1_000_000}
@@ -62,7 +69,17 @@ class ProductionHardeningTest {
         }
         fun page(items:String="[]")="""{"items":$items,"has_more":false,"next_cursor":null,"comment_count":1}"""
         fun comment(id:String="00000000-0000-0000-0000-000000000010")="""{"id":"$id","user_id":"$owner","body":"Real test comment","created_at":"2026-10-01T00:00:00Z","updated_at":"2026-10-01T00:00:00Z","parent_comment_id":null,"display_name":"Reader","username":"reader","avatar_path":null,"google_avatar_url":null,"author_updated_at":null,"like_count":0,"reply_count":0,"liked_by_me":false,"level":1}"""
-        override fun close() {runBlocking {client.close()};server.stop(0);executor.shutdownNow();unmockkStatic(android.os.SystemClock::class)}
+        override fun close() {
+            try {
+                runBlocking { client.close() }
+                server.stop(0)
+                executor.shutdownNow()
+                unmockkStatic(android.os.SystemClock::class)
+            } finally {
+                localScope.commit(priorOwner)
+                installedField.setBoolean(localScope, priorInstalled)
+            }
+        }
     }
     @Test fun `spoiler post and flag-only edit reconcile server truth without changing identity`() = runTest {
         Fixture().use { f ->
@@ -302,6 +319,23 @@ class ProductionHardeningTest {
             repo.observe(f.target).value.rating?.currentUserRating shouldBe 5
             repo.observe(f.target).value.rating?.average shouldBe 5.0
             repo.observe(f.target).value.rating?.count shouldBe 1
+        }
+    }
+    @Test fun `SDK fixture binds its own authenticated workspace and restores prior account`() {
+        val scope = tachiyomi.core.common.util.lang.LocalAccountScope
+        val priorOwner = scope.active().owner
+        val installedField = scope.javaClass.getDeclaredField("installed").apply { isAccessible = true }
+        val priorInstalled = installedField.getBoolean(scope)
+        try {
+            scope.commit("00000000-0000-0000-0000-000000000002")
+            Fixture().use { fixture ->
+                scope.active().owner shouldBe fixture.owner
+                scope.checkOwner(fixture.owner)
+            }
+            scope.active().owner shouldBe "00000000-0000-0000-0000-000000000002"
+        } finally {
+            scope.commit(priorOwner)
+            installedField.setBoolean(scope, priorInstalled)
         }
     }
     @Test fun `manual sync is single flight and wrong account cannot apply response`()=runTest {

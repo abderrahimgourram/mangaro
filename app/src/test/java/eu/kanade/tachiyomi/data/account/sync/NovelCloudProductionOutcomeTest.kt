@@ -19,6 +19,9 @@ import tachiyomi.core.common.util.lang.LocalAccountScope as Local
 class NovelCloudProductionOutcomeTest {
     @Test fun `missing novel capability cannot report full success and a later real successful probe recovers`()=runBlocking {
         val owner="00000000-0000-0000-0000-000000000025"
+        val priorOwner=Local.active().owner
+        val installedField=Local.javaClass.getDeclaredField("installed").apply {isAccessible=true}
+        val priorInstalled=installedField.getBoolean(Local)
         Local.commit(owner)
         val values=java.util.concurrent.ConcurrentHashMap<Pair<String,String>,String>()
         values[owner to "enabled"]="true";values[owner to "baseline"]="true"
@@ -69,6 +72,6 @@ class NovelCloudProductionOutcomeTest {
             routes.count {it.endsWith("cloud_novel_capabilities")} shouldBe 2
             routes.none {it.contains("claim_chapter") || it.contains("auth/")} shouldBe true
             coVerify(exactly=0) {auth.claimChapterCompletion(any(),any())}
-        } finally {scope.cancel();client.close();server.stop(0);executor.shutdownNow();Local.commit(Local.GUEST)}
+        } finally {scope.cancel();client.close();server.stop(0);executor.shutdownNow();Local.commit(priorOwner);installedField.setBoolean(Local,priorInstalled)}
     }
 }

@@ -13,11 +13,16 @@ import org.junit.jupiter.api.Test
 class AutomaticCloudSyncTest {
     // Mock AccountAuth emits sessions without the real workspace binder. Install the same
     // owner explicitly; otherwise preceding isolation tests correctly fence these fake writes.
+    private val priorOwner = tachiyomi.core.common.util.lang.LocalAccountScope.active().owner
+    private val installedField = tachiyomi.core.common.util.lang.LocalAccountScope.javaClass.getDeclaredField("installed").apply {isAccessible=true}
+    private val priorInstalled = installedField.getBoolean(tachiyomi.core.common.util.lang.LocalAccountScope)
     @org.junit.jupiter.api.BeforeEach fun bindFixtureOwner() {
         tachiyomi.core.common.util.lang.LocalAccountScope.commit("A")
     }
     @org.junit.jupiter.api.AfterEach fun releaseFixtureOwner() {
-        tachiyomi.core.common.util.lang.LocalAccountScope.commit(tachiyomi.core.common.util.lang.LocalAccountScope.GUEST)
+        val local=tachiyomi.core.common.util.lang.LocalAccountScope
+        local.commit(priorOwner)
+        installedField.setBoolean(local,priorInstalled)
     }
 
     @Test fun `session restore automatically schedules once then switch pauses without snapshot leakage`()=runBlocking {
