@@ -49,7 +49,11 @@ class VerifiedStoryRelationshipRegistryTest {
     @Test fun `publisher canonical numeric IDs remain intact but extra secret parameters are rejected`() {
         val text=StoryFixtures.text
         val canonical="https://series.naver.com/novel/detail.series?productNo=4130558"
-        VerifiedStoryRelationshipRegistry.parse(text).records.size shouldBe 4
+        VerifiedStoryRelationshipRegistry.parse(text).records.size shouldBe 5
+        val webtoon="https://www.webtoons.com/en/action/omniscient-reader/list?title_no=2154"
+        for (bad in listOf(webtoon+"&token=fixture",webtoon.replace("2154","invalid"))) {
+            runCatching { VerifiedStoryRelationshipRegistry.parse(text.replace(webtoon,bad)) }.isFailure shouldBe true
+        }
         for (bad in listOf(canonical+"&token=fixture",canonical.replace("4130558","invalid"),
             canonical.replace("series.naver.com","untrusted.test"))) {
             runCatching {VerifiedStoryRelationshipRegistry.parse(text.replace(canonical,bad))}.isFailure shouldBe true

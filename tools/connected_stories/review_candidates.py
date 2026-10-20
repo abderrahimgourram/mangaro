@@ -25,6 +25,7 @@ def public_query(parsed):
         return True
     allowed = {('series.naver.com','/novel/detail.series'):'productNo',
                ('m.comic.naver.com','/webtoon/list'):'titleId',
+               ('www.webtoons.com','/en/action/omniscient-reader/list'):'title_no',
                ('navercorp.com','/media/pressReleasesDetail'):'seq'}
     key = allowed.get((parsed.hostname,parsed.path))
     field, separator, value = parsed.query.partition('=')

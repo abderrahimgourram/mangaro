@@ -83,7 +83,7 @@ class ConnectedStoryResolverTest {
     }
     @Test fun `unavailable sources yield no target without discarding registry records`() {
         resolve(StoryFixtures.novels().single(),StoryFixtures.comics().map { it.copy(eligible=false) }) shouldBe null
-        registry.records.size shouldBe 4
+        registry.records.size shouldBe 5
     }
     @Test fun `projection is deterministic and account-generation safe`() {
         val origin=StoryFixtures.novels().single();val rows=StoryFixtures.comics()
@@ -94,7 +94,7 @@ class ConnectedStoryResolverTest {
         first.current(Local.State(Local.Token("fixture",3))) shouldBe false
         first.current(Local.State(token,ready=false)) shouldBe false
     }
-    @Test fun `all twelve enrolled edition origins resolve only to the opposite exact work`() {
+    @Test fun `all fourteen enrolled edition origins resolve only to the opposite exact work`() {
         var checked=0
         for(record in registry.records) {
             val comics=StoryFixtures.comics(record);val novels=StoryFixtures.novels(record)
@@ -107,7 +107,7 @@ class ConnectedStoryResolverTest {
                 checked++
             }
         }
-        checked shouldBe 12
+        checked shouldBe 14
     }
 
 }

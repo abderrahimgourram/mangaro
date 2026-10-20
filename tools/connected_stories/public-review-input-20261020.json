@@ -40,6 +40,26 @@
         "عودة طائفة جبل هوا",
         "Return of the Mount Hua Sect"
       ]
+    },
+    {
+      "format": "TEXT_NOVEL",
+      "source": "novel.seanovel",
+      "url": "https://seanovel.org/novels/the-all-encompassing-reader",
+      "publicUrl": "https://seanovel.org/novels/the-all-encompassing-reader",
+      "names": [
+        "القارئ المحيط بكل شيء",
+        "The All-Encompassing Reader"
+      ]
+    },
+    {
+      "format": "MANHWA",
+      "source": "215553151312092548",
+      "url": "/manhwa/omniscient-readers-viewpoint#6a8fb9a47d3207cb2faf20a0",
+      "publicUrl": "https://mangatime.org/manhwa/omniscient-readers-viewpoint",
+      "names": [
+        "وجهة نظر القارئ كلّي المعرفة",
+        "Omniscient Reader's Viewpoint"
+      ]
     }
   ],
   "relations": [
@@ -79,6 +99,27 @@
       "publisherAdaptation": "https://m.comic.naver.com/webtoon/list?titleId=769209",
       "evidence": [
         "https://navercorp.com/media/pressReleasesDetail?seq=30834"
+      ]
+    },
+    {
+      "id": "omniscient-reader-original",
+      "type": "ADAPTATION_OF",
+      "original": {
+        "format": "TEXT_NOVEL",
+        "source": "novel.seanovel",
+        "url": "https://seanovel.org/novels/the-all-encompassing-reader"
+      },
+      "adaptation": {
+        "format": "MANHWA",
+        "source": "215553151312092548",
+        "url": "/manhwa/omniscient-readers-viewpoint#6a8fb9a47d3207cb2faf20a0"
+      },
+      "publisherOriginal": "https://yenpress.com/titles/9798400903526-omniscient-reader-s-viewpoint-novel-vol-1",
+      "publisherAdaptation": "https://www.webtoons.com/en/action/omniscient-reader/list?title_no=2154",
+      "evidence": [
+        "https://www.webtoons.com/en/action/omniscient-reader/list?title_no=2154",
+        "https://yenpress.com/titles/9798400903526-omniscient-reader-s-viewpoint-novel-vol-1",
+        "https://yenpress.com/series/omniscient-reader-s-viewpoint"
       ]
     }
   ]

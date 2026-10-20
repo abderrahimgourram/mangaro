@@ -136,6 +136,7 @@ internal class VerifiedStoryRelationshipRegistry private constructor(val records
             val parameter = when (uri.host to uri.rawPath) {
                 "series.naver.com" to "/novel/detail.series" -> "productNo"
                 "m.comic.naver.com" to "/webtoon/list" -> "titleId"
+                "www.webtoons.com" to "/en/action/omniscient-reader/list" -> "title_no"
                 "navercorp.com" to "/media/pressReleasesDetail" -> "seq"
                 else -> return false
             }

@@ -72,4 +72,32 @@ class ConnectedStoriesCoverageTest {
         graph.relationship(unrelated) shouldBe null
     }
 
+    @Test fun `reviewed Omniscient Reader exact Arabic edition resolves both ways while namesakes remain unlinked`() {
+        val graph=StoryFixtures.registry
+        val relation=graph.records.single { it.id=="omniscient-reader-original" }
+        val doc=Json.parseToJsonElement(File(StoryFixtures.root,
+            "app/src/test/resources/connected-stories/omniscient-reader-public-metadata-20261020.json").readText()).jsonObject
+        val rows=doc["records"]!!.jsonArray
+        val c=rows.first().jsonObject["metadata"]!!.jsonObject
+        val n=rows.last().jsonObject["metadata"]!!.jsonObject
+        val comic=StoryCandidate(StoryDestination.Comic(StoryFixtures.comic(relation.adaptation.editions.single()).copy(
+            title=c["title"]!!.jsonPrimitive.content, author=c["author"]!!.jsonPrimitive.content,
+            artist=c["artist"]!!.jsonPrimitive.content,thumbnailUrl="https://mangatime.org"+c["coverUrl"]!!.jsonPrimitive.content)))
+        val novel=StoryCandidate(StoryDestination.Prose(StoryFixtures.novel(relation.original.editions.single()).copy(
+            title=n["title_ar"]!!.jsonPrimitive.content,originalTitle=n["title_original"]!!.jsonPrimitive.content,
+            author=n["author"]!!.jsonPrimitive.content,
+            cover="https://seanovel.org/api/novel/the-all-encompassing-reader/cover?type=webp")))
+        ConnectedStoryResolver.resolve(graph,comic,listOf(novel),token)!!.selected shouldBe novel.destination
+        ConnectedStoryResolver.resolve(graph,novel,listOf(comic),token)!!.selected shouldBe comic.destination
+        for (route in listOf("/manhua/omniscient-cultivator#6a8fbbad7d3207cb2faf2e50",
+            "/manhwa/omniscient-reader#6a9821dcc039d83190c57734")) {
+            val unreviewed=comic.copy(destination=StoryDestination.Comic((comic.destination as StoryDestination.Comic).manga.copy(url=route)))
+            graph.relationship(unreviewed) shouldBe null
+        }
+        graph.relationship(comic.copy(externalIds=mapOf("anilist" to "1"))) shouldBe null
+        graph.relationship(novel.copy(destination=StoryDestination.Prose((novel.destination as StoryDestination.Prose).novel.copy(
+            url="https://seanovel.org/novels/omniscient-readers-viewpoint")))) shouldBe null
+        StoryFixtures.state("REVOKED").relationship(comic) shouldBe null
+    }
+
 }

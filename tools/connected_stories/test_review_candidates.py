@@ -46,6 +46,13 @@ class ReviewTest(unittest.TestCase):
         self.assertFalse(public_url(url+'&token=fixture'))
         self.assertFalse(public_url(url.replace('series.naver.com','untrusted.test')))
 
+    def test_webtoon_exact_publisher_title_id_preserved_but_unreviewed_paths_rejected(self):
+        url='https://www.webtoons.com/en/action/omniscient-reader/list?title_no=2154'
+        self.assertTrue(public_url(url))
+        self.assertFalse(public_url(url+'&token=fixture'))
+        self.assertFalse(public_url(url.replace('2154','invalid')))
+        self.assertFalse(public_url(url.replace('omniscient-reader','unreviewed')))
+
     def test_batch_budget_enforced(self):
         with self.assertRaises(ValueError):review({'editions':[{}]*1001,'relations':[]})
 

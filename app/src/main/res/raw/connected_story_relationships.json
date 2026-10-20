@@ -183,6 +183,50 @@
       ],
       "reviewedAt": "2026-10-20",
       "reviewer": "Mangaro Naver publisher and source metadata review"
+    },
+    {
+      "id": "omniscient-reader-original",
+      "adaptation": {
+        "work": {
+          "format": "MANHWA",
+          "key": "external:anilist:119257"
+        },
+        "externalIds": {
+          "anilist": "119257"
+        },
+        "editions": [
+          {
+            "format": "MANHWA",
+            "source": "215553151312092548",
+            "url": "/manhwa/omniscient-readers-viewpoint#6a8fb9a47d3207cb2faf20a0"
+          }
+        ]
+      },
+      "original": {
+        "work": {
+          "format": "TEXT_NOVEL",
+          "key": "novel.work.7cc1d552-bace-3955-ad1b-2cb3c1c867c9"
+        },
+        "editions": [
+          {
+            "format": "TEXT_NOVEL",
+            "source": "novel.seanovel",
+            "url": "https://seanovel.org/novels/the-all-encompassing-reader"
+          }
+        ]
+      },
+      "type": "ADAPTATION_OF",
+      "status": "VERIFIED",
+      "evidence": [
+        "https://www.webtoons.com/en/action/omniscient-reader/list?title_no=2154",
+        "https://yenpress.com/titles/9798400903526-omniscient-reader-s-viewpoint-novel-vol-1",
+        "https://yenpress.com/series/omniscient-reader-s-viewpoint",
+        "https://anilist.co/manga/119257",
+        "https://mangatime.org/manhwa/omniscient-readers-viewpoint",
+        "https://seanovel.org/novels/the-all-encompassing-reader"
+      ],
+      "reviewedAt": "2026-10-20",
+      "reviewer": "Mangaro publisher roles and exact provider metadata review"
     }
   ]
 }
