@@ -41,3 +41,7 @@ Publisher evidence preserves meaningful numeric URL parameters. Only the exact N
 Coverage is not universal. Missing historical novel reading statistics and production Supabase access are separate issues; this feature does not change them.
 
 NAVER publisher evidence is used as reviewed bibliographic facts and canonical URLs only. No NAVER SDK, paid-content API, copied prose/art, runtime publisher calls or new metadata license is introduced. A larger automated service requires its own terms review.
+
+### Provider cover discrepancy found during visual acceptance
+
+The actual MangaTime Mount Hua cover URL in the recorded fixture returns artwork that appears unrelated to the work. Title/original name, Biga/ARCHE/LICO credits and narrative metadata identify the reviewed work, and the publisher relationship is explicit. This is a source asset inconsistency, not title-only relationship evidence. No fabricated replacement cover or source change was made. Bidirectional navigation passed, but this edition's cover still requires provider correction or owner review and is not visually approved.
