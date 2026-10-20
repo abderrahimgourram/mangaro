@@ -8,7 +8,8 @@ package tachiyomi.domain.manga.model
  */
 object ReviewedCoverArtwork {
     const val MANGA_TIME = 215553151312092548L
-    const val MOUNT_HUA_OFFICIAL = "https://shared-comic.pstatic.net/thumb/webtoon/769209/thumbnail/thumbnail_IMAG19_f83b209a-25e4-4d75-8027-b7c7895a34ec.jpg"
+    const val MOUNT_HUA_OFFICIAL =
+        "https://shared-comic.pstatic.net/thumb/webtoon/769209/thumbnail/thumbnail_IMAG19_f83b209a-25e4-4d75-8027-b7c7895a34ec.jpg"
     const val EVIDENCE = "https://m.comic.naver.com/webtoon/list?titleId=769209"
     const val REVIEWED_AT = "2026-10-20"
     private val rejected = setOf(

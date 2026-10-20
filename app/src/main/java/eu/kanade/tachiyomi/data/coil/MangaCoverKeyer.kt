@@ -11,10 +11,10 @@ import uy.kohesive.injekt.api.get
 import tachiyomi.domain.manga.model.Manga as DomainManga
 
 class MangaKeyer(
-    private val coverCache: CoverCache = Injekt.get(),
+    private val coverCache: CoverCache? = null,
 ) : Keyer<DomainManga> {
     override fun key(data: DomainManga, options: Options): String {
-        return if (data.hasCustomCover(coverCache)) {
+        return if (data.hasCustomCover(coverCache ?: Injekt.get())) {
             "${tachiyomi.core.common.util.lang.LocalAccountScope.segment(data.accountToken.fileOwner)};${data.id};${data.coverLastModified}"
         } else {
             "${ReviewedCoverArtwork.resolve(data.source, data.thumbnailUrl)};${data.coverLastModified}"
