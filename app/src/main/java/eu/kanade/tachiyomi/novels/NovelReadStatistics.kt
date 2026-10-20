@@ -1,9 +1,13 @@
 package eu.kanade.tachiyomi.novels
 
+private val novelPositionJson = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+internal fun decodeNovelReadingPosition(raw: String?, chapterId: String): NovelReadingPosition? =
+    runCatching { raw?.let { novelPositionJson.decodeFromString<NovelReadingPosition>(it) }?.takeIf { it.chapter.id==chapterId } }.getOrNull()
+
 /** Explicit reader-end observations; null completion on legacy records is deliberately unknown. */
-data class NovelReadStatistics(val completed: Long, val unknown: Long) {
-    val count: Long? get() = completed.takeIf { it > 0 || unknown == 0L }
-    val partial: Boolean get() = unknown > 0
+data class NovelReadStatistics(val completed: Long, val unknown: Long, val authoritative: Boolean = true) {
+    val count: Long? get() = completed.takeIf { it > 0 || (unknown == 0L && authoritative) }
+    val partial: Boolean get() = unknown > 0 || !authoritative
 }
 
 internal fun preserveNovelCompletion(previous: NovelReadingPosition?, next: NovelReadingPosition): NovelReadingPosition {

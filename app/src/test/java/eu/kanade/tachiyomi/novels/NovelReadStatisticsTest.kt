@@ -43,6 +43,19 @@ class NovelReadStatisticsTest {
         }
         NovelCloudState.decode(NovelCloudState.PROGRESS,rows.values.last()).chapterUrl shouldBe a.url+"/chapter/20716"
     }
+    @Test fun `unknown account cloud coverage cannot turn an empty local snapshot into confirmed zero`() {
+        NovelReadStatistics(0,0,authoritative=false).count shouldBe null
+        NovelReadStatistics(5,0,authoritative=false).count shouldBe 5
+        NovelReadStatistics(5,0,authoritative=false).partial shouldBe true
+    }
+    @Test fun `old malformed or different chapter snapshot cannot stop a fresh position save or fabricate completion`() {
+        decodeNovelReadingPosition("{}",position(1,false).chapter.id) shouldBe null
+        decodeNovelReadingPosition("broken",position(1,false).chapter.id) shouldBe null
+        decodeNovelReadingPosition(null,position(1,false).chapter.id) shouldBe null
+        val raw=Json.encodeToString(NovelReadingPosition.serializer(),position(1,true))
+        decodeNovelReadingPosition(raw,position(2,false).chapter.id) shouldBe null
+        decodeNovelReadingPosition(raw,position(1,false).chapter.id)!!.completed shouldBe true
+    }
     @Test fun `cloud source host checks remain enforced`() {
         runCatching { NovelCloudState.rows(NovelLibraryItem(a.copy(url="https://evil.test/novel/96")),emptyList()) }.isFailure shouldBe true
     }

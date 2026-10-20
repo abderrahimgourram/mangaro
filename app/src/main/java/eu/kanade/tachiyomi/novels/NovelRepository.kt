@@ -383,7 +383,8 @@ class NovelRepository private constructor(context: Context) {
                 } else if (target.baseFile.exists() || File(target.baseFile.path + ".bak").exists())
                     json.decodeFromString<List<NovelLibraryItem>>(target.openRead().use { it.readBytes().decodeToString() }) else emptyList()
                 if (sequence < (appliedChapterSequence[key] ?: 0L)) return@withLock
-                val previous = metadata.read(positionPath(novel,chapter,owner))?.let { json.decodeFromString<NovelReadingPosition>(it) }
+                val previous = decodeNovelReadingPosition(metadata.read(positionPath(novel,chapter,owner)),chapter.id)
+                    ?: entries.firstOrNull {it.novel.id==novel.id}?.position?.takeIf {it.chapter.id==chapter.id}
                 val durablePosition = preserveNovelCompletion(previous,position)
                 val last = entries.firstOrNull { it.novel.id == novel.id }?.position
                 if (!refreshHistory && last?.chapter?.id == chapter.id && last.paragraph == position.paragraph &&
@@ -579,7 +580,7 @@ class NovelRepository private constructor(context: Context) {
                     runCatching {
                         novelReadStatistics(mutableLibrary.value.flatMap { item ->
                             (metadataPositions(item.novel) + listOfNotNull(item.position)).map { item.novel to it }
-                        })
+                        }).copy(authoritative = owner == tachiyomi.core.common.util.lang.LocalAccountScope.GUEST)
                     }.getOrNull()
                 }
             }
@@ -613,7 +614,8 @@ class NovelRepository private constructor(context: Context) {
                     readingStatus = decoded.status, addedAt = decoded.addedAt, position = decoded.position)
             } else {
                 decoded.position?.takeUnless { decoded.deleted }?.let {
-                    val previous = metadata.read(positionPath(old.novel,it.chapter))?.let { raw -> json.decodeFromString<NovelReadingPosition>(raw) }
+                    val previous = decodeNovelReadingPosition(metadata.read(positionPath(old.novel,it.chapter)),it.chapter.id)
+                        ?: old.position?.takeIf {position -> position.chapter.id==it.chapter.id}
                     metadata.write(positionPath(old.novel, it.chapter), json.encodeToString(preserveNovelCompletion(previous,it)))
                 }
                 old.copy(position = old.position ?: decoded.position?.takeUnless { decoded.deleted }, bookmarks = if (decoded.bookmarked && !decoded.deleted) old.bookmarks + decoded.chapterUrl!! else old.bookmarks - decoded.chapterUrl!!)
