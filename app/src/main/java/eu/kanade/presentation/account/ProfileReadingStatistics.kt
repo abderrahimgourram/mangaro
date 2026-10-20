@@ -31,8 +31,16 @@ import java.util.Locale
 internal fun formatProfileCount(value: Long?, locale: Locale): String =
     value?.let { NumberFormat.getIntegerInstance(locale).format(it) } ?: "—"
 
-internal fun formatProfileReadCount(value: Long?, partial: Boolean, locale: Locale): String =
-    formatProfileCount(value, locale) + if (value != null && partial) "+" else ""
+/** Only confirmed positive records enter the number; completeness is presented separately. */
+internal fun formatProfileReadCount(value: Long?, locale: Locale): String =
+    formatProfileCount(value?.takeIf { it > 0 }, locale)
+
+internal fun profileReadingStatus(snapshot: ProfileReadingSnapshot): String? = when (snapshot.completeness) {
+    eu.kanade.tachiyomi.data.account.ProfileReadingCompleteness.LOADING -> "جارٍ التحميل"
+    eu.kanade.tachiyomi.data.account.ProfileReadingCompleteness.PARTIAL -> "السجل غير مكتمل"
+    eu.kanade.tachiyomi.data.account.ProfileReadingCompleteness.UNAVAILABLE -> "غير متاح"
+    eu.kanade.tachiyomi.data.account.ProfileReadingCompleteness.COMPLETE -> null
+}
 
 @Composable
 internal fun rememberProfileReadingStatistics(owner: String): ProfileReadingSnapshot {
@@ -50,7 +58,7 @@ internal fun rememberProfileReadingStatistics(owner: String): ProfileReadingSnap
 internal fun ProfileReadingStatistics(snapshot: ProfileReadingSnapshot) {
     val configuration = androidx.compose.ui.platform.LocalConfiguration.current
     val locale = configuration.locales[0]
-    val total = remember(snapshot.totals.total, snapshot.totals.novelsPartial, locale) { formatProfileReadCount(snapshot.totals.total, snapshot.totals.novelsPartial, locale) }
+    val total = remember(snapshot.totals.total, locale) { formatProfileReadCount(snapshot.totals.total, locale) }
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = MangaroDesignSystem.SurfaceDark,
@@ -58,8 +66,15 @@ internal fun ProfileReadingStatistics(snapshot: ProfileReadingSnapshot) {
         border = BorderStroke(.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = .35f)),
     ) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Text("رحلتك في القراءة", style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically) {
+                Text("رحلتك في القراءة", modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                profileReadingStatus(snapshot)?.let { status ->
+                    Text(status, style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(total, modifier = Modifier.fillMaxWidth(), color = MangaroDesignSystem.GoldPrimary,
                     style = MaterialTheme.typography.displaySmall.copy(textDirection = TextDirection.Ltr),
@@ -73,12 +88,12 @@ internal fun ProfileReadingStatistics(snapshot: ProfileReadingSnapshot) {
             if (largeText) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     ReadingCategory("المانجا والمانهوا", snapshot.totals.comics, locale, Icons.Outlined.CollectionsBookmark, Modifier.fillMaxWidth())
-                    ReadingCategory("الروايات", snapshot.totals.novels, locale, Icons.AutoMirrored.Outlined.MenuBook, Modifier.fillMaxWidth(), snapshot.totals.novelsPartial)
+                    ReadingCategory("الروايات", snapshot.totals.novels, locale, Icons.AutoMirrored.Outlined.MenuBook, Modifier.fillMaxWidth())
                 }
             } else {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     ReadingCategory("المانجا والمانهوا", snapshot.totals.comics, locale, Icons.Outlined.CollectionsBookmark, Modifier.weight(1f))
-                    ReadingCategory("الروايات", snapshot.totals.novels, locale, Icons.AutoMirrored.Outlined.MenuBook, Modifier.weight(1f), snapshot.totals.novelsPartial)
+                    ReadingCategory("الروايات", snapshot.totals.novels, locale, Icons.AutoMirrored.Outlined.MenuBook, Modifier.weight(1f))
                 }
             }
         }
@@ -86,8 +101,8 @@ internal fun ProfileReadingStatistics(snapshot: ProfileReadingSnapshot) {
 }
 
 @Composable
-private fun ReadingCategory(label: String, value: Long?, locale: Locale, icon: ImageVector, modifier: Modifier, partial: Boolean = false) {
-    val formatted = remember(value, locale, partial) { formatProfileReadCount(value, partial, locale) }
+private fun ReadingCategory(label: String, value: Long?, locale: Locale, icon: ImageVector, modifier: Modifier) {
+    val formatted = remember(value, locale) { formatProfileReadCount(value, locale) }
     Surface(modifier, color = MangaroDesignSystem.SurfaceHigh.copy(alpha = .45f), shape = RoundedCornerShape(16.dp)) {
         Column(Modifier.padding(horizontal = 10.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(icon, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)

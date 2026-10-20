@@ -3,6 +3,7 @@ package eu.kanade.tachiyomi.data.account
 import eu.kanade.presentation.account.RankArtAssets
 import eu.kanade.presentation.account.formatProfileCount
 import eu.kanade.presentation.account.formatProfileReadCount
+import eu.kanade.presentation.account.profileReadingStatus
 import io.kotest.matchers.shouldBe
 import mihon.domain.account.*
 import mihon.domain.sigils.*
@@ -63,12 +64,24 @@ class ProfileRefinementPreservationTest {
         header.contains("showRank: Boolean = true") shouldBe true
         header.contains("if (showRank)") shouldBe true
     }
-    @Test fun `partial read counts retain lower bound without converting unknown to zero`() {
-        formatProfileReadCount(40, true, Locale.US) shouldBe "40+"
-        formatProfileReadCount(39, false, Locale.US) shouldBe "39"
-        formatProfileReadCount(1, true, Locale.US) shouldBe "1+"
-        formatProfileReadCount(null, true, Locale.US) shouldBe "—"
-        formatProfileReadCount(0, false, Locale.US) shouldBe "0"
+    @Test fun `read numbers have no plus and confirmed empty uses dash without changing stored counts`() {
+        formatProfileReadCount(40, Locale.US) shouldBe "40"
+        formatProfileReadCount(39, Locale.US) shouldBe "39"
+        formatProfileReadCount(1, Locale.US) shouldBe "1"
+        formatProfileReadCount(null, Locale.US) shouldBe "—"
+        formatProfileReadCount(0, Locale.US) shouldBe "—"
+        // Community statistics still use their original zero presentation.
+        formatProfileCount(0, Locale.US) shouldBe "0"
+        val partial = ProfileReadingSnapshot(totals=ProfileReadingTotals(39,1,true),loading=false)
+        partial.totals.total shouldBe 40
+        partial.totals.novelsPartial shouldBe true
+        profileReadingStatus(partial) shouldBe "السجل غير مكتمل"
+        profileReadingStatus(partial.copy(totals=ProfileReadingTotals(39,1,false))) shouldBe null
+        val empty=partial.copy(totals=ProfileReadingTotals(0,0,false))
+        empty.totals.total shouldBe 0
+        profileReadingStatus(empty) shouldBe null
+        profileReadingStatus(ProfileReadingSnapshot()) shouldBe "جارٍ التحميل"
+        profileReadingStatus(ProfileReadingSnapshot(loading=false)) shouldBe "غير متاح"
     }
     @Test fun `public profile never uses private reading projection or local history`() {
         val public = source("eu/kanade/presentation/community/PublicCommunityProfile.kt")
