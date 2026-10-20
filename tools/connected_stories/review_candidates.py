@@ -20,10 +20,22 @@ def name_key(value):
                             if not unicodedata.combining(c)).split())
 
 
+def public_query(parsed):
+    if not parsed.query:
+        return True
+    allowed = {('series.naver.com','/novel/detail.series'):'productNo',
+               ('m.comic.naver.com','/webtoon/list'):'titleId',
+               ('navercorp.com','/media/pressReleasesDetail'):'seq'}
+    key = allowed.get((parsed.hostname,parsed.path))
+    field, separator, value = parsed.query.partition('=')
+    return bool(key and field == key and separator and value.isascii() and value.isdigit()
+                and not value.startswith('0') and len(value) <= 12)
+
+
 def public_url(value):
     parsed = urlsplit(value)
     return (parsed.scheme == 'https' and bool(parsed.hostname) and not parsed.username
-            and not parsed.password and not parsed.query and parsed.port in (None, 443) and not parsed.fragment)
+            and not parsed.password and public_query(parsed) and parsed.port in (None, 443) and not parsed.fragment)
 
 
 def review(document):

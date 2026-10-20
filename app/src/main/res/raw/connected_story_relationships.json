@@ -140,6 +140,49 @@
       ],
       "reviewedAt": "2026-10-20",
       "reviewer": "Mangaro publisher and source metadata review"
+    },
+    {
+      "id": "return-mount-hua-original",
+      "adaptation": {
+        "work": {
+          "format": "MANHWA",
+          "key": "external:anilist:132144"
+        },
+        "externalIds": {
+          "anilist": "132144"
+        },
+        "editions": [
+          {
+            "format": "MANHWA",
+            "source": "215553151312092548",
+            "url": "/manhwa/return-of-the-mount-hua-sect#6a49e00234c268b77054833e"
+          }
+        ]
+      },
+      "original": {
+        "work": {
+          "format": "TEXT_NOVEL",
+          "key": "novel.work.cc5cc332-2fb8-3fbd-b837-f299c267fe96"
+        },
+        "editions": [
+          {
+            "format": "TEXT_NOVEL",
+            "source": "novel.seanovel",
+            "url": "https://seanovel.org/novels/return-of-the-blossoming-blade"
+          }
+        ]
+      },
+      "type": "ADAPTATION_OF",
+      "status": "VERIFIED",
+      "evidence": [
+        "https://series.naver.com/novel/detail.series?productNo=4130558",
+        "https://m.comic.naver.com/webtoon/list?titleId=769209",
+        "https://navercorp.com/media/pressReleasesDetail?seq=30834",
+        "https://mangatime.org/manhwa/return-of-the-mount-hua-sect",
+        "https://seanovel.org/novels/return-of-the-blossoming-blade"
+      ],
+      "reviewedAt": "2026-10-20",
+      "reviewer": "Mangaro Naver publisher and source metadata review"
     }
   ]
 }

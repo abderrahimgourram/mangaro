@@ -43,7 +43,7 @@ internal data class ConnectedStoryUiModel(
     fun current(state: LocalAccountScope.State) = state.ready && state.token == token
 }
 
-/** Exact enrolled editions only. Titles, authors, slugs and franchise IDs never create edges. */
+/** Reviewed edition/canonical evidence only. Titles, authors, slugs and franchise IDs never create edges. */
 internal object ConnectedStoryResolver {
     fun resolve(
         registry: VerifiedStoryRelationshipRegistry,

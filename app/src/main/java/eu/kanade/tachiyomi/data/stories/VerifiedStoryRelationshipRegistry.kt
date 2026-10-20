@@ -129,10 +129,22 @@ internal class VerifiedStoryRelationshipRegistry private constructor(val records
             return VerifiedStoryRelationshipRegistry(doc.records)
         }
         internal val authorities = setOf("anilist", "myanimelist", "mangadex", "mangaupdates", "kitsu")
+        // These publisher work IDs are meaningful canonical URL parts, never credentials.
+        // All other evidence queries (including extra parameters) remain rejected.
+        private fun publicEvidenceQuery(uri: URI): Boolean {
+            val query = uri.rawQuery ?: return true
+            val parameter = when (uri.host to uri.rawPath) {
+                "series.naver.com" to "/novel/detail.series" -> "productNo"
+                "m.comic.naver.com" to "/webtoon/list" -> "titleId"
+                "navercorp.com" to "/media/pressReleasesDetail" -> "seq"
+                else -> return false
+            }
+            return query.matches(Regex("$parameter=[1-9][0-9]{0,11}"))
+        }
         private fun publicEvidence(value: String) = runCatching {
             val uri = URI(value)
             uri.scheme == "https" && !uri.host.isNullOrBlank() && uri.port in listOf(-1,443) &&
-                uri.rawUserInfo == null && uri.rawQuery == null && uri.rawFragment == null
+                uri.rawUserInfo == null && publicEvidenceQuery(uri) && uri.rawFragment == null
         }.getOrDefault(false)
     }
 }

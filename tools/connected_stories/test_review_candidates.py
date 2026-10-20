@@ -1,5 +1,5 @@
 import unittest
-from review_candidates import review
+from review_candidates import review, public_url
 
 
 class ReviewTest(unittest.TestCase):
@@ -39,6 +39,12 @@ class ReviewTest(unittest.TestCase):
         with self.assertRaises(ValueError):review(doc)
         doc=self.document();doc['editions'].append(doc['editions'][0])
         with self.assertRaises(ValueError):review(doc)
+
+    def test_meaningful_publisher_ids_are_preserved_without_accepting_credentials(self):
+        url='https://series.naver.com/novel/detail.series?productNo=4130558'
+        self.assertTrue(public_url(url))
+        self.assertFalse(public_url(url+'&token=fixture'))
+        self.assertFalse(public_url(url.replace('series.naver.com','untrusted.test')))
 
     def test_batch_budget_enforced(self):
         with self.assertRaises(ValueError):review({'editions':[{}]*1001,'relations':[]})

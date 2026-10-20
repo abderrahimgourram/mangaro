@@ -32,6 +32,12 @@ The accessible MangaTime record `/manhwa/overgeared#6a8f5babf1a5e87af68c564b` su
 
 Otherworldly Evil Monarch: current SeaNovel prose metadata and reviewed comic editions exist, but this review did not obtain sufficiently specific publisher evidence for the exact comic adaptation. AniList returned an alternative animation, not a source-novel edge. Remains unlinked.
 
-Return of the Blossoming Blade: MangaTime comic and SeaNovel prose metadata exist, and AniList says web-novel source, but no explicit source-node pair was returned. Without completing independent exact relationship review, remains unlinked. A search response also contained unrelated Magic Emperor; that result was not accepted as a match.
+## Reviewed extension: Return of the Blossoming Blade
+
+Return of the Blossoming Blade was initially pending because AniList lacked a source-node edge. Subsequent independent publisher review established the exact relationship: https://navercorp.com/media/pressReleasesDetail?seq=30834 explicitly states that the same-title webtoon began adapting the novel in March 2021. https://series.naver.com/novel/detail.series?productNo=4130558 links its related webtoon, https://m.comic.naver.com/webtoon/list?titleId=769209 . Credits are Biga (original), ARCHE/LICO (comic); provider metadata independently supplies those credits. The exact MangaTime edition `/manhwa/return-of-the-mount-hua-sect#6a49e00234c268b77054833e` and SeaNovel prose `https://seanovel.org/novels/return-of-the-blossoming-blade` are now reviewed and enrolled under the existing external-ID namespace, AniList 132144. A search response also contained unrelated Magic Emperor; that record and Mount Hua Sect's Genius Phantom Swordsman remain unlinked.
+
+Publisher evidence preserves meaningful numeric URL parameters. Only the exact Naver host/path contracts above (`productNo`, `titleId`, and press-release `seq`, a single positive numeric value) are accepted. Extra parameters, unknown query contracts, fragments and credentials remain rejected. Source edition URL validation is unchanged. No publisher chapter content is retained.
 
 Coverage is not universal. Missing historical novel reading statistics and production Supabase access are separate issues; this feature does not change them.
+
+NAVER publisher evidence is used as reviewed bibliographic facts and canonical URLs only. No NAVER SDK, paid-content API, copied prose/art, runtime publisher calls or new metadata license is introduced. A larger automated service requires its own terms review.

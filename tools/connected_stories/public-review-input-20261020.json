@@ -74,7 +74,12 @@
         "format": "MANHWA",
         "source": "215553151312092548",
         "url": "/manhwa/return-of-the-mount-hua-sect#6a49e00234c268b77054833e"
-      }
+      },
+      "publisherOriginal": "https://series.naver.com/novel/detail.series?productNo=4130558",
+      "publisherAdaptation": "https://m.comic.naver.com/webtoon/list?titleId=769209",
+      "evidence": [
+        "https://navercorp.com/media/pressReleasesDetail?seq=30834"
+      ]
     }
   ]
 }

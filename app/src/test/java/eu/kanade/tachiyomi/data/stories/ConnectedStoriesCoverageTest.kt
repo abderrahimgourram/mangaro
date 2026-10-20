@@ -53,4 +53,23 @@ class ConnectedStoriesCoverageTest {
         val revoked = StoryFixtures.state("REVOKED")
         revoked.relationship(row.copy(externalIds=mapOf("anilist" to "117460"))) shouldBe null
     }
+    @Test fun `Mount Hua publisher original and adaptation remain exact separate source works`() {
+        val graph=StoryFixtures.registry
+        val relation=graph.records.single { it.id=="return-mount-hua-original" }
+        val doc=Json.parseToJsonElement(File(StoryFixtures.root,
+            "app/src/test/resources/connected-stories/mount-hua-public-metadata-20261020.json").readText()).jsonObject
+        val records=doc["records"]!!.jsonArray
+        val n=records.single {it.jsonObject["provider"]!!.jsonPrimitive.content=="Sea"}.jsonObject["metadata"]!!.jsonObject
+        val c=records.single {it.jsonObject["provider"]!!.jsonPrimitive.content=="MangaTime"}.jsonObject["metadata"]!!.jsonObject
+        val novel=StoryCandidate(StoryDestination.Prose(StoryFixtures.novel(relation.original.editions.single()).copy(
+            title=n["title_ar"]!!.jsonPrimitive.content,cover="https://seanovel.org/api/novel/return-of-the-blossoming-blade/cover?type=webp")))
+        val comic=StoryCandidate(StoryDestination.Comic(StoryFixtures.comic(relation.adaptation.editions.single()).copy(
+            title=c["title"]!!.jsonPrimitive.content,thumbnailUrl="https://mangatime.org"+c["coverUrl"]!!.jsonPrimitive.content)))
+        ConnectedStoryResolver.resolve(graph,comic,listOf(novel),token)!!.selected shouldBe novel.destination
+        ConnectedStoryResolver.resolve(graph,novel,listOf(comic),token)!!.selected shouldBe comic.destination
+        val unrelated=comic.copy(destination=StoryDestination.Comic((comic.destination as StoryDestination.Comic).manga.copy(
+            url="/manhwa/mount-hua-sects-genius-phantom-swordsman#unrelated")))
+        graph.relationship(unrelated) shouldBe null
+    }
+
 }

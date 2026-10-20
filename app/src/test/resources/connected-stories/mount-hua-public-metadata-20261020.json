@@ -1,0 +1,39 @@
+{
+  "observedAt": "2026-10-20",
+  "publisherRelation": {
+    "original": "https://series.naver.com/novel/detail.series?productNo=4130558",
+    "adaptation": "https://m.comic.naver.com/webtoon/list?titleId=769209",
+    "type": "ADAPTATION_OF",
+    "evidence": "https://navercorp.com/media/pressReleasesDetail?seq=30834",
+    "signal": "Publisher press release states the same-title webtoon began adapting this novel in March 2021; novel page links exact related Naver webtoon"
+  },
+  "records": [
+    {
+      "provider": "Sea",
+      "publicMetadataUrl": "https://seanovel.org/api/novel/return-of-the-blossoming-blade",
+      "status": 200,
+      "metadata": {
+        "slug": "return-of-the-blossoming-blade",
+        "title_ar": "عودة طائفة جبل هوا",
+        "title_original": "Return of the Blossoming Blade",
+        "author": "بيجا",
+        "chapters_count": 1835
+      }
+    },
+    {
+      "provider": "MangaTime",
+      "publicMetadataUrl": "https://mangatime.org/api/trpc/content.getSeriesBySlug?input=%7B%22json%22%3A+%7B%22slug%22%3A+%22return-of-the-mount-hua-sect%22%2C+%22type%22%3A+%22manhwa%22%7D%7D",
+      "status": 200,
+      "metadata": {
+        "id": "6a49e00234c268b77054833e",
+        "slug": "return-of-the-mount-hua-sect",
+        "title": "عودة طائفة جبل هوا",
+        "nameAr": "عودة طائفة جبل هوا",
+        "nameEn": "Return of the Mount Hua Sect",
+        "author": "Biga",
+        "artist": "ARCHE; LICO",
+        "coverUrl": "/uploads/series/6a49e00234c268b77054833e-6907fadc0a427774.webp"
+      }
+    }
+  ]
+}
