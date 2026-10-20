@@ -293,18 +293,23 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
         val currentPlain by rememberUpdatedState(plain)
         val currentAnchors by rememberUpdatedState(anchors)
         val currentBlockPositions by rememberUpdatedState(blockPositions)
+        val currentProgress by rememberUpdatedState(contentProgress)
         fun saveCurrent() {
             if (runCatching { tachiyomi.core.common.util.lang.LocalAccountScope.check(readerOwner) }.isFailure) return
             val shown = currentChapter ?: return
             if(!currentRestoring && currentAnchors.isNotEmpty()) {
                 val index=scroll.firstVisibleItemIndex.coerceAtMost(currentAnchors.size)
                 repository.savePosition(novel,shown,currentBlockPositions.getOrElse(index - 1) { 0 },scroll.firstVisibleItemScrollOffset,
-                    currentAnchors.getOrNull(index-1).orEmpty())
+                    currentAnchors.getOrNull(index-1).orEmpty(), completed = currentProgress.atEnd)
             }
         }
         LaunchedEffect(loadedChapter?.id,restoring) {
             if(loadedChapter != null && !restoring && anchors.isNotEmpty()) snapshotFlow {Triple(scroll.firstVisibleItemIndex,scroll.firstVisibleItemScrollOffset,scroll.isScrollInProgress)}
                 .debounce(600).distinctUntilChanged().collect {if(!it.third) saveCurrent()}
+        }
+        LaunchedEffect(loadedChapter?.id,restoring) {
+            if (loadedChapter == null || restoring) return@LaunchedEffect
+            snapshotFlow { contentProgress.atEnd }.distinctUntilChanged().collect { if (it) saveCurrent() }
         }
         val owner=LocalLifecycleOwner.current
         DisposableEffect(owner) {

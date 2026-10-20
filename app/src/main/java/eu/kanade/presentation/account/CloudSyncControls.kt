@@ -43,7 +43,7 @@ fun CloudSyncControls(userId: String, repository: AccountCloudSync) {
                 !status.enabled -> "المزامنة التلقائية متوقفة"
                 status.error!=null || status.pending>0 -> "بانتظار الاتصال"
                 status.novelConflicts>0 -> "تحتاج تغييرات الروايات إلى مراجعة"
-                status.novelError!=null -> "مزامنة الروايات بانتظار التفعيل"
+                status.novelError!=null -> "تعذّر مزامنة الروايات"
                 status.lastSuccess!=null -> "تمت المزامنة"
                 else -> "المزامنة التلقائية"
             },style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)

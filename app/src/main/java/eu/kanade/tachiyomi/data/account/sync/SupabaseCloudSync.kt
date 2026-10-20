@@ -258,10 +258,12 @@ class SupabaseCloudSync(private val context:Context,private val client:SupabaseC
                 push(userId)
                 checkOwner(userId)
                 val remaining=runnablePending(userId)>0 || runnableDirty(userId)>0 || tables(userId).any {store.get(userId,"more/$it")=="true"}
-                if(!remaining)store.put(userId,"success",System.currentTimeMillis().toString())
+                if(!remaining && store.get(userId,"novel/error")==null && store.count(userId,"retry/")==0)store.put(userId,"success",System.currentTimeMillis().toString())
                 publish(userId,false)
                 if(remaining)schedule(userId,append=true)
-                if(store.count(userId,"retry/")>0) AccountOperation.Failed("تعذّر مزامنة بعض تغييرات الروايات — بياناتك محفوظة") else AccountOperation.Completed
+                val novelFailure = store.get(userId,"novel/error")
+                if (novelFailure != null) AccountOperation.Failed(novelFailure)
+                else if(store.count(userId,"retry/")>0) AccountOperation.Failed("تعذّر مزامنة بعض تغييرات الروايات — بياناتك محفوظة") else AccountOperation.Completed
             }
         } catch(_:InactiveAccount) {publish(userId,false);AccountOperation.Completed}
         catch(_:TimeoutCancellationException) {publish(userId,false,"تعذر المزامنة — سنحاول مرة أخرى");runCatching {schedule(userId)};AccountOperation.Failed("تعذر المزامنة — سنحاول مرة أخرى")}

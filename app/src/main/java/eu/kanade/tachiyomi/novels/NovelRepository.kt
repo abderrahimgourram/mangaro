@@ -362,14 +362,16 @@ class NovelRepository private constructor(context: Context) {
         } catch (c: CancellationException) { throw c }
         catch (e: Exception) { android.util.Log.w("MangaroNovels", "Library change failed", e); mutableStorageError.value = "تعذّر حفظ التغيير. حاول مجددًا." }
     }
-    fun savePosition(novel: Novel, chapter: NovelChapter, paragraph: Int, offset: Int, anchor: String = "", refreshHistory: Boolean = false) {
+    fun savePosition(novel: Novel, chapter: NovelChapter, paragraph: Int, offset: Int, anchor: String = "", refreshHistory: Boolean = false, completed: Boolean = false) {
         val owner = cloudAccount
         val sequence = positionSequence.incrementAndGet()
         val key = Triple(owner, novel.id, chapter.id)
-        val position = NovelReadingPosition(chapter, paragraph.coerceAtLeast(0), offset.coerceAtLeast(0), System.currentTimeMillis(), anchor)
-        synchronized(pendingPositions) {
+        val position = synchronized(pendingPositions) {
+            val position = NovelReadingPosition(chapter, paragraph.coerceAtLeast(0), offset.coerceAtLeast(0), System.currentTimeMillis(), anchor,
+                completed || pendingPositions[key]?.second?.completed == true)
             pendingPositions[key] = sequence to position
             while (pendingPositions.size > 64) pendingPositions.remove(pendingPositions.keys.first())
+            position
         }
         io.launch {
             ready.await()
@@ -381,19 +383,21 @@ class NovelRepository private constructor(context: Context) {
                 } else if (target.baseFile.exists() || File(target.baseFile.path + ".bak").exists())
                     json.decodeFromString<List<NovelLibraryItem>>(target.openRead().use { it.readBytes().decodeToString() }) else emptyList()
                 if (sequence < (appliedChapterSequence[key] ?: 0L)) return@withLock
+                val previous = metadata.read(positionPath(novel,chapter,owner))?.let { json.decodeFromString<NovelReadingPosition>(it) }
+                val durablePosition = preserveNovelCompletion(previous,position)
                 val last = entries.firstOrNull { it.novel.id == novel.id }?.position
                 if (!refreshHistory && last?.chapter?.id == chapter.id && last.paragraph == position.paragraph &&
-                    last.offset == position.offset && last.anchor == position.anchor) {
+                    last.offset == position.offset && last.anchor == position.anchor && last.completed == durablePosition.completed) {
                     appliedChapterSequence[key] = sequence
                     synchronized(pendingPositions) { if (pendingPositions[key]?.first == sequence) pendingPositions.remove(key) }
                     return@withLock
                 }
-                metadata.write(positionPath(novel, chapter, owner), json.encodeToString(position))
+                metadata.write(positionPath(novel, chapter, owner), json.encodeToString(durablePosition))
                 appliedChapterSequence[key] = sequence
                 val editionKey = accountPrefix(owner) + novel.id
                 if (sequence >= (appliedPositionSequence[editionKey] ?: 0L)) {
                     val old = entries.firstOrNull { it.novel.id == novel.id } ?: NovelLibraryItem(novel)
-                    val next = (entries.filterNot { it.novel.id == novel.id } + old.copy(novel = novel, position = position))
+                    val next = (entries.filterNot { it.novel.id == novel.id } + old.copy(novel = novel, position = durablePosition))
                         .sortedByDescending { it.position?.updatedAt ?: 0 }
                     write(target, json.encodeToString(next))
                     if (owner == cloudAccount) mutableLibrary.value = next
@@ -564,6 +568,24 @@ class NovelRepository private constructor(context: Context) {
             rows
         }
     }
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun observeReadStatistics(owner: String): Flow<NovelReadStatistics?> = tachiyomi.core.common.util.lang.LocalAccountScope.changes.flatMapLatest { state ->
+        if (!state.ready || state.token.owner != owner) flowOf(null) else library.mapLatest {
+            withContext(Dispatchers.IO) {
+                ready.await()
+                lock.withLock {
+                    val bound = cloudAccount ?: tachiyomi.core.common.util.lang.LocalAccountScope.GUEST
+                    if (bound != owner || !libraryReadable || tachiyomi.core.common.util.lang.LocalAccountScope.changes.value != state) return@withLock null
+                    runCatching {
+                        novelReadStatistics(mutableLibrary.value.flatMap { item ->
+                            (metadataPositions(item.novel) + listOfNotNull(item.position)).map { item.novel to it }
+                        })
+                    }.getOrNull()
+                }
+            }
+        }.onStart { emit(null) }
+    }.distinctUntilChanged()
+
     private fun metadataPositions(novel: Novel): List<NovelReadingPosition> {
         val directory = File(app.filesDir, "novels-local/" + accountPrefix(cloudAccount) + "positions/" + novelDigest(novel.id))
         return directory.listFiles().orEmpty().filter { it.extension == "json" }.map { path ->
@@ -591,7 +613,8 @@ class NovelRepository private constructor(context: Context) {
                     readingStatus = decoded.status, addedAt = decoded.addedAt, position = decoded.position)
             } else {
                 decoded.position?.takeUnless { decoded.deleted }?.let {
-                    metadata.write(positionPath(old.novel, it.chapter), json.encodeToString(it))
+                    val previous = metadata.read(positionPath(old.novel,it.chapter))?.let { raw -> json.decodeFromString<NovelReadingPosition>(raw) }
+                    metadata.write(positionPath(old.novel, it.chapter), json.encodeToString(preserveNovelCompletion(previous,it)))
                 }
                 old.copy(position = old.position ?: decoded.position?.takeUnless { decoded.deleted }, bookmarks = if (decoded.bookmarked && !decoded.deleted) old.bookmarks + decoded.chapterUrl!! else old.bookmarks - decoded.chapterUrl!!)
             }
