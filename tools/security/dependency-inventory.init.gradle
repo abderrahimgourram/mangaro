@@ -1,0 +1,100 @@
+import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
+import org.gradle.api.artifacts.component.ModuleComponentIdentifier
+import org.gradle.api.artifacts.result.UnresolvedDependencyResult
+
+// Opt-in, read-only inventory of Gradle's selected versions (including transitives).
+// This does not change dependency versions, repositories, application tasks or locks.
+gradle.beforeProject { project ->
+    project.tasks.register('exportSecurityProjectInventory') {
+        doLast {
+            def packages = new TreeMap<String, Map>()
+            def configurations = []
+            def localProjects = new TreeSet<String>()
+            def failures = []
+            def collect = { ownerProject, config, scope ->
+                def label = "${ownerProject.path}:${scope}"
+                configurations.add(label)
+                def resolution = config.incoming.resolutionResult
+                resolution.allDependencies.each { edge ->
+                    if (edge instanceof UnresolvedDependencyResult) {
+                        failures.add("${label}: ${edge.requested.displayName}")
+                    }
+                }
+                resolution.allComponents.each { component ->
+                    def id = component.id
+                    if (id instanceof ModuleComponentIdentifier) {
+                        def key = "${id.group}:${id.module}:${id.version}"
+                        def entry = packages.computeIfAbsent(key) {
+                            [group: id.group, name: id.module, version: id.version, scopes: new TreeSet<String>()]
+                        }
+                        entry.scopes.add(label)
+                    } else {
+                        localProjects.add(id.displayName)
+                    }
+                }
+            }
+            project.configurations.findAll { config ->
+                def name = config.name.toLowerCase(Locale.ROOT)
+                config.canBeResolved && (name.endsWith('runtimeclasspath') ||
+                    name.endsWith('compileclasspath') || name.endsWith('annotationprocessor'))
+            }.sort { it.name }.each { config -> collect(project, config, config.name) }
+            def plugins = project.buildscript.configurations.findByName('classpath')
+            if (plugins != null && plugins.canBeResolved) collect(project, plugins, 'buildscriptClasspath')
+            def output = new File(project.buildDir, 'reports/security/project-dependencies.json')
+            output.parentFile.mkdirs()
+            output.text = JsonOutput.prettyPrint(JsonOutput.toJson([
+                schema: 1, build: project.path, configurations: configurations.sort(),
+                packages: packages.values().toList(), localProjects: localProjects,
+                unresolved: failures.sort(),
+            ])) + '\n'
+            if (!failures.isEmpty()) {
+                throw new GradleException('Security inventory is incomplete; inspect build/reports/security/dependencies.json')
+            }
+            logger.lifecycle("Security inventory: ${packages.size()} selected Maven versions in ${configurations.size()} configurations")
+        }
+    }
+}
+
+gradle.projectsEvaluated {
+    def root = gradle.rootProject
+    root.tasks.register('exportSecurityInventory') {
+        dependsOn(root.allprojects.collect { it.tasks.named('exportSecurityProjectInventory') })
+        doLast {
+            def packages = new TreeMap<String, Map>()
+            def configurations = []
+            def localProjects = new TreeSet<String>()
+            def failures = []
+            root.allprojects.each { project ->
+                def inventory = new JsonSlurper().parse(new File(project.buildDir, 'reports/security/project-dependencies.json'))
+                configurations.addAll(inventory.configurations)
+                localProjects.addAll(inventory.localProjects)
+                failures.addAll(inventory.unresolved)
+                inventory.packages.each { item ->
+                    def key = "${item.group}:${item.name}:${item.version}"
+                    def entry = packages.computeIfAbsent(key) {
+                        [group: item.group, name: item.name, version: item.version, scopes: new TreeSet<String>()]
+                    }
+                    entry.scopes.addAll(item.scopes)
+                }
+            }
+            if (root.findProject(':app') != null) {
+                [':app:debugRuntimeClasspath', ':app:releaseRuntimeClasspath',
+                 ':app:debugCompileClasspath', ':app:releaseCompileClasspath'].each { required ->
+                    if (!configurations.contains(required)) failures.add("Missing required configuration ${required}")
+                }
+            }
+            def output = new File(root.buildDir, 'reports/security/dependencies.json')
+            output.parentFile.mkdirs()
+            output.text = JsonOutput.prettyPrint(JsonOutput.toJson([
+                schema: 1, build: root.name, configurations: configurations.sort(),
+                packages: packages.values().toList(), localProjects: localProjects,
+                unresolved: failures.sort(),
+            ])) + '\n'
+            if (!failures.isEmpty() || packages.isEmpty()) {
+                throw new GradleException('Security inventory is incomplete; inspect build/reports/security/dependencies.json')
+            }
+            logger.lifecycle("Security inventory: ${packages.size()} selected Maven versions in ${configurations.size()} configurations")
+        }
+    }
+}

@@ -31,12 +31,17 @@ android {
 // This is the configuration block for the Baseline Profile plugin.
 // You can specify to run the generators on a managed devices or connected devices.
 baselineProfile {
-    
+
     useConnectedDevices = true
 }
 
 dependencies {
     implementation(libs.androidx.benchmark.macroJunit4)
+    constraints {
+        implementation("com.squareup.wire:wire-runtime:6.4.5") {
+            because("GHSA-7xpr-hc2w-34m9 and GHSA-9rm7-3qhh-h2mc: validate protobuf lengths")
+        }
+    }
     implementation(libs.androidx.test.junit)
     implementation(libs.androidx.test.espresso.core)
     implementation(libs.androidx.test.uiautomator)

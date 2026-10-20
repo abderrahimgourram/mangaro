@@ -1,6 +1,26 @@
 buildscript {
     dependencies {
         classpath(libs.kotlin.gradle)
+        constraints {
+            add("classpath", "org.apache.commons:commons-lang3:3.18.0") {
+                because("GHSA-j288-q9x7-2f5v: bound recursive class-name processing")
+            }
+            add("classpath", "org.bitbucket.b_c:jose4j:0.9.6") {
+                because("GHSA-3677-xxcr-wjqv: bound compressed JWE content")
+            }
+            add("classpath", "org.jdom:jdom2:2.0.6.1") {
+                because("GHSA-2363-cqg2-863c: reject external XML entities")
+            }
+            add("classpath", "org.bouncycastle:bcprov-jdk18on:1.85") {
+                because("Fix reviewed ASN.1, name-constraint, LDAP and GOST advisories through 1.85")
+            }
+            add("classpath", "org.bouncycastle:bcpkix-jdk18on:1.85") {
+                because("Keep Bouncy Castle build-time modules aligned; GHSA-wg6q-6289-32hp")
+            }
+            add("classpath", "org.bouncycastle:bcutil-jdk18on:1.85") {
+                because("Keep Bouncy Castle build-time modules aligned")
+            }
+        }
     }
 }
 

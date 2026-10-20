@@ -22,6 +22,11 @@ android {
 
 dependencies {
     implementation(projects.core.common)
+    constraints {
+        implementation("com.google.guava:guava:32.0.1-android") {
+            because("GHSA-5mg8-w23w-74h3 and GHSA-7g45-4rm6-3mm3: safe temporary files")
+        }
+    }
 
     if (Config.includeTelemetry) {
         implementation(platform(libs.firebase.bom))
