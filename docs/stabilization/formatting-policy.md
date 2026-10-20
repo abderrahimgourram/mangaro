@@ -59,3 +59,11 @@ release optimization remain required. No advertising source bytes, source IDs,
 reader state, user data, backend policies, signing or version configuration are
 changed by this policy. The separate Mknov database validation branch is not an
 Android integration dependency and no proposal is deployed to production.
+
+PR CI verifies the real release compiler, R8, resource optimization and benchmark
+compilation without packaging an APK. A signing-free disposable home reproduces
+the existing `assembleRelease` guard: permanent external signing configuration
+is required. That production guard stays intact; private keys are not copied to
+CI, no substitute key is created, and no APK is uploaded by this validation job.
+Release/publication workflows and the production signing/version settings are
+unchanged. This is release-code verification, not a signed-artifact acceptance.
