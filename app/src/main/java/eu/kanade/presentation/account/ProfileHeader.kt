@@ -30,6 +30,7 @@ internal fun ProfileHeader(
     bio: String?,
     level: Int,
     role: AccountRole,
+    showRank: Boolean = true,
     cover: @Composable () -> Unit,
     avatar: @Composable () -> Unit,
     action: @Composable () -> Unit = {},
@@ -72,8 +73,8 @@ internal fun ProfileHeader(
                         DeveloperBadge(role, compact = true)
                     }
                 }
-                Box(Modifier.fillMaxWidth().background(Color(0xFF211829).copy(alpha = .65f),
-                    RoundedCornerShape(18.dp)).padding(horizontal = 12.dp, vertical = 10.dp)) {
+                // Public profiles have no separate progression card. The owner's screen supplies one below.
+                if (showRank) {
                     RankIdentity(visualLevel, prominent = true)
                 }
                 bio?.takeIf { it.isNotBlank() }?.let {

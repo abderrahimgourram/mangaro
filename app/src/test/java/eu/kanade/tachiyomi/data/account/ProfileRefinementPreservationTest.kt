@@ -2,6 +2,7 @@ package eu.kanade.tachiyomi.data.account
 
 import eu.kanade.presentation.account.RankArtAssets
 import eu.kanade.presentation.account.formatProfileCount
+import eu.kanade.presentation.account.formatProfileReadCount
 import io.kotest.matchers.shouldBe
 import mihon.domain.account.*
 import mihon.domain.sigils.*
@@ -53,6 +54,21 @@ class ProfileRefinementPreservationTest {
             "ProfileProgressCard(profile)","OwnProfileSigils()","ProfileShowcaseControls(profile, account)",
             "account.auth.updateProfile(update)","CloudSyncControls(profile.userId, account.cloudSync)",
             "key(current.profile.userId)").forEach { screen.contains(it) shouldBe true }
+    }
+    @Test fun `owner has one rank presentation while public rank remains available`() {
+        val owner = source("eu/kanade/presentation/account/AccountScreen.kt")
+        owner.contains("showRank = false") shouldBe true
+        owner.split("ProfileProgressCard(profile)").size shouldBe 2
+        val header = source("eu/kanade/presentation/account/ProfileHeader.kt")
+        header.contains("showRank: Boolean = true") shouldBe true
+        header.contains("if (showRank)") shouldBe true
+    }
+    @Test fun `partial read counts retain lower bound without converting unknown to zero`() {
+        formatProfileReadCount(40, true, Locale.US) shouldBe "40+"
+        formatProfileReadCount(39, false, Locale.US) shouldBe "39"
+        formatProfileReadCount(1, true, Locale.US) shouldBe "1+"
+        formatProfileReadCount(null, true, Locale.US) shouldBe "—"
+        formatProfileReadCount(0, false, Locale.US) shouldBe "0"
     }
     @Test fun `public profile never uses private reading projection or local history`() {
         val public = source("eu/kanade/presentation/community/PublicCommunityProfile.kt")

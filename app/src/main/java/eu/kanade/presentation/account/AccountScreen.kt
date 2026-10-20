@@ -334,7 +334,7 @@ private fun AccountProfileEditor(
     val muted = Color(0xFF8F819E)
     ProfileHeader(
         displayName = profile.displayName, username = profile.username, bio = profile.bio,
-        level = profile.level, role = profile.role,
+        level = profile.level, role = profile.role, showRank = false,
         cover = { ProfileCover(profile, Modifier.fillMaxSize()) },
         avatar = { AccountAvatar(profile, Modifier.fillMaxSize().clip(RoundedCornerShape(20.dp)).background(MangaroDesignSystem.SurfaceHigh)) },
         action = {

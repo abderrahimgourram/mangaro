@@ -24,8 +24,8 @@ internal fun ProfileProgressCard(profile: MangaroProfile) {
     val accent = rankAccent(level)
     Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp), color = MangaroDesignSystem.SurfaceDark,
         border = BorderStroke(.5.dp, accent.copy(alpha = .14f))) {
-        Row(Modifier.padding(18.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            RankArtwork(level, Modifier.size(64.dp))
+        Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            RankArtwork(level, Modifier.size(56.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(MangaroRanks.titleFor(level), style = MaterialTheme.typography.titleSmall,
                     color = accent, fontWeight = FontWeight.SemiBold)
@@ -33,6 +33,8 @@ internal fun ProfileProgressCard(profile: MangaroProfile) {
                     Text("المستوى الأقصى · ${WesternDigits.isolate(level.toString())}",
                         color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                 } else {
+                    Text("المستوى ${WesternDigits.isolate(level.toString())}",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                     val earned = MangaroLevelProgress.earned(profile)
                     val required = MangaroLevelProgress.required(profile.level)
                     LinearProgressIndicator(progress = { (earned.toFloat() / required).coerceIn(0f, 1f) },
