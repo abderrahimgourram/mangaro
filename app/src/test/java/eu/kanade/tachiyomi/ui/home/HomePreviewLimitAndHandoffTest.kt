@@ -73,24 +73,46 @@ class HomePreviewLimitAndHandoffTest {
         merged.map { it.mangaId } shouldContainExactly listOf(1L, 2L)
     }
 
-    private fun known(item: HomeDiscoveryItem): HomeDiscoveryItem = item.copy(url = "/work/${item.mangaId}").also {
+    private fun known(item: HomeDiscoveryItem, externalId: String? = null): HomeDiscoveryItem = item.copy(url = "/work/${item.mangaId}").also {
         PreferredMangaVariants.remember(
             Manga.create().copy(
             id = it.mangaId, source = it.sourceId, url = it.url, title = it.title, author = "Known Creator",
+            memo = kotlinx.serialization.json.buildJsonObject {
+                if (externalId != null) put(tachiyomi.domain.manga.service.WorkMetadata.MEMO_KEY,
+                    kotlinx.serialization.json.buildJsonObject {
+                        put("externalIds",kotlinx.serialization.json.buildJsonObject {
+                            put("anilist",kotlinx.serialization.json.JsonPrimitive(externalId))
+                        })
+                    })
+            },
         ))
     }
 
     @Test
     fun `verify same-title manga from different sources remain distinct during snapshot handoff`() {
-        val itemA = HomeDiscoveryItem(mangaId = 10L, title = "Solo Leveling", coverData = MangaCover(10L, 1L, false, "http://coverA.jpg", 0L), sourceId = 100L, sourceName = "Azora")
-        val itemB = HomeDiscoveryItem(mangaId = 20L, title = "Solo Leveling", coverData = MangaCover(20L, 1L, false, "http://coverB.jpg", 0L), sourceId = 200L, sourceName = "MangaDar")
-
-        DiscoverySnapshotStore.setSnapshot(DiscoveryCategory.LATEST, listOf(known(itemA), known(itemB)))
-
+        val itemA = HomeDiscoveryItem(mangaId = 81001L, title = "Unverified matching title", coverData = MangaCover(81001L, 81001L, false, "http://coverA.jpg", 0L), sourceId = 81001L, sourceName = "Source A")
+        val itemB = HomeDiscoveryItem(mangaId = 81002L, title = "Unverified matching title", coverData = MangaCover(81002L, 81002L, false, "http://coverB.jpg", 0L), sourceId = 81002L, sourceName = "Source B")
+        // Publishing receives resolved groups. Snapshot restoration must not infer title-only links.
+        val grouped = GroupDiscoveryItems.group(listOf(known(itemA), known(itemB)))
+        DiscoverySnapshotStore.setSnapshot(DiscoveryCategory.LATEST, grouped)
         val retrieved = DiscoverySnapshotStore.getSnapshot(DiscoveryCategory.LATEST)
+        retrieved.size shouldBe 2
+        retrieved.map { it.mangaId }.toSet() shouldBe setOf(81001L, 81002L)
+        retrieved.all { it.alternatives.isEmpty() } shouldBe true
+    }
 
+    @Test
+    fun `verified grouped work survives snapshot handoff with both edition routes and stable key`() {
+        val itemA = HomeDiscoveryItem(mangaId = 82001L, title = "Reviewed title A", coverData = MangaCover(82001L, 82001L, false, "http://coverA.jpg", 0L), sourceId = 82001L, sourceName = "Source A")
+        val itemB = HomeDiscoveryItem(mangaId = 82002L, title = "Reviewed title B", coverData = MangaCover(82002L, 82002L, false, "http://coverB.jpg", 0L), sourceId = 82002L, sourceName = "Source B")
+        val grouped = GroupDiscoveryItems.group(listOf(known(itemA,"fixture-snapshot-work"),known(itemB,"fixture-snapshot-work")))
+        grouped.size shouldBe 1
+        DiscoverySnapshotStore.setSnapshot(DiscoveryCategory.LATEST,grouped+grouped)
+        val retrieved = DiscoverySnapshotStore.getSnapshot(DiscoveryCategory.LATEST)
         retrieved.size shouldBe 1
-        setOf(retrieved[0].sourceId, retrieved[0].alternatives.single().sourceId) shouldBe setOf(100L, 200L)
-        (retrieved[0].mangaId == retrieved[0].alternatives.single().mangaId) shouldBe false
+        retrieved.single().canonicalWorkId shouldBe grouped.single().canonicalWorkId
+        val editions = listOf(retrieved.single())+retrieved.single().alternatives
+        editions.map {it.sourceId to it.url}.toSet() shouldBe setOf(82001L to "/work/82001",82002L to "/work/82002")
+        editions.map {it.mangaId}.toSet() shouldBe setOf(82001L,82002L)
     }
 }
