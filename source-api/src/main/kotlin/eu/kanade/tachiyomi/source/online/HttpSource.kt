@@ -413,15 +413,15 @@ abstract class HttpSource : CatalogueSource {
             .awaitSuccess()
     }
 
+    /** Preserve source-specific image headers when an internal declarative adapter is installed. */
+    fun repairImageRequest(page: Page): Request = imageRequest(page)
+
     /**
      * Returns the request for getting the source image. Override only if it's needed to override
      * the url, send different headers or request method like POST.
      *
      * @param page the chapter whose page list has to be fetched
      */
-    /** Preserve source-specific image headers when an internal declarative adapter is installed. */
-    fun repairImageRequest(page: Page): Request = imageRequest(page)
-
     protected open fun imageRequest(page: Page): Request {
         return GET(page.imageUrl!!, headers)
     }
