@@ -41,7 +41,10 @@ The final documentation record does not change compiled application source.
 | Protected files | 135 unchanged SHA256 comparisons, reader entire file unchanged, 49 startup/storage paths unchanged |
 
 The four app failures are protected advertising tests and reproduce on the detached
-pre-task commit. They were not skipped or edited. Two contain stale destination
+pre-task commit. A separate detached checkout of the immutable recovery commit
+`0c9f95b565b0ae5aca2343430128eaaf6f5eb025` also ran39 advertising cases:
+35 passed and the exact same four failed. Both advertising source/test trees are
+byte-identical between recovery and this feature. Tests were not skipped or edited. Two contain stale destination
 expectations; two null/cooldown failures remain undiagnosed to production-safety standards.
 A separate cloud test-order failure was reproduced on the baseline and repaired without
 weakening ownership. Current SearchExperienceTest passes all thirteen cases.
