@@ -1,3 +1,63 @@
+# Native read-only verification update — 2026-10-20 20:30 UTC
+
+The restarted host now exposes **native** `mcp__supabase__*` tools. The configured
+project URL was verified as `https://pehsxthjetlltlsqcbfa.supabase.co`;
+`current_user = supabase_read_only_user`, `transaction_read_only = on`.
+Native `list_tables` and metadata-only SQL succeeded. Prior Apps denials below are
+historical and do not describe this connection. No further OAuth was requested.
+
+## Deployed contract findings
+
+- Both novel cloud tables exist with owner-scoped SELECT, INSERT and UPDATE RLS.
+  Authenticated SELECT and column-scoped INSERT/UPDATE grants are present.
+  Table-level INSERT/UPDATE privilege probes alone return false **by design**;
+  column privilege probes confirm identity columns are insert-only, state and
+  tombstones can be updated, and revision/timestamps remain server-owned.
+- `cloud_apply_change` is security invoker, verifies auth ownership and expected
+  revisions, and updates only state/deleted_at for novel rows. Its qualified
+  update-predicate expression was tested with constant synthetic text and works.
+- `cloud_novel_state_source_id_check` permits only Kolnovel, Cenele, Sunovels and
+  SeaNovel. `cloud_novel_url` also lacks Mknov. Current Android supports Mknov:
+  this is now a **verified deployed compatibility gap**, not just a repository
+  hypothesis. It can reject Mknov sync without implying other providers fail.
+- The deployed schema-1 position validator excludes `completed`. The current
+  codec deliberately omits it. A restored legacy position cannot establish
+  completion; neither chapter number nor XP can safely reconstruct it.
+- `profile_own_statistics` returns comments/ratings, not an authoritative
+  format-separated chapter count. The completion ledger has hashed chapter/work
+  keys but no explicit novel/comic format column. No private ledger rows were
+  inspected and no user's historical count was inferred.
+- Current URL validation accepts a synthetic Cenele URL. A suspected escaping
+  problem was disproven by evaluating the exact constant expression read-only.
+  The read-only role cannot invoke the private validator directly (42501); this
+  is not evidence of missing authenticated privileges, which were verified.
+
+No production account, email, token, private progress, chapter body or auth log
+was read. No production DDL, RLS, data mutation or RPC write was attempted.
+Schema inspection does not prove authenticated app roundtrips, token refresh or
+all users' sync outcomes. Those still require a controlled nonproduction account
+matrix. The immutable metadata-only checks do not award XP.
+
+## Proposed next work (not applied)
+
+The separate [Mknov compatibility proposal](proposals/novel-mknov-compatibility.sql)
+only extends the existing validator/source constraint. It leaves RLS, grants,
+identities and data unchanged. A read-only expression fixture verifies the host
+matrix; **that is not a migration/RLS integration test**. DDL application, lock
+behavior and old/new client roundtrips require a disposable PostgreSQL environment
+and approval before production execution. Docker is installed locally but the
+current user cannot access its socket; no daemon/security configuration was changed.
+
+Completion evidence needs a separately negotiated backward-compatible capability,
+explicit unread/reset semantics and tests that old clients cannot erase newer
+completion evidence. No speculative completion schema or historical backfill is
+included in this proposal. Local known counts and partial-history state remain
+truthful. No Android cloud ownership or codec changes are made in this follow-up.
+
+---
+
+The following is the preserved earlier diagnosis, superseded above where noted.
+
 # Novel history: verified local contract and pending production diagnosis
 
 Status (2026-10-20): production schema NOT verified. No production reads of user
