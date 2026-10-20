@@ -30,6 +30,7 @@ import okio.source
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.manga.model.MangaCover
+import tachiyomi.domain.manga.model.ReviewedCoverArtwork
 import tachiyomi.domain.source.service.SourceManager
 import uy.kohesive.injekt.api.get
 import uy.kohesive.injekt.injectLazy
@@ -57,6 +58,7 @@ class MangaCoverFetcher(
     private val callFactoryLazy: Lazy<Call.Factory>,
     private val imageLoader: ImageLoader,
     private val mangaId: Long? = null,
+    private val allowSourceRecovery: Boolean = true,
 ) : Fetcher {
 
     private val diskCacheKey: String
@@ -180,7 +182,7 @@ class MangaCoverFetcher(
     }
 
     private suspend fun recoverCover(): FetchResult? {
-        if (!options.networkCachePolicy.readEnabled) return null
+        if (!allowSourceRecovery || !options.networkCachePolicy.readEnabled) return null
         val source = sourceLazy.value ?: return null
         val id = mangaId ?: return null
         val response = eu.kanade.domain.manga.interactor.RecoverMangaCover(uy.kohesive.injekt.Injekt.get())
@@ -356,14 +358,16 @@ class MangaCoverFetcher(
         private val sourceManager: SourceManager by injectLazy()
 
         override fun create(data: Manga, options: Options, imageLoader: ImageLoader): Fetcher {
+            val effectiveUrl = ReviewedCoverArtwork.resolve(data.source, data.thumbnailUrl)
             val custom = coverCache.getCustomCoverFile(data.id, data.accountToken.fileOwner)
             val key = imageLoader.components.key(data, options)!!
             return MangaCoverFetcher(
                 mangaId = data.id,
-                url = data.thumbnailUrl,
+                url = effectiveUrl,
+                allowSourceRecovery = effectiveUrl == data.thumbnailUrl,
                 isLibraryManga = data.favorite,
                 options = options,
-                coverFileLazy = lazy { coverCache.getCoverFile(data.thumbnailUrl) },
+                coverFileLazy = lazy { coverCache.getCoverFile(effectiveUrl) },
                 customCoverFileLazy = lazy { custom },
                 diskCacheKeyLazy = lazy { key },
                 sourceLazy = lazy { sourceManager.get(data.source) as? HttpSource },
@@ -381,14 +385,16 @@ class MangaCoverFetcher(
         private val sourceManager: SourceManager by injectLazy()
 
         override fun create(data: MangaCover, options: Options, imageLoader: ImageLoader): Fetcher {
+            val effectiveUrl = ReviewedCoverArtwork.resolve(data.sourceId, data.url)
             val custom = coverCache.getCustomCoverFile(data.mangaId, data.owner)
             val key = imageLoader.components.key(data, options)!!
             return MangaCoverFetcher(
                 mangaId = data.mangaId,
-                url = data.url,
+                url = effectiveUrl,
+                allowSourceRecovery = effectiveUrl == data.url,
                 isLibraryManga = data.isMangaFavorite,
                 options = options,
-                coverFileLazy = lazy { coverCache.getCoverFile(data.url) },
+                coverFileLazy = lazy { coverCache.getCoverFile(effectiveUrl) },
                 customCoverFileLazy = lazy { custom },
                 diskCacheKeyLazy = lazy { key },
                 sourceLazy = lazy { sourceManager.get(data.sourceId) as? HttpSource },

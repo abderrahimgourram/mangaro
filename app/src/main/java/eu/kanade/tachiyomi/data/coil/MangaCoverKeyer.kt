@@ -5,16 +5,19 @@ import coil3.request.Options
 import eu.kanade.domain.manga.model.hasCustomCover
 import eu.kanade.tachiyomi.data.cache.CoverCache
 import tachiyomi.domain.manga.model.MangaCover
+import tachiyomi.domain.manga.model.ReviewedCoverArtwork
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import tachiyomi.domain.manga.model.Manga as DomainManga
 
-class MangaKeyer : Keyer<DomainManga> {
+class MangaKeyer(
+    private val coverCache: CoverCache = Injekt.get(),
+) : Keyer<DomainManga> {
     override fun key(data: DomainManga, options: Options): String {
-        return if (data.hasCustomCover()) {
+        return if (data.hasCustomCover(coverCache)) {
             "${tachiyomi.core.common.util.lang.LocalAccountScope.segment(data.accountToken.fileOwner)};${data.id};${data.coverLastModified}"
         } else {
-            "${data.thumbnailUrl};${data.coverLastModified}"
+            "${ReviewedCoverArtwork.resolve(data.source, data.thumbnailUrl)};${data.coverLastModified}"
         }
     }
 }
@@ -26,7 +29,7 @@ class MangaCoverKeyer(
         return if (coverCache.getCustomCoverFile(data.mangaId, data.owner).exists()) {
             "${tachiyomi.core.common.util.lang.LocalAccountScope.segment(data.owner)};${data.mangaId};${data.lastModified}"
         } else {
-            "${data.url};${data.lastModified}"
+            "${ReviewedCoverArtwork.resolve(data.sourceId, data.url)};${data.lastModified}"
         }
     }
 }
