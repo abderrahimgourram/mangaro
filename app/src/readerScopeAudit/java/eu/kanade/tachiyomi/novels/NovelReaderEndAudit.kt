@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.novels
 
+import coil3.asImage
 import android.app.Instrumentation
 import android.os.Bundle
 import android.view.accessibility.AccessibilityNodeInfo
@@ -16,7 +17,7 @@ import uy.kohesive.injekt.api.addFactory
 import uy.kohesive.injekt.api.get
 
 /** Opt-in instrumentation only. Authored offline prose on a disposable emulator, no account or ad requests. */
-internal fun Instrumentation.runNovelReaderEndAudit(connectedOnly: Boolean = false): Bundle = runBlocking {
+internal fun Instrumentation.runNovelReaderEndAudit(connectedOnly: Boolean = false, profileOnly: Boolean = false): Bundle = runBlocking {
     val activity=startActivitySync(android.content.Intent(targetContext,eu.kanade.tachiyomi.ui.main.MainActivity::class.java)
         .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
     val account=Injekt.get<AccountFoundation>()
@@ -63,7 +64,7 @@ internal fun Instrumentation.runNovelReaderEndAudit(connectedOnly: Boolean = fal
     var phase="start"
     fun record(text:String) {results+=text;println(text)}
     try {
-        for ((count,font) in if(connectedOnly) emptyList() else listOf(62 to 21f,100 to 32f,240 to 16f)) {
+        for ((count,font) in if(connectedOnly || profileOnly) emptyList() else listOf(62 to 21f,100 to 32f,240 to 16f)) {
             val novel=Novel("novel.seanovel","https://seanovel.org/novels/reader-end-audit-$count","اختبار نهاية الفصل $count")
             val chapter=NovelChapter(novel.url+"/chapters/1","اختبار $count",1)
             val paragraphs=(1..count).map { i ->
@@ -105,7 +106,7 @@ internal fun Instrumentation.runNovelReaderEndAudit(connectedOnly: Boolean = fal
             val screenshot=uiAutomation.takeScreenshot()
             screenshot?.let { bitmap -> java.io.File(targetContext.cacheDir,"reader-end-$count.png").outputStream().use {bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)} }
         }
-        if (!connectedOnly) {
+        if (!connectedOnly && !profileOnly) {
         phase="local-statistics"
         val stats=repository.observeReadStatistics(tachiyomi.core.common.util.lang.LocalAccountScope.GUEST).first {it?.completed==3L}
         check(stats?.count==3L) // Three chapters, NOT 62+100+240 internal segments.
@@ -113,6 +114,19 @@ internal fun Instrumentation.runNovelReaderEndAudit(connectedOnly: Boolean = fal
 
         }
 
+        // Optional real cover bytes are pushed to this disposable app cache by the operator.
+        // Cache the exact source URL; the production cover components and destination remain unchanged.
+        fun cacheCover(name:String,url:String,novel:Boolean) {
+            val file=java.io.File(targetContext.cacheDir,"polish-covers/$name.image")
+            if(!file.exists())return
+            val bitmap=android.graphics.BitmapFactory.decodeFile(file.path) ?: error("Invalid recorded cover")
+            val image=bitmap.asImage()
+            if(novel) repository.covers.memoryCache?.set(coil3.memory.MemoryCache.Key("$url|motion=false"),coil3.memory.MemoryCache.Value(image))
+            else coil3.SingletonImageLoader.get(targetContext).memoryCache?.set(coil3.memory.MemoryCache.Key("$url;0"),coil3.memory.MemoryCache.Value(image))
+        }
+        if (!profileOnly) {
+        cacheCover("solo-novel","https://seanovel.org/api/novel/solo-leveling/cover?type=webp",true)
+        cacheCover("solo-comic","https://olympustaff.com/images/manga/b05147568d52f22c663c084172fc0dac.png",false)
         // Real public metadata captured 2026-10-20. Offline UI test, not a live reading claim.
         val relatedNovel=Novel("novel.seanovel","https://seanovel.org/novels/solo-leveling","رفع المستوى منفرداً",
             "https://seanovel.org/api/novel/solo-leveling/cover?type=webp")
@@ -155,6 +169,70 @@ internal fun Instrumentation.runNovelReaderEndAudit(connectedOnly: Boolean = fal
         check(repository.library.value==libraryBefore)
         check(!mangaRepository.getMangaById(comic.id).favorite)
         record("PASS novelDetailsToComicDetails actualUI=true backStack=true noLibraryOrProgressMutation=true")
+        // A new publisher-reviewed pair traverses the same production detail screens.
+        val extraPairs=listOf(
+            Triple("overgeared",Novel("novel.seanovel","https://seanovel.org/novels/overgeared","مدجج بالعتاد",
+                "https://seanovel.org/api/novel/overgeared/cover?type=webp",author="Park Saenal"),
+                tachiyomi.domain.manga.model.Manga.create().copy(source=215553151312092548L,
+                    url="/manhwa/overgeared#6a8f5babf1a5e87af68c564b",title="أوفرغيرد",initialized=true,
+                    thumbnailUrl="https://mangatime.org/uploads/series/6a8f5babf1a5e87af68c564b-3a5102281fc30d20.webp")),
+            Triple("mount-hua",Novel("novel.seanovel","https://seanovel.org/novels/return-of-the-blossoming-blade","عودة طائفة جبل هوا",
+                "https://seanovel.org/api/novel/return-of-the-blossoming-blade/cover?type=webp",author="بيجا"),
+                tachiyomi.domain.manga.model.Manga.create().copy(source=215553151312092548L,
+                    url="/manhwa/return-of-the-mount-hua-sect#6a49e00234c268b77054833e",title="عودة طائفة جبل هوا",initialized=true,
+                    thumbnailUrl="https://mangatime.org/uploads/series/6a49e00234c268b77054833e-6907fadc0a427774.webp")),
+        )
+        for ((storyId,extraNovel,comicMetadata) in extraPairs) {
+            val extraComic=mangaRepository.insertNetworkManga(listOf(comicMetadata)).single()
+            repository.ingest(listOf(extraNovel))
+            cacheCover("$storyId-novel",extraNovel.cover!!,true)
+            cacheCover("$storyId-comic",extraComic.thumbnailUrl!!,false)
+            phase="$storyId-comic-details"
+            showScreen(eu.kanade.tachiyomi.ui.manga.MangaScreen(extraComic.id))
+            awaitHeading("إصدار رواية")
+            delay(400)
+            uiAutomation.takeScreenshot()?.let {bitmap -> java.io.File(targetContext.cacheDir,"$storyId-novel-card.png").outputStream().use {bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)} }
+            withTimeout(10_000) {while(!tapTitle(extraNovel.title))delay(150)}
+            withTimeout(10_000) {while(navigator.get()?.lastItem !is eu.kanade.presentation.novels.NovelDetailsScreen)delay(100)}
+            awaitHeading("إصدار مانهوا")
+            delay(400)
+            uiAutomation.takeScreenshot()?.let {bitmap -> java.io.File(targetContext.cacheDir,"$storyId-manhwa-card.png").outputStream().use {bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)} }
+            withTimeout(10_000) {while(!tapTitle(extraComic.title))delay(150)}
+            withTimeout(10_000) {while(navigator.get()?.lastItem !is eu.kanade.tachiyomi.ui.manga.MangaScreen)delay(100)}
+            check(!mangaRepository.getMangaById(extraComic.id).favorite)
+            record("PASS connectedStory=$storyId bothDirections=true actualDetails=true separateSourceIds=true")
+        }
+        }
+        if (!connectedOnly) {
+            phase="profile"
+            val profile=MangaroProfile("guest",null,"قارئ مانجارو · Mangaro", "mangaro_reader_1234567890",null,110,3,
+                bio="مساحة للقراءة والحكايات",role=AccountRole.DEVELOPER)
+            val session=kotlinx.coroutines.flow.MutableStateFlow<AccountSession>(AccountSession.Authenticated(profile))
+            val fake=object:AccountAuth by GuestAccountAuth() {
+                override fun observeSession():kotlinx.coroutines.flow.StateFlow<AccountSession> = session
+                override suspend fun getCurrentProfile():MangaroProfile = profile
+                override suspend fun profileStatistics()=ProfileStatistics(3,2)
+            }
+            Injekt.addFactory<AccountFoundation> {AccountFoundation(fake,DisabledAccountCloudSync())}
+            showScreen(eu.kanade.presentation.account.AccountScreen())
+            val rank=MangaroRanks.titleFor(30)
+            withTimeout(15_000) {while(!contains(rank))delay(100)}
+            var ranks=0
+            nodes(uiAutomation.rootInActiveWindow) {node -> if(node.text?.toString()==rank)ranks++;false}
+            check(ranks==1) {"Duplicate rank: $ranks"}
+            check(profile.xp==110L && profile.level==3)
+            uiAutomation.takeScreenshot()?.let {bitmap -> java.io.File(targetContext.cacheDir,"profile-header.png").outputStream().use {bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)} }
+            // Scroll the actual owner profile to its existing statistics and featured seals.
+            withTimeout(10_000) {
+                while(!contains("أختامك المميزة")) {
+                    nodes(uiAutomation.rootInActiveWindow) {it.isScrollable && it.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)}
+                    delay(200)
+                }
+            }
+            check(contains("أختامك المميزة"))
+            uiAutomation.takeScreenshot()?.let {bitmap -> java.io.File(targetContext.cacheDir,"profile-reading-seals.png").outputStream().use {bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)} }
+            record("PASS actualAccountScreen oneRank=true developerLevel30=true actualXp=110 originalLevel=3 featuredSealsPresent=true")
+        }
         Bundle().apply {putString("stream",results.joinToString("\n")+"\n");putInt("passed",results.size)}
     } catch (failure:Throwable) {
         uiAutomation.takeScreenshot()?.let { bitmap -> java.io.File(targetContext.cacheDir,"reader-audit-failure.png").outputStream().use {bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)} }

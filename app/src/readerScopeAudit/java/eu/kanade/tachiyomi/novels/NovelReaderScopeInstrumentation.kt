@@ -27,10 +27,11 @@ class NovelReaderScopeInstrumentation : Instrumentation() {
     private var signedStage: String? = null
     private var readerEndAudit = false
     private var connectedOnly = false
-    override fun onCreate(arguments: Bundle?) { connectedOnly = arguments?.getString("connectedOnly") == "true"; readerEndAudit = arguments?.getString("readerEnd") == "true"; signedStage = arguments?.getString("signedStage"); super.onCreate(arguments); start() }
+    private var profileOnly = false
+    override fun onCreate(arguments: Bundle?) { profileOnly = arguments?.getString("profileOnly") == "true"; connectedOnly = arguments?.getString("connectedOnly") == "true"; readerEndAudit = arguments?.getString("readerEnd") == "true"; signedStage = arguments?.getString("signedStage"); super.onCreate(arguments); start() }
     override fun onStart() {
         if (readerEndAudit) {
-            try { finish(0,runNovelReaderEndAudit(connectedOnly)) }
+            try { finish(0,runNovelReaderEndAudit(connectedOnly,profileOnly)) }
             catch (failure:Throwable) { finish(1,Bundle().apply {putString("stream","FAIL readerEnd: ${failure.javaClass.simpleName}: ${failure.message}\n"+failure.stackTraceToString())}) }
             return
         }

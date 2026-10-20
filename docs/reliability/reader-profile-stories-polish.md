@@ -1,0 +1,20 @@
+# Reader, profile and Connected Stories refinement
+
+Base: `8b740fb9f1031351b89e5ddf739592913208b550`. No release configuration change.
+
+- Reader controls display one chapter percentage and a slim track. Internal segment calculations, measured final-content visibility, completion, saved position and advertising remain unchanged.
+- Owner profile header no longer repeats the rank identity. One compact progression card retains original rank art, XP, developer display override and max state. Public profiles keep their existing rank. Reading categories are centered, and exact/lower-bound/unknown values keep their meaning.
+- Connected Stories expands from two reviewed relationships/eight enrolled source editions to four/twelve: original Solo Leveling, original TBATE, Overgeared (2020), and Return of the Blossoming Blade. See `../connected-stories/coverage-review.md` for publisher references and rejected candidates. Existing same-format reviewed keys/trusted IDs can extend enrollment, with contradiction/revocation checks. No Atlas, source, progress or cloud identity is rewritten.
+- Offline review tooling outputs pending candidates only; no runtime discovery service or new dependency was introduced.
+
+## Verification
+
+The broad app JVM selection ran 249 cases: 247 passed, two opt-in network/environment tests skipped, no failures. After the final publisher mapping, all affected Connected Stories suites were rerun: 54 cases, 53 passed, one opt-in live test skipped. Taking the latest result for each suite gives 251 cases: 249 passed, two skipped, zero failures/errors. This is an affected-suite aggregate, not a claim that the entire app test suite ran. Domain rank/seal/account/showcase selection: 28 passed. Offline review tool: six passed.
+
+Production code debug compilation and opt-in emulator debug APK compilation succeeded. Reader emulator cases reached final authored text at 62/100/240 segments with 100%, no internal fraction; the 62 case restored its saved chapter identity. This does not claim device-independent physical page counts. Profile uses the actual AccountScreen with a synthetic test session and real isolated local reading storage, at 360dp and approximately 430dp/1.3 font scale. Three offline authored chapters count as three chapters, not 402 segments. Real publisher-reviewed source metadata and previously downloaded genuine cover bytes feed the actual native manga/novel details screens; no replacement demo screen is used.
+
+The first expanded UI harness attempt tapped before accessibility state was ready. A separate profile attempt checked an offscreen seal heading before scrolling. These were test synchronization defects; assertions remain, and the harness now waits for the actual clickable target and scrolls to the seal section. Failed logs were retained locally. No production lookup or privacy check was weakened.
+
+Production Supabase read-only project metadata still returns permission denied. No SQL, schema, RLS, account data or synchronization rules were changed; historical novel totals remain partial/unavailable where appropriate. Authenticated earned-seal customization and live cross-device/cloud reconciliation require owner acceptance with working project access.
+
+No owner phone, public repository, release APK, mandatory update, website, signing key or version metadata was changed. Emulator app network was disabled; public cover bytes were preloaded into test memory caches under their exact original source URLs. Private test evidence and screenshots are outside Git, without chapter-body fixtures or credentials.
