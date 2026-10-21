@@ -1,0 +1,91 @@
+{
+  "source": "Authorized native read-only schema metadata, 2026-10-20; no user rows.",
+  "serverVersion": "17.11",
+  "functions": [
+    {
+      "name": "cloud_novel_position",
+      "definition": "CREATE OR REPLACE FUNCTION mangaro_private.cloud_novel_position(source text, value jsonb, chapter_url text DEFAULT NULL::text)\n RETURNS boolean\n LANGUAGE plpgsql\n IMMUTABLE\n SET search_path TO ''\nAS $function$\ndeclare entry jsonb;\nbegin\n if value is null or value='null'::jsonb then return true; end if;\n if jsonb_typeof(value)<>'object' or value - array['chapter','paragraph','offset','updatedAt','anchor']::text[] <> '{}'::jsonb then return false; end if;\n if jsonb_typeof(value->'chapter') is distinct from 'object' then return false; end if;\n if (value->'chapter') - array['url','title','order','volume','volumeId','sourcePage','available','publishedRows','unavailableReason','sunovelsState','sunovelsEvidence']::text[] <> '{}'::jsonb then return false; end if;\n if not mangaro_private.cloud_novel_url(source,value->'chapter'->>'url') or\n   (chapter_url is not null and value->'chapter'->>'url' is distinct from chapter_url) then return false; end if;\n if jsonb_typeof(value->'chapter'->'title') is distinct from 'string' or char_length(value->'chapter'->>'title')>512 then return false; end if;\n if jsonb_typeof(value->'chapter'->'order') is distinct from 'number' then return false; end if;\n if (value ? 'paragraph' and jsonb_typeof(value->'paragraph')<>'number') or\n   (value ? 'offset' and jsonb_typeof(value->'offset')<>'number') or\n   (value ? 'updatedAt' and jsonb_typeof(value->'updatedAt')<>'number') then return false; end if;\n if coalesce(value->'chapter'->>'order','') !~ '^[0-9]{1,7}$' then return false; end if;\n if coalesce(value->>'paragraph','0') !~ '^[0-9]{1,7}$' or coalesce(value->>'offset','0') !~ '^[0-9]{1,8}$' or\n   coalesce(value->>'updatedAt','0') !~ '^[0-9]{1,16}$' then return false; end if;\n if (value->'chapter'->>'order')::bigint>1000000 then return false; end if;\n if coalesce((value->>'paragraph')::bigint,0)>1000000 or coalesce((value->>'offset')::bigint,0)>10000000 then return false; end if;\n if value ? 'anchor' and (jsonb_typeof(value->'anchor')<>'string' or char_length(value->>'anchor')>4096) then return false; end if;\n -- Old accepted APKs can include these bounded chapter metadata fields; none grant reader access.\n if value->'chapter' ? 'sunovelsState' and value->'chapter'->>'sunovelsState' not in ('INDEXED_UNVERIFIED','VERIFIED_READABLE','EXPLICITLY_LOCKED','AMBIGUOUS','MISSING','TEMPORARILY_UNAVAILABLE') then return false; end if;\n if value->'chapter' ? 'sunovelsEvidence' and value->'chapter'->>'sunovelsEvidence' not in ('INDEX','PUBLIC_READER','TRANSPORT') then return false; end if;\n if value->'chapter' ? 'publishedRows' and (jsonb_typeof(value->'chapter'->'publishedRows')<>'array' or jsonb_array_length(value->'chapter'->'publishedRows')>200) then return false; end if;\n if value->'chapter' ? 'unavailableReason' and (jsonb_typeof(value->'chapter'->'unavailableReason')<>'string' or char_length(value->'chapter'->>'unavailableReason')>1024) then return false; end if;\n if value->'chapter' ? 'available' and jsonb_typeof(value->'chapter'->'available')<>'boolean' then return false; end if;\n for entry in select * from jsonb_array_elements(coalesce(value->'chapter'->'publishedRows','[]'::jsonb)) loop\n  if jsonb_typeof(entry)<>'object' or entry-array['url','title','publishedAt']::text[]<>'{}'::jsonb\n   or not mangaro_private.cloud_novel_url(source,entry->>'url')\n   or jsonb_typeof(entry->'title') is distinct from 'string' or char_length(entry->>'title')>512\n   or (entry ? 'publishedAt' and entry->'publishedAt'<>'null'::jsonb and (jsonb_typeof(entry->'publishedAt')<>'string' or char_length(entry->>'publishedAt')>128)) then return false; end if;\n end loop;\n\n\n return true;\nend; $function$\n"
+    },
+    {
+      "name": "cloud_novel_url",
+      "definition": "CREATE OR REPLACE FUNCTION mangaro_private.cloud_novel_url(source text, value text)\n RETURNS boolean\n LANGUAGE sql\n IMMUTABLE\n SET search_path TO ''\nAS $function$\n select coalesce(char_length(value) between 1 and 4096 and value ~ (\n '^https://([a-zA-Z0-9-]+\\.)*' || case source\n when 'novel.kolnovel' then 'kolnovel\\.com' when 'novel.cenele' then 'cenele\\.com'\n when 'novel.sunovels' then 'sunovels\\.com' when 'novel.seanovel' then 'seanovel\\.org'\n else '(?!)' end || '(:443)?(/|$)'),false);\n$function$\n"
+    }
+  ],
+  "constraints": [
+    {
+      "name": "cloud_novel_progress_chapter_key_check",
+      "definition": "CHECK ((chapter_key ~ '^[a-f0-9]{64}$'::text))",
+      "table_name": "cloud_novel_progress"
+    },
+    {
+      "name": "cloud_novel_progress_check",
+      "definition": "CHECK (((\"left\"(edition_id, (char_length(source_id) + 1)) = (source_id || ':'::text)) AND (edition_key = encode(sha256(convert_to(edition_id, 'UTF8'::name)), 'hex'::text))))",
+      "table_name": "cloud_novel_progress"
+    },
+    {
+      "name": "cloud_novel_progress_check1",
+      "definition": "CHECK ((mangaro_private.cloud_novel_url(source_id, chapter_url) AND (chapter_key = encode(sha256(convert_to(chapter_url, 'UTF8'::name)), 'hex'::text))))",
+      "table_name": "cloud_novel_progress"
+    },
+    {
+      "name": "cloud_novel_progress_check2",
+      "definition": "CHECK (COALESCE(((jsonb_typeof(state) = 'object'::text) AND (octet_length((state)::text) <= 65536) AND (state ?& ARRAY['position'::text, 'bookmarked'::text]) AND ((state - ARRAY['position'::text, 'bookmarked'::text]) = '{}'::jsonb) AND (jsonb_typeof((state -> 'bookmarked'::text)) = 'boolean'::text) AND mangaro_private.cloud_novel_position(source_id, (state -> 'position'::text), chapter_url)), false))",
+      "table_name": "cloud_novel_progress"
+    },
+    {
+      "name": "cloud_novel_progress_pkey",
+      "definition": "PRIMARY KEY (user_id, edition_key, chapter_key)",
+      "table_name": "cloud_novel_progress"
+    },
+    {
+      "name": "cloud_novel_progress_user_id_edition_key_fkey",
+      "definition": "FOREIGN KEY (user_id, edition_key) REFERENCES cloud_novel_state(user_id, edition_key)",
+      "table_name": "cloud_novel_progress"
+    },
+    {
+      "name": "cloud_novel_progress_user_id_fkey",
+      "definition": "FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE",
+      "table_name": "cloud_novel_progress"
+    },
+    {
+      "name": "cloud_novel_progress_user_id_source_id_edition_id_fkey",
+      "definition": "FOREIGN KEY (user_id, source_id, edition_id) REFERENCES cloud_novel_state(user_id, source_id, edition_id)",
+      "table_name": "cloud_novel_progress"
+    },
+    {
+      "name": "cloud_novel_state_check",
+      "definition": "CHECK (((\"left\"(edition_id, (char_length(source_id) + 1)) = (source_id || ':'::text)) AND mangaro_private.cloud_novel_url(source_id, SUBSTRING(edition_id FROM (char_length(source_id) + 2))) AND (edition_key = encode(sha256(convert_to(edition_id, 'UTF8'::name)), 'hex'::text))))",
+      "table_name": "cloud_novel_state"
+    },
+    {
+      "name": "cloud_novel_state_check1",
+      "definition": "CHECK (COALESCE(((jsonb_typeof(state) = 'object'::text) AND (octet_length((state)::text) <= 65536) AND (state ?& ARRAY['saved'::text, 'favorite'::text, 'readingStatus'::text, 'lastPosition'::text, 'title'::text, 'cover'::text, 'addedAt'::text]) AND ((state - ARRAY['saved'::text, 'favorite'::text, 'readingStatus'::text, 'lastPosition'::text, 'title'::text, 'cover'::text, 'addedAt'::text]) = '{}'::jsonb) AND (jsonb_typeof((state -> 'saved'::text)) = 'boolean'::text) AND (jsonb_typeof((state -> 'favorite'::text)) = 'boolean'::text) AND ((state ->> 'readingStatus'::text) = ANY (ARRAY['reading'::text, 'completed'::text, 'planned'::text])) AND (jsonb_typeof((state -> 'title'::text)) = 'string'::text) AND ((char_length((state ->> 'title'::text)) >= 1) AND (char_length((state ->> 'title'::text)) <= 512)) AND (((state -> 'cover'::text) = 'null'::jsonb) OR ((jsonb_typeof((state -> 'cover'::text)) = 'string'::text) AND (char_length((state ->> 'cover'::text)) <= 4096))) AND (COALESCE((state ->> 'addedAt'::text), ''::text) ~ '^[0-9]{1,16}$'::text) AND mangaro_private.cloud_novel_position(source_id, (state -> 'lastPosition'::text))), false))",
+      "table_name": "cloud_novel_state"
+    },
+    {
+      "name": "cloud_novel_state_edition_key_check",
+      "definition": "CHECK ((edition_key ~ '^[a-f0-9]{64}$'::text))",
+      "table_name": "cloud_novel_state"
+    },
+    {
+      "name": "cloud_novel_state_pkey",
+      "definition": "PRIMARY KEY (user_id, edition_key)",
+      "table_name": "cloud_novel_state"
+    },
+    {
+      "name": "cloud_novel_state_source_id_check",
+      "definition": "CHECK ((source_id = ANY (ARRAY['novel.kolnovel'::text, 'novel.cenele'::text, 'novel.sunovels'::text, 'novel.seanovel'::text])))",
+      "table_name": "cloud_novel_state"
+    },
+    {
+      "name": "cloud_novel_state_user_id_fkey",
+      "definition": "FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE",
+      "table_name": "cloud_novel_state"
+    },
+    {
+      "name": "cloud_novel_state_user_id_source_id_edition_id_key",
+      "definition": "UNIQUE (user_id, source_id, edition_id)",
+      "table_name": "cloud_novel_state"
+    }
+  ]
+}

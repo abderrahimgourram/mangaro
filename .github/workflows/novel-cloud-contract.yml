@@ -1,0 +1,48 @@
+name: Novel Cloud Contract
+on:
+  pull_request:
+    paths:
+      - 'supabase/**'
+      - 'docs/stabilization/proposals/**'
+      - '.github/workflows/novel-cloud-contract.yml'
+permissions:
+  contents: read
+jobs:
+  postgres:
+    name: PostgreSQL backup restore and API contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Build exact deployed PostgreSQL version and verify pinned PostgREST
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/novel-cloud-tools"
+          cd "$RUNNER_TEMP/novel-cloud-tools"
+          curl --fail --location --retry 2 https://ftp.postgresql.org/pub/source/v17.11/postgresql-17.11.tar.bz2 -o postgres.tar.bz2
+          echo 'dd27f2b3c59e73ed14aa3324901242bf69a032a6347805f274e6260322d42979  postgres.tar.bz2' | sha256sum --check
+          tar -xf postgres.tar.bz2
+          cd postgresql-17.11
+          ./configure --prefix="$RUNNER_TEMP/novel-cloud-tools/postgres" --without-readline --without-icu --without-zlib
+          make -j2
+          make install
+          cd ..
+          curl --fail --location --retry 2 https://github.com/PostgREST/postgrest/releases/download/v16.5/postgrest-v16.5-linux-static-x86-64.tar.xz -o postgrest.tar.xz
+          echo '5099e7ada38f9f6846cd87c14c5f158b7c165f1e9959665ad412e61f4dceba95  postgrest.tar.xz' | sha256sum --check
+          tar -xf postgrest.tar.xz
+          ./postgrest --version
+      - name: Run synthetic compatibility, real restore, JWT and RLS checks
+        run: >-
+          python3 supabase/tests/run_disposable.py
+          --root "$RUNNER_TEMP/novel-cloud-evidence"
+          --postgres-bin "$RUNNER_TEMP/novel-cloud-tools/postgres/bin"
+          --postgrest "$RUNNER_TEMP/novel-cloud-tools/postgrest"
+      - name: Upload sanitized test evidence (never dumps or credentials)
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: novel-cloud-contract-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/novel-cloud-evidence/*.json
+            ${{ runner.temp }}/novel-cloud-evidence/suite-*.log
