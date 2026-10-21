@@ -1,0 +1,86 @@
+{
+  "schema": 1,
+  "project_ref": "synthetic-only",
+  "created_at": "2026-10-21T17:54:28.770030+00:00",
+  "restore_verified": true,
+  "status": "SYNTHETIC RESTORE VERIFIED",
+  "verification_transport": "LOCAL LOOPBACK S3; NOT CLOUDFLARE R2",
+  "tests": 13,
+  "results": [
+    {
+      "name": "Existing Mangaro fixtures include both accounts, five providers, bookmarks, comic read state, revisions and tombstones",
+      "passed": true
+    },
+    {
+      "name": "Signed local S3 fixture rejects an unsigned request; not an R2 privacy audit",
+      "passed": true
+    },
+    {
+      "name": "Local S3 encrypted stream/read-back/decrypt 1024bytes",
+      "passed": true
+    },
+    {
+      "name": "Local S3 encrypted stream/read-back/decrypt 1048576bytes",
+      "passed": true
+    },
+    {
+      "name": "Local S3 encrypted stream/read-back/decrypt 17825792bytes",
+      "passed": true
+    },
+    {
+      "name": "Real PostgreSQL role and complete database exports streamed through gzip and age to local S3",
+      "passed": true
+    },
+    {
+      "name": "Existing object cannot be reused or overwritten by a later upload",
+      "passed": true
+    },
+    {
+      "name": "Actual retrieved ciphertext decrypted and fail-on-error restored in a second PostgreSQL17 cluster",
+      "passed": true
+    },
+    {
+      "name": "Restored rows, FK/CHECK constraints, RLS, effective grants, column ACLs, indexes, functions, triggers and sequence match",
+      "passed": true
+    },
+    {
+      "name": "Migration history preserved; restored account B cannot read account A progress",
+      "passed": true
+    },
+    {
+      "name": "Incorrect ciphertext receipt rejected before any restore",
+      "passed": true
+    },
+    {
+      "name": "Partial failed export cannot become a completed backup manifest",
+      "passed": true
+    },
+    {
+      "name": "Wrong recovery identity fails decryption and cannot certify a restore",
+      "passed": true
+    }
+  ],
+  "production_modified": false,
+  "peak_child_rss_kib": 102536,
+  "limitations": [
+    "No real R2 credential or production database used. Offline recovery copy not verified."
+  ],
+  "transport": "LOCAL authenticated S3 loopback only; real Cloudflare R2 not verified",
+  "unitTestsPassed": 16,
+  "toolProvenance": [
+    {
+      "repository": "FiloSottile/age",
+      "tag": "v1.3.2",
+      "asset": "age-v1.3.2-linux-amd64.tar.gz",
+      "sha256": "cbe24006683f8eb669266162894b9a522a1af52f2665fbc63a4bb032ed26ac10",
+      "verification": "official release digest"
+    },
+    {
+      "repository": "rclone/rclone",
+      "tag": "v1.75.2",
+      "asset": "rclone-v1.75.2-linux-amd64.zip",
+      "sha256": "349ac8fba6ff65d6247043f1750cdcb518ec5d500ef91463a10d37c0ccdf3702",
+      "verification": "official SHA256SUMS"
+    }
+  ]
+}

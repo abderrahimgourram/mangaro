@@ -1,0 +1,44 @@
+name: Encrypted Backup Tools
+on:
+  pull_request:
+    paths:
+      - 'tools/backups/**'
+      - '.github/workflows/backup-tools.yml'
+permissions:
+  contents: read
+jobs:
+  local-recovery:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Pipeline security and failure tests
+        run: python3 -W error::ResourceWarning -m unittest discover -s tools/backups -p 'test_*.py' -v
+      - name: Verify pinned encryption and transport tools
+        run: python3 tools/backups/install_tools.py --cache "$RUNNER_TEMP/backup-tools"
+      - name: Build the previously inspected PostgreSQL version
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/backup-pg"
+          cd "$RUNNER_TEMP/backup-pg"
+          curl --fail --location --retry 2 https://ftp.postgresql.org/pub/source/v17.11/postgresql-17.11.tar.bz2 -o pg.tar.bz2
+          echo 'dd27f2b3c59e73ed14aa3324901242bf69a032a6347805f274e6260322d42979  pg.tar.bz2' | sha256sum --check
+          tar -xf pg.tar.bz2
+          cd postgresql-17.11
+          ./configure --prefix="$RUNNER_TEMP/backup-pg/install" --without-readline --without-icu --without-zlib
+          make -j2
+          make install
+      - name: Disposable synthetic identity and actual local S3 database recovery
+        run: |
+          set -euo pipefail
+          umask 077
+          "$RUNNER_TEMP/backup-tools/bin/age-keygen" -o "$RUNNER_TEMP/backup-recovery-identity.txt"
+          python3 tools/backups/drill.py --root "$RUNNER_TEMP/backup-drill" \
+            --pg-bin "$RUNNER_TEMP/backup-pg/install/bin" \
+            --bin "$RUNNER_TEMP/backup-tools/bin" --identity "$RUNNER_TEMP/backup-recovery-identity.txt"
+      - name: Upload sanitized aggregate result only
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: synthetic-backup-drill
+          path: ${{ runner.temp }}/backup-drill/result.json
+          # Never upload identities, PostgreSQL data directories, dumps or remote credentials.
