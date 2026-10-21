@@ -104,17 +104,30 @@ jobs:
 
       - name: Run unit tests
         id: unit_tests
-        run: ./gradlew testDebugUnitTest --max-workers=2
+        run: |
+          # Preserve complete failure evidence, including HTTP status, without
+          # changing test selection, assertions, retry policy or source behavior.
+          cat > "$RUNNER_TEMP/test-diagnostics.init.gradle" <<'GRADLE'
+          gradle.beforeProject { project ->
+              project.tasks.withType(org.gradle.api.tasks.testing.Test).configureEach {
+                  testLogging.exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+                  reports.junitXml.required.set(true)
+              }
+          }
+          GRADLE
+          ./gradlew -I "$RUNNER_TEMP/test-diagnostics.init.gradle" testDebugUnitTest --max-workers=2
 
       - name: Verify SQLDelight migrations
         run: ./gradlew verifySqlDelightMigration --max-workers=2
 
       - name: Upload test report
-        if: steps.unit_tests.outcome == 'failure'
+        if: always() && (steps.unit_tests.outcome == 'success' || steps.unit_tests.outcome == 'failure')
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: test-report-${{ github.sha }}
-          path: app/build/reports/tests/testDebugUnitTest
+          path: |
+            **/build/test-results/testDebugUnitTest/*.xml
+            app/build/reports/tests/testDebugUnitTest
 
       # Production packaging deliberately requires an external permanent signing
       # configuration. PR CI must not acquire that key or substitute a debug key.
