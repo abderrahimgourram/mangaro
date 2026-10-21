@@ -1,0 +1,87 @@
+[
+  {
+    "class": "eu.kanade.tachiyomi.data.stories.ConnectedStoryLiveMetadataTest",
+    "test": "actual adapters preserve reviewed Omniscient Reader editions despite translated novel slug()",
+    "reason": null
+  },
+  {
+    "class": "eu.kanade.tachiyomi.data.stories.ConnectedStoryLiveMetadataTest",
+    "test": "actual source adapters resolve original Solo Leveling metadata in both directions()",
+    "reason": null
+  },
+  {
+    "class": "eu.kanade.tachiyomi.novels.CeneleIllustrationChapterTest",
+    "test": "publicReportedCharacterSheetPassesProductionParserAndImageTransport()",
+    "reason": null
+  },
+  {
+    "class": "eu.kanade.tachiyomi.novels.FadaaPublicChapterProbeTest",
+    "test": "existingProductionSourceAcceptsTwoPublicSamples()",
+    "reason": null
+  },
+  {
+    "class": "eu.kanade.tachiyomi.novels.FadaaPublicChapterProbeTest",
+    "test": "existingProductionDiscoveryAndIndexRetainPublicWorkIdentity()",
+    "reason": null
+  },
+  {
+    "class": "eu.kanade.tachiyomi.novels.MknovLiveAcceptanceTest",
+    "test": "realPublicWorkIndexAndStoryThroughIntegratedTransport()",
+    "reason": null
+  },
+  {
+    "class": "eu.kanade.tachiyomi.novels.NovelRuleUpdateTest",
+    "test": "actualPublicGitHubArtifactsAreCompatible()",
+    "reason": null
+  },
+  {
+    "class": "eu.kanade.tachiyomi.novels.NovelShortChapterLiveTest",
+    "test": "shortSourceTextIsRestoredWithoutSubstitutingWrongIdsOrCorruptBodies()",
+    "reason": null
+  },
+  {
+    "class": "eu.kanade.tachiyomi.novels.NovelSourceReliabilityLiveTest",
+    "test": "observeProductionAdaptersAndOfflineRoundTrips()",
+    "reason": null
+  },
+  {
+    "class": "eu.kanade.tachiyomi.novels.NovelSourceTest",
+    "test": "liveCataloguePagination()",
+    "reason": null
+  },
+  {
+    "class": "eu.kanade.tachiyomi.novels.NovelSourceTest",
+    "test": "seaPublicParagraphVisibility()",
+    "reason": null
+  },
+  {
+    "class": "eu.kanade.tachiyomi.novels.NovelSourceTest",
+    "test": "livePublicSourceJourney()",
+    "reason": null
+  },
+  {
+    "class": "eu.kanade.tachiyomi.novels.NovelUnifiedTest",
+    "test": "liveCompleteIndexes()",
+    "reason": null
+  },
+  {
+    "class": "eu.kanade.tachiyomi.search.AtlasPublicSearchCorpusTest",
+    "test": "captureBoundedActualSearchMetadata()",
+    "reason": null
+  },
+  {
+    "class": "eu.kanade.tachiyomi.search.WorkIdentityPublicDetailProbeTest",
+    "test": "actualObservedNovelPairThroughProductionGridProjection()",
+    "reason": null
+  },
+  {
+    "class": "eu.kanade.tachiyomi.search.WorkIdentityPublicSearchProbeTest",
+    "test": "boundedPublicSearchSnapshots()",
+    "reason": null
+  },
+  {
+    "class": "eu.kanade.tachiyomi.source.internal.mangadar.MangaDarParserTest",
+    "test": "verify live Popular page parsing produces non-empty manga list()",
+    "reason": "org.opentest4j.TestAbortedException: Assumption failed: Provider integration probe is explicit opt-in"
+  }
+]

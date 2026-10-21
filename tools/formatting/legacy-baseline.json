@@ -231,7 +231,6 @@
     "app/src/main/java/eu/kanade/tachiyomi/novels/NovelCatalogCards.kt": "c3725d5758c0ea4faec2357469097b585b55438cd17e0e6794b0f4c64c19a883",
     "app/src/main/java/eu/kanade/tachiyomi/novels/NovelChapterGroups.kt": "3e821dc85801c81de1dc61ef22af19052a129080e952050c3a60569e0ad46619",
     "app/src/main/java/eu/kanade/tachiyomi/novels/NovelChapterIndexer.kt": "1a12e16bcec8851d12b7e9692d8e3cb6edfbadc02bba10569b493b26c0efcc50",
-    "app/src/main/java/eu/kanade/tachiyomi/novels/NovelCloudState.kt": "96d3f79dde21d77ab588bb7c5f36b4e889de84424204111c726b9cfcda06840e",
     "app/src/main/java/eu/kanade/tachiyomi/novels/NovelContent.kt": "4aa800772bdf648fe938479bc4387b708a1957a99853f3257cd37a3d401af040",
     "app/src/main/java/eu/kanade/tachiyomi/novels/NovelContentQuality.kt": "16eb4a933dcdd824c354d64288b5e48e34b274b3698b085bef7c1cc123eb2283",
     "app/src/main/java/eu/kanade/tachiyomi/novels/NovelContentTypeClassifier.kt": "94a104bbd0f51f471d46bc797f8da5ca74e72d969b57bd105222dd19212da46c",
@@ -245,7 +244,6 @@
     "app/src/main/java/eu/kanade/tachiyomi/novels/NovelMetadataStore.kt": "168600833824e53c5780c7664a4c6edcade7de9dd0c50b2ad5f652506c5f1347",
     "app/src/main/java/eu/kanade/tachiyomi/novels/NovelModels.kt": "9c3f59dab405c78cd31748f12e16a4dfea51666395b99987231a9e3b0ec03222",
     "app/src/main/java/eu/kanade/tachiyomi/novels/NovelQueueSql.kt": "e79c387fefc1cff43c233085b34eeb81c4576fd77d6a24906f443d39c184355e",
-    "app/src/main/java/eu/kanade/tachiyomi/novels/NovelReadStatistics.kt": "c2cfd324ce8a9e96e36d5998387cf911da364140170a75fa812ba5f8abaa745d",
     "app/src/main/java/eu/kanade/tachiyomi/novels/NovelRepository.kt": "322ccf6763f82153fe09ea1ad5a94c41d8577d45d0f216b2ba5ae1454d8d1815",
     "app/src/main/java/eu/kanade/tachiyomi/novels/NovelRepositoryContentValidation.kt": "7135246c2872b767b98a2f4e159a375ea7a42f4bf61dd34d6f08db70ab32d630",
     "app/src/main/java/eu/kanade/tachiyomi/novels/NovelRuleManifest.kt": "cd7ddd087f3aa806da4b8c60dbfdf3b485356cc067d02eaf08d95586ac4c373e",
@@ -520,7 +518,6 @@
     "app/src/test/java/eu/kanade/tachiyomi/ui/reader/model/ReaderChapterSelectionTest.kt": "9e4b77e2197361a950464d3f88be08f6de8d56dfe091ee2212f625948b236cc3",
     "app/src/test/java/mihon/domain/source/interactor/ChapterMetadataCacheTest.kt": "2adb1922a4798ddaea4c16e514421e425609cb485269a5eeb63636cf4a2101e8",
     "app/src/test/java/mihon/domain/source/interactor/ChapterRefreshRecoveryTest.kt": "0d090c06ec7a15d670258076627256606ca2b45b014b6099942217abebb73503",
-    "app/src/test/java/mihon/domain/source/interactor/SourceRefreshConcurrencyTest.kt": "d52b2847e99a6190bcf53998402fb8b45953c445995e7ab5c4776cc952f645c7",
     "app/src/test/java/tachiyomi/data/chapter/SourceChapterTransactionTest.kt": "bec0732ad23e068e844b78e92d43c08f0114f289063d660e3102b34a5535e875",
     "app/src/test/java/tachiyomi/data/source/SourcePagingReliabilityTest.kt": "3b974ef4122bec492ddd3b8f6990f74385adf43862cbfe33ad042b7982273b42",
     "app/src/test/java/tachiyomi/domain/manga/service/WorkLinkerTest.kt": "7be41c0e81572bb860ae6d3dbe9aaa31f837b9ee27b96a9c24d137b9dcc30beb",
@@ -582,6 +579,10 @@
   },
   "inventory": "docs/stabilization/pr4-formatting-inventory.md",
   "reason": "Owner-approved exact-content legacy baseline; no application source edits or rule changes. New and modified files must become clean. See docs/stabilization/formatting-policy.md.",
-  "retirements": {},
+  "retirements": {
+    "app/src/main/java/eu/kanade/tachiyomi/novels/NovelReadStatistics.kt": "Phase 2 completion evidence projection: fully format the modified file; no XP, source or account identity changes.",
+    "app/src/main/java/eu/kanade/tachiyomi/novels/NovelCloudState.kt": "Phase 2 completion evidence projection: fully format the modified file; no XP, source or account identity changes.",
+    "app/src/test/java/mihon/domain/source/interactor/SourceRefreshConcurrencyTest.kt": "Phase2 CI timing defect: await real IO source entry instead of assuming runCurrent drains Dispatchers.IO; preserve all concurrency assertions and format entire test file."
+  },
   "schema": 1
 }
