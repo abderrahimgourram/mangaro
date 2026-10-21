@@ -5,6 +5,7 @@ import hashlib
 import json
 from pathlib import Path
 import sys
+from concurrent.futures import ThreadPoolExecutor
 
 
 def main():
@@ -101,6 +102,37 @@ def main():
         check('capability is additive and compatible with exact schema-one table checks',lambda:(
             eq(json.loads(sql('select cloud_novel_capabilities()',owner=A))['schema'],1),
             eq(json.loads(sql('select cloud_novel_capabilities()',owner=A))['tables'],['cloud_novel_state','cloud_novel_progress'])))
+        sql(runner.proposal)
+        m=runner.parent('novel.mknov','mknov.com',True)
+        runner.apply(m)
+        mpos=dict(m['state']['lastPosition'],completed=True)
+        murl=mpos['chapter']['url']
+        mrow={k:v for k,v in m.items() if k!='state'}
+        mrow.update(chapter_key=hashlib.sha256(murl.encode()).hexdigest(),chapter_url=murl,state=dict(position=mpos,bookmarked=True))
+        check('Mknov migration after completion proposal accepts exact completed identity',lambda:eq(runner.apply(mrow,table='cloud_novel_progress')['accepted'],True))
+        murl2=murl+'1'
+        mrow2=dict(mrow,chapter_key=hashlib.sha256(murl2.encode()).hexdigest(),chapter_url=murl2,
+                   state=dict(position=dict(mpos,chapter=dict(mpos['chapter'],url=murl2)),bookmarked=False))
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            attempts=list(pool.map(lambda _:runner.apply(mrow2,table='cloud_novel_progress'),range(2)))
+        check('concurrent devices completing one new chapter accept one insert and one explicit conflict',lambda:eq(sorted(r['accepted'] for r in attempts),[False,True]))
+        check('concurrent retries yield one source-qualified chapter count',lambda:eq(stats()['confirmedReadChapters'],4))
+        before_reverse=sql('select jsonb_agg(t order by user_id,edition_key,chapter_key) from cloud_novel_progress t')
+        check('legacy-only completion downgrade refuses evidence instead of deleting it',lambda:sql(
+            "begin; alter table cloud_novel_progress add constraint phase2_legacy_completion check (not ((state->'position') ? 'completed')) not valid; alter table cloud_novel_progress validate constraint phase2_legacy_completion; commit;",expected='23514'))
+        check('failed downgrade preserves every completion and reading position',lambda:eq(sql(
+            'select jsonb_agg(t order by user_id,edition_key,chapter_key) from cloud_novel_progress t'),before_reverse))
+        # Reverse deployment order also works, with a fresh independent database.
+        reverse=Checks(args)
+        reverse.sql('create database '+reverse.db,database='postgres')
+        reverse.sql((ROOT/'supabase/tests/fixtures/novel_mknov_local_bootstrap.sql').read_text())
+        for f in ['20261003234522_mangaro_local_first_cloud_sync.sql','20261015175820_novel_cloud_metadata_compatibility.sql']:
+            reverse.sql((ROOT/'supabase/migrations'/f).read_text())
+        reverse.sql('insert into auth.users values ('+literal(A)+')')
+        reverse.sql(reverse.proposal)
+        reverse.sql(proposal)
+        reverse.apply(m)
+        check('completion proposal after Mknov migration accepts exact completed identity',lambda:eq(reverse.apply(mrow,table='cloud_novel_progress')['accepted'],True))
         result=dict(status='PASS',tests=len(runner.results),passed=len(runner.results),results=runner.results,
                     proposalSHA256=hashlib.sha256(proposal.encode()).hexdigest(),productionModified=False,
                     limitations=['SQL proposal only; Android schema-one codec intentionally still omits completed.',

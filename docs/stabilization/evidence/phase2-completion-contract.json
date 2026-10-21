@@ -1,7 +1,7 @@
 {
   "status": "PASS",
-  "tests": 29,
-  "passed": 29,
+  "tests": 35,
+  "passed": 35,
   "results": [
     {
       "name": "legacy server does not accept unnegotiated completion",
@@ -11,12 +11,12 @@
     {
       "name": "completion contract does not alter source URL validation",
       "passed": true,
-      "seconds": 0.003
+      "seconds": 0.004
     },
     {
       "name": "RLS and existing column grants unchanged",
       "passed": true,
-      "seconds": 0.012
+      "seconds": 0.014
     },
     {
       "name": "proposal idempotently reapplies without losing original data",
@@ -26,22 +26,22 @@
     {
       "name": "existing positions do not fabricate historical completion",
       "passed": true,
-      "seconds": 0.005
+      "seconds": 0.006
     },
     {
       "name": "explicit reader-end evidence counts once",
       "passed": true,
-      "seconds": 0.004
+      "seconds": 0.005
     },
     {
       "name": "lost acknowledgement retry returns a revision conflict",
       "passed": true,
-      "seconds": 0.023
+      "seconds": 0.012
     },
     {
       "name": "retry does not count twice",
       "passed": true,
-      "seconds": 0.004
+      "seconds": 0.005
     },
     {
       "name": "old schema-one client cannot erase newer completion",
@@ -61,7 +61,7 @@
     {
       "name": "out-of-order revision cannot overwrite progress",
       "passed": true,
-      "seconds": 0.017
+      "seconds": 0.012
     },
     {
       "name": "legacy null position cannot discard genuine completion",
@@ -71,82 +71,112 @@
     {
       "name": "account B statistics never include account A",
       "passed": true,
-      "seconds": 0.004
+      "seconds": 0.005
     },
     {
       "name": "account A to B to A preserves owner-only total",
       "passed": true,
-      "seconds": 0.012
+      "seconds": 0.017
     },
     {
       "name": "anonymous aggregate access denied",
       "passed": true,
-      "seconds": 0.003
+      "seconds": 0.004
     },
     {
       "name": "authenticated role without identity gets no aggregate",
       "passed": true,
-      "seconds": 0.004
+      "seconds": 0.006
     },
     {
       "name": "cross-account completion write rejected",
       "passed": true,
-      "seconds": 0.004
+      "seconds": 0.006
     },
     {
       "name": "invalid completion type rejected \"true\"",
       "passed": true,
-      "seconds": 0.003
+      "seconds": 0.004
     },
     {
       "name": "invalid completion type rejected 1",
       "passed": true,
-      "seconds": 0.003
+      "seconds": 0.004
     },
     {
       "name": "invalid completion type rejected {}",
       "passed": true,
-      "seconds": 0.003
+      "seconds": 0.005
     },
     {
       "name": "invalid completion type rejected []",
       "passed": true,
-      "seconds": 0.003
+      "seconds": 0.005
     },
     {
       "name": "new contract still rejects content bodies",
       "passed": true,
-      "seconds": 0.004
+      "seconds": 0.005
     },
     {
       "name": "different source-qualified chapters count independently",
       "passed": true,
-      "seconds": 0.005
+      "seconds": 0.006
     },
     {
       "name": "tombstone hides removed history without destroying evidence",
       "passed": true,
-      "seconds": 0.005
+      "seconds": 0.006
     },
     {
       "name": "stale retry cannot resurrect tombstoned history",
       "passed": true,
-      "seconds": 0.027
+      "seconds": 0.012
     },
     {
       "name": "statistics never claim unknowable historical completeness",
       "passed": true,
-      "seconds": 0.016
+      "seconds": 0.005
     },
     {
       "name": "sync and statistics do not change any synthetic XP value",
       "passed": true,
-      "seconds": 0.006
+      "seconds": 0.004
     },
     {
       "name": "capability is additive and compatible with exact schema-one table checks",
       "passed": true,
-      "seconds": 0.012
+      "seconds": 0.009
+    },
+    {
+      "name": "Mknov migration after completion proposal accepts exact completed identity",
+      "passed": true,
+      "seconds": 0.016
+    },
+    {
+      "name": "concurrent devices completing one new chapter accept one insert and one explicit conflict",
+      "passed": true,
+      "seconds": 0.0
+    },
+    {
+      "name": "concurrent retries yield one source-qualified chapter count",
+      "passed": true,
+      "seconds": 0.007
+    },
+    {
+      "name": "legacy-only completion downgrade refuses evidence instead of deleting it",
+      "passed": true,
+      "seconds": 0.006
+    },
+    {
+      "name": "failed downgrade preserves every completion and reading position",
+      "passed": true,
+      "seconds": 0.007
+    },
+    {
+      "name": "completion proposal after Mknov migration accepts exact completed identity",
+      "passed": true,
+      "seconds": 0.018
     }
   ],
   "proposalSHA256": "c4ecfacd61236fce63796302d5b5e62aa3a40469f0ad85308dee0895c03238c3",

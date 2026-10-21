@@ -1,6 +1,8 @@
 package eu.kanade.tachiyomi.novels
 
 import io.kotest.matchers.shouldBe
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Test
@@ -83,5 +85,18 @@ class NovelCompletionEvidenceTest {
         done.completed shouldBe true
         raw["source_id"]!!.jsonPrimitive.content shouldBe novel.sourceId
         raw.keys.any { it.contains("xp", ignoreCase = true) } shouldBe false
+    }
+
+    @Test
+    fun `existing client restores explicit future server evidence but keeps legacy upload compatibility`() {
+        val row = NovelCloudState.rows(NovelLibraryItem(novel, position = position()), emptyList()).values.last()
+        val state = row.getValue("state").jsonObject
+        val remotePosition = JsonObject(state.getValue("position").jsonObject + ("completed" to JsonPrimitive(true)))
+        val remote = JsonObject(row + ("state" to JsonObject(state + ("position" to remotePosition))))
+        val restored = NovelCloudState.decode(NovelCloudState.PROGRESS, remote).position!!
+        restored.completed shouldBe true
+        restored.chapter.id shouldBe position().chapter.id
+        val legacy = NovelCloudState.rows(NovelLibraryItem(novel, position = restored), emptyList()).values.last()
+        legacy.getValue("state").jsonObject.getValue("position").jsonObject.containsKey("completed") shouldBe false
     }
 }
