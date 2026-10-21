@@ -1,0 +1,169 @@
+{
+  "status": "PASS",
+  "tests": 30,
+  "passed": 30,
+  "results": [
+    {
+      "name": "pg_dump custom archive produced from synthetic pre-migration database",
+      "passed": true,
+      "seconds": 0.097
+    },
+    {
+      "name": "backup archive contains data, constraints, policies and grants",
+      "passed": true,
+      "seconds": 0.0
+    },
+    {
+      "name": "backup has no stored role passwords",
+      "passed": true,
+      "seconds": 0.0
+    },
+    {
+      "name": "migration does not rewrite any existing provider rows or bookmarks",
+      "passed": true,
+      "seconds": 0.111
+    },
+    {
+      "name": "old supported provider rows remain owner-readable after migration",
+      "passed": true,
+      "seconds": 0.005
+    },
+    {
+      "name": "new account cannot read previous account positions",
+      "passed": true,
+      "seconds": 0.005
+    },
+    {
+      "name": "real pg_restore into second cluster succeeds without ignored errors",
+      "passed": true,
+      "seconds": 1.502
+    },
+    {
+      "name": "restored data, keys, columns, constraints, RLS, grants, functions, indexes and revisions match exactly",
+      "passed": true,
+      "seconds": 0.0
+    },
+    {
+      "name": "restored backup accepts the same forward migration",
+      "passed": true,
+      "seconds": 0.069
+    },
+    {
+      "name": "HTTP capability schema remains one for old clients",
+      "passed": true,
+      "seconds": 0.002
+    },
+    {
+      "name": "HTTP authenticated A reads its own five editions",
+      "passed": true,
+      "seconds": 0.002
+    },
+    {
+      "name": "HTTP B sees only its own four editions",
+      "passed": true,
+      "seconds": 0.002
+    },
+    {
+      "name": "HTTP A to B to A never leaks account-scoped rows",
+      "passed": true,
+      "seconds": 0.001
+    },
+    {
+      "name": "HTTP anonymous cannot read private novel metadata",
+      "passed": true,
+      "seconds": 0.001
+    },
+    {
+      "name": "HTTP expired JWT rejected before SQL work",
+      "passed": true,
+      "seconds": 0.001
+    },
+    {
+      "name": "HTTP invalid JWT signature rejected",
+      "passed": true,
+      "seconds": 0.001
+    },
+    {
+      "name": "HTTP B cannot spoof A ownership",
+      "passed": true,
+      "seconds": 0.003
+    },
+    {
+      "name": "HTTP valid Mknov position and bookmark accepted",
+      "passed": true,
+      "seconds": 0.014
+    },
+    {
+      "name": "HTTP actual chapter identity and offsets preserved",
+      "passed": true,
+      "seconds": 0.0
+    },
+    {
+      "name": "HTTP revision conflict on stale/lost-ack retry is explicit",
+      "passed": true,
+      "seconds": 0.009
+    },
+    {
+      "name": "HTTP replay never inserts duplicate chapter rows",
+      "passed": true,
+      "seconds": 0.002
+    },
+    {
+      "name": "HTTP chapter from wrong Mknov work rejected",
+      "passed": true,
+      "seconds": 0.004
+    },
+    {
+      "name": "HTTP parent cannot restore a chapter from a different Mknov work",
+      "passed": true,
+      "seconds": 0.004
+    },
+    {
+      "name": "strict canonical Mknov URL rejects https://api.mknov.com/novel/96",
+      "passed": true,
+      "seconds": 0.004
+    },
+    {
+      "name": "strict canonical Mknov URL rejects https://mknov.com/novel/96?x=1",
+      "passed": true,
+      "seconds": 0.005
+    },
+    {
+      "name": "strict canonical Mknov URL rejects https://mknov.com/novel/0",
+      "passed": true,
+      "seconds": 0.004
+    },
+    {
+      "name": "strict canonical Mknov URL rejects https://mknov.com/novel/96#x",
+      "passed": true,
+      "seconds": 0.004
+    },
+    {
+      "name": "strict canonical Mknov URL rejects https://mknov.com/novel/96/../97",
+      "passed": true,
+      "seconds": 0.004
+    },
+    {
+      "name": "HTTP old schema-one client update still accepted",
+      "passed": true,
+      "seconds": 0.014
+    },
+    {
+      "name": "Mknov migration alone does not pretend completion schema is supported",
+      "passed": true,
+      "seconds": 0.003
+    }
+  ],
+  "database": "mangaro_mknov_d2853936f3",
+  "serverVersion": "17.11",
+  "postgrestVersion": "16.5",
+  "productionModified": false,
+  "proposalSHA256": "c3c437ac77a74eb36ac4ae396b292585dd42a8f2a07af02f89e94cae60dcb660",
+  "backupSHA256": "06428f52637d33a2217af2cebdd0309ce7d83b8e7659a70634121f7d62a6a928",
+  "limitations": [
+    "Synthetic JWT issuer, not GoTrue OAuth/login/refresh acceptance.",
+    "PostgREST 16.5 local; production PostgREST version not exposed by project-scoped metadata.",
+    "No production backup or restore performed; management backup entitlement/retention remains unverified.",
+    "SQL payloads mirror Android schema-1 codec; actual old Android binaries not driven through this API."
+  ]
+}
