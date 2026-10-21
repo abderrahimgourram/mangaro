@@ -163,8 +163,15 @@ class SeaNovelSource(http: NovelHttp) : HtmlNovelSource(http) {
             if (document.selectFirst("#challenge-form, #cf-wrapper, .challenge-running, .cf-browser-verification") != null)
                 throw NovelSourceFailure("المصدر يطلب تحققًا في الموقع الأصلي؛ لا يمكن تجاوزه داخل التطبيق.", "Sea access challenge", 403, code = "SEA_ACCESS_CHALLENGE")
             trace?.stage(SeaReaderStage.SOURCE_CANONICAL)
-            val canonical = document.selectFirst("link[rel=canonical]")?.absUrl("href")
-            if (canonical?.trimEnd('/') != chapter.url.trimEnd('/')) failure("Sea chapter canonical ownership mismatch", "SEA_CANONICAL_MISMATCH")
+            val requested = chapter.url.toHttpUrl()
+            val canonical = document.selectFirst("link[rel=canonical]")?.attr("href")
+                ?.takeIf(String::isNotBlank)?.let(requested::resolve)
+            // Jsoup absUrl can discard user-info. Validate the original URL reference first.
+            if (canonical == null || canonical.scheme != requested.scheme || canonical.host != requested.host ||
+                canonical.port != requested.port || canonical.username.isNotEmpty() || canonical.password.isNotEmpty() ||
+                canonical.fragment != null || canonical.encodedQuery != requested.encodedQuery ||
+                canonical.pathSegments.dropLastWhile(String::isEmpty) != requested.pathSegments.dropLastWhile(String::isEmpty))
+                failure("Sea chapter canonical ownership mismatch", "SEA_CANONICAL_MISMATCH")
             trace?.stage(SeaReaderStage.SOURCE_CONTAINER)
             val target = selector("text", "article.reader-content")
             val containers = document.select(target)
@@ -207,8 +214,9 @@ class SeaNovelSource(http: NovelHttp) : HtmlNovelSource(http) {
             rejectAccessNotice(content.paragraphs.take(2).map(String::trim))
             val navigationWords = setOf("السابق", "التالي", "فهرس", "الفهرس", "Show", "Commits")
             val story = content.paragraphs.filterNot { p -> p.trim().split(Regex("\\s+")).all { it in navigationWords } }
-            if (story.sumOf { it.trim().length } < 200 || story.sumOf { p -> p.count(Char::isLetter) } < 100)
+            if (story.sumOf { it.trim().length } < 40 || story.sumOf { p -> p.count(Char::isLetter) } < 20)
                 throw NovelSourceFailure("تعذّر التحقق من بيانات بحر الروايات. أعد المحاولة أو افتح الموقع الأصلي.", "Sea reader text empty or incomplete", code = "SEA_CONTENT_INVALID")
+            NovelContentQuality.requireReadable(content)
         }
         private fun rejectAccessNotice(labels: List<String>) {
             if (labels.any { label -> listOf("الفصل المطلوب مقفل", "هذا الفصل مقفل", "هذا الفصل مغلق", "Chapter is locked").any { label.startsWith(it, ignoreCase = true) } })
@@ -228,7 +236,7 @@ class SeaNovelSource(http: NovelHttp) : HtmlNovelSource(http) {
             Regex("(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?").matches(value)
         private fun path(url: String, chapter: Boolean): Pair<String, String?> {
             val parsed = url.toHttpUrl()
-            val parts = parsed.pathSegments.filter { it.isNotEmpty() }
+            val parts = parsed.pathSegments.dropLastWhile(String::isEmpty)
             val valid = parsed.isHttps && parsed.host == "seanovel.org" && parsed.port == 443 &&
                 parsed.username.isEmpty() && parsed.password.isEmpty() && parsed.query == null && parsed.fragment == null &&
                 parts.size == (if (chapter) 4 else 2) && parts[0] == "novels" && validSlug(parts[1]) &&

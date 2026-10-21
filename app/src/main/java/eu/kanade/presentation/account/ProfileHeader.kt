@@ -3,6 +3,7 @@ package eu.kanade.presentation.account
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -17,9 +18,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import eu.kanade.presentation.theme.MangaroDesignSystem
 import mihon.domain.account.AccountRole
-import tachiyomi.core.common.util.lang.WesternDigits
 
 /** Shared presentation only: ownership, image loading, and actions remain with each profile. */
 @Composable
@@ -29,11 +30,13 @@ internal fun ProfileHeader(
     bio: String?,
     level: Int,
     role: AccountRole,
+    showRank: Boolean = true,
     cover: @Composable () -> Unit,
     avatar: @Composable () -> Unit,
     action: @Composable () -> Unit = {},
     content: @Composable ColumnScope.() -> Unit = {},
 ) {
+    val visualLevel = mihon.domain.account.ProfileIdentity.displayedLevel(level, role)
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = MangaroDesignSystem.SurfaceDark,
@@ -44,7 +47,7 @@ internal fun ProfileHeader(
             Box(Modifier.fillMaxWidth().height(180.dp)) {
                 Box(Modifier.fillMaxWidth().height(136.dp)) {
                     cover()
-                    RankCoverAccent(level, Modifier.fillMaxSize())
+                    RankCoverAccent(visualLevel, Modifier.fillMaxSize())
                     Box(Modifier.fillMaxSize().background(Brush.verticalGradient(
                         listOf(Color.Transparent, MangaroDesignSystem.SurfaceDark.copy(alpha = .5f)),
                     )))
@@ -53,7 +56,7 @@ internal fun ProfileHeader(
                     horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Bottom) {
                     Box(Modifier.shadow(10.dp, RoundedCornerShape(28.dp))
                         .background(MangaroDesignSystem.SurfaceDark, RoundedCornerShape(28.dp)).padding(4.dp)) {
-                        TierAvatarFrame(level, Modifier.size(92.dp)) { avatar() }
+                        TierAvatarFrame(visualLevel, Modifier.size(92.dp)) { avatar() }
                     }
                     Box(Modifier.weight(1f).padding(bottom = 4.dp), contentAlignment = Alignment.CenterEnd) { action() }
                 }
@@ -70,10 +73,9 @@ internal fun ProfileHeader(
                         DeveloperBadge(role, compact = true)
                     }
                 }
-                Box(Modifier.fillMaxWidth().background(Brush.horizontalGradient(listOf(
-                    rankAccent(level).copy(alpha = .09f), Color(0xFF211829).copy(alpha = .45f),
-                )), RoundedCornerShape(18.dp)).padding(horizontal = 12.dp, vertical = 8.dp)) {
-                    RankIdentity(level, prominent = true)
+                // Public profiles have no separate progression card. The owner's screen supplies one below.
+                if (showRank) {
+                    RankIdentity(visualLevel, prominent = true)
                 }
                 bio?.takeIf { it.isNotBlank() }?.let {
                     Text(it, color = Color(0xFFCABCD5), style = MaterialTheme.typography.bodyMedium.copy(textDirection = TextDirection.Content))
@@ -87,14 +89,18 @@ internal fun ProfileHeader(
 /** The public profile supplies only its existing privacy-filtered statistics. */
 @Composable
 internal fun ProfileStatsStrip(items: List<Pair<String, Long?>>) {
+    val locale = androidx.compose.ui.platform.LocalConfiguration.current.locales[0]
     Surface(Modifier.fillMaxWidth(), color = Color(0xFF1B1523), shape = RoundedCornerShape(22.dp)) {
         Row(Modifier.padding(horizontal = 8.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
             items.forEachIndexed { index, (label, value) ->
                 if (index > 0) Box(Modifier.width(1.dp).height(26.dp).background(Color(0xFFAE91CA).copy(alpha = .12f)))
                 Column(Modifier.weight(1f).padding(horizontal = 4.dp), horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(value?.let { WesternDigits.isolate(it.toString()) } ?: "—", color = Color(0xFFEBDAC0),
-                        style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                    val formatted = androidx.compose.runtime.remember(value, locale) { formatProfileCount(value, locale) }
+                    Text(formatted, color = Color(0xFFEBDAC0), maxLines = 1,
+                        autoSize = TextAutoSize.StepBased(minFontSize = 10.sp, maxFontSize = 22.sp),
+                        style = MaterialTheme.typography.titleLarge.copy(textDirection = TextDirection.Ltr),
+                        fontWeight = FontWeight.SemiBold)
                     Text(label, color = Color(0xFFAFA0BD), style = MaterialTheme.typography.labelSmall,
                         textAlign = TextAlign.Center)
                 }

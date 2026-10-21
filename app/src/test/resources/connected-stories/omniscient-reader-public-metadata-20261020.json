@@ -1,0 +1,73 @@
+{
+  "observedAt": "2026-10-20",
+  "scope": "PUBLIC_WORK_METADATA_ONLY_NO_CHAPTER_BODIES",
+  "records": [
+    {
+      "provider": "MangaTime",
+      "sourceId": "215553151312092548",
+      "url": "/manhwa/omniscient-readers-viewpoint#6a8fb9a47d3207cb2faf20a0",
+      "metadata": {
+        "id": "6a8fb9a47d3207cb2faf20a0",
+        "slug": "omniscient-readers-viewpoint",
+        "title": "وجهة نظر القارئ كلّي المعرفة",
+        "nameAr": "وجهة نظر القارئ كلّي المعرفة",
+        "nameEn": "Omniscient Reader's Viewpoint",
+        "type": "manhwa",
+        "coverUrl": "/uploads/series/6a8fb9a47d3207cb2faf20a0-1ce9cd693210fcac.webp",
+        "cover": null,
+        "author": "sing N song (싱숑)",
+        "artist": "Sleepy-C (슬리피-C)",
+        "year": null
+      }
+    },
+    {
+      "provider": "Sea",
+      "sourceId": "novel.seanovel",
+      "url": "https://seanovel.org/novels/the-all-encompassing-reader",
+      "metadata": {
+        "title_ar": "القارئ المحيط بكل شيء ",
+        "title_original": "The All-Encompassing Reader",
+        "author": "سينغ شونغ",
+        "status": "ongoing",
+        "slug": "the-all-encompassing-reader",
+        "genres": [
+          "أكشن",
+          "إثارة",
+          "خارق للطبيعة",
+          "دراما"
+        ],
+        "chapters_count": 952
+      }
+    }
+  ],
+  "review": {
+    "relationship": "explicit original/adaptation creator roles on WEBTOON; prose edition confirmed by Ize Press",
+    "providerIdentity": "independent author, credited comic artist, supplied titles and distinctive sole-reader apocalypse premise reviewed against publisher metadata; exact source routes only",
+    "catalogCaveat": "AniList source field OTHER is not treated as adaptation proof; provider may include later side chapters; no chapter equivalence is inferred",
+    "rejected": [
+      {
+        "sourceId": "215553151312092548",
+        "url": "/manhua/omniscient-cultivator#6a8fbbad7d3207cb2faf2e50",
+        "reason": "different work/creators/publication"
+      },
+      {
+        "sourceId": "215553151312092548",
+        "url": "/manhwa/omniscient-reader#6a9821dcc039d83190c57734",
+        "reason": "sparse metadata; not automatically enrolled"
+      },
+      {
+        "sourceId": "novel.mknov",
+        "url": "https://mknov.com/novel/1684",
+        "reason": "alternate translation not reviewed; no title-only enrollment"
+      }
+    ]
+  },
+  "evidence": [
+    "https://www.webtoons.com/en/action/omniscient-reader/list?title_no=2154",
+    "https://yenpress.com/titles/9798400903526-omniscient-reader-s-viewpoint-novel-vol-1",
+    "https://yenpress.com/series/omniscient-reader-s-viewpoint",
+    "https://anilist.co/manga/119257",
+    "https://mangatime.org/manhwa/omniscient-readers-viewpoint",
+    "https://seanovel.org/novels/the-all-encompassing-reader"
+  ]
+}

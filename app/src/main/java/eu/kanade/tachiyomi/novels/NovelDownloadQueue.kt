@@ -272,7 +272,7 @@ class NovelDownloadQueue(private val app: Context, private val repository: Novel
     private suspend fun failed(task: NovelDownloadTask, error: Exception) = mutex.withLock {
         if (stateOf(task.key) != (NovelDownloadState.RUNNING to task.generation)) return@withLock
         android.util.Log.w("MangaroNovels", "Novel chapter download failed", error)
-        val message = if (task.novel.sourceId in setOf(SeaNovelSource.SOURCE_ID, SunovelsSource.SOURCE_ID)) (error as? NovelSourceFailure)?.publicMessage
+        val message = if (task.novel.sourceId in setOf(SeaNovelSource.SOURCE_ID, SunovelsSource.SOURCE_ID, MknovSource.SOURCE_ID)) (error as? NovelSourceFailure)?.publicMessage
             ?: "تعذّر تحميل الفصل. حاول مجددًا." else "تعذّر تحميل الفصل. حاول مجددًا."
         db.execSQL("UPDATE tasks SET state='FAILED',error=? WHERE id=?", arrayOf(message, task.key)); changed(task.key, NovelDownloadState.FAILED, message)
     }

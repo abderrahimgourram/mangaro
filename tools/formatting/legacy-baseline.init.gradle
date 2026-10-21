@@ -1,0 +1,29 @@
+// Approved exact-content policy. Original formatter targets, versions and rules stay intact.
+// Preflight runs again here, so invoking this init script directly cannot bypass validation.
+import groovy.json.JsonSlurper
+
+def repository = System.getenv('MANGARO_FORMAT_ROOT')
+if (!repository) {
+    throw new GradleException('Missing MANGARO_FORMAT_ROOT; use tools/formatting/check_baseline.py')
+}
+def check = new ProcessBuilder('python3', "${repository}/tools/formatting/check_baseline.py",
+        '--root', repository, '--emit-exclusions').start()
+def stdout = new StringBuffer()
+def stderr = new StringBuffer()
+check.consumeProcessOutput(stdout, stderr)
+if (check.waitFor() != 0) {
+    throw new GradleException("Frozen formatting baseline rejected: ${stderr}")
+}
+def exemptions = new JsonSlurper().parseText(stdout.toString()).collect { new File(it).canonicalFile }
+
+gradle.beforeProject { project ->
+    project.afterEvaluate {
+        def local = exemptions.findAll { it.toPath().startsWith(project.projectDir.canonicalFile.toPath()) }
+        if (!local.empty && project.plugins.hasPlugin('com.diffplug.spotless')) {
+            def spotless = project.extensions.getByName('spotless')
+            spotless.kotlin { targetExclude(local) }
+            spotless.kotlinGradle { targetExclude(local) }
+            spotless.format('xml') { targetExclude(local) }
+        }
+    }
+}

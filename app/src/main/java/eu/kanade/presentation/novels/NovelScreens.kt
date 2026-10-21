@@ -1,5 +1,7 @@
 package eu.kanade.presentation.novels
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+
 import eu.kanade.tachiyomi.focus.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
@@ -186,17 +188,24 @@ internal fun SunovelsChapterDiagnostic(novel: Novel, chapter: NovelChapter, allo
 /** One catalogue, streamed source-by-source; provider identity stays in maintenance/edition information. */
 private class NovelBrowseMemory {
     var selection: eu.kanade.tachiyomi.search.NovelSearchSelection? = null
-    var selectionQuery: String? = null
+    val sessions = eu.kanade.tachiyomi.search.SearchSessionCoordinator()
+    val snapshots = eu.kanade.tachiyomi.search.SearchSnapshotCache<NovelBrowseSnapshot>()
     val evidenceRevision = mutableIntStateOf(0)
     val failed = mutableStateOf(emptySet<String>())
-    var query: Pair<String, String?>? = null
+    var query: eu.kanade.tachiyomi.search.SearchContext? = null
     val slots = mutableStateOf(emptyMap<String, List<Novel>>())
     val pages = mutableStateOf(emptyMap<String, Int?>())
     val routes = mutableStateOf(emptyMap<String, List<NovelGenre>>())
-    var loadedKey: Pair<String, String?>? = null
+    var loadedKey: eu.kanade.tachiyomi.search.SearchContext? = null
+    fun cache(context: eu.kanade.tachiyomi.search.SearchContext) {
+        if (context.query.isNotBlank()) snapshots.put(context, NovelBrowseSnapshot(
+            slots.value.mapValues { it.value.toList() }, pages.value.toMap(), routes.value.toMap(), selection?.snapshot().orEmpty()))
+    }
 }
+private data class NovelBrowseSnapshot(val slots: Map<String, List<Novel>>, val pages: Map<String, Int?>,
+    val routes: Map<String, List<NovelGenre>>, val groups: List<eu.kanade.tachiyomi.search.SearchWorkGroup>)
 private data class NovelBrowsePresentation(val works: List<UnifiedNovelWork> = emptyList(), val genres: List<String> = emptyList(),
-    val recent: List<UnifiedNovelWork> = emptyList(), val groups: List<eu.kanade.tachiyomi.search.SearchWorkGroup> = emptyList(), val query: String? = null)
+    val recent: List<UnifiedNovelWork> = emptyList(), val groups: List<eu.kanade.tachiyomi.search.SearchWorkGroup> = emptyList(), val query: String? = null, val generation: Long = 0)
 
 class NovelHomeScreen(private val initialGenre: String? = null) : Screen() {
     @Transient private var browseMemory: NovelBrowseMemory? = null
@@ -214,9 +223,16 @@ class NovelHomeScreen(private val initialGenre: String? = null) : Screen() {
         var sunStatus by rememberSaveable { mutableStateOf<String?>(null) }
         var generation by remember { mutableIntStateOf(0) }
         val memory = remember { browseMemory ?: NovelBrowseMemory().also { browseMemory = it } }
-        val selection = remember(term) {
-            memory.selection?.takeIf { memory.selectionQuery == term }
-                ?: eu.kanade.tachiyomi.search.NovelSearchSelection(repository).also { memory.selection = it; memory.selectionQuery = term }
+        val sourceAdapters = repository.activeSources
+        val searchContext = eu.kanade.tachiyomi.search.SearchContext(
+            eu.kanade.tachiyomi.search.SearchWorkKind.NOVEL, term, sourceAdapters.map { it.id },
+            filters = mapOf("genre" to genre.orEmpty(), "sunovelsStatus" to sunStatus.orEmpty()))
+        val session = remember(searchContext, generation) { memory.sessions.begin(searchContext) }
+        val selection = remember(session) {
+            eu.kanade.tachiyomi.search.NovelSearchSelection(repository).also { selected ->
+                memory.snapshots.get(searchContext)?.let { selected.restore(it.groups) }
+                memory.selection = selected
+            }
         }
         val evidenceRevision by memory.evidenceRevision
         var slots by memory.slots
@@ -225,72 +241,78 @@ class NovelHomeScreen(private val initialGenre: String? = null) : Screen() {
         val gridState = rememberLazyGridState()
         var busy by remember { mutableStateOf(emptySet<String>()) }
         var failed by memory.failed
-        var epoch by remember { mutableIntStateOf(0) }
         val scope = rememberCoroutineScope()
         var moreJob by remember { mutableStateOf<Job?>(null) }
         LaunchedEffect(input) { kotlinx.coroutines.delay(350); if (input.trim() != term) { term = input.trim(); if (term.isNotBlank()) genre = null } }
-        LaunchedEffect(term, genre, generation, sunStatus) {
-            if (memory.loadedKey == (term to genre)) return@LaunchedEffect
-            val request = ++epoch
+        LaunchedEffect(session) {
+            if (memory.loadedKey == searchContext && (session.context.query.isBlank() || memory.snapshots.get(searchContext) != null)) return@LaunchedEffect
+            val request = session
+            val requestQuery = request.context.query
+            val requestGenre = request.context.filters["genre"]?.takeIf(String::isNotBlank)
+            val requestStatus = request.context.filters["sunovelsStatus"]?.takeIf(String::isNotBlank)
             moreJob?.cancel()
-            if (memory.query != (term to genre)) { slots = emptyMap(); pages = emptyMap() }
-            memory.query = term to genre
+            if (memory.query != searchContext) {
+                val cached = memory.snapshots.get(searchContext)
+                slots = cached?.slots.orEmpty(); pages = cached?.pages.orEmpty()
+                cached?.let { routes = it.routes }
+            }
+            memory.query = searchContext
             failed = emptySet()
-            busy = repository.activeSources.map { it.id }.toSet()
-            kotlinx.coroutines.coroutineScope { repository.activeSources.forEach { source -> launch {
+            busy = sourceAdapters.map { it.id }.toSet()
+            kotlinx.coroutines.coroutineScope { sourceAdapters.forEach { source -> launch {
                 try {
-                    if (genre == null && slots[source.id].isNullOrEmpty()) {
-                        repository.discoverySnapshot(source, term, 1,
-                            if (source is SunovelsGatewaySource) SunovelsGatewaySource.filter(null,sunStatus) else null)?.let { cached ->
+                    if (requestGenre == null && slots[source.id].isNullOrEmpty()) {
+                        repository.discoverySnapshot(source, requestQuery, 1,
+                            if (source is SunovelsGatewaySource) SunovelsGatewaySource.filter(null,requestStatus) else null)?.let { cached ->
                             repository.ingest(cached.novels)
-                            if (request == epoch) {
+                            if (memory.sessions.accepts(request)) {
                                 slots = slots + (source.id to cached.novels); pages = pages + (source.id to cached.nextPage)
                                 if (cached.genres.isNotEmpty()) routes = routes + (source.id to cached.genres)
                             }
                         }
                     }
-                    if (genre != null && routes[source.id].isNullOrEmpty()) {
+                    if (requestGenre != null && routes[source.id].isNullOrEmpty()) {
                         val initialPage = repository.discover(source, "", 1, null)
-                        if (request == epoch) routes = routes + (source.id to initialPage.genres)
+                        if (memory.sessions.accepts(request)) routes = routes + (source.id to initialPage.genres)
                     }
-                    val route = routes[source.id].orEmpty().firstOrNull { NovelGenres.key(it.name) == genre }?.value
-                    val result = if (genre != null && route == null) {
+                    val route = routes[source.id].orEmpty().firstOrNull { NovelGenres.key(it.name) == requestGenre }?.value
+                    val result = if (requestGenre != null && route == null) {
                         val available = withContext(Dispatchers.Default) {
-                            val query = NovelIdentity.normalize(term)
-                            repository.catalog.value.works.flatMap { it.editions }.filter { it.sourceId == source.id && it.genres.any { g -> NovelGenres.key(g) == genre } && (term.isBlank() || NovelIdentity.normalize(it.title).contains(query)) }
+                            val query = NovelIdentity.normalize(requestQuery)
+                            repository.catalog.value.works.flatMap { it.editions }.filter { it.sourceId == source.id && it.genres.any { g -> NovelGenres.key(g) == requestGenre } && (requestQuery.isBlank() || NovelIdentity.normalize(it.title).contains(query)) }
                         }
                         NovelPage(available)
-                    } else repository.discover(source, term, 1,
-                        if (source is SunovelsGatewaySource) SunovelsGatewaySource.filter(route,sunStatus) else route)
-                    if (request == epoch) {
+                    } else repository.discover(source, requestQuery, 1,
+                        if (source is SunovelsGatewaySource) SunovelsGatewaySource.filter(route,requestStatus) else route)
+                    if (memory.sessions.accepts(request)) {
                         slots = slots + (source.id to result.novels); pages = pages + (source.id to result.nextPage)
                         if (result.genres.isNotEmpty()) routes = routes + (source.id to result.genres)
                     }
                 } catch (c: CancellationException) { throw c }
-                catch (e: Exception) { novelError(e); if (request == epoch) failed = failed + source.id }
-                finally { if (request == epoch) busy = busy - source.id }
+                catch (e: Exception) { novelError(e); if (memory.sessions.accepts(request)) failed = failed + source.id }
+                finally { if (memory.sessions.accepts(request)) busy = busy - source.id }
             } } }
-            if (request == epoch) memory.loadedKey = term to genre
+            if (memory.sessions.accepts(request)) {
+                memory.loadedKey = searchContext
+                memory.cache(searchContext)
+            }
         }
         // Catalogue matching and genre normalization never run during main-thread composition.
         val catalogSnapshot = catalog
-        val slotsSnapshot = slots
+        val slotsSnapshot = if (memory.query == searchContext) slots
+            else memory.snapshots.get(searchContext)?.slots.orEmpty()
         val routesSnapshot = routes
         val querySnapshot = term
         val genreSnapshot = genre
         val resumeEdition = if (term.isBlank() && genre == null) library.firstOrNull { it.position != null }?.novel?.id else null
-        val presentation by produceState(NovelBrowsePresentation(), catalogSnapshot, slotsSnapshot, routesSnapshot, querySnapshot to genreSnapshot, evidenceRevision, resumeEdition) {
-            value = withContext(Dispatchers.Default) {
-                val lists = repository.activeSources.map { slotsSnapshot[it.id].orEmpty() }
+        val presentation by produceState(NovelBrowsePresentation(), catalogSnapshot, slotsSnapshot, routesSnapshot, querySnapshot to genreSnapshot, evidenceRevision, resumeEdition, session) {
+            val projected = withContext(Dispatchers.Default) {
+                val lists = sourceAdapters.map { slotsSnapshot[it.id].orEmpty() }
                 val editions = buildList { for (i in 0 until (lists.maxOfOrNull { it.size } ?: 0)) lists.forEach { it.getOrNull(i)?.let(::add) } }
                 val activeWorks = NovelCatalogCards.project(catalogSnapshot)
-                val byEdition = activeWorks.flatMap { w -> w.editions.map { it.id to w } }.toMap()
                 val eligibleEditions = NovelCatalogCards.eligiblePage(catalogSnapshot, NovelPage(editions)).novels
-                val detailed = eligibleEditions.map { n -> byEdition[n.id]?.editions?.firstOrNull {it.id == n.id} ?: n }.distinctBy {it.id}
                 val search = if (querySnapshot.isNotBlank()) {
-                    val matched = NovelCatalogCards.select(activeWorks, detailed)
-                    val searchEditions = matched.flatMap { it.editions }.associateBy { it.id }
-                    selection.presentation(searchEditions.values.toList(), matched)
+                    eu.kanade.tachiyomi.search.NovelSearchProjection.project(catalogSnapshot, editions, selection, activeWorks)
                 } else null
                 val groups = search?.groups.orEmpty()
                 // Render the same verified groups whose winners/counts were selected. Alternatives
@@ -304,10 +326,11 @@ class NovelHomeScreen(private val initialGenre: String? = null) : Screen() {
                     slotsSnapshot["novel.kolnovel"].orEmpty().take(3) + slotsSnapshot["novel.cenele"].orEmpty().take(3))).novels)
                 val resume = activeWorks.filter { work -> work.editions.any { it.id == resumeEdition } }
                 val visibleRecent = if (querySnapshot.isBlank() && genreSnapshot == null) NovelCatalogCards.excluding(recent, resume) else emptyList()
-                NovelBrowsePresentation(NovelCatalogCards.excluding(works, visibleRecent + resume), genres, visibleRecent, groups, querySnapshot)
+                NovelBrowsePresentation(NovelCatalogCards.excluding(works, visibleRecent + resume), genres, visibleRecent, groups, querySnapshot, session.generation)
             }
+            if (memory.sessions.accepts(session)) value = projected
         }
-        val works = if (term.isNotBlank() && presentation.query != term) emptyList() else presentation.works
+        val works = if (term.isNotBlank() && (presentation.query != term || presentation.generation != session.generation)) emptyList() else presentation.works
         val genres = presentation.genres
         val recent = presentation.recent
         val searchGroupsByKey = remember(presentation.groups) { presentation.groups.associateBy { it.key } }
@@ -340,7 +363,7 @@ class NovelHomeScreen(private val initialGenre: String? = null) : Screen() {
                 eu.kanade.tachiyomi.search.NovelSearchSelection.EvidenceInput(
                     slots.values.flatten(), currentSearchEditions, catalog,
                 )
-            }) { memory.evidenceRevision.intValue++ }
+            }) { if (memory.sessions.accepts(session)) memory.evidenceRevision.intValue++ }
         }
         LaunchedEffect(gridState, term) {
             snapshotFlow {
@@ -361,19 +384,21 @@ class NovelHomeScreen(private val initialGenre: String? = null) : Screen() {
             if (moreJob?.isActive == true) return
             val next = pages.filter { (id, page) -> page != null && id !in busy }
             if (next.isEmpty()) return
-            val request = epoch
+            val request = session
+            val requestGenre = request.context.filters["genre"]?.takeIf(String::isNotBlank)
+            val requestStatus = request.context.filters["sunovelsStatus"]?.takeIf(String::isNotBlank)
             busy = busy + next.keys
             moreJob = scope.launch {
                 next.forEach { (id, page) -> launch {
                     try {
                         val source = repository.source(id)
-                        val route = routes[id].orEmpty().firstOrNull { NovelGenres.key(it.name) == genre }?.value
-                        val result = repository.discover(source, term, page!!,
-                            if (source is SunovelsGatewaySource) SunovelsGatewaySource.filter(route,sunStatus) else route)
-                        if (request == epoch) { slots = slots + (id to (slots[id].orEmpty() + result.novels).distinctBy { it.id }); pages = pages + (id to result.nextPage) }
+                        val route = routes[id].orEmpty().firstOrNull { NovelGenres.key(it.name) == requestGenre }?.value
+                        val result = repository.discover(source, request.context.query, page!!,
+                            if (source is SunovelsGatewaySource) SunovelsGatewaySource.filter(route,requestStatus) else route)
+                        if (memory.sessions.accepts(request)) { slots = slots + (id to (slots[id].orEmpty() + result.novels).distinctBy { it.id }); pages = pages + (id to result.nextPage); memory.cache(searchContext) }
                     } catch (c: CancellationException) { throw c }
-                    catch (e: Exception) { novelError(e); if (request == epoch) failed = failed + id }
-                    finally { if (request == epoch) busy = busy - id }
+                    catch (e: Exception) { novelError(e); if (memory.sessions.accepts(request)) failed = failed + id }
+                    finally { if (memory.sessions.accepts(request)) busy = busy - id }
                 } }
             }
         }
@@ -475,15 +500,18 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
         val repository = remember(context) { NovelRepository.get(context) }
         val navigator = LocalNavigator.currentOrThrow
         val catalog by repository.catalog.collectAsState()
-        val workIds = remember(catalog, initial.id) {
-            catalog.work(initial.id)?.editions?.map { it.id }?.toSet() ?: setOf(initial.id)
+        val connectedGraph = eu.kanade.presentation.stories.rememberConnectedStoryGraph()
+        val connectedRegistry = connectedGraph?.collectAsStateWithLifecycle()?.value
+        val work = remember(catalog, initial.id, connectedRegistry) {
+            val existing = catalog.work(initial.id) ?: UnifiedNovelWork(NovelIdentity.initialWorkId(initial.id), listOf(initial), initial.id)
+            eu.kanade.tachiyomi.data.stories.ConnectedNovelEditions.project(connectedRegistry, initial, existing, catalog)
         }
+        val workIds = remember(work) { work.editions.map { it.id }.toSet() }
         val library by remember(repository, workIds) {
             repository.library.map { entries -> entries.filter { it.novel.id in workIds } }
                 .distinctUntilChanged().flowOn(Dispatchers.Default)
         }.collectAsState(initial = emptyList())
         val storageError by repository.storageError.collectAsState()
-        val work = remember(catalog, initial.id) { catalog.work(initial.id) ?: UnifiedNovelWork(NovelIdentity.initialWorkId(initial.id), listOf(initial), initial.id) }
         val scope = rememberCoroutineScope()
         val downloadAdGate = rememberNovelDownloadAdGate()
         var selectedId by rememberSaveable { mutableStateOf<String?>(initial.id) }
@@ -662,6 +690,10 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
                     FilledTonalButton(onClick = { openDownloads() }, enabled = index.chapters.isNotEmpty() && !enqueueing, modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Outlined.Download, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("تحميل الفصول")
                     }
+                }
+                item(key = "connected-stories") {
+                    eu.kanade.presentation.stories.ConnectedStoriesSection(
+                        eu.kanade.tachiyomi.data.stories.StoryDestination.Prose(novel))
                 }
                 item(key = "work-community") {
                     eu.kanade.presentation.community.WorkCommunitySection(novelWorkCommunityContext(novel))

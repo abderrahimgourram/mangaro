@@ -10,7 +10,7 @@ internal object NovelCloudState {
     val tables = listOf(LIBRARY, PROGRESS)
     private val json = Json { ignoreUnknownKeys = true }
     private val domains = mapOf("novel.kolnovel" to "kolnovel.com", "novel.cenele" to "cenele.com",
-        "novel.sunovels" to "sunovels.com", "novel.seanovel" to "seanovel.org")
+        "novel.sunovels" to "sunovels.com", "novel.seanovel" to "seanovel.org", "novel.mknov" to "mknov.com")
     private fun url(source: String, value: String): Boolean = runCatching {
         val uri = java.net.URI(value)
         val domain = domains[source] ?: return false
@@ -18,7 +18,8 @@ internal object NovelCloudState {
             (uri.host == domain || uri.host.endsWith(".$domain")) && value.length <= 4096
     }.getOrDefault(false)
     private fun cloudPosition(position: NovelReadingPosition) = position.copy(
-        anchor = position.anchor.take(4096), chapter = position.chapter.copy(title = position.chapter.title.take(512),
+        // Completion evidence stays local until the server explicitly supports it. Legacy RPCs reject extra fields.
+        completed = null, anchor = position.anchor.take(4096), chapter = position.chapter.copy(title = position.chapter.title.take(512),
             volume = position.chapter.volume?.take(512), volumeId = position.chapter.volumeId?.take(4096),
             // Cloud progress is reader identity/position, not a portable access verdict or index dump.
             publishedRows = emptyList(), unavailableReason = null, sunovelsState = null, sunovelsEvidence = null))

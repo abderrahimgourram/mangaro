@@ -334,6 +334,11 @@ private fun MangaScreenSmallImpl(
                         )
                     }
 
+                    item(key = "connected-stories", contentType = "connected-stories") {
+                        eu.kanade.presentation.stories.ConnectedStoriesSection(
+                            eu.kanade.tachiyomi.data.stories.StoryDestination.Comic(state.manga), inset = true)
+                    }
+
                     item(key = MangaScreenItem.COMMUNITY, contentType = MangaScreenItem.COMMUNITY) {
                         MangaCommunitySection(state.manga)
                     }
@@ -525,6 +530,8 @@ fun MangaScreenLargeImpl(
                             tags = state.manga.genre,
                             onTagClick = onTagSearch,
                         )
+                        eu.kanade.presentation.stories.ConnectedStoriesSection(
+                            eu.kanade.tachiyomi.data.stories.StoryDestination.Comic(state.manga), inset = true)
                         MangaCommunitySection(state.manga)
                     }
                 },

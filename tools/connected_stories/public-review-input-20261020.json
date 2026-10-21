@@ -1,0 +1,126 @@
+{
+  "observedAt": "2026-10-20",
+  "editions": [
+    {
+      "format": "TEXT_NOVEL",
+      "source": "novel.seanovel",
+      "url": "https://seanovel.org/novels/overgeared",
+      "publicUrl": "https://seanovel.org/novels/overgeared",
+      "names": [
+        "مدجج بالعتاد",
+        ""
+      ]
+    },
+    {
+      "format": "MANHWA",
+      "source": "215553151312092548",
+      "url": "/manhwa/overgeared#6a8f5babf1a5e87af68c564b",
+      "publicUrl": "https://mangatime.org/manhwa/overgeared",
+      "names": [
+        "أوفرغيرد",
+        "Overgeared"
+      ]
+    },
+    {
+      "format": "TEXT_NOVEL",
+      "source": "novel.seanovel",
+      "url": "https://seanovel.org/novels/return-of-the-blossoming-blade",
+      "publicUrl": "https://seanovel.org/novels/return-of-the-blossoming-blade",
+      "names": [
+        "عودة طائفة جبل هوا",
+        "Return of the Blossoming Blade"
+      ]
+    },
+    {
+      "format": "MANHWA",
+      "source": "215553151312092548",
+      "url": "/manhwa/return-of-the-mount-hua-sect#6a49e00234c268b77054833e",
+      "publicUrl": "https://mangatime.org/manhwa/return-of-the-mount-hua-sect",
+      "names": [
+        "عودة طائفة جبل هوا",
+        "Return of the Mount Hua Sect"
+      ]
+    },
+    {
+      "format": "TEXT_NOVEL",
+      "source": "novel.seanovel",
+      "url": "https://seanovel.org/novels/the-all-encompassing-reader",
+      "publicUrl": "https://seanovel.org/novels/the-all-encompassing-reader",
+      "names": [
+        "القارئ المحيط بكل شيء",
+        "The All-Encompassing Reader"
+      ]
+    },
+    {
+      "format": "MANHWA",
+      "source": "215553151312092548",
+      "url": "/manhwa/omniscient-readers-viewpoint#6a8fb9a47d3207cb2faf20a0",
+      "publicUrl": "https://mangatime.org/manhwa/omniscient-readers-viewpoint",
+      "names": [
+        "وجهة نظر القارئ كلّي المعرفة",
+        "Omniscient Reader's Viewpoint"
+      ]
+    }
+  ],
+  "relations": [
+    {
+      "id": "overgeared",
+      "type": "ADAPTATION_OF",
+      "original": {
+        "format": "TEXT_NOVEL",
+        "source": "novel.seanovel",
+        "url": "https://seanovel.org/novels/overgeared"
+      },
+      "adaptation": {
+        "format": "MANHWA",
+        "source": "215553151312092548",
+        "url": "/manhwa/overgeared#6a8f5babf1a5e87af68c564b"
+      },
+      "publisherOriginal": "https://tapas.io/series/overgeared-novel/info",
+      "publisherAdaptation": "https://tapas.io/series/overgeared/info",
+      "evidence": [
+        "https://tapas.io/series/overgeared-novel/info"
+      ]
+    },
+    {
+      "id": "return-of-the-blossoming-blade",
+      "type": "ADAPTATION_OF",
+      "original": {
+        "format": "TEXT_NOVEL",
+        "source": "novel.seanovel",
+        "url": "https://seanovel.org/novels/return-of-the-blossoming-blade"
+      },
+      "adaptation": {
+        "format": "MANHWA",
+        "source": "215553151312092548",
+        "url": "/manhwa/return-of-the-mount-hua-sect#6a49e00234c268b77054833e"
+      },
+      "publisherOriginal": "https://series.naver.com/novel/detail.series?productNo=4130558",
+      "publisherAdaptation": "https://m.comic.naver.com/webtoon/list?titleId=769209",
+      "evidence": [
+        "https://navercorp.com/media/pressReleasesDetail?seq=30834"
+      ]
+    },
+    {
+      "id": "omniscient-reader-original",
+      "type": "ADAPTATION_OF",
+      "original": {
+        "format": "TEXT_NOVEL",
+        "source": "novel.seanovel",
+        "url": "https://seanovel.org/novels/the-all-encompassing-reader"
+      },
+      "adaptation": {
+        "format": "MANHWA",
+        "source": "215553151312092548",
+        "url": "/manhwa/omniscient-readers-viewpoint#6a8fb9a47d3207cb2faf20a0"
+      },
+      "publisherOriginal": "https://yenpress.com/titles/9798400903526-omniscient-reader-s-viewpoint-novel-vol-1",
+      "publisherAdaptation": "https://www.webtoons.com/en/action/omniscient-reader/list?title_no=2154",
+      "evidence": [
+        "https://www.webtoons.com/en/action/omniscient-reader/list?title_no=2154",
+        "https://yenpress.com/titles/9798400903526-omniscient-reader-s-viewpoint-novel-vol-1",
+        "https://yenpress.com/series/omniscient-reader-s-viewpoint"
+      ]
+    }
+  ]
+}

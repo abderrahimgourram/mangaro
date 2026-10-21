@@ -12,8 +12,8 @@ import coil3.fetch.SourceFetchResult
 import coil3.getOrDefault
 import coil3.request.Options
 import com.hippo.unifile.UniFile
-import eu.kanade.tachiyomi.data.cache.CoverCache
 import eu.kanade.tachiyomi.data.cache.CacheFileAccess
+import eu.kanade.tachiyomi.data.cache.CoverCache
 import eu.kanade.tachiyomi.data.coil.MangaCoverFetcher.Companion.USE_CUSTOM_COVER_KEY
 import eu.kanade.tachiyomi.network.await
 import eu.kanade.tachiyomi.source.online.HttpSource
@@ -30,6 +30,7 @@ import okio.source
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.manga.model.MangaCover
+import tachiyomi.domain.manga.model.ReviewedCoverArtwork
 import tachiyomi.domain.source.service.SourceManager
 import uy.kohesive.injekt.api.get
 import uy.kohesive.injekt.injectLazy
@@ -57,6 +58,7 @@ class MangaCoverFetcher(
     private val callFactoryLazy: Lazy<Call.Factory>,
     private val imageLoader: ImageLoader,
     private val mangaId: Long? = null,
+    private val allowSourceRecovery: Boolean = true,
 ) : Fetcher {
 
     private val diskCacheKey: String
@@ -137,9 +139,11 @@ class MangaCoverFetcher(
             }
 
             // Fetch from network
-            val response = try { executeNetworkRequest() } catch (error: Exception) {
+            val response = try {
+                executeNetworkRequest()
+            } catch (error: Exception) {
                 val recoverable = error is InvalidCoverResponse ||
-                    error is eu.kanade.tachiyomi.network.HttpException && error.code in setOf(403, 404, 410)
+                    (error is eu.kanade.tachiyomi.network.HttpException && error.code in setOf(403, 404, 410))
                 if (!recoverable) throw error
                 return recoverCover() ?: throw error
             }
@@ -180,37 +184,66 @@ class MangaCoverFetcher(
     }
 
     private suspend fun recoverCover(): FetchResult? {
-        if (!options.networkCachePolicy.readEnabled) return null
+        if (!allowSourceRecovery || !options.networkCachePolicy.readEnabled) return null
         val source = sourceLazy.value ?: return null
         val id = mangaId ?: return null
         val response = eu.kanade.domain.manga.interactor.RecoverMangaCover(uy.kohesive.injekt.Injekt.get())
             .await(source, id, url) ?: return null
         try {
-            val manga = uy.kohesive.injekt.Injekt.get<tachiyomi.domain.manga.repository.MangaRepository>().getMangaById(id)
+            val manga = uy.kohesive.injekt.Injekt.get<tachiyomi.domain.manga.repository.MangaRepository>().getMangaById(
+                id,
+            )
             // If another refresh changed SQL, or the image redirected, don't assign
             // those bytes to a different identity. Normal loading still caches it.
             if (manga.thumbnailUrl != response.request.url.toString()) {
-                return SourceFetchResult(source = ImageSource(source = response.body.source(), fileSystem = FileSystem.SYSTEM),
-                    mimeType = response.header("Content-Type"), dataSource = DataSource.NETWORK)
+                return SourceFetchResult(
+                    source = ImageSource(source = response.body.source(), fileSystem = FileSystem.SYSTEM),
+                    mimeType = response.header("Content-Type"),
+                    dataSource = DataSource.NETWORK,
+                )
             }
             val key = imageLoader.components.key(manga, options)
-            if (key == null) { response.close(); return null }
-            val cacheFile = if (manga.favorite) uy.kohesive.injekt.Injekt.get<CoverCache>().getCoverFile(manga.thumbnailUrl) else null
+            if (key == null) {
+                response.close()
+                return null
+            }
+            val cacheFile = if (manga.favorite) {
+                uy.kohesive.injekt.Injekt.get<CoverCache>().getCoverFile(
+                    manga.thumbnailUrl,
+                )
+            } else {
+                null
+            }
             writeResponseToCoverCache(response, cacheFile)?.let { file ->
                 response.close()
-                return SourceFetchResult(source = ImageSource(file = file.toOkioPath(), fileSystem = FileSystem.SYSTEM,
-                    diskCacheKey = key, closeable = CacheFileAccess.shared.acquire(file)),
-                    mimeType = "image/*", dataSource = DataSource.NETWORK)
+                return SourceFetchResult(
+                    source = ImageSource(
+                        file = file.toOkioPath(),
+                        fileSystem = FileSystem.SYSTEM,
+                        diskCacheKey = key,
+                        closeable = CacheFileAccess.shared.acquire(file),
+                    ),
+                    mimeType = "image/*",
+                    dataSource = DataSource.NETWORK,
+                )
             }
             writeToDiskCache(response, key)?.let { snapshot ->
                 response.close()
-                return SourceFetchResult(source = snapshot.toImageSource(key), mimeType = "image/*", dataSource = DataSource.NETWORK)
+                return SourceFetchResult(
+                    source = snapshot.toImageSource(key),
+                    mimeType = "image/*",
+                    dataSource = DataSource.NETWORK,
+                )
             }
             return SourceFetchResult(
                 source = ImageSource(source = response.body.source(), fileSystem = FileSystem.SYSTEM),
-                mimeType = response.header("Content-Type"), dataSource = DataSource.NETWORK,
+                mimeType = response.header("Content-Type"),
+                dataSource = DataSource.NETWORK,
             )
-        } catch (error: Exception) { response.close(); throw error }
+        } catch (error: Exception) {
+            response.close()
+            throw error
+        }
     }
 
     private class InvalidCoverResponse : IOException("Cover response is not an image")
@@ -222,7 +255,9 @@ class MangaCoverFetcher(
             response.close()
             throw eu.kanade.tachiyomi.network.HttpException(response.code)
         }
-        if (response.code != HTTP_NOT_MODIFIED && tachiyomi.core.common.util.system.ImageUtil.findImageType(response.peekBody(512).byteStream()) == null) {
+        if (response.code != HTTP_NOT_MODIFIED &&
+            tachiyomi.core.common.util.system.ImageUtil.findImageType(response.peekBody(512).byteStream()) == null
+        ) {
             response.close()
             throw InvalidCoverResponse()
         }
@@ -356,14 +391,16 @@ class MangaCoverFetcher(
         private val sourceManager: SourceManager by injectLazy()
 
         override fun create(data: Manga, options: Options, imageLoader: ImageLoader): Fetcher {
+            val effectiveUrl = ReviewedCoverArtwork.resolve(data.source, data.thumbnailUrl)
             val custom = coverCache.getCustomCoverFile(data.id, data.accountToken.fileOwner)
             val key = imageLoader.components.key(data, options)!!
             return MangaCoverFetcher(
                 mangaId = data.id,
-                url = data.thumbnailUrl,
+                url = effectiveUrl,
+                allowSourceRecovery = effectiveUrl == data.thumbnailUrl,
                 isLibraryManga = data.favorite,
                 options = options,
-                coverFileLazy = lazy { coverCache.getCoverFile(data.thumbnailUrl) },
+                coverFileLazy = lazy { coverCache.getCoverFile(effectiveUrl) },
                 customCoverFileLazy = lazy { custom },
                 diskCacheKeyLazy = lazy { key },
                 sourceLazy = lazy { sourceManager.get(data.source) as? HttpSource },
@@ -381,14 +418,16 @@ class MangaCoverFetcher(
         private val sourceManager: SourceManager by injectLazy()
 
         override fun create(data: MangaCover, options: Options, imageLoader: ImageLoader): Fetcher {
+            val effectiveUrl = ReviewedCoverArtwork.resolve(data.sourceId, data.url)
             val custom = coverCache.getCustomCoverFile(data.mangaId, data.owner)
             val key = imageLoader.components.key(data, options)!!
             return MangaCoverFetcher(
                 mangaId = data.mangaId,
-                url = data.url,
+                url = effectiveUrl,
+                allowSourceRecovery = effectiveUrl == data.url,
                 isLibraryManga = data.isMangaFavorite,
                 options = options,
-                coverFileLazy = lazy { coverCache.getCoverFile(data.url) },
+                coverFileLazy = lazy { coverCache.getCoverFile(effectiveUrl) },
                 customCoverFileLazy = lazy { custom },
                 diskCacheKeyLazy = lazy { key },
                 sourceLazy = lazy { sourceManager.get(data.sourceId) as? HttpSource },

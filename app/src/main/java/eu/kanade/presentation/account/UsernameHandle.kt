@@ -12,7 +12,8 @@ import androidx.compose.ui.text.style.TextDirection
 @Composable
 fun UsernameHandle(username: String, modifier: Modifier = Modifier, color: Color = Color.Unspecified,
     style: TextStyle = MaterialTheme.typography.labelSmall) {
-    Text(isolateUsername("@$username"), modifier, color = color, style = style.copy(textDirection = TextDirection.Ltr))
+    Text(isolateUsername("@$username"), modifier, color = color, style = style.copy(textDirection = TextDirection.Ltr),
+        maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
 }
 
 /** Presentation-only isolation. Never use this decorated value in input, validation or storage. */

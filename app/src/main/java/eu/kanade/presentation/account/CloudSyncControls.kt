@@ -39,16 +39,24 @@ fun CloudSyncControls(userId: String, repository: AccountCloudSync) {
             Text(when {
                 status.needsMerge -> "اختر استعادة الحساب أو ضم بيانات الضيف"
                 status.running || busy -> "تتم المزامنة…"
-                !status.loaded || !status.enabled -> "جارٍ تجهيز المزامنة"
+                !status.loaded -> "جارٍ تجهيز المزامنة"
+                !status.enabled -> "المزامنة التلقائية متوقفة"
                 status.error!=null || status.pending>0 -> "بانتظار الاتصال"
                 status.novelConflicts>0 -> "تحتاج تغييرات الروايات إلى مراجعة"
-                status.novelError!=null -> "مزامنة الروايات بانتظار التفعيل"
+                status.novelError!=null -> "تعذّر مزامنة الروايات"
                 status.lastSuccess!=null -> "تمت المزامنة"
                 else -> "المزامنة التلقائية"
             },style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-            TextButton(enabled=status.loaded && !status.running && !busy,onClick={
+            TextButton(enabled=status.loaded && (status.enabled || status.needsMerge) && !status.running && !busy,onClick={
                 if(status.needsMerge) confirm=true else perform { repository.syncNow(userId) }
             }) {Text(if(status.needsMerge) "دمج مع هذا الحساب" else "مزامنة الآن",style=MaterialTheme.typography.labelSmall)}
+        }
+        if (status.loaded && !status.needsMerge) Row(Modifier.fillMaxWidth(),
+            horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
+            Text("المزامنة التلقائية",style=MaterialTheme.typography.bodySmall)
+            Switch(checked=status.enabled,enabled=!busy && !status.running,onCheckedChange={ enabled ->
+                perform { if(enabled) repository.restoreAccount(userId) else repository.configure(userId,false) }
+            })
         }
         status.lastSuccess?.let { time ->
             val formatted=remember(time,context) {WesternDigits.normalize(DateUtils.formatDateTime(context,time,DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_SHOW_TIME or DateUtils.FORMAT_ABBREV_ALL))}

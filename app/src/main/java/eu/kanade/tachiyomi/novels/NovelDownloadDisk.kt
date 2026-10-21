@@ -63,9 +63,10 @@ class NovelDownloadDisk(private val root: File) {
                 text = CeneleSanitizer.sanitize(text)
             }
             val sea = editionId.startsWith(SeaNovelSource.SOURCE_ID + ":")
-            validate(text, allowShortText = sea || (editionId.startsWith(SunovelsSource.SOURCE_ID + ":") &&
-                stored.sourceContract == SunovelsSource.PARSER_VERSION))
+            validate(text, allowShortText = sea || editionId.startsWith(MknovSource.SOURCE_ID + ":") || (editionId.startsWith(SunovelsSource.SOURCE_ID + ":") &&
+                stored.sourceContract == SunovelsSource.PARSER_VERSION), allowIllustrations = isCenele(editionId))
             if (sea) SeaNovelSource.validateText(text)
+            if (editionId.startsWith(MknovSource.SOURCE_ID + ":")) MknovSource.validateText(text)
             if (editionId.startsWith(SunovelsSource.SOURCE_ID + ":")) SunovelsSource.validateText(text)
             text
         }.getOrNull()
@@ -103,8 +104,9 @@ class NovelDownloadDisk(private val root: File) {
             CeneleSanitizer.sanitize(text)
         } else text
         val sea = editionId.startsWith(SeaNovelSource.SOURCE_ID + ":")
-        validate(sanitized, allowShortText = sea || editionId.startsWith(SunovelsSource.SOURCE_ID + ":"))
+        validate(sanitized, allowShortText = sea || editionId.startsWith(MknovSource.SOURCE_ID + ":") || editionId.startsWith(SunovelsSource.SOURCE_ID + ":"), allowIllustrations = isCenele(editionId))
         if (sea) SeaNovelSource.validateText(sanitized)
+        if (editionId.startsWith(MknovSource.SOURCE_ID + ":")) MknovSource.validateText(sanitized)
         if (editionId.startsWith(SunovelsSource.SOURCE_ID + ":")) SunovelsSource.validateText(sanitized)
         val value = StoredChapter(editionId, chapterId, novelDigest(json.encodeToString(sanitized)), sanitized,
             sourceContract = SunovelsSource.PARSER_VERSION.takeIf { editionId.startsWith(SunovelsSource.SOURCE_ID + ":") })
@@ -244,9 +246,13 @@ class NovelDownloadDisk(private val root: File) {
         }
         return deleted
     }
-    private fun validate(text: NovelText, allowShortText: Boolean = false) {
-        check(if (allowShortText) text.paragraphs.isNotEmpty() && text.paragraphs.any { p -> p.any(Char::isLetter) }
-            else text.paragraphs.size >= 3 && text.paragraphs.sumOf { it.length } >= 200) { "Incomplete novel chapter" }
+    private fun isCenele(editionId: String) = editionId == "novel.cenele" ||
+        editionId.startsWith("novel.cenele:") || editionId.startsWith("novel.cenele/")
+
+    private fun validate(text: NovelText, allowShortText: Boolean = false, allowIllustrations: Boolean = false) {
+        check((allowIllustrations && text.hasReadableIllustration()) ||
+            (if (allowShortText) text.paragraphs.isNotEmpty() && text.paragraphs.any { p -> p.any(Char::isLetter) }
+            else text.paragraphs.size >= 3 && text.paragraphs.sumOf { it.length } >= 200)) { "Incomplete novel chapter" }
         check(text.markup.isEmpty() || text.markup.size == text.paragraphs.size)
         check(text.blocks.size <= 20000)
         check(text.blocks.filter { it.kind == NovelBlockKind.IMAGE }.size <= 256)

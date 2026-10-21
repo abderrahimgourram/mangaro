@@ -123,7 +123,7 @@ class SearchResultPresentationFilterTest {
         manga.contains("val results = state.rankedResults") shouldBe true
         manga.contains("onLongClick = if (initial.alternatives.isNotEmpty())") shouldBe true
         val novel=source("presentation/novels/NovelScreens.kt")
-        novel.contains("selection.presentation(searchEditions.values.toList(), matched)") shouldBe true
+        novel.contains("NovelSearchProjection.project(catalogSnapshot, editions, selection, activeWorks)") shouldBe true
         novel.contains("if (search != null) search.works") shouldBe true
         novel.contains("items(works, key = { it.id })") shouldBe true
         novel.contains("val group = searchGroupsByKey[work.id]") shouldBe true

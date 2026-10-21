@@ -171,6 +171,14 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
         var ceneleDiagRenderedTheft by remember { mutableIntStateOf(0) }
         var ceneleDiagRenderedCenele by remember { mutableIntStateOf(0) }
         val scroll=rememberLazyListState()
+        val density = androidx.compose.ui.platform.LocalDensity.current
+        var bottomControlsHeight by remember { mutableIntStateOf(0) }
+        val contentProgress by remember(scroll, blocks.size) { derivedStateOf {
+            val layout = scroll.layoutInfo
+            novelChapterProgress(blocks.size, layout.totalItemsCount,
+                layout.visibleItemsInfo.map { NovelVisibleBlock(it.index,it.offset,it.size) },
+                layout.viewportEndOffset, scroll.canScrollForward)
+        } }
         val smartController=remember(context) { eu.kanade.tachiyomi.data.ads.SmartLinkController.get(context) }
         val smartWork=remember(novel.id) { eu.kanade.tachiyomi.data.ads.SmartLinkController.chapter("novel",novel.sourceId,novel.id,"work") }
         val readerOwner = remember { tachiyomi.core.common.util.lang.LocalAccountScope.capture() }
@@ -285,18 +293,23 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
         val currentPlain by rememberUpdatedState(plain)
         val currentAnchors by rememberUpdatedState(anchors)
         val currentBlockPositions by rememberUpdatedState(blockPositions)
+        val currentProgress by rememberUpdatedState(contentProgress)
         fun saveCurrent() {
             if (runCatching { tachiyomi.core.common.util.lang.LocalAccountScope.check(readerOwner) }.isFailure) return
             val shown = currentChapter ?: return
-            if(!currentRestoring && currentPlain.isNotEmpty()) {
+            if(!currentRestoring && currentAnchors.isNotEmpty()) {
                 val index=scroll.firstVisibleItemIndex.coerceAtMost(currentAnchors.size)
                 repository.savePosition(novel,shown,currentBlockPositions.getOrElse(index - 1) { 0 },scroll.firstVisibleItemScrollOffset,
-                    currentAnchors.getOrNull(index-1).orEmpty())
+                    currentAnchors.getOrNull(index-1).orEmpty(), completed = currentProgress.atEnd)
             }
         }
         LaunchedEffect(loadedChapter?.id,restoring) {
-            if(loadedChapter != null && !restoring && paragraphs.isNotEmpty()) snapshotFlow {Triple(scroll.firstVisibleItemIndex,scroll.firstVisibleItemScrollOffset,scroll.isScrollInProgress)}
+            if(loadedChapter != null && !restoring && anchors.isNotEmpty()) snapshotFlow {Triple(scroll.firstVisibleItemIndex,scroll.firstVisibleItemScrollOffset,scroll.isScrollInProgress)}
                 .debounce(600).distinctUntilChanged().collect {if(!it.third) saveCurrent()}
+        }
+        LaunchedEffect(loadedChapter?.id,restoring) {
+            if (loadedChapter == null || restoring) return@LaunchedEffect
+            snapshotFlow { contentProgress.atEnd }.distinctUntilChanged().collect { if (it) saveCurrent() }
         }
         val owner=LocalLifecycleOwner.current
         DisposableEffect(owner) {
@@ -395,7 +408,7 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                                     }
                                 }
                             }
-                        },contentPadding=PaddingValues(top=64.dp,bottom=112.dp),
+                        },contentPadding=PaddingValues(top=64.dp,bottom=maxOf(112.dp,with(density) { bottomControlsHeight.toDp() } + 16.dp)),
                             verticalArrangement=Arrangement.spacedBy(appearance.paragraphSpacing.dp)) {
                             item(key="chapter-heading") {
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -450,12 +463,12 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                             IconButton(onClick={chaptersOpen=true;if(chapterChoices.isEmpty()) moreChapters()}) {Icon(Icons.Outlined.List,"قائمة الفصول",tint=gold)}
                         }
                     }
-                    Surface(Modifier.align(Alignment.BottomCenter).fillMaxWidth(), color = background.copy(alpha = .97f)) {
+                    Surface(Modifier.align(Alignment.BottomCenter).fillMaxWidth().onSizeChanged { bottomControlsHeight = it.height }, color = background.copy(alpha = .97f)) {
                         Column(Modifier.padding(horizontal=12.dp,vertical=4.dp)) {
                             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween, verticalAlignment=Alignment.CenterVertically) {
                                 TextButton(onClick={adjacent(false)},enabled=!loading && !navigating) {Text("السابق",color=gold)}
                                 if (loadedChapter?.id == chapter.id && blocks.isNotEmpty())
-                                    ReaderProgress(scroll, blocks.size, gold)
+                                    ReaderProgress(contentProgress, gold)
                                 TextButton(onClick={adjacent(true)},enabled=!loading && !navigating) {Text("التالي",color=gold)}
                             }
                             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.Center,verticalAlignment=Alignment.CenterVertically) {
@@ -607,7 +620,11 @@ private fun styledParagraph(markup: String?, plain: String): AnnotatedString {
 }
 
 @Composable
-private fun ReaderProgress(scroll: androidx.compose.foundation.lazy.LazyListState, count: Int, color: Color) {
-    val progress by remember(scroll, count) { derivedStateOf { scroll.firstVisibleItemIndex.coerceAtMost(count) } }
-    Text(WesternDigits.isolate("$progress / $count"), color = color, style = MaterialTheme.typography.labelSmall)
+private fun ReaderProgress(progress: NovelChapterProgress, color: Color) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        progress.percent?.let { percent ->
+            Text(WesternDigits.isolate("$percent%"), color = color, style = MaterialTheme.typography.labelSmall)
+            LinearProgressIndicator(progress = { percent / 100f }, modifier = Modifier.width(90.dp).height(2.dp), color = color)
+        }
+    }
 }

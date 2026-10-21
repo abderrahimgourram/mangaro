@@ -362,14 +362,16 @@ class NovelRepository private constructor(context: Context) {
         } catch (c: CancellationException) { throw c }
         catch (e: Exception) { android.util.Log.w("MangaroNovels", "Library change failed", e); mutableStorageError.value = "تعذّر حفظ التغيير. حاول مجددًا." }
     }
-    fun savePosition(novel: Novel, chapter: NovelChapter, paragraph: Int, offset: Int, anchor: String = "", refreshHistory: Boolean = false) {
+    fun savePosition(novel: Novel, chapter: NovelChapter, paragraph: Int, offset: Int, anchor: String = "", refreshHistory: Boolean = false, completed: Boolean = false) {
         val owner = cloudAccount
         val sequence = positionSequence.incrementAndGet()
         val key = Triple(owner, novel.id, chapter.id)
-        val position = NovelReadingPosition(chapter, paragraph.coerceAtLeast(0), offset.coerceAtLeast(0), System.currentTimeMillis(), anchor)
-        synchronized(pendingPositions) {
+        val position = synchronized(pendingPositions) {
+            val position = NovelReadingPosition(chapter, paragraph.coerceAtLeast(0), offset.coerceAtLeast(0), System.currentTimeMillis(), anchor,
+                completed || pendingPositions[key]?.second?.completed == true)
             pendingPositions[key] = sequence to position
             while (pendingPositions.size > 64) pendingPositions.remove(pendingPositions.keys.first())
+            position
         }
         io.launch {
             ready.await()
@@ -381,19 +383,22 @@ class NovelRepository private constructor(context: Context) {
                 } else if (target.baseFile.exists() || File(target.baseFile.path + ".bak").exists())
                     json.decodeFromString<List<NovelLibraryItem>>(target.openRead().use { it.readBytes().decodeToString() }) else emptyList()
                 if (sequence < (appliedChapterSequence[key] ?: 0L)) return@withLock
+                val previous = decodeNovelReadingPosition(metadata.read(positionPath(novel,chapter,owner)),chapter.id)
+                    ?: entries.firstOrNull {it.novel.id==novel.id}?.position?.takeIf {it.chapter.id==chapter.id}
+                val durablePosition = preserveNovelCompletion(previous,position)
                 val last = entries.firstOrNull { it.novel.id == novel.id }?.position
                 if (!refreshHistory && last?.chapter?.id == chapter.id && last.paragraph == position.paragraph &&
-                    last.offset == position.offset && last.anchor == position.anchor) {
+                    last.offset == position.offset && last.anchor == position.anchor && last.completed == durablePosition.completed) {
                     appliedChapterSequence[key] = sequence
                     synchronized(pendingPositions) { if (pendingPositions[key]?.first == sequence) pendingPositions.remove(key) }
                     return@withLock
                 }
-                metadata.write(positionPath(novel, chapter, owner), json.encodeToString(position))
+                metadata.write(positionPath(novel, chapter, owner), json.encodeToString(durablePosition))
                 appliedChapterSequence[key] = sequence
                 val editionKey = accountPrefix(owner) + novel.id
                 if (sequence >= (appliedPositionSequence[editionKey] ?: 0L)) {
                     val old = entries.firstOrNull { it.novel.id == novel.id } ?: NovelLibraryItem(novel)
-                    val next = (entries.filterNot { it.novel.id == novel.id } + old.copy(novel = novel, position = position))
+                    val next = (entries.filterNot { it.novel.id == novel.id } + old.copy(novel = novel, position = durablePosition))
                         .sortedByDescending { it.position?.updatedAt ?: 0 }
                     write(target, json.encodeToString(next))
                     if (owner == cloudAccount) mutableLibrary.value = next
@@ -564,6 +569,24 @@ class NovelRepository private constructor(context: Context) {
             rows
         }
     }
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun observeReadStatistics(owner: String): Flow<NovelReadStatistics?> = tachiyomi.core.common.util.lang.LocalAccountScope.changes.flatMapLatest { state ->
+        if (!state.ready || state.token.owner != owner) flowOf(null) else library.mapLatest {
+            withContext(Dispatchers.IO) {
+                ready.await()
+                lock.withLock {
+                    val bound = cloudAccount ?: tachiyomi.core.common.util.lang.LocalAccountScope.GUEST
+                    if (bound != owner || !libraryReadable || tachiyomi.core.common.util.lang.LocalAccountScope.changes.value != state) return@withLock null
+                    runCatching {
+                        novelReadStatistics(mutableLibrary.value.flatMap { item ->
+                            (metadataPositions(item.novel) + listOfNotNull(item.position)).map { item.novel to it }
+                        }).copy(authoritative = owner == tachiyomi.core.common.util.lang.LocalAccountScope.GUEST)
+                    }.getOrNull()
+                }
+            }
+        }.onStart { emit(null) }
+    }.distinctUntilChanged()
+
     private fun metadataPositions(novel: Novel): List<NovelReadingPosition> {
         val directory = File(app.filesDir, "novels-local/" + accountPrefix(cloudAccount) + "positions/" + novelDigest(novel.id))
         return directory.listFiles().orEmpty().filter { it.extension == "json" }.map { path ->
@@ -591,7 +614,9 @@ class NovelRepository private constructor(context: Context) {
                     readingStatus = decoded.status, addedAt = decoded.addedAt, position = decoded.position)
             } else {
                 decoded.position?.takeUnless { decoded.deleted }?.let {
-                    metadata.write(positionPath(old.novel, it.chapter), json.encodeToString(it))
+                    val previous = decodeNovelReadingPosition(metadata.read(positionPath(old.novel,it.chapter)),it.chapter.id)
+                        ?: old.position?.takeIf {position -> position.chapter.id==it.chapter.id}
+                    metadata.write(positionPath(old.novel, it.chapter), json.encodeToString(preserveNovelCompletion(previous,it)))
                 }
                 old.copy(position = old.position ?: decoded.position?.takeUnless { decoded.deleted }, bookmarks = if (decoded.bookmarked && !decoded.deleted) old.bookmarks + decoded.chapterUrl!! else old.bookmarks - decoded.chapterUrl!!)
             }
@@ -1058,11 +1083,19 @@ class NovelRepository private constructor(context: Context) {
         if (SunovelsSource.mobileOfflineAuthorized) return@withContext chapterText(novel, chapter).also { SunovelsSource.validateText(it) }
         (source(novel.sourceId) as SunovelsSource).chapterForDownload(chapter).also { SunovelsSource.validateText(it) }
     }
+    /** An invalid memory entry cannot trap Retry on an obsolete successful result. */
+    private suspend fun validatedMemoryText(key: String, sourceId: String): NovelText? {
+        val candidate = memoryCacheLock.withLock { texts[key] } ?: return null
+        if (validatedNovelCachedText(sourceId, candidate) != null) return candidate
+        memoryCacheLock.withLock { if (texts[key] === candidate) texts.remove(key) }
+        return null
+    }
     suspend fun chapterText(novel: Novel, chapter: NovelChapter): NovelText = withContext(Dispatchers.IO) {
         val isCenele = novel.sourceId == "novel.cenele" || novel.id == "novel.cenele" || novel.id.startsWith("novel.cenele:") || novel.id.startsWith("novel.cenele/")
         val seaTrace = SeaNovelReaderDiagnostics.current() ?: SeaNovelReaderDiagnostics.begin(novel, chapter)
         seaTrace?.stage(SeaReaderStage.REPOSITORY_OWNERSHIP)
         if (novel.sourceId == SeaNovelSource.SOURCE_ID) SeaNovelSource.requireOwnership(novel, chapter)
+        if (novel.sourceId == MknovSource.SOURCE_ID) MknovSource.requireOwnership(novel, chapter)
         disk.read(novel.id, chapter.id)?.takeIf { disk.complete(it) }?.let { stored ->
             requireSunChapter(novel, chapter, storedContent = true)
             val validated = if (isCenele) CeneleSanitizer.sanitize(stored) else stored
@@ -1090,7 +1123,7 @@ class NovelRepository private constructor(context: Context) {
         val identity = Triple(requestOwner, novel.id, chapter.id)
         val key = novelTextCacheKey(offlineOwner(), novel.id, chapter.id)
         seaTrace?.stage(SeaReaderStage.CACHE_LOOKUP)
-        memoryCacheLock.withLock { texts[key] }?.let {
+        validatedMemoryText(key, novel.sourceId)?.let {
             if (novel.sourceId == SunovelsSource.SOURCE_ID) SunovelsSource.validateText(it)
             lastDataOrigin = "memory"
             seaTrace?.cache("VERIFIED_MEMORY", it)
@@ -1104,7 +1137,7 @@ class NovelRepository private constructor(context: Context) {
             chapterFlights[identity]?.also { it.readers++ } ?: ChapterFlight(io.async(context = requestTask + tachiyomi.core.common.util.lang.LocalAccountScope.StorageElement(requestOwner) + (fetchTrace ?: kotlin.coroutines.EmptyCoroutineContext), start = CoroutineStart.LAZY) {
                 try {
                     fetchTrace?.stage(SeaReaderStage.CACHE_LOOKUP)
-                    memoryCacheLock.withLock { texts[key] }?.let {
+                    validatedMemoryText(key, novel.sourceId)?.let {
                         if (novel.sourceId == SunovelsSource.SOURCE_ID) SunovelsSource.validateText(it)
                         lastDataOrigin = "memory"
                         fetchTrace?.cache("VERIFIED_MEMORY", it)

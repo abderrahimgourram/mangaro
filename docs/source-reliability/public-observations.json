@@ -1,0 +1,122 @@
+{
+  "observedAt": "2026-10-19",
+  "scope": "Public response statistics only, not chapter text or device acceptance",
+  "samples": [
+    {
+      "sourceId": "novel.mknov",
+      "url": "https://mknov.com/novel/96/chapter/20716",
+      "responseFields": [
+        "chapter_number",
+        "chapter_title",
+        "content",
+        "id",
+        "is_free",
+        "next_chapter_id",
+        "next_chapter_is_free",
+        "novel_title",
+        "previous_chapter_id",
+        "previous_chapter_is_free"
+      ],
+      "identity": 20716,
+      "workId": null,
+      "free": true,
+      "title": "عبد الظل",
+      "chapterNumber": 1.0,
+      "statistics": {
+        "characters": 9004,
+        "letters": 6855,
+        "scripts": {
+          "ARABIC": 6843,
+          "LATIN": 12
+        },
+        "replacementCharacters": 0,
+        "paragraphs": 97,
+        "sha256": "75cd1730ce3f4c3c620ce55757fbb88af1799c457bcaeb8c73c11d2e09f77c87"
+      }
+    },
+    {
+      "sourceId": "novel.mknov",
+      "url": "https://mknov.com/novel/96/chapter/20967",
+      "responseFields": [
+        "chapter_number",
+        "chapter_title",
+        "content",
+        "id",
+        "is_free",
+        "next_chapter_id",
+        "next_chapter_is_free",
+        "novel_title",
+        "previous_chapter_id",
+        "previous_chapter_is_free"
+      ],
+      "identity": 20967,
+      "workId": null,
+      "free": true,
+      "title": "عبد الظل",
+      "chapterNumber": 248.0,
+      "statistics": {
+        "characters": 4659,
+        "letters": 3632,
+        "scripts": {
+          "ARABIC": 3632
+        },
+        "replacementCharacters": 0,
+        "paragraphs": 36,
+        "sha256": "f575c6ea7716b1dba7ceb8297035cbac1f1aba8c5e194eb24b13d7dea154223c"
+      }
+    },
+    {
+      "sourceId": "novel.seanovel",
+      "url": "https://seanovel.org/novels/invincible/chapters/1979",
+      "canonical": "https://seanovel.org/novels/invincible/chapters/1979",
+      "statistics": {
+        "characters": 8900,
+        "letters": 7057,
+        "scripts": {
+          "ARABIC": 7015,
+          "LATIN": 42
+        },
+        "replacementCharacters": 0,
+        "paragraphs": 52,
+        "sha256": "7a5ca8662d3c1c18bbfdb76536bec8b2035a4a771fd0b223710e13a678fc852d"
+      },
+      "containerTag": "article",
+      "paragraphNodes": 52
+    },
+    {
+      "sourceId": "novel.seanovel",
+      "url": "https://seanovel.org/novels/invincible/chapters/1620",
+      "canonical": "https://seanovel.org/novels/invincible/chapters/1620",
+      "statistics": {
+        "characters": 7463,
+        "letters": 5805,
+        "scripts": {
+          "ARABIC": 5805
+        },
+        "replacementCharacters": 0,
+        "paragraphs": 57,
+        "sha256": "3e6277e3a3a3f2c355dd9689d5eb5160a6da3cbb2d29daf93b9ac4fb93b44aa7"
+      },
+      "containerTag": "article",
+      "paragraphNodes": 57
+    },
+    {
+      "sourceId": "novel.seanovel",
+      "url": "https://seanovel.org/novels/terra-nova-online-rise-of-the-strongest-player/chapters/1",
+      "canonical": "https://seanovel.org/novels/terra-nova-online-rise-of-the-strongest-player/chapters/1",
+      "statistics": {
+        "characters": 5115,
+        "letters": 3952,
+        "scripts": {
+          "ARABIC": 3946,
+          "LATIN": 6
+        },
+        "replacementCharacters": 0,
+        "paragraphs": 42,
+        "sha256": "74dd4a8a6549eeb3873a36d582cd6ab9309be840cb9bd41781ff70568a6ecdbc"
+      },
+      "containerTag": "article",
+      "paragraphNodes": 42
+    }
+  ]
+}

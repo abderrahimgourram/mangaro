@@ -28,10 +28,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Dependency Review
-        if: github.event_name == 'pull_request'
-        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          # Baseline ancestry/deletion checks must see the approved snapshot and history.
+          fetch-depth: 0
 
       - name: Set up JDK
         uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
@@ -42,31 +41,102 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
 
-      - name: Check code format
-        run: ./gradlew spotlessCheck
+      # Dependency Review requires GitHub Code Security on private repositories.
+      # Scan Gradle-selected direct AND transitive versions instead; errors fail closed.
+      - name: Test dependency audit client
+        run: python3 -m unittest discover -s tools/security -p 'test_*.py' -v
+
+      - name: Export resolved dependency inventory
+        run: >-
+          ./gradlew --no-configure-on-demand --no-configuration-cache
+          -I tools/security/dependency-inventory.init.gradle
+          exportSecurityInventory :build-logic:exportSecurityInventory
+          -Pinclude-telemetry -Penable-updater --max-workers=2
+
+      - name: Audit resolved dependencies (OSV)
+        run: >-
+          python3 tools/security/scan_dependencies.py
+          build/reports/security/dependencies.json
+          gradle/build-logic/build/reports/security/dependencies.json
+          --output build/reports/security/osv-results.json
+
+      - name: Upload dependency audit evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dependency-audit-${{ github.sha }}
+          path: |
+            build/reports/security/
+            gradle/build-logic/build/reports/security/dependencies.json
+
+      - name: Test strict legacy formatting policy
+        run: python3 -m unittest discover -s tools/formatting -p 'test_*.py' -v
+
+      - name: Verify actual Spotless accepts clean and rejects new violating code
+        run: python3 tools/formatting/verify_spotless_contract.py
+
+      - name: Check code format (approved exact-content legacy baseline)
+        run: python3 tools/formatting/check_baseline.py
+
+      - name: Report inherited full-formatting debt
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib
+          report = pathlib.Path('build/reports/formatting/baseline.json')
+          if report.exists():
+              data = json.loads(report.read_text())
+              with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+                  summary.write('### Formatting policy and legacy debt\n\n')
+                  summary.write(f"Blocking exact-content gate: **{data['blocking_gate']}**.\n\n")
+                  summary.write(f"Full repository is **not formatting-clean**: {data['unchanged_legacy_violations']} frozen legacy files.\n")
+          PY
+
+      - name: Upload formatting policy evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: formatting-policy-${{ github.sha }}
+          path: |
+            build/reports/formatting/
+            tools/formatting/legacy-baseline.json
+            docs/stabilization/pr4-formatting-inventory.md
 
       - name: Run unit tests
         id: unit_tests
-        run: ./gradlew testDebugUnitTest
+        run: |
+          # Preserve complete failure evidence, including HTTP status, without
+          # changing test selection, assertions, retry policy or source behavior.
+          cat > "$RUNNER_TEMP/test-diagnostics.init.gradle" <<'GRADLE'
+          gradle.beforeProject { project ->
+              project.tasks.withType(org.gradle.api.tasks.testing.Test).configureEach {
+                  testLogging.exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+                  reports.junitXml.required.set(true)
+              }
+          }
+          GRADLE
+          ./gradlew -I "$RUNNER_TEMP/test-diagnostics.init.gradle" testDebugUnitTest --max-workers=2
 
       - name: Verify SQLDelight migrations
-        run: ./gradlew verifySqlDelightMigration
+        run: ./gradlew verifySqlDelightMigration --max-workers=2
 
       - name: Upload test report
-        if: steps.unit_tests.outcome == 'failure'
+        if: always() && (steps.unit_tests.outcome == 'success' || steps.unit_tests.outcome == 'failure')
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: test-report-${{ github.sha }}
-          path: app/build/reports/tests/testDebugUnitTest
+          path: |
+            **/build/test-results/testDebugUnitTest/*.xml
+            app/build/reports/tests/testDebugUnitTest
 
-      - name: Build app
-        run: ./gradlew assembleRelease -Pinclude-telemetry -Penable-updater
-
-      - name: Upload APK
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: arm64-v8a-${{ github.sha }}
-          path: app/build/outputs/apk/release/app-arm64-v8a-release.apk
+      # Production packaging deliberately requires an external permanent signing
+      # configuration. PR CI must not acquire that key or substitute a debug key.
+      # Compile/optimize the real release variant and its resources without packaging.
+      - name: Verify release compilation, R8 and resource optimization
+        run: >-
+          ./gradlew :app:minifyReleaseWithR8 :app:optimizeReleaseResources
+          :baseline-profile:compileBenchmarkReleaseKotlin
+          -Pinclude-telemetry -Penable-updater --max-workers=2
 
       - name: Upload mapping
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

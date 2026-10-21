@@ -25,8 +25,16 @@ import uy.kohesive.injekt.api.get
 /** Test account and isolated rule overrides are restored; no login, server XP writes or production cache writes. */
 class NovelReaderScopeInstrumentation : Instrumentation() {
     private var signedStage: String? = null
-    override fun onCreate(arguments: Bundle?) { signedStage = arguments?.getString("signedStage"); super.onCreate(arguments); start() }
+    private var readerEndAudit = false
+    private var connectedOnly = false
+    private var profileOnly = false
+    override fun onCreate(arguments: Bundle?) { profileOnly = arguments?.getString("profileOnly") == "true"; connectedOnly = arguments?.getString("connectedOnly") == "true"; readerEndAudit = arguments?.getString("readerEnd") == "true"; signedStage = arguments?.getString("signedStage"); super.onCreate(arguments); start() }
     override fun onStart() {
+        if (readerEndAudit) {
+            try { finish(0,runNovelReaderEndAudit(connectedOnly,profileOnly)) }
+            catch (failure:Throwable) { finish(1,Bundle().apply {putString("stream","FAIL readerEnd: ${failure.javaClass.simpleName}: ${failure.message}\n"+failure.stackTraceToString())}) }
+            return
+        }
         val observations = mutableListOf<String>()
         var passed = 0
         var code = 0

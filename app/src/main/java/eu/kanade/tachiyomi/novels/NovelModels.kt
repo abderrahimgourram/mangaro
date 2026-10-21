@@ -73,7 +73,7 @@ data class NovelChapterIndex(val editionId: String, val chapters: List<NovelChap
     }
 }
 @Serializable
-data class NovelReadingPosition(val chapter: NovelChapter, val paragraph: Int = 0, val offset: Int = 0, val updatedAt: Long = 0, val anchor: String = "")
+data class NovelReadingPosition(val chapter: NovelChapter, val paragraph: Int = 0, val offset: Int = 0, val updatedAt: Long = 0, val anchor: String = "", val completed: Boolean? = null)
 @Serializable
 data class NovelLibraryItem(val novel: Novel, val saved: Boolean = false, val position: NovelReadingPosition? = null,
     val favorite: Boolean = false, val readingStatus: String = "reading", val addedAt: Long = 0,

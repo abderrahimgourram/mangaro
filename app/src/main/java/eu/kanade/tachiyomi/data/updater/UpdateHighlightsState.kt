@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.data.updater
 
+import eu.kanade.tachiyomi.BuildConfig
 import tachiyomi.core.common.preference.Preference
 import tachiyomi.core.common.preference.PreferenceStore
 
@@ -29,6 +30,6 @@ internal class UpdateHighlightsState(store: PreferenceStore) {
     }
 
     companion object {
-        const val RELEASE_CODE = 27
+        const val RELEASE_CODE = BuildConfig.VERSION_CODE
     }
 }

@@ -24,6 +24,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.time.Duration.Companion.seconds
 
 /** Real Supabase SDK + loopback Auth/PostgREST fixtures. No real accounts or credentials. */
+@OptIn(io.github.jan.supabase.annotations.SupabaseExperimental::class)
 class AccountLogoutTest {
     private class Fixture : AutoCloseable {
         val a = "00000000-0000-0000-0000-000000000001"
@@ -32,6 +33,10 @@ class AccountLogoutTest {
         @Volatile var persisted: UserSession? = null
         @Volatile var logoutStatus = 204
         val logoutCalls = AtomicInteger()
+        @Volatile var profileStatus = 200
+        val profileCalls = AtomicInteger()
+        val oauthCalls = AtomicInteger()
+        @Volatile var tokenStatus = 503
         var bind: suspend (String?) -> Unit = {}
         val bindings = java.util.concurrent.CopyOnWriteArrayList<String?>()
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
@@ -45,16 +50,24 @@ class AccountLogoutTest {
             coEvery { storage.loadSession() } coAnswers { persisted ?: throw NoSessionFoundException() }
             coEvery { storage.deleteSession() } coAnswers { persisted = null }
             coEvery { storage.deleteCodeVerifier() } returns Unit
+            coEvery { storage.beginAuthorization() } returns Unit
+            coEvery { storage.saveCodeVerifier(any()) } returns Unit
             server.executor = executor
             server.createContext("/") { exchange ->
                 val owner = exchange.requestURI.rawQuery.orEmpty().substringAfter("eq.").substringBefore('&').ifBlank { a }
                 val body = when {
                     exchange.requestURI.path.endsWith("/logout") -> { logoutCalls.incrementAndGet(); "{\"message\":\"fixture unavailable\"}" }
+                    exchange.requestURI.path.endsWith("/token") -> """{"message":"fixture refresh temporarily unavailable"}"""
                     exchange.requestURI.path.endsWith("/profiles") -> """[{"user_id":"$owner","display_name":"Fixture","username":"fixture","updated_at":"2026-10-16T00:00:00Z"}]"""
                     exchange.requestURI.path.endsWith("/user_progression") -> """[{"total_xp":0,"level":1}]"""
                     else -> "[]"
                 }.toByteArray()
-                val status = if (exchange.requestURI.path.endsWith("/logout")) logoutStatus else 200
+                val status = when {
+                    exchange.requestURI.path.endsWith("/logout") -> logoutStatus
+                    exchange.requestURI.path.endsWith("/profiles") -> { profileCalls.incrementAndGet(); profileStatus }
+                    exchange.requestURI.path.endsWith("/token") -> tokenStatus
+                    else -> 200
+                }
                 exchange.responseHeaders.add("Content-Type", "application/json")
                 exchange.sendResponseHeaders(status, if (status == 204) -1 else body.size.toLong())
                 exchange.responseBody.use { if (status != 204) it.write(body) }
@@ -63,7 +76,12 @@ class AccountLogoutTest {
             client = createSupabaseClient("http://127.0.0.1:${server.address.port}", "public-fixture-client") {
                 defaultLogLevel = LogLevel.NONE
                 requestTimeout = 2.seconds
-                install(Auth) { enableLifecycleCallbacks = false; sessionManager = storage; codeVerifierCache = storage; alwaysAutoRefresh = false; autoLoadFromStorage = true }
+                install(Auth) {
+                    enableLifecycleCallbacks = false; sessionManager = storage; codeVerifierCache = storage
+                    alwaysAutoRefresh = false; autoLoadFromStorage = true
+                    flowType = io.github.jan.supabase.auth.FlowType.PKCE
+                    urlLauncher = io.github.jan.supabase.auth.UrlLauncher { _, _ -> oauthCalls.incrementAndGet(); Unit }
+                }
                 install(Postgrest)
                 install(Storage)
             }
@@ -81,6 +99,64 @@ class AccountLogoutTest {
             runBlocking { client.close() }
             server.stop(0); executor.shutdownNow()
             unmockkStatic(android.os.SystemClock::class)
+        }
+    }
+
+    @Test fun `temporary profile failure after SDK login retries without losing account ownership`() = runBlocking {
+        Fixture().use { f ->
+            f.guest(); f.profileStatus = 503
+            f.client.auth.importSession(UserSession("fixture-access", "fixture-refresh", expiresIn = 3600,
+                tokenType = "bearer", user = UserInfo(id = f.a, aud = "authenticated",
+                    appMetadata = buildJsonObject { put("provider", "google") })), autoRefresh = false)
+            withTimeout(20_000) { f.adapter.error.first { it != null } }
+            assertTrue(f.bindings.contains(f.a))
+            f.profileStatus = 200
+            withTimeout(8_000) { f.adapter.observeSession().first {
+                (it as? AccountSession.Authenticated)?.profile?.userId == f.a
+            } }
+            assertTrue(f.profileCalls.get() >= 2)
+            assertEquals(f.a, f.client.auth.currentUserOrNull()?.id)
+            assertNull(f.adapter.error.value)
+        }
+    }
+
+    @Test fun `rapid repeated OAuth taps open only one explicit authorization request`() = runBlocking {
+        Fixture().use { f ->
+            f.guest()
+            assertEquals(mihon.domain.account.AccountOperation.Completed, f.adapter.signInWithGoogle())
+            assertTrue(f.adapter.signInWithGoogle() is mihon.domain.account.AccountOperation.Failed)
+            assertEquals(1, f.oauthCalls.get())
+            assertEquals(AccountSession.Guest, f.adapter.observeSession().value)
+        }
+    }
+
+    @Test fun `expired refresh failure retains local owner but pauses privileged authentication`() = runBlocking {
+        Fixture().use { f ->
+            f.guest(); f.login()
+            val expired = f.persisted!!.copy(expiresIn = -1, expiresAt = kotlin.time.Clock.System.now() - 1.seconds)
+            f.client.auth.importSession(expired, autoRefresh = true)
+            withTimeout(8_000) { f.client.auth.sessionStatus.first { it is io.github.jan.supabase.auth.status.SessionStatus.RefreshFailure } }
+            withTimeout(8_000) { f.adapter.error.first { it != null } }
+            assertEquals(f.a, f.bindings.last())
+            assertEquals(AccountSession.Loading, f.adapter.observeSession().value)
+            assertNotNull(f.persisted)
+            assertNull(f.client.auth.currentUserOrNull())
+        }
+    }
+
+    @Test fun `logout cancels profile recovery before it can restore the old account`() = runBlocking {
+        Fixture().use { f ->
+            f.guest(); f.profileStatus = 404
+            f.client.auth.importSession(UserSession("fixture-access", "fixture-refresh", expiresIn = 3600,
+                tokenType = "bearer", user = UserInfo(id = f.a, aud = "authenticated",
+                    appMetadata = buildJsonObject { put("provider", "google") })), autoRefresh = false)
+            withTimeout(8_000) { f.adapter.error.first { it != null } }
+            f.adapter.signOut(); f.guest(); val calls = f.profileCalls.get()
+            f.profileStatus = 200
+            delay(2_200)
+            assertEquals(AccountSession.Guest, f.adapter.observeSession().value)
+            assertNull(f.persisted)
+            assertEquals(calls, f.profileCalls.get())
         }
     }
 

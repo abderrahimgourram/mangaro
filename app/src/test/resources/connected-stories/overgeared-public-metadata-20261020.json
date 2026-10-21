@@ -1,0 +1,39 @@
+{
+  "observedAt": "2026-10-20",
+  "publisherRelation": {
+    "original": "https://tapas.io/series/overgeared-novel/info",
+    "adaptation": "https://tapas.io/series/overgeared/info",
+    "type": "ADAPTATION_OF",
+    "signal": "Publisher labels exact linked comic as Comic adaptation"
+  },
+  "records": [
+    {
+      "provider": "Sea",
+      "publicMetadataUrl": "https://seanovel.org/api/novel/overgeared",
+      "status": 200,
+      "metadata": {
+        "slug": "overgeared",
+        "title_ar": "مدجج بالعتاد",
+        "title_original": "",
+        "author": "Park Saenal",
+        "chapters_count": 2058
+      }
+    },
+    {
+      "provider": "MangaTime",
+      "publicMetadataUrl": "https://mangatime.org/api/trpc/content.getSeriesBySlug?input=%7B%22json%22%3A+%7B%22slug%22%3A+%22overgeared%22%2C+%22type%22%3A+%22manhwa%22%7D%7D",
+      "status": 200,
+      "metadata": {
+        "id": "6a8f5babf1a5e87af68c564b",
+        "slug": "overgeared",
+        "type": "manhwa",
+        "title": "أوفرغيرد",
+        "nameAr": "أوفرغيرد",
+        "nameEn": "Overgeared",
+        "author": "Sae-Nal Park",
+        "artist": "Team Argo",
+        "coverUrl": "/uploads/series/6a8f5babf1a5e87af68c564b-3a5102281fc30d20.webp"
+      }
+    }
+  ]
+}

@@ -1,0 +1,232 @@
+{
+  "schema": 1,
+  "records": [
+    {
+      "id": "solo-leveling-original",
+      "adaptation": {
+        "work": {
+          "format": "MANHWA",
+          "key": "work:b955e56408a056c896f62909eebf6985865e7690c80de8393c7f9c5e475dca56"
+        },
+        "editions": [
+          {
+            "format": "MANHWA",
+            "source": "6058166507489091982",
+            "url": "/manga/solo-leveling"
+          },
+          {
+            "format": "MANHWA",
+            "source": "4110737012647435874",
+            "url": "/series/SL"
+          },
+          {
+            "format": "MANHWA",
+            "source": "215553151312092548",
+            "url": "/manhwa/solo-leveling#697df7610c5d340ac154401b"
+          }
+        ]
+      },
+      "original": {
+        "work": {
+          "format": "TEXT_NOVEL",
+          "key": "novel.work.f7726eb5-5517-369b-870e-15fc082ee736"
+        },
+        "editions": [
+          {
+            "format": "TEXT_NOVEL",
+            "source": "novel.seanovel",
+            "url": "https://seanovel.org/novels/solo-leveling"
+          }
+        ]
+      },
+      "type": "ADAPTATION_OF",
+      "status": "VERIFIED",
+      "evidence": [
+        "https://www.tappytoon.com/en/book/solo-leveling-official",
+        "https://yenpress.com/series/solo-leveling-novel",
+        "https://seanovel.org/novels/solo-leveling"
+      ],
+      "reviewedAt": "2026-10-19",
+      "reviewer": "Mangaro interoperability review"
+    },
+    {
+      "id": "tbate-original",
+      "adaptation": {
+        "work": {
+          "format": "MANHWA",
+          "key": "work:81e63342a698e9de565ca6f2bfb384f2c65bdd71183d80212c0535b459faf6f9"
+        },
+        "editions": [
+          {
+            "format": "MANHWA",
+            "source": "6058166507489091982",
+            "url": "/manga/the-beginning-after-the-end"
+          },
+          {
+            "format": "MANHWA",
+            "source": "4110737012647435874",
+            "url": "/series/BATE"
+          }
+        ]
+      },
+      "original": {
+        "work": {
+          "format": "TEXT_NOVEL",
+          "key": "novel.work.2c7debb8-4a25-3730-ba23-e4d6bb427790"
+        },
+        "editions": [
+          {
+            "format": "TEXT_NOVEL",
+            "source": "novel.mknov",
+            "url": "https://mknov.com/novel/618"
+          },
+          {
+            "format": "TEXT_NOVEL",
+            "source": "novel.seanovel",
+            "url": "https://seanovel.org/novels/novel-618"
+          }
+        ]
+      },
+      "type": "ADAPTATION_OF",
+      "status": "VERIFIED",
+      "evidence": [
+        "https://www.turtleme.com/tbate-comic",
+        "https://tapas.io/series/tbate-comic/info",
+        "https://mknov.com/novel/618",
+        "https://seanovel.org/novels/novel-618"
+      ],
+      "reviewedAt": "2026-10-19",
+      "reviewer": "Mangaro interoperability review"
+    },
+    {
+      "id": "overgeared-2020",
+      "adaptation": {
+        "work": {
+          "format": "MANHWA",
+          "key": "external:anilist:117460"
+        },
+        "editions": [
+          {
+            "format": "MANHWA",
+            "source": "215553151312092548",
+            "url": "/manhwa/overgeared#6a8f5babf1a5e87af68c564b"
+          }
+        ],
+        "externalIds": {
+          "anilist": "117460"
+        }
+      },
+      "original": {
+        "work": {
+          "format": "TEXT_NOVEL",
+          "key": "novel.work.ca69b0ec-c5a4-3bd6-9f33-48e125d7e57e"
+        },
+        "editions": [
+          {
+            "format": "TEXT_NOVEL",
+            "source": "novel.seanovel",
+            "url": "https://seanovel.org/novels/overgeared"
+          }
+        ]
+      },
+      "type": "ADAPTATION_OF",
+      "status": "VERIFIED",
+      "evidence": [
+        "https://tapas.io/series/overgeared-novel/info",
+        "https://tapas.io/series/overgeared/info",
+        "https://anilist.co/manga/117460",
+        "https://mangatime.org/manhwa/overgeared",
+        "https://seanovel.org/novels/overgeared"
+      ],
+      "reviewedAt": "2026-10-20",
+      "reviewer": "Mangaro publisher and source metadata review"
+    },
+    {
+      "id": "return-mount-hua-original",
+      "adaptation": {
+        "work": {
+          "format": "MANHWA",
+          "key": "external:anilist:132144"
+        },
+        "externalIds": {
+          "anilist": "132144"
+        },
+        "editions": [
+          {
+            "format": "MANHWA",
+            "source": "215553151312092548",
+            "url": "/manhwa/return-of-the-mount-hua-sect#6a49e00234c268b77054833e"
+          }
+        ]
+      },
+      "original": {
+        "work": {
+          "format": "TEXT_NOVEL",
+          "key": "novel.work.cc5cc332-2fb8-3fbd-b837-f299c267fe96"
+        },
+        "editions": [
+          {
+            "format": "TEXT_NOVEL",
+            "source": "novel.seanovel",
+            "url": "https://seanovel.org/novels/return-of-the-blossoming-blade"
+          }
+        ]
+      },
+      "type": "ADAPTATION_OF",
+      "status": "VERIFIED",
+      "evidence": [
+        "https://series.naver.com/novel/detail.series?productNo=4130558",
+        "https://m.comic.naver.com/webtoon/list?titleId=769209",
+        "https://navercorp.com/media/pressReleasesDetail?seq=30834",
+        "https://mangatime.org/manhwa/return-of-the-mount-hua-sect",
+        "https://seanovel.org/novels/return-of-the-blossoming-blade"
+      ],
+      "reviewedAt": "2026-10-20",
+      "reviewer": "Mangaro Naver publisher and source metadata review"
+    },
+    {
+      "id": "omniscient-reader-original",
+      "adaptation": {
+        "work": {
+          "format": "MANHWA",
+          "key": "external:anilist:119257"
+        },
+        "externalIds": {
+          "anilist": "119257"
+        },
+        "editions": [
+          {
+            "format": "MANHWA",
+            "source": "215553151312092548",
+            "url": "/manhwa/omniscient-readers-viewpoint#6a8fb9a47d3207cb2faf20a0"
+          }
+        ]
+      },
+      "original": {
+        "work": {
+          "format": "TEXT_NOVEL",
+          "key": "novel.work.7cc1d552-bace-3955-ad1b-2cb3c1c867c9"
+        },
+        "editions": [
+          {
+            "format": "TEXT_NOVEL",
+            "source": "novel.seanovel",
+            "url": "https://seanovel.org/novels/the-all-encompassing-reader"
+          }
+        ]
+      },
+      "type": "ADAPTATION_OF",
+      "status": "VERIFIED",
+      "evidence": [
+        "https://www.webtoons.com/en/action/omniscient-reader/list?title_no=2154",
+        "https://yenpress.com/titles/9798400903526-omniscient-reader-s-viewpoint-novel-vol-1",
+        "https://yenpress.com/series/omniscient-reader-s-viewpoint",
+        "https://anilist.co/manga/119257",
+        "https://mangatime.org/manhwa/omniscient-readers-viewpoint",
+        "https://seanovel.org/novels/the-all-encompassing-reader"
+      ],
+      "reviewedAt": "2026-10-20",
+      "reviewer": "Mangaro publisher roles and exact provider metadata review"
+    }
+  ]
+}
