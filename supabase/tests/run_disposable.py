@@ -37,6 +37,8 @@ def main():
         ]
         if (suite/'validate_novel_completion_contract.py').is_file():
             commands.append([sys.executable,str(suite/'validate_novel_completion_contract.py'),*shared,'--output',str(args.root/'completion.json')])
+        commands.append([sys.executable,str(suite/'validate_completion_api.py'),*shared,
+                         '--postgrest',str(args.postgrest.resolve()),'--output',str(args.root/'completion-api.json')])
         for i,command in enumerate(commands):
             with (args.root/f'suite-{i}.log').open('w') as log:
                 subprocess.run(command,env=env,check=True,stdout=log,stderr=log,timeout=180)
