@@ -144,5 +144,15 @@ The application regression suite and current CI results are recorded separately
 from SQL fixture counts in the Downloads report. No phone installation, APK
 production, production data write or profile-number fabrication occurs here.
 
+`MknovCloudRetryContractTest` additionally uses the real Supabase Kotlin SDK,
+production `SupabaseCloudSync.syncNow`, and actual `NovelCloudState` payloads
+against a loopback HTTP contract server. A 23514 source CHECK response retains
+both pending rows and reports failure without a success timestamp. After the
+server contract is corrected, a new coordinator instance replays the same
+preserved journal, clears retry/error state and synchronizes the exact edition/
+chapter without reset or XP calls. A third sync is idempotent. The journal is a
+memory-backed fixture, not a claim of physical SQLite/process-death acceptance;
+the separate PostgreSQL suite tests the real database/API/RLS behavior.
+
 Status: safe local projection fixes implemented; server completion contract tested
 as a proposal; authoritative cross-device all-time history remains unavailable.
