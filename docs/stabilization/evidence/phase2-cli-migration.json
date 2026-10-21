@@ -1,0 +1,21 @@
+{
+  "status": "PASS",
+  "cliVersion": "2.121.0",
+  "postgresVersion": "17.11",
+  "database": "mangaro_mknov_1b77794b1f",
+  "migrationVersion": "20261021135303",
+  "migrationProposalSHA256": "c3c437ac77a74eb36ac4ae396b292585dd42a8f2a07af02f89e94cae60dcb660",
+  "checks": [
+    "official CLI generated migration filename",
+    "exact proposal applied with recorded migration history",
+    "legacy provider row unchanged",
+    "Mknov accepted",
+    "repeat migration up does not duplicate history",
+    "intentional failed migration rolls back DDL",
+    "failed migration not recorded"
+  ],
+  "productionModified": false,
+  "limitations": [
+    "Synthetic local database and minimal Auth schema; no hosted production migration, backup or user records."
+  ]
+}

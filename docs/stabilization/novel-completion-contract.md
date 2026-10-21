@@ -156,3 +156,21 @@ the separate PostgreSQL suite tests the real database/API/RLS behavior.
 
 Status: safe local projection fixes implemented; server completion contract tested
 as a proposal; authoritative cross-device all-time history remains unavailable.
+
+## CI-only inherited timing defect
+
+Run39608560687 exposed an unchanged SourceRefreshConcurrencyTest assertion:
+expected1 source call, observed0 before Dispatchers.IO started. runCurrent drains
+only the test scheduler. The fixture now awaits an actual source-entry event
+under a bounded real-time coroutine, retaining all serialization assertions and
+adding that the second operation remains suspended. Three actual executions of
+all three class tests passed, then the full suite passed. No production source
+implementation changed. The entire legacy test file is formatted and its
+exemption retired separately;535 frozen inherited violations now remain.
+
+The official Supabase CLI2.121.0 also applied the exact Mknov proposal in a
+separate local PostgreSQL17.11 database, recorded migration history, reapplied
+without duplicate history, and rolled back a deliberately failing later DDL
+migration without recording it. Local/production migration version inventories
+match21/21. These are deployment rehearsals, not production operations; evidence
+is in phase2-cli-migration.json and phase2-migration-history-comparison.json.

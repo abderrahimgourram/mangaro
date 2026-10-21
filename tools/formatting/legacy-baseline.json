@@ -518,7 +518,6 @@
     "app/src/test/java/eu/kanade/tachiyomi/ui/reader/model/ReaderChapterSelectionTest.kt": "9e4b77e2197361a950464d3f88be08f6de8d56dfe091ee2212f625948b236cc3",
     "app/src/test/java/mihon/domain/source/interactor/ChapterMetadataCacheTest.kt": "2adb1922a4798ddaea4c16e514421e425609cb485269a5eeb63636cf4a2101e8",
     "app/src/test/java/mihon/domain/source/interactor/ChapterRefreshRecoveryTest.kt": "0d090c06ec7a15d670258076627256606ca2b45b014b6099942217abebb73503",
-    "app/src/test/java/mihon/domain/source/interactor/SourceRefreshConcurrencyTest.kt": "d52b2847e99a6190bcf53998402fb8b45953c445995e7ab5c4776cc952f645c7",
     "app/src/test/java/tachiyomi/data/chapter/SourceChapterTransactionTest.kt": "bec0732ad23e068e844b78e92d43c08f0114f289063d660e3102b34a5535e875",
     "app/src/test/java/tachiyomi/data/source/SourcePagingReliabilityTest.kt": "3b974ef4122bec492ddd3b8f6990f74385adf43862cbfe33ad042b7982273b42",
     "app/src/test/java/tachiyomi/domain/manga/service/WorkLinkerTest.kt": "7be41c0e81572bb860ae6d3dbe9aaa31f837b9ee27b96a9c24d137b9dcc30beb",
@@ -582,7 +581,8 @@
   "reason": "Owner-approved exact-content legacy baseline; no application source edits or rule changes. New and modified files must become clean. See docs/stabilization/formatting-policy.md.",
   "retirements": {
     "app/src/main/java/eu/kanade/tachiyomi/novels/NovelReadStatistics.kt": "Phase 2 completion evidence projection: fully format the modified file; no XP, source or account identity changes.",
-    "app/src/main/java/eu/kanade/tachiyomi/novels/NovelCloudState.kt": "Phase 2 completion evidence projection: fully format the modified file; no XP, source or account identity changes."
+    "app/src/main/java/eu/kanade/tachiyomi/novels/NovelCloudState.kt": "Phase 2 completion evidence projection: fully format the modified file; no XP, source or account identity changes.",
+    "app/src/test/java/mihon/domain/source/interactor/SourceRefreshConcurrencyTest.kt": "Phase2 CI timing defect: await real IO source entry instead of assuming runCurrent drains Dispatchers.IO; preserve all concurrency assertions and format entire test file."
   },
   "schema": 1
 }

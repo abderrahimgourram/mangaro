@@ -1,0 +1,14 @@
+{
+  "failedRun": 39608560687,
+  "failedHead": "24331c2e876bef5140df62ef6ff6a966f44a25f0",
+  "test": "mihon.domain.source.interactor.SourceRefreshConcurrencyTest.different refresh options serialize source request and persistence for exact manga",
+  "assertion": "expected 1 actual 0 before first IO callback",
+  "unchangedIntegrationFileSHA256": "d52b2847e99a6190bcf53998402fb8b45953c445995e7ab5c4776cc952f645c7",
+  "rootCause": "runCurrent drains only TestCoroutineScheduler; production withIOContext uses Dispatchers.IO",
+  "correction": "Wait first source-entry CompletableDeferred under bounded real-time runBlocking; start second request UNDISTPATCHED; preserve existing calls=1, final calls=2, peak=1 assertions and add second request incomplete assertion",
+  "productionSourceChanged": false,
+  "focusedExecutions": 3,
+  "focusedTestsPerExecution": 3,
+  "focusedFailures": 0,
+  "advertisingChanged": false
+}
