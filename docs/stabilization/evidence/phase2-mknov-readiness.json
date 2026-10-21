@@ -1,7 +1,7 @@
 {
   "status": "PASS",
-  "tests": 30,
-  "passed": 30,
+  "tests": 32,
+  "passed": 32,
   "results": [
     {
       "name": "pg_dump custom archive produced from synthetic pre-migration database",
@@ -21,7 +21,7 @@
     {
       "name": "migration does not rewrite any existing provider rows or bookmarks",
       "passed": true,
-      "seconds": 0.082
+      "seconds": 0.085
     },
     {
       "name": "old supported provider rows remain owner-readable after migration",
@@ -31,12 +31,12 @@
     {
       "name": "new account cannot read previous account positions",
       "passed": true,
-      "seconds": 0.004
+      "seconds": 0.003
     },
     {
       "name": "real pg_restore into second cluster succeeds without ignored errors",
       "passed": true,
-      "seconds": 2.105
+      "seconds": 1.231
     },
     {
       "name": "restored data, keys, columns, constraints, RLS, grants, functions, indexes and revisions match exactly",
@@ -46,17 +46,17 @@
     {
       "name": "restored backup accepts the same forward migration",
       "passed": true,
-      "seconds": 0.057
+      "seconds": 0.055
     },
     {
       "name": "HTTP capability schema remains one for old clients",
       "passed": true,
-      "seconds": 0.001
+      "seconds": 0.002
     },
     {
       "name": "HTTP authenticated A reads its own five editions",
       "passed": true,
-      "seconds": 0.002
+      "seconds": 0.001
     },
     {
       "name": "HTTP B sees only its own four editions",
@@ -101,7 +101,7 @@
     {
       "name": "HTTP revision conflict on stale/lost-ack retry is explicit",
       "passed": true,
-      "seconds": 0.011
+      "seconds": 0.007
     },
     {
       "name": "HTTP replay never inserts duplicate chapter rows",
@@ -109,14 +109,24 @@
       "seconds": 0.001
     },
     {
+      "name": "matching foreign chapter position passes the generic validator so work guard is independently tested",
+      "passed": true,
+      "seconds": 0.005
+    },
+    {
       "name": "HTTP chapter from wrong Mknov work rejected",
       "passed": true,
-      "seconds": 0.003
+      "seconds": 0.002
+    },
+    {
+      "name": "HTTP wrong-work bookmark without any position is rejected",
+      "passed": true,
+      "seconds": 0.002
     },
     {
       "name": "HTTP parent cannot restore a chapter from a different Mknov work",
       "passed": true,
-      "seconds": 0.004
+      "seconds": 0.003
     },
     {
       "name": "strict canonical Mknov URL rejects https://api.mknov.com/novel/96",
@@ -131,7 +141,7 @@
     {
       "name": "strict canonical Mknov URL rejects https://mknov.com/novel/0",
       "passed": true,
-      "seconds": 0.003
+      "seconds": 0.004
     },
     {
       "name": "strict canonical Mknov URL rejects https://mknov.com/novel/96#x",
@@ -146,20 +156,20 @@
     {
       "name": "HTTP old schema-one client update still accepted",
       "passed": true,
-      "seconds": 0.011
+      "seconds": 0.009
     },
     {
       "name": "Mknov migration alone does not pretend completion schema is supported",
       "passed": true,
-      "seconds": 0.003
+      "seconds": 0.002
     }
   ],
-  "database": "mangaro_mknov_0efc27ae73",
+  "database": "mangaro_mknov_8b0e462090",
   "serverVersion": "17.11",
   "postgrestVersion": "16.5",
   "productionModified": false,
   "proposalSHA256": "c3c437ac77a74eb36ac4ae396b292585dd42a8f2a07af02f89e94cae60dcb660",
-  "backupSHA256": "d2df02c0d99cbf8ebaf860682a4723941ce895b389d062c150d7a1ab2c10b941",
+  "backupSHA256": "40b40b78fccd56823456e1f57180e84eb41042b178b3114456f905c71f1f8b32",
   "limitations": [
     "Synthetic JWT issuer, not GoTrue OAuth/login/refresh acceptance.",
     "PostgREST 16.5 local; production PostgREST version not exposed by project-scoped metadata.",
