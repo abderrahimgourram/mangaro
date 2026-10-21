@@ -231,7 +231,6 @@
     "app/src/main/java/eu/kanade/tachiyomi/novels/NovelCatalogCards.kt": "c3725d5758c0ea4faec2357469097b585b55438cd17e0e6794b0f4c64c19a883",
     "app/src/main/java/eu/kanade/tachiyomi/novels/NovelChapterGroups.kt": "3e821dc85801c81de1dc61ef22af19052a129080e952050c3a60569e0ad46619",
     "app/src/main/java/eu/kanade/tachiyomi/novels/NovelChapterIndexer.kt": "1a12e16bcec8851d12b7e9692d8e3cb6edfbadc02bba10569b493b26c0efcc50",
-    "app/src/main/java/eu/kanade/tachiyomi/novels/NovelCloudState.kt": "96d3f79dde21d77ab588bb7c5f36b4e889de84424204111c726b9cfcda06840e",
     "app/src/main/java/eu/kanade/tachiyomi/novels/NovelContent.kt": "4aa800772bdf648fe938479bc4387b708a1957a99853f3257cd37a3d401af040",
     "app/src/main/java/eu/kanade/tachiyomi/novels/NovelContentQuality.kt": "16eb4a933dcdd824c354d64288b5e48e34b274b3698b085bef7c1cc123eb2283",
     "app/src/main/java/eu/kanade/tachiyomi/novels/NovelContentTypeClassifier.kt": "94a104bbd0f51f471d46bc797f8da5ca74e72d969b57bd105222dd19212da46c",
@@ -245,7 +244,6 @@
     "app/src/main/java/eu/kanade/tachiyomi/novels/NovelMetadataStore.kt": "168600833824e53c5780c7664a4c6edcade7de9dd0c50b2ad5f652506c5f1347",
     "app/src/main/java/eu/kanade/tachiyomi/novels/NovelModels.kt": "9c3f59dab405c78cd31748f12e16a4dfea51666395b99987231a9e3b0ec03222",
     "app/src/main/java/eu/kanade/tachiyomi/novels/NovelQueueSql.kt": "e79c387fefc1cff43c233085b34eeb81c4576fd77d6a24906f443d39c184355e",
-    "app/src/main/java/eu/kanade/tachiyomi/novels/NovelReadStatistics.kt": "c2cfd324ce8a9e96e36d5998387cf911da364140170a75fa812ba5f8abaa745d",
     "app/src/main/java/eu/kanade/tachiyomi/novels/NovelRepository.kt": "322ccf6763f82153fe09ea1ad5a94c41d8577d45d0f216b2ba5ae1454d8d1815",
     "app/src/main/java/eu/kanade/tachiyomi/novels/NovelRepositoryContentValidation.kt": "7135246c2872b767b98a2f4e159a375ea7a42f4bf61dd34d6f08db70ab32d630",
     "app/src/main/java/eu/kanade/tachiyomi/novels/NovelRuleManifest.kt": "cd7ddd087f3aa806da4b8c60dbfdf3b485356cc067d02eaf08d95586ac4c373e",
@@ -582,6 +580,9 @@
   },
   "inventory": "docs/stabilization/pr4-formatting-inventory.md",
   "reason": "Owner-approved exact-content legacy baseline; no application source edits or rule changes. New and modified files must become clean. See docs/stabilization/formatting-policy.md.",
-  "retirements": {},
+  "retirements": {
+    "app/src/main/java/eu/kanade/tachiyomi/novels/NovelReadStatistics.kt": "Phase 2 completion evidence projection: fully format the modified file; no XP, source or account identity changes.",
+    "app/src/main/java/eu/kanade/tachiyomi/novels/NovelCloudState.kt": "Phase 2 completion evidence projection: fully format the modified file; no XP, source or account identity changes."
+  },
   "schema": 1
 }
