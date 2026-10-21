@@ -39,3 +39,15 @@ __pycache__/
 /docs/novels/**/*logcat*.txt
 /docs/novels/**/*.log
 /docs/novels/**/*instrumentation.txt
+
+# Recovery material and database exports are never application source.
+*.age
+*.dump
+*.pgdump
+*.sql.gz
+**/recovery/identity.txt
+**/recovery/identity-*.txt
+rclone.conf
+.pgpass
+.pg_service.conf
+/backup-runtime/
