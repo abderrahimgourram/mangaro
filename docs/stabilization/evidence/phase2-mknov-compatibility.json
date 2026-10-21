@@ -1,0 +1,261 @@
+{
+  "status": "PASS",
+  "serverVersion": "17.11",
+  "database": "mangaro_mknov_011a687db5",
+  "tests": 49,
+  "passed": 49,
+  "results": [
+    {
+      "name": "local constraints match authorized deployed metadata snapshot",
+      "passed": true,
+      "seconds": 0.0
+    },
+    {
+      "name": "deployed validator body matches cloud_novel_position",
+      "passed": true,
+      "seconds": 0.0
+    },
+    {
+      "name": "deployed validator body matches cloud_novel_url",
+      "passed": true,
+      "seconds": 0.0
+    },
+    {
+      "name": "authenticated role cannot bypass RLS",
+      "passed": true,
+      "seconds": 0.004
+    },
+    {
+      "name": "current old-client write novel.kolnovel",
+      "passed": true,
+      "seconds": 0.014
+    },
+    {
+      "name": "current old-client write novel.cenele",
+      "passed": true,
+      "seconds": 0.016
+    },
+    {
+      "name": "current old-client write novel.sunovels",
+      "passed": true,
+      "seconds": 0.017
+    },
+    {
+      "name": "current old-client write novel.seanovel",
+      "passed": true,
+      "seconds": 0.017
+    },
+    {
+      "name": "current schema rejects Mknov",
+      "passed": true,
+      "seconds": 0.01
+    },
+    {
+      "name": "transaction rollback preserves function, constraints and old rows",
+      "passed": true,
+      "seconds": 0.015
+    },
+    {
+      "name": "real proposal lock_timeout aborts at five seconds",
+      "passed": true,
+      "seconds": 5.005
+    },
+    {
+      "name": "lock failure rolls back every schema change",
+      "passed": true,
+      "seconds": 0.008
+    },
+    {
+      "name": "real thirty-second statement timeout cancels and rolls back",
+      "passed": true,
+      "seconds": 30.009
+    },
+    {
+      "name": "statement timeout preserves previous schema and data",
+      "passed": true,
+      "seconds": 0.005
+    },
+    {
+      "name": "error after old constraint drop rolls back entire proposal",
+      "passed": true,
+      "seconds": 0.004
+    },
+    {
+      "name": "failed midway DDL restores original constraint and validator",
+      "passed": true,
+      "seconds": 0.005
+    },
+    {
+      "name": "proposed extension applies atomically",
+      "passed": true,
+      "seconds": 0.01
+    },
+    {
+      "name": "RLS, grants and table security unchanged",
+      "passed": true,
+      "seconds": 0.012
+    },
+    {
+      "name": "proposal can run twice without changing policy or losing data",
+      "passed": true,
+      "seconds": 0.022
+    },
+    {
+      "name": "committed proposal reverses safely before any Mknov write",
+      "passed": true,
+      "seconds": 0.026
+    },
+    {
+      "name": "Mknov new-client position accepted with independent edition identity",
+      "passed": true,
+      "seconds": 0.013
+    },
+    {
+      "name": "Mknov chapter position and bookmark roundtrip",
+      "passed": true,
+      "seconds": 0.013
+    },
+    {
+      "name": "old client write and roundtrip after extension novel.kolnovel",
+      "passed": true,
+      "seconds": 0.0
+    },
+    {
+      "name": "old client write and roundtrip after extension novel.cenele",
+      "passed": true,
+      "seconds": 0.0
+    },
+    {
+      "name": "old client write and roundtrip after extension novel.sunovels",
+      "passed": true,
+      "seconds": 0.0
+    },
+    {
+      "name": "old client write and roundtrip after extension novel.seanovel",
+      "passed": true,
+      "seconds": 0.0
+    },
+    {
+      "name": "A owner sees five source editions",
+      "passed": true,
+      "seconds": 0.004
+    },
+    {
+      "name": "B cannot read A library or progress",
+      "passed": true,
+      "seconds": 0.004
+    },
+    {
+      "name": "B cannot spoof A through RPC",
+      "passed": true,
+      "seconds": 0.003
+    },
+    {
+      "name": "B cannot spoof A through direct INSERT",
+      "passed": true,
+      "seconds": 0.006
+    },
+    {
+      "name": "B update cannot affect invisible A row",
+      "passed": true,
+      "seconds": 0.004
+    },
+    {
+      "name": "A to B to A restores only A data",
+      "passed": true,
+      "seconds": 0.004
+    },
+    {
+      "name": "B writes only its own independent source edition",
+      "passed": true,
+      "seconds": 0.011
+    },
+    {
+      "name": "B sees one own edition and A still sees five",
+      "passed": true,
+      "seconds": 0.008
+    },
+    {
+      "name": "missing authenticated identity cannot start privileged sync",
+      "passed": true,
+      "seconds": 0.003
+    },
+    {
+      "name": "anonymous role cannot read private novel metadata",
+      "passed": true,
+      "seconds": 0.004
+    },
+    {
+      "name": "source identities remain insert-only",
+      "passed": true,
+      "seconds": 0.004
+    },
+    {
+      "name": "owner tombstone mutation accepted",
+      "passed": true,
+      "seconds": 0.013
+    },
+    {
+      "name": "stale client retry cannot resurrect tombstone",
+      "passed": true,
+      "seconds": 0.01
+    },
+    {
+      "name": "reject unrelated/unsafe Mknov URL http://mknov.com/novel/1",
+      "passed": true,
+      "seconds": 0.003
+    },
+    {
+      "name": "reject unrelated/unsafe Mknov URL https://mknov.com.evil.org/novel/1",
+      "passed": true,
+      "seconds": 0.003
+    },
+    {
+      "name": "reject unrelated/unsafe Mknov URL https://mknov.com@evil.org/novel/1",
+      "passed": true,
+      "seconds": 0.003
+    },
+    {
+      "name": "reject unrelated/unsafe Mknov URL https://cenele.com/novel/1",
+      "passed": true,
+      "seconds": 0.003
+    },
+    {
+      "name": "reject unrelated/unsafe Mknov URL https://mknov.com:444/novel/1",
+      "passed": true,
+      "seconds": 0.003
+    },
+    {
+      "name": "story text forbidden in metadata payload",
+      "passed": true,
+      "seconds": 0.006
+    },
+    {
+      "name": "schema-one historical completion remains unsupported",
+      "passed": true,
+      "seconds": 0.003
+    },
+    {
+      "name": "naive old constraint rollback refuses new Mknov rows without deleting them",
+      "passed": true,
+      "seconds": 0.004
+    },
+    {
+      "name": "failed rollback leaves accepted data intact",
+      "passed": true,
+      "seconds": 0.005
+    },
+    {
+      "name": "existing authenticated source isolation and tombstone SQL regression",
+      "passed": true,
+      "seconds": 0.0
+    }
+  ],
+  "productionModified": false,
+  "proposalSHA256": "c3c437ac77a74eb36ac4ae396b292585dd42a8f2a07af02f89e94cae60dcb660",
+  "limitations": [
+    "Synthetic database roles/claims, not OAuth or Android network acceptance.",
+    "Run on the recorded serverVersion; production version was 17.11 at inspection.",
+    "Restoring old source restriction after new Mknov writes needs a data-preserving forward plan."
+  ]
+}
