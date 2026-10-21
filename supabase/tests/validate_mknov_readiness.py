@@ -185,7 +185,12 @@ class Readiness(Checks):
                 self.check('HTTP replay never inserts duplicate chapter rows',lambda:equal(len(request('cloud_novel_progress')[1]),5))
                 bad=dict(progress,chapter_url='https://mknov.com/novel/97/chapter/20716')
                 bad['chapter_key']=hashlib.sha256(bad['chapter_url'].encode()).hexdigest()
+                bad_position=dict(pos,chapter=dict(pos['chapter'],url=bad['chapter_url']))
+                bad['state']=dict(position=bad_position,bookmarked=True)
+                self.check('matching foreign chapter position passes the generic validator so work guard is independently tested',lambda:equal(self.sql(
+                    "select mangaro_private.cloud_novel_position('novel.mknov',"+literal(json.dumps(bad_position))+"::jsonb,"+literal(bad['chapter_url'])+")",owner=A),'t'))
                 self.check('HTTP chapter from wrong Mknov work rejected',lambda:equal(apply(bad,table='cloud_novel_progress')[0],400))
+                self.check('HTTP wrong-work bookmark without any position is rejected',lambda:equal(apply(dict(bad,state=dict(position=None,bookmarked=True)),table='cloud_novel_progress')[0],400))
                 wrong_parent=dict(m,state=dict(m['state'],lastPosition=dict(pos,chapter=dict(pos['chapter'],url=bad['chapter_url']))))
                 self.check('HTTP parent cannot restore a chapter from a different Mknov work',lambda:equal(apply(wrong_parent,current['revision'])[0],400))
                 for url in ['https://api.mknov.com/novel/96','https://mknov.com/novel/96?x=1',

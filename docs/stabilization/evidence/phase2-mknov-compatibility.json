@@ -1,7 +1,7 @@
 {
   "status": "PASS",
   "serverVersion": "17.11",
-  "database": "mangaro_mknov_011a687db5",
+  "database": "mangaro_mknov_445dfca57b",
   "tests": 49,
   "passed": 49,
   "results": [
@@ -23,52 +23,52 @@
     {
       "name": "authenticated role cannot bypass RLS",
       "passed": true,
-      "seconds": 0.004
+      "seconds": 0.003
     },
     {
       "name": "current old-client write novel.kolnovel",
       "passed": true,
-      "seconds": 0.014
+      "seconds": 0.012
     },
     {
       "name": "current old-client write novel.cenele",
       "passed": true,
-      "seconds": 0.016
+      "seconds": 0.012
     },
     {
       "name": "current old-client write novel.sunovels",
       "passed": true,
-      "seconds": 0.017
+      "seconds": 0.012
     },
     {
       "name": "current old-client write novel.seanovel",
       "passed": true,
-      "seconds": 0.017
+      "seconds": 0.011
     },
     {
       "name": "current schema rejects Mknov",
       "passed": true,
-      "seconds": 0.01
+      "seconds": 0.006
     },
     {
       "name": "transaction rollback preserves function, constraints and old rows",
       "passed": true,
-      "seconds": 0.015
+      "seconds": 0.012
     },
     {
       "name": "real proposal lock_timeout aborts at five seconds",
       "passed": true,
-      "seconds": 5.005
+      "seconds": 5.004
     },
     {
       "name": "lock failure rolls back every schema change",
       "passed": true,
-      "seconds": 0.008
+      "seconds": 0.004
     },
     {
       "name": "real thirty-second statement timeout cancels and rolls back",
       "passed": true,
-      "seconds": 30.009
+      "seconds": 30.005
     },
     {
       "name": "statement timeout preserves previous schema and data",
@@ -83,12 +83,12 @@
     {
       "name": "failed midway DDL restores original constraint and validator",
       "passed": true,
-      "seconds": 0.005
+      "seconds": 0.004
     },
     {
       "name": "proposed extension applies atomically",
       "passed": true,
-      "seconds": 0.01
+      "seconds": 0.019
     },
     {
       "name": "RLS, grants and table security unchanged",
@@ -98,7 +98,7 @@
     {
       "name": "proposal can run twice without changing policy or losing data",
       "passed": true,
-      "seconds": 0.022
+      "seconds": 0.023
     },
     {
       "name": "committed proposal reverses safely before any Mknov write",
@@ -108,7 +108,7 @@
     {
       "name": "Mknov new-client position accepted with independent edition identity",
       "passed": true,
-      "seconds": 0.013
+      "seconds": 0.012
     },
     {
       "name": "Mknov chapter position and bookmark roundtrip",
@@ -153,7 +153,7 @@
     {
       "name": "B cannot spoof A through direct INSERT",
       "passed": true,
-      "seconds": 0.006
+      "seconds": 0.004
     },
     {
       "name": "B update cannot affect invisible A row",
@@ -163,7 +163,7 @@
     {
       "name": "A to B to A restores only A data",
       "passed": true,
-      "seconds": 0.004
+      "seconds": 0.003
     },
     {
       "name": "B writes only its own independent source edition",
@@ -173,7 +173,7 @@
     {
       "name": "B sees one own edition and A still sees five",
       "passed": true,
-      "seconds": 0.008
+      "seconds": 0.007
     },
     {
       "name": "missing authenticated identity cannot start privileged sync",
@@ -193,7 +193,7 @@
     {
       "name": "owner tombstone mutation accepted",
       "passed": true,
-      "seconds": 0.013
+      "seconds": 0.014
     },
     {
       "name": "stale client retry cannot resurrect tombstone",
@@ -218,17 +218,17 @@
     {
       "name": "reject unrelated/unsafe Mknov URL https://cenele.com/novel/1",
       "passed": true,
-      "seconds": 0.003
+      "seconds": 0.004
     },
     {
       "name": "reject unrelated/unsafe Mknov URL https://mknov.com:444/novel/1",
       "passed": true,
-      "seconds": 0.003
+      "seconds": 0.004
     },
     {
       "name": "story text forbidden in metadata payload",
       "passed": true,
-      "seconds": 0.006
+      "seconds": 0.005
     },
     {
       "name": "schema-one historical completion remains unsupported",
@@ -243,7 +243,7 @@
     {
       "name": "failed rollback leaves accepted data intact",
       "passed": true,
-      "seconds": 0.005
+      "seconds": 0.004
     },
     {
       "name": "existing authenticated source isolation and tombstone SQL regression",
