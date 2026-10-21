@@ -245,11 +245,18 @@ def _kill(process):
             os.killpg(process.pid, signal.SIGKILL)
 
 
-def backup_components(store, producers, source_env, recipient, age, project=PROJECT):
+def backup_components(store, producers, source_env, recipient, age, project=PROJECT, attempt_path=None):
     prefix = 'staging/' + datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ') + '-' + uuid.uuid4().hex
     manifest = {'schema': 1, 'project_ref': project, 'created_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
                 'recipient': recipient, 'components': [], 'restore_verified': False,
                 'status': 'UPLOADED_NOT_RESTORED'}
+    if any(not re.fullmatch('[a-z_]+', name) for name, _ in producers):
+        raise BackupError('Invalid component name')
+    if attempt_path is not None:
+        # A durable, explicitly incomplete journal survives a later exporter/network failure.
+        write_private(attempt_path, {'status': 'STAGING_ONLY', 'project_ref': project,
+                                    'prefix': prefix, 'created_at': manifest['created_at'],
+                                    'planned_objects': [prefix + '/' + name + '.sql.gz.age' for name, _ in producers]})
     budget = store.limit
     try:
         for name, command in producers:
@@ -299,6 +306,9 @@ def main():
     config = load_config(args.config, production=True)
     if args.manifest.exists():
         raise BackupError('Never overwrite a historical manifest')
+    attempt_path = args.manifest.with_suffix('.attempt.json')
+    if attempt_path.exists():
+        raise BackupError('Never reuse a previous attempt journal')
     outside_git(args.manifest)
     service_file = outside_git(private_file(Path.home() / '.pg_service.conf'))
     password_file = outside_git(private_file(Path.home() / '.pgpass'))
@@ -330,7 +340,7 @@ def main():
                   config['timeout_seconds'], config['max_ciphertext_bytes'])
     producers = [('roles', [str(args.pg_bin / 'pg_dumpall'), '-w', '--roles-only', '--no-role-passwords']),
                  ('database', [str(args.pg_bin / 'pg_dump'), '-w', '--format=plain', '--lock-wait-timeout=5s'])]
-    manifest = backup_components(store, producers, env, config['recipient'], args.age)
+    manifest = backup_components(store, producers, env, config['recipient'], args.age, attempt_path=attempt_path)
     manifest['source_server'] = server
     manifest['tools'] = {}
     for name, command in [('pg_dump', [str(args.pg_bin / 'pg_dump'), '--version']),

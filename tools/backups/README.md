@@ -8,8 +8,10 @@ a bucket, publish an APK, schedule a job or delete existing backup objects.
 
 Never reuse `mangaro-backup-writer`. The owner confirmed revocation on
 2026-10-21; independent API verification was unavailable. Cloudflare connector
-whoami/search/docs returned internal error -32603. Local Wrangler OAuth was
-expired. An owner confirmation is not an API revocation receipt or an audit-log
+whoami/search/docs returned internal error -32603. Existing Wrangler OAuth was
+successfully refreshed without a new login. Its token-metadata requests still
+returned403/9109 and audit logs403/10000. It verified the actual Standard bucket,
+disabled r2.dev and absence of custom domains. An owner confirmation is not an API revocation receipt or an audit-log
 review. No token secret was read, reproduced or used.
 
 Use `mangaro-backup-writer-v2`: R2 **Object Read & Write**, scoped only to this
@@ -100,7 +102,9 @@ plain `pg_dump` → `gzip -1` → `age -r <public recipient>` → bounded hash b
 process exit matters; exporter failure is fatal even if compression/encryption
 and upload finish. Stderr is drained without persisting potentially private SQL
 errors. All process groups are killed on timeout/error. Failed/partial objects
-remain **staging only**, with no successful manifest. Do not interpret their
+remain **staging only**, with no successful manifest. The production command
+first writes a durable `.attempt.json` journal containing planned object keys.
+Do not interpret their
 existence as a backup; identify a failed attempt before any deliberate cleanup.
 
 Rclone: streaming cutoff1MiB, S3 chunk8MiB, one upload part at a time, one transfer,

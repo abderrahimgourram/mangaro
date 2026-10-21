@@ -7,9 +7,23 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
+import xml.etree.ElementTree as ET
 
 from streaming import (BackupError, BUCKET, Store, backup_components, credential_env,
                        load_config, restore_component, safe_env, write_private)
+
+
+def anonymous_denied(status, body):
+    if status in (401,403):
+        return True
+    if status != 400:
+        return False
+    try:
+        error=ET.fromstring(body)
+        # Actual R2 unsigned requests report400/InvalidArgument:Authorization.
+        return error.findtext('Code')=='InvalidArgument' and error.findtext('Message')=='Authorization'
+    except ET.ParseError:
+        return False
 
 
 def main():
@@ -42,7 +56,7 @@ def main():
         with urllib.request.urlopen(request,timeout=20):
             raise BackupError('Unsigned object GET unexpectedly succeeded; stop uploads')
     except urllib.error.HTTPError as error:
-        if error.code not in (401,403):
+        if not anonymous_denied(error.code,error.read(4096)):
             raise BackupError('Anonymous access classification is not verified')
     # Delete ONLY the just-created, digest/decryption-verified disposable synthetic object.
     subprocess.run(store.command('deletefile',component['object']),env=env,check=True,

@@ -66,7 +66,7 @@
     "No real R2 credential or production database used. Offline recovery copy not verified."
   ],
   "transport": "LOCAL authenticated S3 loopback only; real Cloudflare R2 not verified",
-  "unitTestsPassed": 14,
+  "unitTestsPassed": 16,
   "toolProvenance": [
     {
       "repository": "FiloSottile/age",

@@ -1,0 +1,37 @@
+{
+  "status": "SYNTHETIC RESTORE VERIFIED",
+  "transport": "ACTUAL CLOUDFLARE R2 via existing owner Wrangler OAuth; NOT bucket-scoped rclone/S3 credentials",
+  "bucket": "mangaro-secure-backups",
+  "timestampUTC": "2026-10-21T18:01:54.222859+00:00",
+  "results": [
+    {
+      "operation": "real R2 encrypted synthetic upload/download/digest and anonymous rejection",
+      "object": "synthetic-recovery/20261021T180102Z-a51ffc0168274109a5bf86728f9ce452/roles.sql.gz.age",
+      "bytes": 596,
+      "sha256": "228279d8654352241f17e488785ca09b7cf4ba83ff08d35ddc2a1bd480a54e10",
+      "passed": true
+    },
+    {
+      "operation": "real R2 encrypted synthetic upload/download/digest and anonymous rejection",
+      "object": "synthetic-recovery/20261021T180102Z-a51ffc0168274109a5bf86728f9ce452/database.sql.gz.age",
+      "bytes": 10585,
+      "sha256": "65ca8f524e60bb7b93415cc506bce5b907b4e9fcf43c4d10faa72dfd4f9fd68d",
+      "passed": true
+    },
+    {
+      "operation": "Actual R2 retrieval decrypts and restores to independent PostgreSQL17.11; full Mangaro fixture/security snapshot and migration history match",
+      "passed": true
+    },
+    {
+      "operation": "Only the two explicitly created disposable encrypted synthetic R2 objects removed after verification",
+      "passed": true
+    }
+  ],
+  "production_exported": false,
+  "production_modified": false,
+  "recovery_key_redundancy_verified": false,
+  "limitations": [
+    "Only small synthetic encrypted SQL components were buffered on disk; this does not prove production rclone credential scope or streaming behavior.",
+    "Token-management metadata access denied; no bucket-scoped S3 replacement or production PostgreSQL credential available."
+  ]
+}

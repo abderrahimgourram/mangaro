@@ -12,6 +12,8 @@ from unittest.mock import patch
 from streaming import (BackupError, Store, digest_stream, load_config, outside_git,
                        pipeline, private_file, safe_env, write_private)
 from audit_staged import unsafe
+from r2_probe import anonymous_denied
+from streaming import backup_components
 
 
 class StreamTests(unittest.TestCase):
@@ -117,6 +119,25 @@ class StreamTests(unittest.TestCase):
         self.assertTrue(unsafe('notes.txt',b'AGE-SECRET-KEY-1'+b'X'*58))
         self.assertTrue(unsafe('notes.txt',b'postgresql'+b'://owner:password@example.test/db'))
         self.assertFalse(unsafe('source.py',b"name='AWS_SECRET_ACCESS_KEY'"))
+
+    def test_actual_r2_authorization_error_is_not_an_arbitrary_http_error(self):
+        self.assertTrue(anonymous_denied(400,b'<Error><Code>InvalidArgument</Code><Message>Authorization</Message></Error>'))
+        self.assertTrue(anonymous_denied(403,b''))
+        for status,body in [(400,b'invalid'),(404,b''),(500,b''),
+                            (400,b'<Error><Code>InvalidArgument</Code><Message>unrelated</Message></Error>')]:
+            self.assertFalse(anonymous_denied(status,body))
+
+    def test_failed_export_keeps_an_explicitly_incomplete_attempt_journal(self):
+        with tempfile.TemporaryDirectory() as name:
+            attempt=Path(name)/'attempt.json'
+            store=Store('rclone','test:bucket',{})
+            with patch.object(store,'upload',side_effect=BackupError('fixture failure')):
+                with self.assertRaises(BackupError):
+                    backup_components(store,[('database',['not-executed'])],{},'not-used','age',attempt_path=attempt)
+            journal=json.loads(attempt.read_text())
+            self.assertEqual(journal['status'],'STAGING_ONLY')
+            self.assertEqual(len(journal['planned_objects']),1)
+            self.assertNotIn('restore_verified',journal)
 
     @staticmethod
     def valid_config():
