@@ -81,6 +81,18 @@ internal class VerifiedStoryRelationshipRegistry private constructor(val records
             }
         }
         val matches = buildList {
+            candidate.canonicalNovelKey?.takeIf { edition.format == StoryFormat.TEXT_NOVEL }?.let {
+                addAll(byWork[StoryWorkRef(StoryFormat.TEXT_NOVEL, it)].orEmpty())
+            }
+            candidate.providerWorkId?.let { provider ->
+                addAll(
+                    records.filter { record ->
+                        record.adaptation.editions.any {
+                            it.source == edition.source && providerId(it) == provider
+                        }
+                    },
+                )
+            }
             candidate.reviewedComicKey?.takeIf { edition.format == StoryFormat.MANHWA }?.let {
                 addAll(byWork[StoryWorkRef(StoryFormat.MANHWA, "work:$it")].orEmpty())
             }
@@ -99,6 +111,17 @@ internal class VerifiedStoryRelationshipRegistry private constructor(val records
         if (endpoint.work.format != candidate.destination.edition.format) return false
         if (!ConnectedStoryResolver.compatible(endpoint, listOf(candidate))) return false
         if (endpoint.enrolls(candidate.destination.edition)) return true
+        if (endpoint.work.format == StoryFormat.TEXT_NOVEL &&
+            candidate.canonicalNovelKey == endpoint.work.key
+        ) {
+            return true
+        }
+        if (endpoint.work.format == StoryFormat.MANHWA && candidate.providerWorkId != null && endpoint.editions.any {
+                it.source == candidate.destination.edition.source && providerId(it) == candidate.providerWorkId
+            }
+        ) {
+            return true
+        }
         return (
             candidate.reviewedComicKey != null && endpoint.work.format == StoryFormat.MANHWA &&
                 endpoint.work.key == "work:${candidate.reviewedComicKey}"
@@ -107,6 +130,14 @@ internal class VerifiedStoryRelationshipRegistry private constructor(val records
     }
 
     companion object {
+        /** Only the existing MangaTime adapter validates these source-owned server IDs.
+         * A slug/title, arbitrary URL fragment or another provider's numeric ID is no proof.
+         */
+        private fun providerId(edition: StoryEditionRef): String? = edition.takeIf {
+            it.format == StoryFormat.MANHWA && it.source == "215553151312092548" &&
+                it.url.matches(Regex("/(manga|manhwa|manhua)/[^?#]+#[a-f0-9]{24}"))
+        }?.url?.substringAfter('#')
+
         @Serializable private data class Document(val schema: Int, val records: List<StoryRelationship>)
         fun empty() = VerifiedStoryRelationshipRegistry(emptyList())
         fun parse(text: String): VerifiedStoryRelationshipRegistry {

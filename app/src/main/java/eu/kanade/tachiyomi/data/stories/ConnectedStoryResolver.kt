@@ -28,6 +28,8 @@ internal data class StoryCandidate(
     val formatCompatible: Boolean = true,
     val readable: Boolean? = null,
     val verifiedCount: Int? = null,
+    val canonicalNovelKey: String? = null,
+    val providerWorkId: String? = null,
 )
 internal data class ConnectedStoryUiModel(
     val relationship: StoryRelationship,
@@ -52,28 +54,60 @@ internal object ConnectedStoryResolver {
         token: LocalAccountScope.Token,
     ): ConnectedStoryUiModel? {
         val relation = registry.relationship(origin) ?: return null
-        val from = if (origin.destination.edition.format == StoryFormat.MANHWA) relation.adaptation else relation.original
+        val from = if (origin.destination.edition.format ==
+            StoryFormat.MANHWA
+        ) {
+            relation.adaptation
+        } else {
+            relation.original
+        }
         val to = if (from == relation.adaptation) relation.original else relation.adaptation
-        val origins = (listOf(origin) + candidates.filter { registry.accepts(from,it) })
-        val targets = candidates.filter { registry.accepts(to,it) }
-        if (!origin.eligible || !registry.accepts(from,origin) || !compatible(from,origins) || !compatible(to,targets)) return null
-        val usable = targets.distinctBy { it.destination.edition }.filter { it.eligible && it.readable != false && it.destination.title.isNotBlank() &&
-            tachiyomi.domain.manga.model.CoverUrl.valid(it.destination.cover) != null }
-        val ordered = usable.sortedWith(compareByDescending<StoryCandidate> { it.readable == true }
-            .thenByDescending { it.verifiedCount ?: -1 }
-            .thenBy { to.editions.indexOfFirst { route -> route.lookupKey()==it.destination.edition.lookupKey() } })
+        val origins = (listOf(origin) + candidates.filter { registry.accepts(from, it) })
+        val targets = candidates.filter { registry.accepts(to, it) }
+        if (!origin.eligible || !registry.accepts(from, origin) || !compatible(from, origins) ||
+            !compatible(to, targets)
+        ) {
+            return null
+        }
+        val usable = targets.distinctBy { it.destination.edition }.filter {
+            it.eligible && it.readable != false &&
+                it.destination.title.isNotBlank() &&
+                tachiyomi.domain.manga.model.CoverUrl.valid(it.destination.cover) != null
+        }
+        val ordered = usable.sortedWith(
+            compareByDescending<StoryCandidate> { it.readable == true }
+                .thenByDescending { it.verifiedCount ?: -1 }
+                .thenBy {
+                    to.editions.indexOfFirst { route -> route.lookupKey() == it.destination.edition.lookupKey() }
+                },
+        )
         val best = ordered.firstOrNull() ?: return null
-        return ConnectedStoryUiModel(relation,origin.destination.edition,to.work,best.destination,ordered.map { it.destination },token,origin)
+        return ConnectedStoryUiModel(
+            relation,
+            origin.destination.edition,
+            to.work,
+            best.destination,
+            ordered.map { it.destination },
+            token,
+            origin,
+        )
     }
 
     internal fun compatible(endpoint: StoryWorkEndpoint, candidates: List<StoryCandidate>): Boolean {
         if (candidates.any { !it.formatCompatible }) return false
-        if (candidates.any { row -> row.reviewedComicKey != null && endpoint.work.format == StoryFormat.MANHWA &&
-                "work:${row.reviewedComicKey}" != endpoint.work.key }) return false
+        if (candidates.any { row ->
+                row.reviewedComicKey != null && endpoint.work.format == StoryFormat.MANHWA &&
+                    "work:${row.reviewedComicKey}" != endpoint.work.key
+            }
+        ) {
+            return false
+        }
         // Compare within each format only. Novel and adaptation legitimately have DIFFERENT catalog IDs.
         return VerifiedStoryRelationshipRegistry.authorities.all { namespace ->
-            (candidates.mapNotNull { it.externalIds[namespace]?.takeIf(String::isNotBlank) } +
-                listOfNotNull(endpoint.externalIds[namespace])).distinct().size <= 1
+            (
+                candidates.mapNotNull { it.externalIds[namespace]?.takeIf(String::isNotBlank) } +
+                    listOfNotNull(endpoint.externalIds[namespace])
+                ).distinct().size <= 1
         }
     }
 }

@@ -8,11 +8,14 @@ data class CatalogEditionEvidence(
     val publishedAt: Long? = null,
     val sourceReliability: Int = 0,
     val indexSucceededAt: Long = 0,
+    val readable: Boolean? = null,
 )
 
 /** Prefer the fullest indexed edition after verified grouping, independently of feed ordering. */
 object CatalogEditionSelection {
     fun compare(context: CatalogSelectionContext, a: CatalogEditionEvidence, b: CatalogEditionEvidence): Int {
+        val availability = compareValues(a.readable != false, b.readable != false)
+        if (availability != 0) return availability
         if (context == CatalogSelectionContext.DEFAULT) return 0
         val chapters = compareValues(a.indexedChapters ?: -1, b.indexedChapters ?: -1)
         if (chapters != 0) return chapters
@@ -23,7 +26,7 @@ object CatalogEditionSelection {
         val health = a.sourceReliability.compareTo(b.sourceReliability)
         if (health != 0) return health
         // Refresh time is index quality only. It cannot create a chapter publication date.
-        return a.indexSucceededAt.compareTo(b.indexSucceededAt)
+        return 0 // Request completion order is not a publication update or a stable tie-breaker.
     }
 
     /** Unknown dates keep their feed slots. Only genuinely dated entries are reordered. */
