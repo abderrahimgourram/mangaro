@@ -15,11 +15,11 @@ import eu.kanade.tachiyomi.util.asJsoup
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
-import okhttp3.HttpUrl.Companion.toHttpUrl
+import kotlinx.coroutines.withTimeout
 import okhttp3.Headers
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -50,7 +50,10 @@ class TeamX(
     val chapterPaginationSemaphore = Semaphore(CHAPTER_PAGINATION_CONCURRENCY_LIMIT)
 
     override fun headersBuilder(): Headers.Builder = Headers.Builder()
-        .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .add(
+            "User-Agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        )
         .add("Referer", "$baseUrl/")
 
     override suspend fun getPopularManga(page: Int): MangasPage {
@@ -123,7 +126,13 @@ class TeamX(
     }
 
     fun parseMangaFromElement(element: Element): SManga? {
-        val linkElement = if (element.tagName() == "a") element else element.selectFirst("a[href*=/series/]") ?: element.selectFirst("a")
+        val linkElement = if (element.tagName() ==
+            "a"
+        ) {
+            element
+        } else {
+            element.selectFirst("a[href*=/series/]") ?: element.selectFirst("a")
+        }
         val href = linkElement?.attr("href") ?: return null
         val relativeUrl = getRelativeUrl(href)
         if (!relativeUrl.startsWith("/series/")) return null
@@ -153,15 +162,30 @@ class TeamX(
         fetchDetails: Boolean,
         fetchChapters: Boolean,
     ): SMangaUpdate {
-        val request = GET(baseUrl + manga.url, headers).let { request -> if (fetchChapters) request.newBuilder().cacheControl(okhttp3.CacheControl.FORCE_NETWORK).build() else request }
+        val request = GET(baseUrl + manga.url, headers).let { request ->
+            if (fetchChapters) {
+                request.newBuilder().cacheControl(
+                    okhttp3.CacheControl.FORCE_NETWORK,
+                ).build()
+            } else {
+                request
+            }
+        }
         val response = client.newCall(request).awaitSuccess()
         val document = response.asJsoup()
 
         val updatedManga = if (fetchDetails) parseMangaDetails(document, manga) else manga
-        val chapterResult = if (fetchChapters) fetchVerifiedChapters(document, manga.url) else Pair(chapters, ChapterFetchCompleteness.DEGRADED)
+        val chapterResult = if (fetchChapters) {
+            fetchVerifiedChapters(
+                document,
+                manga.url,
+            )
+        } else {
+            Pair(chapters, ChapterFetchCompleteness.DEGRADED)
+        }
 
         return SMangaUpdate(updatedManga, chapterResult.first, chapterResult.second).withDeclaredChapterCount(
-            if (fetchChapters) eu.kanade.tachiyomi.source.internal.util.HtmlMangaIntegrity.count(document) else null,
+            if (fetchChapters) declaredChapterCount(document) else null,
         )
     }
 
@@ -184,12 +208,14 @@ class TeamX(
                 }
             }
 
-            description = document.select("div.description, div.entry-content p, meta[name=description]").firstOrNull()?.let {
-                if (it.tagName() == "meta") it.attr("content") else it.text()
-            }?.trim()
+            description =
+                document.select("div.description, div.entry-content p, meta[name=description]").firstOrNull()?.let {
+                    if (it.tagName() == "meta") it.attr("content") else it.text()
+                }?.trim()
 
             status = parseStatus(document.text())
-            genre = document.select("a[href*=/genre/], a[href*=/genres/], .mgen a").joinToString(", ") { it.text().trim() }
+            genre =
+                document.select("a[href*=/genre/], a[href*=/genres/], .mgen a").joinToString(", ") { it.text().trim() }
             initialized = true
         }
     }
@@ -203,15 +229,25 @@ class TeamX(
         }
     }
 
-    suspend fun parseChapters(initialDocument: Document, mangaUrl: String): List<SChapter> = fetchVerifiedChapters(initialDocument, mangaUrl).first
+    suspend fun parseChapters(initialDocument: Document, mangaUrl: String): List<SChapter> = fetchVerifiedChapters(
+        initialDocument,
+        mangaUrl,
+    ).first
 
-    private suspend fun fetchVerifiedChapters(initialDocument: Document, mangaUrl: String): Pair<List<SChapter>, ChapterFetchCompleteness> = withTimeout(180_000) {
+    private suspend fun fetchVerifiedChapters(
+        initialDocument: Document,
+        mangaUrl: String,
+    ): Pair<List<SChapter>, ChapterFetchCompleteness> = withTimeout(180_000) {
         coroutineScope {
             SourceValidationUtil.checkCloudflareOrError(initialDocument)
-            var declared = eu.kanade.tachiyomi.source.internal.util.HtmlMangaIntegrity.count(initialDocument)
+            var declared = declaredChapterCount(initialDocument)
             val allChapters = verifiedChapterPage(initialDocument, mangaUrl).toMutableList()
             var allRowsMapped = allChapters.size == initialDocument.select("div.chapter-card").size
-            if (allChapters.isEmpty() && declared != 0) throw IOException("TeamX unverified empty chapters for $mangaUrl")
+            if (allChapters.isEmpty() &&
+                declared != 0
+            ) {
+                throw IOException("TeamX unverified empty chapters for $mangaUrl")
+            }
             val completed = mutableSetOf<String>()
             val pending = getAdditionalChapterPageUrls(initialDocument, mangaUrl).toMutableSet()
             while (pending.isNotEmpty()) {
@@ -220,14 +256,22 @@ class TeamX(
                 val documents = batch.map { path ->
                     async {
                         chapterPaginationSemaphore.withPermit {
-                            client.newCall(GET(baseUrl + path, headers, cache = okhttp3.CacheControl.FORCE_NETWORK)).awaitSuccess().use { it.asJsoup() }
+                            client.newCall(
+                                GET(baseUrl + path, headers, cache = okhttp3.CacheControl.FORCE_NETWORK),
+                            ).awaitSuccess().use {
+                                it.asJsoup()
+                            }
                         }
                     }
                 }.awaitAll()
                 for ((index, document) in documents.withIndex()) {
                     SourceValidationUtil.checkCloudflareOrError(document)
-                    val pageTotal = eu.kanade.tachiyomi.source.internal.util.HtmlMangaIntegrity.count(document)
-                    if (pageTotal != null && declared != null && pageTotal != declared) throw IOException("TeamX chapter total changed during pagination")
+                    val pageTotal = declaredChapterCount(document)
+                    if (pageTotal != null && declared != null &&
+                        pageTotal != declared
+                    ) {
+                        throw IOException("TeamX chapter total changed during pagination")
+                    }
                     declared = pageTotal ?: declared
                     val parsed = verifiedChapterPage(document, mangaUrl)
                     allRowsMapped = allRowsMapped && parsed.size == document.select("div.chapter-card").size
@@ -242,17 +286,38 @@ class TeamX(
                 pending.removeAll(completed)
             }
             val unique = allChapters.groupBy { it.url }.map { (_, rows) ->
-                if (rows.any { it.memo != rows.first().memo || it.name != rows.first().name || it.chapter_number != rows.first().chapter_number }) {
+                if (rows.any {
+                        it.memo != rows.first().memo || it.name != rows.first().name ||
+                            it.chapter_number != rows.first().chapter_number
+                    }
+                ) {
                     throw IOException("TeamX conflicting repeated chapter identity")
                 }
                 rows.first() // Proven identical overlap at a pagination boundary.
             }
-            Pair(unique, when {
-                !allRowsMapped || declared == null -> ChapterFetchCompleteness.DEGRADED
-                declared == unique.size -> ChapterFetchCompleteness.COMPLETE
-                else -> ChapterFetchCompleteness.PARTIAL
-            })
+            Pair(
+                unique,
+                when {
+                    !allRowsMapped || declared == null -> ChapterFetchCompleteness.DEGRADED
+                    declared == unique.size -> ChapterFetchCompleteness.COMPLETE
+                    else -> ChapterFetchCompleteness.PARTIAL
+                },
+            )
         }
+    }
+
+    /** TeamX's actual work-page total is a section heading, not a chapter ordinal.
+     * Keep the generic explicit attribute contract and reject disagreement between them.
+     */
+    internal fun declaredChapterCount(document: Document): Int? {
+        val attribute = eu.kanade.tachiyomi.source.internal.util.HtmlMangaIntegrity.count(document)
+        val heading = document.select("h5").mapNotNull {
+            Regex("^قائمة الفصول\\s*\\(([0-9]+)\\)$").matchEntire(it.text().trim())
+                ?.groupValues?.get(1)?.toIntOrNull()
+        }.distinct()
+        val counts = (heading + listOfNotNull(attribute)).distinct()
+        if (counts.size > 1) throw IOException("TeamX conflicting declared chapter totals")
+        return counts.singleOrNull()
     }
 
     private fun verifiedChapterPage(document: Document, mangaUrl: String): List<SChapter> {
@@ -261,7 +326,9 @@ class TeamX(
             it.select("i.fa-lock, a[data-bs-target='#buyModel'], a[data-bs-toggle='modal']").isEmpty()
         }
         val parsed = parseChaptersFromDocument(document)
-        if (parsed.size != accessible || parsed.any { !it.url.startsWith(mangaUrl.substringBefore('?').trimEnd('/') + "/") }) {
+        if (parsed.size != accessible ||
+            parsed.any { !it.url.startsWith(mangaUrl.substringBefore('?').trimEnd('/') + "/") }
+        ) {
             throw IOException("TeamX chapter page contains malformed or unrelated rows")
         }
         return parsed
@@ -310,7 +377,11 @@ class TeamX(
         val advertised = document.select("ul.pagination a[href]").mapNotNull { link ->
             val target = manga.resolve(link.attr("href")) ?: return@mapNotNull null
             val page = target.queryParameter("page")?.toIntOrNull() ?: return@mapNotNull null
-            if (target.host != manga.host || target.encodedPath.trim('/') != manga.encodedPath.trim('/')) throw IOException("TeamX pagination lost manga identity")
+            if (target.host != manga.host ||
+                target.encodedPath.trim('/') != manga.encodedPath.trim('/')
+            ) {
+                throw IOException("TeamX pagination lost manga identity")
+            }
             if (page > 1) page to target else null
         }
         val last = advertised.maxByOrNull { it.first } ?: return emptyList()

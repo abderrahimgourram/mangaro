@@ -5,25 +5,33 @@ import mihon.domain.source.health.SourceHealthMonitor
 import tachiyomi.domain.chapter.service.ChapterListIntegrity
 import tachiyomi.domain.manga.model.CoverUrl
 import tachiyomi.domain.manga.model.Manga
-import java.util.concurrent.ConcurrentHashMap
-import tachiyomi.domain.manga.service.WorkMetadata
-import tachiyomi.domain.manga.service.WorkLinker
-import tachiyomi.domain.manga.service.SourceWorkReference
 import tachiyomi.domain.manga.service.CatalogEditionEvidence
 import tachiyomi.domain.manga.service.CatalogEditionSelection
 import tachiyomi.domain.manga.service.CatalogSelectionContext
+import tachiyomi.domain.manga.service.SourceWorkReference
+import tachiyomi.domain.manga.service.WorkLinker
+import tachiyomi.domain.manga.service.WorkMetadata
+import java.util.concurrent.ConcurrentHashMap
 
 /** Presentation preference only. IDs and library/download/history ownership never change. */
 object PreferredMangaVariants {
-    private data class Quality(val work: WorkMetadata, val complete: Boolean, val metadata: Boolean, val actualChapterCount: Int?, val successfulAt: Long, val publishedAt: Long?)
+    private data class Quality(
+        val work: WorkMetadata,
+        val complete: Boolean,
+        val metadata: Boolean,
+        val actualChapterCount: Int?,
+        val successfulAt: Long,
+        val publishedAt: Long?,
+    )
     val changes = kotlinx.coroutines.flow.MutableStateFlow(0L)
     private val qualities = ConcurrentHashMap<Long, Quality>()
     private val invalid = ConcurrentHashMap.newKeySet<Long>()
     fun eligible(id: Long): Boolean = id !in invalid
-    private val readers = ConcurrentHashMap<Long, Boolean>()
+    private val readers = ConcurrentHashMap<Long, Pair<Boolean, Long>>()
     fun remember(manga: Manga) {
         if (rememberQuality(manga)) changes.update { it + 1 }
     }
+
     /** Discovery conversion should invalidate presentation once per batch, not once per cover. */
     fun rememberAll(mangas: Collection<Manga>) {
         var changed = false
@@ -33,43 +41,98 @@ object PreferredMangaVariants {
     private fun rememberQuality(manga: Manga): Boolean {
         val allowed = tachiyomi.domain.manga.model.DiscoveryEligibility.valid(manga.title, manga.url)
         val changed = if (allowed) invalid.remove(manga.id) else invalid.add(manga.id)
-        val quality = Quality(CatalogWorkEvidence.from(manga), ChapterListIntegrity.complete(manga),
+        val quality = Quality(
+            CatalogWorkEvidence.from(manga),
+            ChapterListIntegrity.retainedComplete(manga),
             manga.initialized && CoverUrl.valid(manga.thumbnailUrl) != null,
-            ChapterListIntegrity.actualChapterCount(manga), ChapterListIntegrity.lastSuccessfulAt(manga), ChapterListIntegrity.catalogPublishedAt(manga))
+            ChapterListIntegrity.actualChapterCount(manga),
+            ChapterListIntegrity.lastSuccessfulAt(manga),
+            ChapterListIntegrity.catalogPublishedAt(manga),
+        )
         var replaced = false
         qualities.compute(manga.id) { _, old ->
             // An older catalogue snapshot must not overwrite a newer reconciled count.
-            val next = if (old != null && old.work.reference == quality.work.reference && old.successfulAt > quality.successfulAt)
-                old.copy(work = quality.work) else quality
+            val next = if (old != null && old.work.reference == quality.work.reference &&
+                old.successfulAt > quality.successfulAt
+            ) {
+                old.copy(work = quality.work)
+            } else {
+                quality
+            }
             next.also { replaced = old != it }
         }
         CatalogWorkEvidence.request(listOf(quality.work))
         return changed || replaced
     }
-    fun reader(mangaId: Long, usable: Boolean) { if (readers.put(mangaId, usable) != usable) changes.update { it + 1 } }
-    fun readerUsable(mangaId: Long): Boolean? = readers[mangaId]
+    fun reader(mangaId: Long, usable: Boolean) {
+        val old = readerUsable(mangaId)
+        readers[mangaId] = usable to System.nanoTime()
+        if (old != usable) changes.update { it + 1 }
+    }
+    fun readerUsable(mangaId: Long): Boolean? = readers[mangaId]?.takeIf {
+        System.nanoTime() - it.second in 0 until if (it.first) 300_000_000_000L else 30_000_000_000L
+    }?.first
     private fun health(sourceId: Long) = when (SourceHealthMonitor.shared.health(sourceId).state) {
         SourceHealthMonitor.State.HEALTHY -> 2
         SourceHealthMonitor.State.DEGRADED -> 1
         SourceHealthMonitor.State.UNAVAILABLE -> 0
     }
     fun evidence(item: HomeDiscoveryItem): CatalogEditionEvidence {
-        val quality = qualities[item.mangaId]?.takeIf { it.work.reference == SourceWorkReference(item.sourceId, item.mangaId, item.url) }
-        return CatalogEditionEvidence(quality?.actualChapterCount, quality?.publishedAt, health(item.sourceId), quality?.successfulAt ?: 0)
+        val quality = qualities[item.mangaId]?.takeIf {
+            it.work.reference ==
+                SourceWorkReference(item.sourceId, item.mangaId, item.url)
+        }
+        return CatalogEditionEvidence(
+            quality?.actualChapterCount,
+            quality?.publishedAt,
+            health(item.sourceId),
+            quality?.successfulAt ?: 0,
+            readerUsable(item.mangaId),
+        )
     }
     fun compare(a: HomeDiscoveryItem, b: HomeDiscoveryItem, context: CatalogSelectionContext): Int {
         val contextual = CatalogEditionSelection.compare(context, evidence(a), evidence(b))
-        return if (contextual != 0) contextual else compare(a.sourceId, a.mangaId, a.coverData.url, b.sourceId, b.mangaId, b.coverData.url)
+        return if (contextual !=
+            0
+        ) {
+            contextual
+        } else {
+            compare(a.sourceId, a.mangaId, a.coverData.url, b.sourceId, b.mangaId, b.coverData.url)
+        }
     }
     fun compare(sourceA: Long, idA: Long, coverA: String?, sourceB: Long, idB: Long, coverB: String?): Int {
         val a = qualities[idA]?.takeIf { it.work.reference.sourceId == sourceA }
         val b = qualities[idB]?.takeIf { it.work.reference.sourceId == sourceB }
-        val scoresA = listOf((a?.actualChapterCount ?: -1).toLong(), a?.successfulAt ?: 0L,
-            if (a?.complete == true) 1L else 0L, health(sourceA).toLong(), if (readers[idA] == true) 1L else 0L,
-            if (a?.metadata == true) 1L else 0L, if (CoverUrl.valid(coverA) != null) 1L else 0L)
-        val scoresB = listOf((b?.actualChapterCount ?: -1).toLong(), b?.successfulAt ?: 0L,
-            if (b?.complete == true) 1L else 0L, health(sourceB).toLong(), if (readers[idB] == true) 1L else 0L,
-            if (b?.metadata == true) 1L else 0L, if (CoverUrl.valid(coverB) != null) 1L else 0L)
+        val scoresA = listOf(
+            if (readerUsable(idA) ==
+                false
+            ) {
+                -1L
+            } else {
+                0L
+            },
+            (a?.actualChapterCount ?: -1).toLong(),
+            if (a?.complete == true) 1L else 0L,
+            health(sourceA).toLong(),
+            if (readerUsable(idA) == true) 1L else 0L,
+            if (a?.metadata == true) 1L else 0L,
+            if (CoverUrl.valid(coverA) != null) 1L else 0L,
+        )
+        val scoresB = listOf(
+            if (readerUsable(idB) ==
+                false
+            ) {
+                -1L
+            } else {
+                0L
+            },
+            (b?.actualChapterCount ?: -1).toLong(),
+            if (b?.complete == true) 1L else 0L,
+            health(sourceB).toLong(),
+            if (readerUsable(idB) == true) 1L else 0L,
+            if (b?.metadata == true) 1L else 0L,
+            if (CoverUrl.valid(coverB) != null) 1L else 0L,
+        )
         for (i in scoresA.indices) if (scoresA[i] != scoresB[i]) return scoresA[i].compareTo(scoresB[i])
         // Stable tie-breaker avoids reshuffling as concurrent source results arrive.
         return compareValuesBy(idA to sourceA, idB to sourceB, { -it.second }, { -it.first })
@@ -79,12 +142,16 @@ object PreferredMangaVariants {
     }?.actualChapterCount
     fun work(item: HomeDiscoveryItem): WorkMetadata {
         val reference = SourceWorkReference(item.sourceId, item.mangaId, item.url)
-        return CatalogWorkEvidence.resolve(qualities[item.mangaId]?.work?.takeIf { it.reference == reference }
-            ?: WorkMetadata(reference, item.title))
+        return CatalogWorkEvidence.resolve(
+            qualities[item.mangaId]?.work?.takeIf { it.reference == reference }
+                ?: WorkMetadata(reference, item.title),
+        )
     }
     fun usable(source: Long, id: Long): Boolean = eligible(id) &&
-        ((qualities[id]?.takeIf { it.work.reference.sourceId == source }?.actualChapterCount ?: 0) > 0 ||
-            SourceHealthMonitor.shared.discoverable(source))
+        (
+            (qualities[id]?.takeIf { it.work.reference.sourceId == source }?.actualChapterCount ?: 0) > 0 ||
+                SourceHealthMonitor.shared.discoverable(source)
+            )
 
     fun preferred(mangas: List<Manga>): Set<Long> {
         mangas.forEach(::remember)

@@ -1,39 +1,51 @@
 package eu.kanade.tachiyomi.ui.home
 
 import android.content.Context
-import logcat.logcat
-import kotlinx.coroutines.*
+import eu.kanade.tachiyomi.source.internal.mangatime.MangaTime
+import eu.kanade.tachiyomi.source.repair.RepairableSource
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
+import logcat.logcat
 import mihon.domain.community.CommunityMangaKey
 import mihon.domain.community.CommunityRepository
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.manga.service.ReviewedCatalogMappings
 import tachiyomi.domain.manga.service.WorkMetadata
 import tachiyomi.domain.source.service.SourceManager
-import eu.kanade.tachiyomi.source.internal.mangatime.MangaTime
-import eu.kanade.tachiyomi.source.repair.RepairableSource
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
 /** One batch for visible public edition keys; no title matching, image fetches or chapter probes. */
 internal object CatalogWorkEvidence {
     private val mappings = ReviewedCatalogMappings()
+
     @Volatile private var registry = tachiyomi.domain.manga.service.ReviewedCatalogRegistry.empty()
     private val pending = linkedSetOf<String>()
     private val attempts = linkedMapOf<String, Long>()
     private val wake = Channel<Unit>(Channel.CONFLATED)
+
     @Volatile private var installed = false
+
     @Serializable private data class Saved(val key: String, val work: String?, val checkedAt: Long)
 
     fun install(context: Context, scope: CoroutineScope) {
         if (installed) return
         installed = true
-        if (eu.kanade.tachiyomi.BuildConfig.DEBUG || eu.kanade.tachiyomi.BuildConfig.SUNOVELS_PRIVATE_ACCEPTANCE)
-            CatalogDuplicateDiagnostics.logger = { row -> logcat(CatalogDuplicateDiagnostics.priority) { "CatalogReview: $row" } }
+        if (eu.kanade.tachiyomi.BuildConfig.DEBUG || eu.kanade.tachiyomi.BuildConfig.SUNOVELS_PRIVATE_ACCEPTANCE) {
+            CatalogDuplicateDiagnostics.logger =
+                { row -> logcat(CatalogDuplicateDiagnostics.priority) { "CatalogReview: $row" } }
+        }
         val preferences = context.getSharedPreferences("catalog-reviewed-identities-v1", Context.MODE_PRIVATE)
         scope.launch(Dispatchers.IO) {
             runCatching {
@@ -57,17 +69,30 @@ internal object CatalogWorkEvidence {
                     while (attempts.size > 2048) attempts.remove(attempts.keys.first())
                     try {
                         val result = withTimeout(5_000) {
-                            withContext(eu.kanade.tachiyomi.focus.FocusTask(eu.kanade.tachiyomi.focus.WorkPriority.ENRICHMENT,
-                                null, null, operation = eu.kanade.tachiyomi.focus.FocusOperation.METADATA)) {
+                            withContext(
+                                eu.kanade.tachiyomi.focus.FocusTask(
+                                    eu.kanade.tachiyomi.focus.WorkPriority.ENRICHMENT,
+                                    null,
+                                    null,
+                                    operation = eu.kanade.tachiyomi.focus.FocusOperation.METADATA,
+                                ),
+                            ) {
                                 eu.kanade.tachiyomi.focus.FocusEngine.network("community-metadata") {
-                                    CatalogPerformance.measure("identity.batch") { Injekt.get<CommunityRepository>().reviewedMangaWorks(batch.toSet()) }
+                                    CatalogPerformance.measure("identity.batch") {
+                                        Injekt.get<CommunityRepository>().reviewedMangaWorks(batch.toSet())
+                                    }
                                 }
                             }
                         }
                         val changed = mappings.replace(batch.toSet(), result)
-                        preferences.edit().putString("snapshot", Json.encodeToString(mappings.snapshot().map { (key, row) ->
-                            Saved(key, row.work, row.checkedAt)
-                        })).apply()
+                        preferences.edit().putString(
+                            "snapshot",
+                            Json.encodeToString(
+                                mappings.snapshot().map { (key, row) ->
+                                    Saved(key, row.work, row.checkedAt)
+                                },
+                            ),
+                        ).apply()
                         if (changed) PreferredMangaVariants.changes.update { it + 1 }
                     } catch (cancelled: CancellationException) {
                         if (cancelled !is TimeoutCancellationException) throw cancelled
@@ -84,16 +109,20 @@ internal object CatalogWorkEvidence {
         PreferredMangaVariants.changes.update { it + 1 }
     }
 
-    internal fun withoutBundledReview(work: WorkMetadata): WorkMetadata = work.copy(reviewedWorkKey =
+    internal fun withoutBundledReview(work: WorkMetadata): WorkMetadata = work.copy(
+        reviewedWorkKey =
         work.reference.url.takeIf { it.isNotBlank() }?.let {
             mappings.resolve(CommunityMangaKey.fromSource(work.reference.sourceId, it).value)
-        })
+        },
+    )
 
     fun request(works: Collection<WorkMetadata>) {
         if (!installed) return
-        val keys = mappings.pending(works.filter { it.reference.url.isNotBlank() }.map {
-            CommunityMangaKey.fromSource(it.reference.sourceId, it.reference.url).value
-        })
+        val keys = mappings.pending(
+            works.filter { it.reference.url.isNotBlank() }.map {
+                CommunityMangaKey.fromSource(it.reference.sourceId, it.reference.url).value
+            },
+        )
         if (keys.isEmpty()) return
         synchronized(pending) { pending.addAll(keys.take((800 - pending.size).coerceAtLeast(0))) }
         wake.trySend(Unit)
@@ -108,13 +137,19 @@ internal object CatalogWorkEvidence {
     }
 
     fun from(manga: Manga): WorkMetadata {
-        val work = WorkMetadata.from(manga)
+        val metadata = WorkMetadata.from(manga)
+        val work = metadata.copy(
+            format = metadata.format ?: eu.kanade.tachiyomi.search.AtlasDeclaredNames.format(manga),
+        )
         // Only the adapter that actually validates this server ID may supply route-alias proof.
         val providerId = runCatching {
             val source = Injekt.get<SourceManager>().get(manga.source)
             val native = (source as? RepairableSource)?.original ?: source
             if (native is MangaTime) {
-                val memoId = (manga.memo["mangatime.seriesId"] as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() && it != "null" }
+                val memoId = (manga.memo["mangatime.seriesId"] as? JsonPrimitive)?.content?.takeIf {
+                    it.isNotBlank() &&
+                        it != "null"
+                }
                 // This adapter's existing route contract explicitly carries the server series ID.
                 val routeId = manga.url.takeIf { it.matches(Regex("/(manga|manhwa|manhua)/[^?#]+#[^#?]+")) }
                     ?.substringAfter('#')
@@ -123,7 +158,9 @@ internal object CatalogWorkEvidence {
                 // Existing pinned MangaLek contract: legacy numeric post ID or source-emitted #postId.
                 manga.url.takeIf { it.matches(Regex("[0-9]+")) } ?: manga.url
                     .takeIf { it.matches(Regex("/manga/[^?#]+#[0-9]+")) }?.substringAfter('#')
-            } else null
+            } else {
+                null
+            }
         }.getOrNull()
         return resolve(work.copy(providerId = providerId))
     }
