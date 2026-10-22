@@ -135,7 +135,7 @@ def main():
         check('completion proposal after Mknov migration accepts exact completed identity',lambda:eq(reverse.apply(mrow,table='cloud_novel_progress')['accepted'],True))
         result=dict(status='PASS',tests=len(runner.results),passed=len(runner.results),results=runner.results,
                     proposalSHA256=hashlib.sha256(proposal.encode()).hexdigest(),productionModified=False,
-                    limitations=['SQL proposal only; Android schema-one codec intentionally still omits completed.',
+                    limitations=['Undeployed SQL proposal; Android v2 evidence requires a fresh authenticated capability lease.',
                                  'Synthetic XP sentinel; existing production XP implementation untouched, not rerun here.',
                                  'No backfill or authoritative historical completeness claim; no OAuth acceptance.'])
     except Exception as error:

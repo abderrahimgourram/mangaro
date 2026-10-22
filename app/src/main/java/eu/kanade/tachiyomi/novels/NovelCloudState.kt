@@ -32,9 +32,9 @@ internal object NovelCloudState {
         uri.scheme == "https" && uri.userInfo == null && uri.port in listOf(-1, 443) &&
             (uri.host == domain || uri.host.endsWith(".$domain")) && value.length <= 4096
     }.getOrDefault(false)
-    private fun cloudPosition(position: NovelReadingPosition) = position.copy(
-        // Completion evidence stays local until the server explicitly supports it. Legacy RPCs reject extra fields.
-        completed = null,
+    private fun cloudPosition(position: NovelReadingPosition, completionEvidence: Boolean) = position.copy(
+        // Only a freshly negotiated authenticated capability permits this optional wire field.
+        completed = position.completed.takeIf { completionEvidence },
         anchor = position.anchor.take(4096),
         chapter = position.chapter.copy(
             title = position.chapter.title.take(512),
@@ -53,7 +53,11 @@ internal object NovelCloudState {
         put("edition_id", novel.id)
         put("deleted_at", JsonNull)
     }
-    fun rows(item: NovelLibraryItem, positions: List<NovelReadingPosition>): Map<String, JsonObject> = buildMap {
+    fun rows(
+        item: NovelLibraryItem,
+        positions: List<NovelReadingPosition>,
+        completionEvidence: Boolean = false,
+    ): Map<String, JsonObject> = buildMap {
         val novel = item.novel
         require(url(novel.sourceId, novel.url))
         val header = header(novel)
@@ -71,7 +75,8 @@ internal object NovelCloudState {
                         put("addedAt", item.addedAt)
                         put(
                             "lastPosition",
-                            item.position?.let { json.encodeToJsonElement(cloudPosition(it)) } ?: JsonNull,
+                            item.position?.let { json.encodeToJsonElement(cloudPosition(it, completionEvidence)) }
+                                ?: JsonNull,
                         )
                     }
                     ),
@@ -91,7 +96,9 @@ internal object NovelCloudState {
                             buildJsonObject {
                                 put(
                                     "position",
-                                    byChapter[chapterUrl]?.let { json.encodeToJsonElement(cloudPosition(it)) }
+                                    byChapter[chapterUrl]?.let {
+                                        json.encodeToJsonElement(cloudPosition(it, completionEvidence))
+                                    }
                                         ?: JsonNull,
                                 )
                                 put("bookmarked", chapterUrl in item.bookmarks)
@@ -102,6 +109,30 @@ internal object NovelCloudState {
             )
         }
     }
+    fun forServer(row: JsonObject, completionEvidence: Boolean): JsonObject {
+        if (completionEvidence) return row
+        val state = row["state"] as? JsonObject ?: return row
+        return JsonObject(
+            row + (
+                "state" to JsonObject(
+                    state.mapValues { (key, value) ->
+                        if (key in setOf("position", "lastPosition") &&
+                            value is JsonObject
+                        ) {
+                            JsonObject(value - "completed")
+                        } else {
+                            value
+                        }
+                    },
+                )
+                ),
+        )
+    }
+
+    fun hasCompletion(row: JsonObject?): Boolean = (row?.get("state") as? JsonObject)?.values?.any {
+        it is JsonObject && "completed" in it
+    } == true
+
     data class Decoded(
         val novel: Novel,
         val deleted: Boolean,
@@ -163,6 +194,37 @@ internal object NovelCloudState {
         )
     }
 
+    private fun mergePosition(base: JsonObject?, local: JsonObject, remote: JsonObject): JsonObject? {
+        if (local["chapter"]?.jsonObject?.get("url") != remote["chapter"]?.jsonObject?.get("url")) return null
+        val l = JsonObject(local - "completed")
+        val r = JsonObject(remote - "completed")
+        val b = base?.let { JsonObject(it - "completed") }
+        val cursor = when {
+            l == r -> l
+            l == b -> r
+            r == b -> l
+            else -> return null
+        }
+        val sameChapterBase = base?.takeIf {
+            it["chapter"]?.jsonObject?.get("url") ==
+                local["chapter"]?.jsonObject?.get("url")
+        }
+        val completed = listOfNotNull(sameChapterBase, local, remote).any {
+            it["completed"] ==
+                kotlinx.serialization.json.JsonPrimitive(true)
+        }
+        val selected = if (completed) {
+            kotlinx.serialization.json.JsonPrimitive(true)
+        } else {
+            local["completed"]?.takeIf { it == remote["completed"] } ?: JsonNull
+        }
+        return if (listOfNotNull(sameChapterBase, local, remote).any { "completed" in it }) {
+            JsonObject(cursor + ("completed" to selected))
+        } else {
+            cursor
+        }
+    }
+
     /** Three-way merge uses observed server baselines, not clock time or maximum chapter numbers. */
     fun merge(base: JsonObject?, local: JsonObject, remote: JsonObject): JsonObject? {
         val b = base?.get("state") as? JsonObject ?: emptyMap<String, JsonElement>()
@@ -180,6 +242,9 @@ internal object NovelCloudState {
             val rv = r[key]
             val bv = b[key]
             val value = when {
+                key in setOf("position", "lastPosition") && lv is JsonObject && rv is JsonObject &&
+                    lv["chapter"]?.jsonObject?.get("url") == rv["chapter"]?.jsonObject?.get("url") ->
+                    mergePosition(bv as? JsonObject, lv, rv) ?: return null
                 lv == rv -> lv
                 lv == bv -> rv
                 rv == bv -> lv

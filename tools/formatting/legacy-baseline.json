@@ -162,9 +162,7 @@
     "app/src/main/java/eu/kanade/tachiyomi/data/account/ProfileShowcaseRepository.kt": "17ad369d7dc4c672673f447a00bf42d9d2859f8c12f1dcf394a3b4cee5712d43",
     "app/src/main/java/eu/kanade/tachiyomi/data/account/PublicFavoriteResolver.kt": "15e4b57610f17aa74be0d9fcfb21fbda2cd6da6930a787b974e844c8c308f599",
     "app/src/main/java/eu/kanade/tachiyomi/data/account/SupabaseAccountAuth.kt": "cb8bfb0ff85bd5f5d6aa6c000f3f6f14922e66e15b0124647e607cbd42ebc7be",
-    "app/src/main/java/eu/kanade/tachiyomi/data/account/sync/CloudLocalGateway.kt": "0ede759a3727a9e1500059c0ab79db35526b03d07e9906293509109cac34b9ca",
     "app/src/main/java/eu/kanade/tachiyomi/data/account/sync/CloudSyncStore.kt": "5eb088d66e0e6f994453dff58645b0cb582dd31db7c29631b3d06df53955108a",
-    "app/src/main/java/eu/kanade/tachiyomi/data/account/sync/SupabaseCloudSync.kt": "0f80b9b8b619191cd6df2046701cd23d0f7bc0dc27624bbbd9dcb55dac6a8e3f",
     "app/src/main/java/eu/kanade/tachiyomi/data/ads/AdBlockerEvidence.kt": "5da966ce5d9a6c272629bb4ffa81e0651f9a628aa47aebf58e5f39bea2feca4b",
     "app/src/main/java/eu/kanade/tachiyomi/data/ads/AdBlockerNotice.kt": "6bcb1de87899121c2a6d6048ae570bf8a5acd59b19b2484e5e4a8211b7d14313",
     "app/src/main/java/eu/kanade/tachiyomi/data/ads/AdPageReadiness.kt": "faa6697f30753e9d8f8850468e5aa11a9501ba77301dfdc1ad89feda7486d255",
@@ -244,7 +242,6 @@
     "app/src/main/java/eu/kanade/tachiyomi/novels/NovelMetadataStore.kt": "168600833824e53c5780c7664a4c6edcade7de9dd0c50b2ad5f652506c5f1347",
     "app/src/main/java/eu/kanade/tachiyomi/novels/NovelModels.kt": "9c3f59dab405c78cd31748f12e16a4dfea51666395b99987231a9e3b0ec03222",
     "app/src/main/java/eu/kanade/tachiyomi/novels/NovelQueueSql.kt": "e79c387fefc1cff43c233085b34eeb81c4576fd77d6a24906f443d39c184355e",
-    "app/src/main/java/eu/kanade/tachiyomi/novels/NovelRepository.kt": "322ccf6763f82153fe09ea1ad5a94c41d8577d45d0f216b2ba5ae1454d8d1815",
     "app/src/main/java/eu/kanade/tachiyomi/novels/NovelRepositoryContentValidation.kt": "7135246c2872b767b98a2f4e159a375ea7a42f4bf61dd34d6f08db70ab32d630",
     "app/src/main/java/eu/kanade/tachiyomi/novels/NovelRuleManifest.kt": "cd7ddd087f3aa806da4b8c60dbfdf3b485356cc067d02eaf08d95586ac4c373e",
     "app/src/main/java/eu/kanade/tachiyomi/novels/NovelRuleSnapshot.kt": "75ecb08595e0e6f72a563e6537d209f30893d8084e112dcb0f97606f9b8ee09a",
@@ -430,7 +427,6 @@
     "app/src/test/java/eu/kanade/tachiyomi/novels/NovelCloudMetadataTest.kt": "9e866a76e809ce345aacc370e300bb0ac08a69c1a1248b6b0fdaf669d5097102",
     "app/src/test/java/eu/kanade/tachiyomi/novels/NovelContentQualityTest.kt": "c08e0a6a648df8c99f8a069e4a09a6af7f3764aee81a74f50d19671b5835aad5",
     "app/src/test/java/eu/kanade/tachiyomi/novels/NovelContentTypeClassifierTest.kt": "9d9c0896cf55019b74f0e12335f500cb94c6c36db1a52234890496f223501344",
-    "app/src/test/java/eu/kanade/tachiyomi/novels/NovelContentTypePresentationTest.kt": "79c53bb00c1ef44242832db5e2a46fc97312a7982227eb4a9dae106dbb33cd19",
     "app/src/test/java/eu/kanade/tachiyomi/novels/NovelDownloadRemovalTest.kt": "74386e514815932f541d8bd101300ee0af6b07e1235d33b766020338006e6c75",
     "app/src/test/java/eu/kanade/tachiyomi/novels/NovelDownloadSourceRegressionTest.kt": "09c6940b65216df1faf1ff8f22f08d7a5dcfd44e8d0ce8f6f1e9d405bb457211",
     "app/src/test/java/eu/kanade/tachiyomi/novels/NovelGuestMergeTest.kt": "a8281f0c3431659c3223092b7fd84094af9687d919f7870f2fed2ef75f65a014",
@@ -582,7 +578,11 @@
   "retirements": {
     "app/src/main/java/eu/kanade/tachiyomi/novels/NovelReadStatistics.kt": "Phase 2 completion evidence projection: fully format the modified file; no XP, source or account identity changes.",
     "app/src/main/java/eu/kanade/tachiyomi/novels/NovelCloudState.kt": "Phase 2 completion evidence projection: fully format the modified file; no XP, source or account identity changes.",
-    "app/src/test/java/mihon/domain/source/interactor/SourceRefreshConcurrencyTest.kt": "Phase2 CI timing defect: await real IO source entry instead of assuming runCurrent drains Dispatchers.IO; preserve all concurrency assertions and format entire test file."
+    "app/src/test/java/mihon/domain/source/interactor/SourceRefreshConcurrencyTest.kt": "Phase2 CI timing defect: await real IO source entry instead of assuming runCurrent drains Dispatchers.IO; preserve all concurrency assertions and format entire test file.",
+    "app/src/main/java/eu/kanade/tachiyomi/novels/NovelRepository.kt": "2026-10-21 guarded novel completion-v2 integration: entire modified file formatted with original Spotless/ktlint rules; no advertisement implementation changed.",
+    "app/src/main/java/eu/kanade/tachiyomi/data/account/sync/CloudLocalGateway.kt": "2026-10-21 guarded novel completion-v2 integration: entire modified file formatted with original Spotless/ktlint rules; no advertisement implementation changed.",
+    "app/src/main/java/eu/kanade/tachiyomi/data/account/sync/SupabaseCloudSync.kt": "2026-10-21 guarded novel completion-v2 integration: entire modified file formatted with original Spotless/ktlint rules; no advertisement implementation changed.",
+    "app/src/test/java/eu/kanade/tachiyomi/novels/NovelContentTypePresentationTest.kt": "2026-10-21 formatting-safe source-integration assertion: exact call target and arguments retained; complete test file formatted with original rules."
   },
   "schema": 1
 }
