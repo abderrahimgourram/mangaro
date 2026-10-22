@@ -27,7 +27,7 @@ class VerifiedStoryRelationshipRegistryTest {
                 it.jsonObject.getValue("sourceId").jsonPrimitive.content to
                     it.jsonObject.getValue("url").jsonPrimitive.content
             }.toSet()
-            record.adaptation.editions.map { it.source to it.url }.toSet() shouldBe editions
+            record.adaptation.editions.map { it.source to it.url }.toSet().containsAll(editions) shouldBe true
             record.evidence.all { it.startsWith("https://") } shouldBe true
             record.status shouldBe StoryVerification.VERIFIED
             (record.reviewedAt.isNotBlank() && record.reviewer.isNotBlank()) shouldBe true

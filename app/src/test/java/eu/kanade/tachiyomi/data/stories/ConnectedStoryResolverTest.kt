@@ -25,7 +25,7 @@ class ConnectedStoryResolverTest {
     }
 
     @Test fun `three original Solo comic editions produce exactly one reverse card with three routes`() {
-        val comics = StoryFixtures.comics()
+        val comics = StoryFixtures.comics().take(3) // Original three editions; expansion is tested separately.
         val result = resolve(StoryFixtures.novels().single(), comics + comics)!!
         result.heading shouldBe "إصدار مانهوا"
         result.alternatives.size shouldBe 3
@@ -158,7 +158,7 @@ class ConnectedStoryResolverTest {
         first.current(Local.State(token, ready = false)) shouldBe false
     }
 
-    @Test fun `all fourteen enrolled edition origins resolve only to the opposite exact work`() {
+    @Test fun `all twenty five enrolled edition origins resolve only to the opposite exact work`() {
         var checked = 0
         for (record in registry.records) {
             val comics = StoryFixtures.comics(record)
@@ -178,6 +178,6 @@ class ConnectedStoryResolverTest {
                 checked++
             }
         }
-        checked shouldBe 14
+        checked shouldBe 25
     }
 }

@@ -72,23 +72,28 @@ fun MangaroMangaHero(
     onContinueReading: () -> Unit,
     onLibraryClick: () -> Unit,
     modifier: Modifier = Modifier,
+    emptyChapterLabel: String = "لا توجد فصول",
 ) {
-    val imageRequest = ImageRequest.Builder(LocalContext.current)
-        .data(manga)
-        .crossfade(true)
-        .build()
-    val backdropScrim = remember {
-        Brush.verticalGradient(
-            listOf(
-                Color(0x660A070F),
-                Color(0xD90A070F),
-                MangaroDesignSystem.BackgroundDark,
-            ),
-        )
-    }
+    val imageRequest =
+        ImageRequest
+            .Builder(LocalContext.current)
+            .data(manga)
+            .crossfade(true)
+            .build()
+    val backdropScrim =
+        remember {
+            Brush.verticalGradient(
+                listOf(
+                    Color(0x660A070F),
+                    Color(0xD90A070F),
+                    MangaroDesignSystem.BackgroundDark,
+                ),
+            )
+        }
 
     BoxWithConstraints(
-        modifier = modifier
+        modifier =
+        modifier
             .fillMaxWidth()
             .background(MangaroDesignSystem.BackgroundDark),
     ) {
@@ -96,7 +101,8 @@ fun MangaroMangaHero(
             model = imageRequest,
             contentDescription = null,
             contentScale = ContentScale.Crop,
-            modifier = Modifier
+            modifier =
+            Modifier
                 .matchParentSize()
                 .blur(12.dp)
                 .alpha(0.34f)
@@ -108,7 +114,8 @@ fun MangaroMangaHero(
 
         val narrow = maxWidth < 350.dp
         Column(
-            modifier = Modifier
+            modifier =
+            Modifier
                 .fillMaxWidth()
                 .padding(start = 16.dp, top = appBarPadding + 14.dp, end = 16.dp, bottom = 18.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -122,7 +129,8 @@ fun MangaroMangaHero(
                     data = imageRequest,
                     contentDescription = manga.title,
                     onClick = onCoverClick,
-                    modifier = Modifier
+                    modifier =
+                    Modifier
                         .width(if (narrow) 104.dp else 120.dp)
                         .clip(RoundedCornerShape(16.dp)),
                 )
@@ -134,7 +142,8 @@ fun MangaroMangaHero(
                     Text(
                         text = manga.title,
                         color = Color.White,
-                        style = MaterialTheme.typography.headlineSmall.copy(
+                        style =
+                        MaterialTheme.typography.headlineSmall.copy(
                             fontWeight = FontWeight.Bold,
                             fontSize = if (narrow) 20.sp else 22.sp,
                             lineHeight = if (narrow) 26.sp else 28.sp,
@@ -162,11 +171,13 @@ fun MangaroMangaHero(
                 Button(
                     onClick = onContinueReading,
                     enabled = readingActionLabel != null,
-                    modifier = Modifier
+                    modifier =
+                    Modifier
                         .weight(1.15f)
                         .height(48.dp),
                     shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(
+                    colors =
+                    ButtonDefaults.buttonColors(
                         containerColor = MangaroDesignSystem.GoldPrimary,
                         contentColor = Color(0xFF150F1B),
                     ),
@@ -174,7 +185,7 @@ fun MangaroMangaHero(
                     Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(19.dp))
                     Spacer(Modifier.width(6.dp))
                     Text(
-                        text = readingActionLabel ?: "لا توجد فصول",
+                        text = readingActionLabel ?: emptyChapterLabel,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -182,17 +193,32 @@ fun MangaroMangaHero(
                 }
                 OutlinedButton(
                     onClick = onLibraryClick,
-                    modifier = Modifier
+                    modifier =
+                    Modifier
                         .weight(1f)
                         .height(48.dp),
                     shape = RoundedCornerShape(14.dp),
-                    border = androidx.compose.foundation.BorderStroke(
+                    border =
+                    androidx.compose.foundation.BorderStroke(
                         1.dp,
-                        if (manga.favorite) MangaroDesignSystem.LavenderPrimary.copy(alpha = 0.7f) else Color.White.copy(alpha = 0.16f),
+                        if (manga.favorite) {
+                            MangaroDesignSystem.LavenderPrimary.copy(
+                                alpha = 0.7f,
+                            )
+                        } else {
+                            Color.White.copy(alpha = 0.16f)
+                        },
                     ),
-                    colors = ButtonDefaults.outlinedButtonColors(
+                    colors =
+                    ButtonDefaults.outlinedButtonColors(
                         containerColor = Color(0x99171020),
-                        contentColor = if (manga.favorite) MangaroDesignSystem.LavenderPrimary else Color(0xFFE8E0EE),
+                        contentColor = if (manga.favorite) {
+                            MangaroDesignSystem.LavenderPrimary
+                        } else {
+                            Color(
+                                0xFFE8E0EE,
+                            )
+                        },
                     ),
                 ) {
                     AnimatedContent(
@@ -217,11 +243,15 @@ fun MangaroMangaHero(
 }
 
 @Composable
-private fun MetadataLine(text: String, color: Color = Color(0xFFD0C5D9)) {
+private fun MetadataLine(
+    text: String,
+    color: Color = Color(0xFFD0C5D9),
+) {
     Text(
         text = text,
         color = color,
-        style = MaterialTheme.typography.bodySmall.copy(
+        style =
+        MaterialTheme.typography.bodySmall.copy(
             lineHeight = 17.sp,
             textDirection = TextDirection.Content,
         ),
@@ -231,15 +261,16 @@ private fun MetadataLine(text: String, color: Color = Color(0xFFD0C5D9)) {
 }
 
 @Composable
-private fun statusLabel(status: Long): String? = when (status) {
-    SManga.ONGOING.toLong() -> stringResource(MR.strings.ongoing)
-    SManga.COMPLETED.toLong() -> stringResource(MR.strings.completed)
-    SManga.LICENSED.toLong() -> stringResource(MR.strings.licensed)
-    SManga.PUBLISHING_FINISHED.toLong() -> stringResource(MR.strings.publishing_finished)
-    SManga.CANCELLED.toLong() -> stringResource(MR.strings.cancelled)
-    SManga.ON_HIATUS.toLong() -> stringResource(MR.strings.on_hiatus)
-    else -> null
-}
+private fun statusLabel(status: Long): String? =
+    when (status) {
+        SManga.ONGOING.toLong() -> stringResource(MR.strings.ongoing)
+        SManga.COMPLETED.toLong() -> stringResource(MR.strings.completed)
+        SManga.LICENSED.toLong() -> stringResource(MR.strings.licensed)
+        SManga.PUBLISHING_FINISHED.toLong() -> stringResource(MR.strings.publishing_finished)
+        SManga.CANCELLED.toLong() -> stringResource(MR.strings.cancelled)
+        SManga.ON_HIATUS.toLong() -> stringResource(MR.strings.on_hiatus)
+        else -> null
+    }
 
 @Composable
 fun MangaroMangaDescription(
@@ -253,7 +284,8 @@ fun MangaroMangaDescription(
     var canExpand by remember(description) { mutableStateOf(false) }
 
     Column(
-        modifier = modifier
+        modifier =
+        modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 14.dp)
             .animateContentSize(),
@@ -268,7 +300,8 @@ fun MangaroMangaDescription(
             Text(
                 text = it,
                 color = Color(0xFFC8BDCF),
-                style = MaterialTheme.typography.bodyMedium.copy(
+                style =
+                MaterialTheme.typography.bodyMedium.copy(
                     lineHeight = 23.sp,
                     textDirection = TextDirection.Content,
                 ),
@@ -283,7 +316,8 @@ fun MangaroMangaDescription(
                     text = if (expanded) "عرض أقل" else "عرض المزيد",
                     color = MangaroDesignSystem.GoldPrimary,
                     style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-                    modifier = Modifier
+                    modifier =
+                    Modifier
                         .clip(RoundedCornerShape(8.dp))
                         .clickable { expanded = !expanded }
                         .padding(vertical = 4.dp),
@@ -300,7 +334,8 @@ fun MangaroMangaDescription(
                         text = tag,
                         color = Color(0xFFD4C7DF),
                         style = MaterialTheme.typography.labelMedium,
-                        modifier = Modifier
+                        modifier =
+                        Modifier
                             .clip(RoundedCornerShape(9.dp))
                             .background(Color(0xFF21172C))
                             .clickable { onTagClick(tag) }
@@ -312,7 +347,10 @@ fun MangaroMangaDescription(
     }
 }
 
-fun mangaUpdateFreshness(newestChapterTimestamp: Long, nowTimestamp: Long = Clock.System.now().toEpochMilliseconds()): String? {
+fun mangaUpdateFreshness(
+    newestChapterTimestamp: Long,
+    nowTimestamp: Long = Clock.System.now().toEpochMilliseconds(),
+): String? {
     if (newestChapterTimestamp <= 0L) return null
     val days = ((nowTimestamp - newestChapterTimestamp).coerceAtLeast(0L) / 86_400_000L).toInt()
     return when (days) {

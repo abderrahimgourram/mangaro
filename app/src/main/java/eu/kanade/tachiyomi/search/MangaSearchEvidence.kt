@@ -98,6 +98,7 @@ internal class MangaSearchEvidence(
             identity.edition, identity.year, priority,
             evidence(manga).let { it.copy(readable = PreferredMangaVariants.readerUsable(manga.id) ?: it.readable) },
             catalogIdentity = VerifiedCatalogIdentity.from(identity),
+            queryMatchRank = row.queryMatchRank,
             metadataOrigin = if (metadata.containsKey(key(manga)) ||
                 manga !== current
             ) {

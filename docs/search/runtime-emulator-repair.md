@@ -1,0 +1,37 @@
+# Runtime integration repair (emulator-5554)
+
+Baseline: e2017c5aa1888ee49e076c6b7f97ec2d0053e2c9. Actual signed release UI reproduced separate same-story comic cards. Solo Leveling's enrolled Manga Starz edition displayed the novel card and navigated both ways; its Azora edition did not. This is edition coverage/identity integration, not universal failure of the card component.
+
+## Shared identity policy
+
+Search previously loaded three reviewed comic identity records while Connected Stories maintained five independently reviewed endpoints. The two consumers could disagree about the exact same source route. Search now consumes verified comic endpoint identities from the existing relationship graph as an additional evidence source. It does not import the prose endpoint into the comic identity, infer an edge from a title, or write identities/progress to SQL. Remote reviewed community decisions retain precedence. Revoked/conflicted graph records cannot create a search identity.
+
+The registry validator previously could not represent two actual bundled adapter route contracts: Azora `slug#numericId` and MangaSwat `numericId`. Only those existing source-qualified grammars are newly permitted; arbitrary providers, traversal, absolute comic URLs, queries and credentials remain rejected.
+
+## Reviewed edition evidence
+
+Five additional original-comic editions were reviewed on 2026-10-22: Azora Solo Leveling (`solo-leveling-s#73`), MangaSwat Solo Leveling (`247366`), Azora Omniscient Reader (`omniscient-readers-viewpoint-11#410`), MangaSwat Omniscient Reader (`193603`), and the second MangaTime comic record (`6a9821dcc039d83190c57734`). The latter explicitly supplies the same Korean original title, multilingual aliases and Dokja narrative; its separate source-owned ID is preserved. Public source detail contracts were fetched, identifying the original comic and its specific narrative; no sequel/ARISE/Ragnarok routes were enrolled. These extend existing reviewed adaptations, rather than creating new adaptation claims. Source responses with empty creator/authority fields are not used for automatic identity inference.
+
+Publisher corroboration: [Solo Leveling](https://www.tappytoon.com/en/book/solo-leveling-official), [Omniscient Reader](https://www.webtoons.com/en/action/omniscient-reader/list?title_no=2154). Source-qualified public routes and exact server IDs remain separate editions. The existing card, cover and navigation resolver still validates live/cached target availability.
+
+A separate same-medium reviewed record connects six inspected Duke comic editions. The source narratives identify Cyan Vert, betrayed by his brother and returned to childhood; MangaTime/MangaSwat corroborate the studio, while MangaDar explicitly declares the Korean and alternate English titles. [Publisher](https://www.webtoons.com/en/fantasy/the-reborn-young-lord-is-an-assassin/list?title_no=6107) corroborates the work and creators. This is an audited data record, not a title-specific branch in ranking or source parsing. No Duke novel adaptation edge was added: the available prose edition's original/revised-publication ambiguity remains unresolved.
+
+## Chapter failure evidence
+
+The actual Duke MangaDar details screen fails in `ChapterPagination.collect` with `Empty or repeated chapter page`. Its public page currently displays both zero chapters and the explicit empty-index message while imported ComicSeries JSON-LD advertises 148 episodes. The advertised number is not a count of reachable chapter routes. The adapter now distinguishes an explicit consistent empty representation from contradictory or absent index evidence, failing closed for the observed contradiction. It does not fabricate chapter links or bypass provider restrictions. The UI keeps an unavailable/retry state rather than labelling unknown/failed counts as confirmed zero. Cached SQL chapters remain untouched on errors.
+
+Local raw evidence is kept outside Git. Runtime acceptance results and unresolved providers must be reported separately; these assertions are not substitutes for APK UI tests.
+
+## Runtime evidence opt-in
+
+On a disposable ranchu/goldfish emulator only, an operator-created private app file `files/search-public-metadata-diagnostics.enabled` enables bounded `MangaroSearchPublic` logcat records on next process start. Normal devices and installations without this file do not enable logging. Only public candidate identity/route, chapter-index measurements, selection and grouping diagnostics are included, not accounts, bodies, library or credentials. Remove the marker after QA. Chunked log records must be reassembled before JSON inspection. This does not replace or alter the actual Search UI path.
+
+Further runtime review enrolled TeamX `/series/OR`, Hijala `/omniscient-readers-viewpoint/`, MangaDar `/manga/omniscient-readers-viewpoint/`, and Manga Starz `/manga/omniscient-readers-viewpoint` in the existing Omniscient Reader endpoint. TeamX and Hijala explicitly identify Kim Dokja and the novel becoming reality; MangaDar supplies the Korean original name and sing N song / Sleepy-C; Manga Starz details and its actual 310-row index were obtained through the signed baseline APK. The latter host returned an HTTP challenge from the laptop, so desktop curl availability is not claimed. Duke Manga Starz details similarly provided Redice Studio and Cyan Vert's specific story through the real app; it is included in the same-medium review. No source or chapter IDs were changed. These additional curated editions are data coverage, not a universal inference algorithm or evidence that every catalogue duplicate is known.
+
+Solo Leveling's MangaDar `/manga/solo-leveling/` and Hijala `/solo-leveling/` were also reviewed against their public Chugong credits, Korean/original aliases and Sung Jinwoo narrative. There are now seven reviewed original Solo comic routes and eight Omniscient comic routes; these are still only five adaptation relationships. Original enrolled routes remain intact. All 25 enrolled comic/prose origins are tested against their opposite exact work; the historical original-three-edition deduplication regression remains fixed to those original three routes, while production observation validates all seven original Solo source IDs.
+
+## Late exact-match ordering
+
+A second actual UI failure was reproduced with Arabic search: fast-source broad results stayed above the real match after the latter arrived. Reading MangaTime's published client and making the exact public Arabic API request confirmed that `query` is the correct field and returns relevant results; all eight emulator rule stores had no active DSL override. Those hypotheses were rejected. The actual ViewModel/selection path pinned previous group order before current query relevance. `SearchLateExactMatchTest` was executed against the old selection and failed its final first-result assertion, retaining both sources.
+
+The existing relevance score now travels with each edition into selection. Groups are ordered by their strongest member match before preserving previous order within equal quality. Edition winner selection still uses usable unique chapter evidence, so a matching 33-chapter alias cannot beat its 200-chapter usable edition merely by title. Unrelated results remain available. New tests cover the actual ViewModel, stable equal-quality order and a matched alias with a fuller different-language edition.
