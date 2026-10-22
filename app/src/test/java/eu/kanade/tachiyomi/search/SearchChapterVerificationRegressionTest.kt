@@ -306,7 +306,7 @@ class SearchChapterVerificationRegressionTest {
         sources.forEach { coVerify(exactly = 1) { it.getMangaUpdate(any(), any(), false, true) } }
     }
 
-    @Test fun `successful image prefix is required before claiming representative readability`() = runBlocking {
+    @Test fun `successful image prefix is required before claiming representative readability`(): Unit = runBlocking {
         SearchChapterVerifier.imageSignature("<html>blocked</html>".toByteArray()) shouldBe false
         SearchChapterVerifier.imageSignature("RIFF".toByteArray()) shouldBe false
         SearchChapterVerifier.imageSignature("GIF89a".toByteArray()) shouldBe true

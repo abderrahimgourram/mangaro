@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Test
 
 /** Sanitized actual public chapter-index fields from 2026-10-22, not reader content. */
 class TeamXRecordedIndexTest {
-    @Test fun `actual Duke index traverses four pages and certifies 148 real unique chapters`() = runBlocking {
+    @Test fun `actual Duke index traverses four pages and certifies 148 real unique chapters`(): Unit = runBlocking {
         val requested = java.util.Collections.synchronizedSet(mutableSetOf<Int>())
         val client = OkHttpClient.Builder().addInterceptor { chain ->
             val page = chain.request().url.queryParameter("page")?.toInt() ?: 1
