@@ -98,6 +98,7 @@ internal class MangaSearchEvidence(
             identity.edition, identity.year, priority,
             evidence(manga).let { it.copy(readable = PreferredMangaVariants.readerUsable(manga.id) ?: it.readable) },
             catalogIdentity = VerifiedCatalogIdentity.from(identity),
+            queryMatchRank = row.queryMatchRank,
             metadataOrigin = if (metadata.containsKey(key(manga)) ||
                 manga !== current
             ) {
@@ -121,13 +122,40 @@ internal class MangaSearchEvidence(
             checkedAt = ChapterListIntegrity.lastSuccessfulAt(manga),
         )
     }
+    private fun metadataPriority(manga: Manga): Int {
+        val known = CatalogWorkEvidence.from(manga)
+        if (known.reviewedWorkKey != null || known.externalIds.any { (namespace, value) ->
+                namespace in setOf("anilist", "myanimelist", "mangadex", "mangaupdates", "kitsu", "novelupdates") &&
+                    AtlasCandidateIndex.validId(value)
+            }
+        ) {
+            return 2
+        }
+        if (cachedMetadata(manga) != null ||
+            (manga.initialized && WorkIdentityNormalizer.creator(manga.author) != null && known.aliases.isNotEmpty())
+        ) {
+            return 1
+        }
+        return 0
+    }
+
     suspend fun refresh(rows: List<RankedSearchResult>, allowNetwork: Boolean = true) = withContext(Dispatchers.IO) {
         val owner = synchronized(this@MangaSearchEvidence) { epoch }
-        for (row in rows.distinctBy { key(it.manga) }.take(12)) {
+        // Choose the bounded frame AFTER prioritizing unresolved editions. Otherwise
+        // two large known groups can fill the frame and hide every useful detail probe.
+        // Retain the first four display candidates for SQL/cache integrity hydration.
+        val distinct = rows.distinctBy { key(it.manga) }
+        val frame = (distinct.sortedBy { metadataPriority(it.manga) }.take(12) + distinct.take(4))
+            .distinctBy { key(it.manga) }.map { row ->
+                ensureActive()
+                row to (
+                    getManga.await(row.manga.id)?.takeIf {
+                        it.source == row.manga.source && it.url == row.manga.url
+                    } ?: row.manga
+                    )
+            }.sortedBy { (_, manga) -> metadataPriority(manga) }
+        for ((row, manga) in frame) {
             ensureActive()
-            val manga = getManga.await(row.manga.id)?.takeIf {
-                it.source == row.manga.source && it.url == row.manga.url
-            } ?: row.manga
             // The current record is authoritative; don't resurrect removed external IDs from an older memo.
             val proof = if (ChapterListIntegrity.proof(manga) == null) {
                 SearchChapterEvidence()

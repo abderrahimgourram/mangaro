@@ -105,6 +105,136 @@ class SearchChapterVerificationRegressionTest {
         }
     }
 
+    @Test fun `known identities leave bounded detail requests for unresolved editions`() = runBlocking {
+        val mangas = (1L..8L).map { i ->
+            manga(890000 + i).copy(
+                author = null,
+                initialized = false,
+                memo = buildJsonObject {
+                    if (i <= 4) {
+                        put(
+                            "mangaro.workIdentity",
+                            buildJsonObject {
+                                put("externalIds", buildJsonObject { put("anilist", (500000 + i).toString()) })
+                            },
+                        )
+                    }
+                },
+            )
+        }
+        val requested = mutableListOf<Long>()
+        val sources = mangas.map { m ->
+            mockk<HttpSource>().also { source ->
+                every { source.id } returns m.source
+                coEvery { source.getMangaUpdate(any(), any(), true, false) } answers {
+                    requested += m.id
+                    SMangaUpdate(
+                        SManga.create().apply {
+                            url = m.url
+                            title = m.title
+                            author = "Creator ${m.id}"
+                        },
+                        emptyList(),
+                    )
+                }
+            }
+        }
+        val db = mockk<GetManga>()
+        coEvery { db.await(any()) } answers { mangas.first { it.id == firstArg<Long>() } }
+        val evidence = MangaSearchEvidence(db, { emptyList() })
+        evidence.refresh(mangas.mapIndexed { i, m -> RankedSearchResult(sources[i], m) })
+        requested shouldBe mangas.drop(4).map { it.id }
+        sources.forEach { coVerify(exactly = 0) { it.getMangaUpdate(any(), any(), false, true) } }
+    }
+
+    @Test fun `late unresolved editions are prioritized before a full frame of known identities`() = runBlocking {
+        val mangas = (1L..20L).map { i ->
+            manga(890000 + i).copy(
+                author = null,
+                initialized = false,
+                memo = buildJsonObject {
+                    if (i <= 16) {
+                        put(
+                            "mangaro.workIdentity",
+                            buildJsonObject {
+                                put("externalIds", buildJsonObject { put("anilist", (500000 + i).toString()) })
+                            },
+                        )
+                    }
+                },
+            )
+        }
+        val requested = mutableListOf<Long>()
+        val sources = mangas.map { m ->
+            mockk<HttpSource>().also { source ->
+                every { source.id } returns m.source
+                coEvery { source.getMangaUpdate(any(), any(), true, false) } answers {
+                    requested += m.id
+                    SMangaUpdate(
+                        SManga.create().apply {
+                            url = m.url
+                            title = m.title
+                            author = "Creator ${m.id}"
+                        },
+                        emptyList(),
+                    )
+                }
+            }
+        }
+        val db = mockk<GetManga>()
+        coEvery { db.await(any()) } answers { mangas.first { it.id == firstArg<Long>() } }
+        val evidence = MangaSearchEvidence(db, { emptyList() })
+        evidence.refresh(mangas.mapIndexed { i, m -> RankedSearchResult(sources[i], m) })
+        requested shouldBe mangas.drop(16).map { it.id }
+        sources.forEach { coVerify(exactly = 0) { it.getMangaUpdate(any(), any(), false, true) } }
+    }
+
+    @Test fun `cached metadata does not repeatedly occupy the bounded unresolved frame`() = runBlocking {
+        val mangas = (1L..20L).map { i ->
+            manga(895000 + i).copy(
+                author = null,
+                initialized = false,
+                memo = buildJsonObject {},
+            )
+        }
+        val requests = mutableListOf<Long>()
+        val sources = mangas.map { m ->
+            mockk<HttpSource>().also { source ->
+                every { source.id } returns m.source
+                coEvery { source.getMangaUpdate(any(), any(), true, false) } answers {
+                    requests += m.id
+                    SMangaUpdate(
+                        SManga.create().apply {
+                            url = m.url
+                            title = m.title
+                            author = "Creator ${m.id}"
+                        },
+                        emptyList(),
+                    )
+                }
+            }
+        }
+        var sqlReads = 0
+        val db = mockk<GetManga>()
+        coEvery { db.await(any()) } answers {
+            sqlReads++
+            mangas.first { it.id == firstArg<Long>() }
+        }
+        val evidence = MangaSearchEvidence(db, { emptyList() })
+        val rows = mangas.mapIndexed { i, m -> RankedSearchResult(sources[i], m) }
+        for (part in rows.take(12).chunked(4)) {
+            evidence.resetBudget()
+            evidence.refresh(part)
+        }
+        requests.clear()
+        sqlReads = 0
+        evidence.resetBudget()
+        evidence.refresh(rows)
+        requests shouldBe mangas.drop(12).take(4).map { it.id }
+        (sqlReads <= 16) shouldBe true
+        sources.forEach { coVerify(exactly = 0) { it.getMangaUpdate(any(), any(), false, true) } }
+    }
+
     @Test fun `similar titles without identity proof never trigger chapter crawling`() = runBlocking {
         val mangas = listOf(manga(881001), manga(881002)).map {
             it.copy(

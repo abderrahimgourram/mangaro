@@ -23,6 +23,31 @@
             "format": "MANHWA",
             "source": "215553151312092548",
             "url": "/manhwa/solo-leveling#697df7610c5d340ac154401b"
+          },
+          {
+            "format": "MANHWA",
+            "source": "2482399499047903203",
+            "url": "solo-leveling-s#73"
+          },
+          {
+            "format": "MANHWA",
+            "source": "7657007209499352344",
+            "url": "247366"
+          },
+          {
+            "format": "MANHWA",
+            "source": "3975276517041363504",
+            "url": "/manga/solo-leveling/"
+          },
+          {
+            "format": "MANHWA",
+            "source": "917436262447415426",
+            "url": "/solo-leveling/"
+          },
+          {
+            "format": "MANHWA",
+            "source": "918460697583900080",
+            "url": "/manga/solo-leveling"
           }
         ]
       },
@@ -44,10 +69,11 @@
       "evidence": [
         "https://www.tappytoon.com/en/book/solo-leveling-official",
         "https://yenpress.com/series/solo-leveling-novel",
-        "https://seanovel.org/novels/solo-leveling"
+        "https://seanovel.org/novels/solo-leveling",
+        "https://mangalik.net/manga/solo-leveling/"
       ],
-      "reviewedAt": "2026-10-19",
-      "reviewer": "Mangaro interoperability review"
+      "reviewedAt": "2026-10-23",
+      "reviewer": "Mangaro source contract and publisher metadata review"
     },
     {
       "id": "tbate-original",
@@ -199,6 +225,46 @@
             "format": "MANHWA",
             "source": "215553151312092548",
             "url": "/manhwa/omniscient-readers-viewpoint#6a8fb9a47d3207cb2faf20a0"
+          },
+          {
+            "format": "MANHWA",
+            "source": "2482399499047903203",
+            "url": "omniscient-readers-viewpoint-11#410"
+          },
+          {
+            "format": "MANHWA",
+            "source": "7657007209499352344",
+            "url": "193603"
+          },
+          {
+            "format": "MANHWA",
+            "source": "215553151312092548",
+            "url": "/manhwa/omniscient-reader#6a9821dcc039d83190c57734"
+          },
+          {
+            "format": "MANHWA",
+            "source": "4110737012647435874",
+            "url": "/series/OR"
+          },
+          {
+            "format": "MANHWA",
+            "source": "917436262447415426",
+            "url": "/omniscient-readers-viewpoint/"
+          },
+          {
+            "format": "MANHWA",
+            "source": "3975276517041363504",
+            "url": "/manga/omniscient-readers-viewpoint/"
+          },
+          {
+            "format": "MANHWA",
+            "source": "6058166507489091982",
+            "url": "/manga/omniscient-readers-viewpoint"
+          },
+          {
+            "format": "MANHWA",
+            "source": "918460697583900080",
+            "url": "/manga/omniscient-readers-viewpoint"
           }
         ]
       },
@@ -223,10 +289,11 @@
         "https://yenpress.com/series/omniscient-reader-s-viewpoint",
         "https://anilist.co/manga/119257",
         "https://mangatime.org/manhwa/omniscient-readers-viewpoint",
-        "https://seanovel.org/novels/the-all-encompassing-reader"
+        "https://seanovel.org/novels/the-all-encompassing-reader",
+        "https://mangalik.net/manga/omniscient-readers-viewpoint/"
       ],
-      "reviewedAt": "2026-10-20",
-      "reviewer": "Mangaro publisher roles and exact provider metadata review"
+      "reviewedAt": "2026-10-23",
+      "reviewer": "Mangaro source contract and publisher metadata review"
     }
   ]
 }

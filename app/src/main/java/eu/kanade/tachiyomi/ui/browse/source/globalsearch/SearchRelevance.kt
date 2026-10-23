@@ -6,10 +6,16 @@ import java.text.Normalizer
 import java.util.Locale
 
 /** Comparison only: source titles and identities are never rewritten. */
-data class RankedSearchResult(val source: Source, val manga: Manga,
-    val workKey: String = "${manga.source}:${manga.url}", val verifiedDistinctChapters: Int? = null,
-    val indexComplete: Boolean = false, val provisional: Boolean = false,
-    val alternatives: List<RankedSearchResult> = emptyList())
+data class RankedSearchResult(
+    val source: Source,
+    val manga: Manga,
+    val workKey: String = "${manga.source}:${manga.url}",
+    val verifiedDistinctChapters: Int? = null,
+    val indexComplete: Boolean = false,
+    val provisional: Boolean = false,
+    val alternatives: List<RankedSearchResult> = emptyList(),
+    val queryMatchRank: Long = Long.MAX_VALUE,
+)
 
 internal class SearchRelevance(query: String) {
     private val query = normalize(query)
@@ -17,7 +23,13 @@ internal class SearchRelevance(query: String) {
     private val titles = mutableMapOf<String, String>()
 
     fun rank(items: Map<Source, SearchItemResult>, sourceOrder: Map<Long, Int>): List<RankedSearchResult> {
-        data class Candidate(val result: RankedSearchResult, val tier: Int, val penalty: Int, val sourceOrder: Int, val itemOrder: Int)
+        data class Candidate(
+            val result: RankedSearchResult,
+            val tier: Int,
+            val penalty: Int,
+            val sourceOrder: Int,
+            val itemOrder: Int,
+        )
         return items.flatMap { (source, result) ->
             (result as? SearchItemResult.Success)?.result.orEmpty()
                 .distinctBy { it.url }
@@ -27,7 +39,13 @@ internal class SearchRelevance(query: String) {
                     val (tier, penalty) = eu.kanade.tachiyomi.search.AtlasDeclaredNames.forSearch(manga)
                         .map { name -> score(titles.getOrPut(name) { normalize(name) }) }
                         .minWithOrNull(compareBy<Pair<Int, Int>>({ it.first }, { it.second })) ?: (7 to 0)
-                    Candidate(RankedSearchResult(source, manga), tier, penalty, sourceOrder[source.id] ?: Int.MAX_VALUE, index)
+                    Candidate(
+                        RankedSearchResult(source, manga, queryMatchRank = (tier.toLong() shl 32) + penalty),
+                        tier,
+                        penalty,
+                        sourceOrder[source.id] ?: Int.MAX_VALUE,
+                        index,
+                    )
                 }
         }.sortedWith(compareBy<Candidate>({ it.tier }, { it.penalty }, { it.sourceOrder }, { it.itemOrder }))
             .map { it.result }
@@ -46,9 +64,13 @@ internal class SearchRelevance(query: String) {
                 val prefixes = words.count { word -> tokens.any { it.startsWith(word) } }
                 if (prefixes > 0) {
                     val unmatched = words.filterNot { word -> tokens.any { it.startsWith(word) } }
-                    val typoPenalty = if (words.size <= 12 && tokens.size <= 32) unmatched.sumOf { word ->
-                        if (word.length !in 3..48) 3 else tokens.minOfOrNull { editDistance(word, it, 2) } ?: 3
-                    } else unmatched.size * 3
+                    val typoPenalty = if (words.size <= 12 && tokens.size <= 32) {
+                        unmatched.sumOf { word ->
+                            if (word.length !in 3..48) 3 else tokens.minOfOrNull { editDistance(word, it, 2) } ?: 3
+                        }
+                    } else {
+                        unmatched.size * 3
+                    }
                     return 5 to ((words.size - prefixes) * 16 + typoPenalty)
                 }
                 // Bounded word-level edit distance, never above literal/prefix matches.
@@ -77,7 +99,9 @@ internal class SearchRelevance(query: String) {
                 minimum = minOf(minimum, current[j + 1])
             }
             if (minimum > limit) return limit + 1
-            val swap = previous; previous = current; current = swap
+            val swap = previous
+            previous = current
+            current = swap
         }
         return previous[b.length]
     }

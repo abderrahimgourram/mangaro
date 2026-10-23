@@ -40,6 +40,7 @@ internal data class SearchWorkCandidate(
     val catalogIdentity: CatalogIdentity? = null,
     val originalTitle: String? = null,
     val metadataOrigin: String = "source-result",
+    val queryMatchRank: Long = Long.MAX_VALUE,
 )
 internal data class SearchWorkGroup(
     val key: String,
@@ -379,7 +380,10 @@ internal class SearchWorkSelection(private val readableFirst: Boolean = false) {
                     eligible.any { it.chapters.verifiedCount == null },
             )
         }.sortedWith(
-            compareBy<SearchWorkGroup> { g -> oldOrder[g.key] ?: Int.MAX_VALUE }
+            // Preserve arrival stability within query quality, not above stronger matches.
+            // A group's best matching alias survives selection of a different, fuller edition.
+            compareBy<SearchWorkGroup> { g -> g.members.minOf { it.queryMatchRank } }
+                .thenBy { g -> oldOrder[g.key] ?: Int.MAX_VALUE }
                 .thenBy { g -> g.members.minOf { member -> inputOrder[member.id] ?: Int.MAX_VALUE } },
         )
         previous = result.map { Previous(it.key, it.members.map { c -> c.id }.toSet(), it.winner.id) }

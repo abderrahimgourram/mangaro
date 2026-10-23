@@ -77,7 +77,9 @@ class ConnectedStoryLiveMetadataTest {
                 val source = eu.kanade.tachiyomi.source.internal.mangatime.MangaTime(client)
                 val graph = StoryFixtures.registry
                 val relation = graph.records.single { it.id == "omniscient-reader-original" }
-                val ref = relation.adaptation.editions.single()
+                val ref = relation.adaptation.editions.single {
+                    it.source == source.id.toString() && it.url.substringAfter('#') == "6a8fb9a47d3207cb2faf20a0"
+                }
                 val input = SManga.create().apply {
                     url = ref.url
                     title = ""

@@ -1,6 +1,8 @@
 package eu.kanade.tachiyomi.search
 
 import eu.kanade.tachiyomi.source.internal.azora.Azora
+import eu.kanade.tachiyomi.source.internal.hijala.Hijala
+import eu.kanade.tachiyomi.source.internal.mangadar.MangaDar
 import eu.kanade.tachiyomi.source.internal.mangatime.MangaTime
 import eu.kanade.tachiyomi.source.internal.teamx.TeamX
 import eu.kanade.tachiyomi.source.model.ChapterFetchCompleteness
@@ -68,6 +70,48 @@ class SearchSourceLiveContractTest {
             println("LIVE_INDEX Azora unique=${update.chapters.size} complete=true samplePages=true")
         } finally {
             uy.kohesive.injekt.Injekt = previous
+            client.dispatcher.executorService.shutdownNow()
+            client.connectionPool.evictAll()
+        }
+    }
+
+    @Test fun `Dar and Hijala retain explicit credits and never turn publisher into author`() = runBlocking {
+        val client = OkHttpClient.Builder().connectTimeout(8, TimeUnit.SECONDS)
+            .readTimeout(15, TimeUnit.SECONDS).callTimeout(20, TimeUnit.SECONDS).build()
+        try {
+            val sources = listOf(
+                MangaDar(client),
+                Hijala(client),
+            )
+            for (source in sources) {
+                for ((slug, creator) in listOf(
+                    "solo-leveling" to "Chugong",
+                    "solo-leveling-ragnarok" to "Daul",
+                    "omniscient-readers-viewpoint" to "sing N song",
+                )) {
+                    val route = if (source is MangaDar) "/manga/$slug/" else "/$slug/"
+                    val result = source.getMangaUpdate(
+                        SManga.create().apply {
+                            url = route
+                            title = "Public work"
+                        },
+                        emptyList(),
+                        true,
+                        false,
+                    ).manga
+                    result.url shouldBe route
+                    if (slug == "omniscient-readers-viewpoint" &&
+                        source is Hijala
+                    ) {
+                        result.author shouldBe null // Site supplies a publisher, not a creator.
+                    } else {
+                        result.author!!.contains(creator, ignoreCase = true) shouldBe true
+                        result.artist.isNullOrBlank() shouldBe false
+                    }
+                    println("LIVE_CREDIT source=${source.name} route=$route exactRoute=true author=true artist=true")
+                }
+            }
+        } finally {
             client.dispatcher.executorService.shutdownNow()
             client.connectionPool.evictAll()
         }

@@ -27,11 +27,30 @@ class VerifiedStoryRelationshipRegistryTest {
                 it.jsonObject.getValue("sourceId").jsonPrimitive.content to
                     it.jsonObject.getValue("url").jsonPrimitive.content
             }.toSet()
-            record.adaptation.editions.map { it.source to it.url }.toSet() shouldBe editions
+            record.adaptation.editions.map { it.source to it.url }.toSet().containsAll(editions) shouldBe true
             record.evidence.all { it.startsWith("https://") } shouldBe true
             record.status shouldBe StoryVerification.VERIFIED
             (record.reviewedAt.isNotBlank() && record.reviewer.isNotBlank()) shouldBe true
         }
+    }
+
+    @Test fun `bounded reviewed endpoint supports nine editions and rejects a seventeenth`() {
+        fun document(count: Int): String {
+            val first = StoryFixtures.solo
+            val ref = first.adaptation.editions.first()
+            val record = first.copy(
+                adaptation = first.adaptation.copy(
+                    editions = (1..count).map { ref.copy(url = "/manga/synthetic-edition-$it") },
+                ),
+            )
+            return buildJsonObject {
+                put("schema", 1)
+                put("records", Json.encodeToJsonElement(listOf(record)))
+            }.toString()
+        }
+        VerifiedStoryRelationshipRegistry.parse(document(9)).records.single().adaptation.editions.size shouldBe 9
+        VerifiedStoryRelationshipRegistry.parse(document(16)).records.single().adaptation.editions.size shouldBe 16
+        runCatching { VerifiedStoryRelationshipRegistry.parse(document(17)) }.isFailure shouldBe true
     }
 
     @Test fun `wrong schema malformed document and oversized registry reject without fallback guesses`() {

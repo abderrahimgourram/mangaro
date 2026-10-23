@@ -154,7 +154,12 @@ class ConnectedStoriesCoverageTest {
         val comic =
             StoryCandidate(
                 StoryDestination.Comic(
-                    StoryFixtures.comic(relation.adaptation.editions.single()).copy(
+                    StoryFixtures.comic(
+                        relation.adaptation.editions.single {
+                            it.url ==
+                                rows.first().jsonObject["url"]!!.jsonPrimitive.content
+                        },
+                    ).copy(
                         title = c["title"]!!.jsonPrimitive.content,
                         author = c["author"]!!.jsonPrimitive.content,
                         artist = c["artist"]!!.jsonPrimitive.content,
@@ -177,7 +182,7 @@ class ConnectedStoriesCoverageTest {
         ConnectedStoryResolver.resolve(graph, novel, listOf(comic), token)!!.selected shouldBe comic.destination
         for (route in listOf(
             "/manhua/omniscient-cultivator#6a8fbbad7d3207cb2faf2e50",
-            "/manhwa/omniscient-reader#6a9821dcc039d83190c57734",
+            "/manhwa/omniscient-reader#000000000000000000000001",
         )) {
             val unreviewed = comic.copy(
                 destination = StoryDestination.Comic(
