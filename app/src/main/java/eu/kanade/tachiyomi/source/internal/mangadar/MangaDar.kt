@@ -360,6 +360,13 @@ class MangaDar(
             ".thumb, .summary_image, div[x-data], .chapter-card, .chapter-item",
             true,
         )
+        eu.kanade.tachiyomi.source.internal.util.HtmlCreatorMetadata.retain(
+            document,
+            manga,
+            baseUrl,
+            ".divide-y > div",
+            false,
+        )
         return manga.apply {
             val titleText = document.selectFirst("h1.entry-title, h1.title, div.post-title h1, main h1")?.text()?.trim()
             if (!titleText.isNullOrBlank()) {

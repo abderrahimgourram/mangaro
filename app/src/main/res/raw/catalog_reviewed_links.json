@@ -40,16 +40,21 @@
         {
           "sourceId": "215553151312092548",
           "url": "/manhwa/solo-leveling#697df7610c5d340ac154401b"
+        },
+        {
+          "sourceId": "918460697583900080",
+          "url": "/manga/solo-leveling"
         }
       ],
       "evidence": [
         "https://starzmanga.com/manga/solo-leveling/",
         "https://olympustaff.com/series/SL",
-        "https://mangatime.org/manhwa/solo-leveling"
+        "https://mangatime.org/manhwa/solo-leveling",
+        "https://mangalik.net/manga/solo-leveling/"
       ],
       "method": "MAINTAINER_CONFIRMED",
       "reviewer": "Mangaro maintainer",
-      "reviewedAt": "2026-10-18"
+      "reviewedAt": "2026-10-23"
     },
     {
       "key": "81e63342a698e9de565ca6f2bfb384f2c65bdd71183d80212c0535b459faf6f9",
@@ -101,6 +106,10 @@
         {
           "sourceId": "6058166507489091982",
           "url": "/manga/the-regressed-son-of-a-duke-is-an-assassin"
+        },
+        {
+          "sourceId": "918460697583900080",
+          "url": "/manga/the-regressed-son-of-a-duke-is-an-assassin"
         }
       ],
       "evidence": [
@@ -109,11 +118,64 @@
         "https://mangatime.org/manhwa/the-regressed-son-of-a-duke-is-an-assassin",
         "https://olympustaff.com/series/the-regressed-son-of-a-duke-is-an-assassin",
         "https://mangadar.com/manga/the-regressed-son-of-a-duke-is-an-assassin/",
-        "https://starzmanga.com/manga/the-regressed-son-of-a-duke-is-an-assassin/"
+        "https://starzmanga.com/manga/the-regressed-son-of-a-duke-is-an-assassin/",
+        "https://mangalik.net/manga/the-regressed-son-of-a-duke-is-an-assassin/"
       ],
       "method": "MAINTAINER_CONFIRMED",
       "reviewer": "Mangaro publisher, alternate-title and Cyan Vert narrative review",
       "reviewedAt": "2026-10-22"
+    },
+    {
+      "key": "cfcd5efa17bbb9eafbc48877044f2dd31f2e15a978d5bb6a51d74c9e314f2154",
+      "title": "Solo Leveling: Ragnarok / سولو ليفلينج: راغناروك (comic)",
+      "state": "ACTIVE",
+      "editions": [
+        {
+          "sourceId": "2482399499047903203",
+          "url": "solo-leveling-ragnarok#1422"
+        },
+        {
+          "sourceId": "7657007209499352344",
+          "url": "1702270"
+        },
+        {
+          "sourceId": "6058166507489091982",
+          "url": "/manga/solo-leveling-ragnarok"
+        },
+        {
+          "sourceId": "3975276517041363504",
+          "url": "/manga/solo-leveling-ragnarok/"
+        },
+        {
+          "sourceId": "917436262447415426",
+          "url": "/solo-leveling-ragnarok/"
+        },
+        {
+          "sourceId": "4110737012647435874",
+          "url": "/series/solo-leveling-ragnarok"
+        },
+        {
+          "sourceId": "215553151312092548",
+          "url": "/manhwa/solo-leveling-ragnarok#697df7af0c5d340ac1547225"
+        },
+        {
+          "sourceId": "918460697583900080",
+          "url": "/manga/solo-leveling-ragnarok"
+        }
+      ],
+      "evidence": [
+        "https://www.tappytoon.com/en/book/solo-leveling-ragnarok",
+        "https://meshmanga.com/series/1702270",
+        "https://starzmanga.com/manga/solo-leveling-ragnarok/",
+        "https://mangadar.com/manga/solo-leveling-ragnarok/",
+        "https://hijala.com/solo-leveling-ragnarok/",
+        "https://olympustaff.com/series/solo-leveling-ragnarok",
+        "https://mangatime.org/manhwa/solo-leveling-ragnarok",
+        "https://mangalik.net/manga/solo-leveling-ragnarok/"
+      ],
+      "method": "MAINTAINER_CONFIRMED",
+      "reviewer": "Mangaro exact provider IDs, Daul/JIN/Brix credits and Sung Suho narrative review; separate from original Solo Leveling",
+      "reviewedAt": "2026-10-23"
     }
   ]
 }

@@ -90,7 +90,7 @@ class ConnectedStoriesProductionTest {
             f.assertReadOnly()
         }
 
-    @Test fun `reverse production observation preserves seven source IDs and SQL IDs in one card`() =
+    @Test fun `reverse production observation preserves all enrolled source IDs and SQL IDs in one card`() =
         runTest {
             val f = Fixture(UnconfinedTestDispatcher(testScheduler))
             val novel = StoryFixtures.novels().single().destination
@@ -98,13 +98,13 @@ class ConnectedStoriesProductionTest {
             backgroundScope.launch(f.dispatcher) { f.repository.observe(novel).collect(values::add) }
             f.rows.entries.forEachIndexed { i, (ref, row) -> row.value = StoryFixtures.comic(ref, 50L + i) }
             val result = values.last()!!
-            result.alternatives.size shouldBe 7
+            result.alternatives.size shouldBe StoryFixtures.solo.adaptation.editions.size
             result.alternatives.map { (it as StoryDestination.Comic).manga.id }.toSet() shouldBe
-                setOf(50L, 51L, 52L, 53L, 54L, 55L, 56L)
+                StoryFixtures.solo.adaptation.editions.indices.map { it.toLong() + 50 }.toSet()
             result.alternatives
                 .map { it.edition.source }
                 .distinct()
-                .size shouldBe 7
+                .size shouldBe StoryFixtures.solo.adaptation.editions.size
             f.assertReadOnly()
         }
 

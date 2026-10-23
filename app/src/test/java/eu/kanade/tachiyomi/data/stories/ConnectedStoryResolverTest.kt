@@ -158,7 +158,7 @@ class ConnectedStoryResolverTest {
         first.current(Local.State(token, ready = false)) shouldBe false
     }
 
-    @Test fun `all twenty five enrolled edition origins resolve only to the opposite exact work`() {
+    @Test fun `all twenty seven enrolled edition origins resolve only to the opposite exact work`() {
         var checked = 0
         for (record in registry.records) {
             val comics = StoryFixtures.comics(record)
@@ -178,6 +178,6 @@ class ConnectedStoryResolverTest {
                 checked++
             }
         }
-        checked shouldBe 25
+        checked shouldBe 27
     }
 }

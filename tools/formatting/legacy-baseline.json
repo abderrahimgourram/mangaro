@@ -95,7 +95,6 @@
     "app/src/main/java/eu/kanade/presentation/home/MangaroHomeHeader.kt": "3d544cd39af01d55b2b959d4b81da5ba04a7ada3bec25ae2d82ffbacc690d61c",
     "app/src/main/java/eu/kanade/presentation/home/MangaroMangaCard.kt": "e483ef351f1c322b7c99eec68c95f45df634590ace9444ad111dbb8076ed2b8a",
     "app/src/main/java/eu/kanade/presentation/home/MangaroNotificationPermissionPrompt.kt": "2b68ae2a0c1194e0e8761194c4fa7e8fab7d6b8d5312a50eaf5fda1646425969",
-    "app/src/main/java/eu/kanade/presentation/home/MangaroSearchScreen.kt": "2ed0d13106d95efb607dfbffd6fd87b242e1560580af336095af9aebcf0ba950",
     "app/src/main/java/eu/kanade/presentation/home/MangaroSourceChip.kt": "257837026a7d463829585fbb0dd100ecfee32a9b77e6fb4545b29c08df0a52ab",
     "app/src/main/java/eu/kanade/presentation/home/MangaroSourceChooserSheet.kt": "be84683806b8fe37d2f9bece67d3a6d4677b7710d76e8d3f70910842bf4bbcb5",
     "app/src/main/java/eu/kanade/presentation/home/MangaroStartupTransition.kt": "8b8f38b1c10866e850ed669180d7227f0fc9b5365d56b27c914d6e4f20eecc4e",
@@ -266,7 +265,6 @@
     "app/src/main/java/eu/kanade/tachiyomi/source/AndroidSourceManager.kt": "1ed34300c70bd00717261d443a72f35e3d790405a5ddebcbb4384858a32ebaa1",
     "app/src/main/java/eu/kanade/tachiyomi/source/MangaDarPageResolver.kt": "88917bcecd11ce7ed079911cea94cb6df6367c4b07a825c5912805d60eaf1b62",
     "app/src/main/java/eu/kanade/tachiyomi/source/internal/azora/Azora.kt": "0694921e99c903973a8bbdee44855af49d8c88bb23af4cd4d3f4917817e276cb",
-    "app/src/main/java/eu/kanade/tachiyomi/source/internal/hijala/Hijala.kt": "4fa5d2701ae09fe398487cbb96348c9d69d2a7b177c3edf0c3dbd50d11f49e06",
     "app/src/main/java/eu/kanade/tachiyomi/source/internal/mangalek/MangaLek.kt": "78876743fdd2c97a0ab9a240f4279c56e3fbdd2676998f5dfa595ec9f97664e0",
     "app/src/main/java/eu/kanade/tachiyomi/source/internal/mangastarz/MangaStarz.kt": "f0393074d0c121f8ff4c0712f649c5f46506e4ae964318a783787b4d37f4a744",
     "app/src/main/java/eu/kanade/tachiyomi/source/internal/mangastarz/MangaStarzHtmlFetcher.kt": "cb5ad69c21f5f54e81aafd01b61b4e13eb977f7f6d9e1a83c4704f83f67ce91f",
@@ -283,7 +281,6 @@
     "app/src/main/java/eu/kanade/tachiyomi/ui/browse/source/globalsearch/GlobalSearchScreen.kt": "44010863c8af3068694bcce40d33f45784c3ce75f1f911a0a3f46c2504e5964c",
     "app/src/main/java/eu/kanade/tachiyomi/ui/browse/source/globalsearch/GlobalSearchViewModel.kt": "fbb30826349fbd4e006d2da8545e9c06fb66c732b5be532392ca073128741522",
     "app/src/main/java/eu/kanade/tachiyomi/ui/browse/source/globalsearch/RecentSearches.kt": "270961ed0a39203ba7cc580b1fe10bdf7959814ec7f3d127f661603f6b8070d6",
-    "app/src/main/java/eu/kanade/tachiyomi/ui/browse/source/globalsearch/SearchViewModel.kt": "3f0d1b4685f790e0c10000d6cec43bdb9d1377bd1281e223261b02504dbe72e3",
     "app/src/main/java/eu/kanade/tachiyomi/ui/category/CategoryViewModel.kt": "7431fa1006d5b0e8d8b4f0a3f1e1f96ce154c1d6be35a34dff76e451adaccf69",
     "app/src/main/java/eu/kanade/tachiyomi/ui/download/DownloadQueueScreen.kt": "52f4487f47a9cf77b6cbf90a2f063092cda1eeb978047e75865c669c873862ce",
     "app/src/main/java/eu/kanade/tachiyomi/ui/download/DownloadQueueViewModel.kt": "6c7070ef37505d545d5b3230ef404295b6e63e3e4e585a79bd523c1f6c0de48e",
@@ -432,9 +429,7 @@
     "app/src/test/java/eu/kanade/tachiyomi/search/AtlasBenchmarkTest.kt": "76109c227d1cb71f9dbd27498def1f7ce5c0dca313808b755c5bd41870aeca39",
     "app/src/test/java/eu/kanade/tachiyomi/search/AtlasCoreSafetyTest.kt": "1ac0a989c31379bb0e1350462d8957cb573ad56412bcec921905cf9c7065c3e3",
     "app/src/test/java/eu/kanade/tachiyomi/search/AtlasNameAcquisitionTest.kt": "705bed87d41aa64d30413c100f226539b869366593e8a41bf04beca2089bab5e",
-    "app/src/test/java/eu/kanade/tachiyomi/search/AtlasProductionSearchTest.kt": "c31db537f22ae561be71dfc6c72039bfa84b71af52c04c99e920f552fb38bdee",
     "app/src/test/java/eu/kanade/tachiyomi/search/AtlasPublicSearchCorpusTest.kt": "836019aacbdc21ec8dbc98bc46fcf2884090f9610e3687f4799c45551187c4bd",
-    "app/src/test/java/eu/kanade/tachiyomi/search/AtlasRecordedEvaluationTest.kt": "391ab0ad500d95400b0e2f84fbcc1c6291e0103a6f72ea5659eddc4c21e7fff9",
     "app/src/test/java/eu/kanade/tachiyomi/search/AtlasResolutionTest.kt": "b796635aa017887383d9ad98379dd97d936ab62443941aaba9c6430dfa421843",
     "app/src/test/java/eu/kanade/tachiyomi/search/HistoricalSearchIdentity.kt": "463e387da57578c744dc269e3dd8d286c03d45d3266b530b19cac00a952bf077",
     "app/src/test/java/eu/kanade/tachiyomi/search/MangaIdentityEnrichmentV2Test.kt": "25f946973357feecc7a8a8f704d13b54df19156e50a8ecb5b800fabd2918ed9e",
@@ -582,7 +577,12 @@
     "app/src/test/java/eu/kanade/tachiyomi/novels/NovelContentTypePresentationTest.kt": "2026-10-21 formatting-safe source-integration assertion: exact call target and arguments retained; complete test file formatted with original rules.",
     "app/src/test/java/eu/kanade/tachiyomi/search/NovelSearchSelectionTest.kt": "Bounded novel chapter-list evidence and regression test: format modified file under original rules.",
     "app/src/test/java/mihon/domain/source/interactor/SourceRefreshConcurrencyTest.kt": "Phase2 CI timing defect: await real IO source entry instead of assuming runCurrent drains Dispatchers.IO; preserve all concurrency assertions and format entire test file.",
-    "domain/src/main/java/tachiyomi/domain/chapter/service/ChapterListIntegrity.kt": "Search/source reliability repair: fully format modified file under original Spotless rules."
+    "domain/src/main/java/tachiyomi/domain/chapter/service/ChapterListIntegrity.kt": "Search/source reliability repair: fully format modified file under original Spotless rules.",
+    "app/src/main/java/eu/kanade/tachiyomi/source/internal/hijala/Hijala.kt": "Retain source-declared creator credits bound to exact work route; format entire touched adapter with original Spotless rules.",
+    "app/src/test/java/eu/kanade/tachiyomi/search/AtlasProductionSearchTest.kt": "Keep original edition fixture explicit as reviewed catalog grows; fully format touched test with original rules.",
+    "app/src/test/java/eu/kanade/tachiyomi/search/AtlasRecordedEvaluationTest.kt": "Keep original edition fixture explicit as reviewed catalog grows; fully format touched test with original rules.",
+    "app/src/main/java/eu/kanade/presentation/home/MangaroSearchScreen.kt": "Fix actual late-result viewport anchoring on emulator-5554 without resetting user scroll; fully format touched production screen with original rules.",
+    "app/src/main/java/eu/kanade/tachiyomi/ui/browse/source/globalsearch/SearchViewModel.kt": "Fix production caller truncation and retain already-validated same-context cache presentation; fully format touched ViewModel with original rules."
   },
   "schema": 1
 }

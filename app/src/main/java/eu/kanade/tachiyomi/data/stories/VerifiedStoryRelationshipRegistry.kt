@@ -219,7 +219,7 @@ internal class VerifiedStoryRelationshipRegistry private constructor(
                 require(record.evidence.size in 1..8 && record.evidence.all(::publicEvidence))
                 listOf(record.adaptation, record.original).forEach { endpoint ->
                     require(
-                        endpoint.editions.size in 1..8 && endpoint.editions.distinct().size == endpoint.editions.size,
+                        endpoint.editions.size in 1..16 && endpoint.editions.distinct().size == endpoint.editions.size,
                     )
                     require(
                         endpoint.externalIds.keys.all { it in authorities } &&
