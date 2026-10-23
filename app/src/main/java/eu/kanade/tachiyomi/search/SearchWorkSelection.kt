@@ -306,42 +306,24 @@ internal class SearchWorkSelection(private val readableFirst: Boolean = false) {
                     it.chapters.verifiedCount != 0
             }
             val eligible = readable.filterNot { it.chapters.indexUncertain }.ifEmpty { readable }.ifEmpty { members }
-            val best = eligible.sortedWith(
-                compareByDescending<SearchWorkCandidate> {
-                    if ((
-                            readableFirst ||
-                                established != null
-                            ) &&
-                        it.chapters.readable == true
-                    ) {
-                        1
-                    } else {
-                        0
-                    }
-                }
-                    .thenByDescending { it.chapters.distinct ?: -1 }
-                    .thenByDescending { it.chapters.readable == true }.thenByDescending { it.chapters.complete }
-                    .thenBy { it.priority }.thenBy { it.source }.thenBy { it.id },
-            ).first()
-            val incumbent = eligible.firstOrNull { it.id == old?.winner }
-            // Lower bounds can dominate a known complete count, but two unfinished indexes
-            // cannot prove their final ordering. Keep the incumbent until stronger evidence arrives.
-            val replace = incumbent == null || incumbent.id == best.id || eligible.all { it.chapters.complete } ||
-                (
-                    (readableFirst || established != null) && best.chapters.readable == true &&
-                        incumbent.chapters.readable != true
-                    ) ||
-                (incumbent.chapters.distinct == null && best.chapters.distinct != null) ||
-                (
-                    incumbent.chapters.complete &&
-                        (best.chapters.distinct ?: -1) >= (incumbent.chapters.distinct ?: -1)
-                    ) ||
-                (best.chapters.complete && best.chapters.distinct == incumbent.chapters.distinct) ||
-                (
-                    best.kind == SearchWorkKind.COMIC &&
-                        (best.chapters.distinct ?: -1) > (incumbent.chapters.distinct ?: -1)
-                    )
-            val winner = if (replace) best else incumbent!!
+            fun quality(c: SearchWorkCandidate) = tachiyomi.domain.manga.service.CatalogEditionEvidence(
+                indexedChapters = c.chapters.distinct,
+                readable = c.chapters.readable,
+                complete = c.chapters.complete,
+                indexUsable = c.chapters.indexUsable,
+                uncertain = c.chapters.indexUncertain,
+            )
+            val ranked = eligible.sortedWith { a, b ->
+                val compared = tachiyomi.domain.manga.service.CatalogEditionSelection.compareQuality(
+                    quality(b),
+                    quality(a),
+                )
+                if (compared != 0) compared else compareValuesBy(a, b, { it.source }, { it.id })
+            }
+            val best = ranked.first()
+            // Same evidence has the same default everywhere. Do not pin an early source
+            // ahead of the shared stable source-qualified reference tie-breaker.
+            val winner = best
             val comicBase = if (winner.kind ==
                 SearchWorkKind.COMIC
             ) {

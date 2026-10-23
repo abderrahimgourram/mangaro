@@ -24,18 +24,31 @@ object HtmlMangaIntegrity {
         }.distinct()
         if (values.size > 1) throw IOException("Conflicting chapter totals")
         val total = values.singleOrNull()
-        if (total == 0 && document.select(".chapter-pagination a[href], .chapters-pagination a[href], #chapterlist a[rel=next]").isNotEmpty()) {
+        if (total == 0 &&
+            document.select(
+                ".chapter-pagination a[href], .chapters-pagination a[href], #chapterlist a[rel=next]",
+            ).isNotEmpty()
+        ) {
             throw IOException("Zero chapter total conflicts with pagination")
         }
         return total
     }
     fun details(document: Document, titleSelector: String, structure: String, madaraRoute: Boolean) {
         SourceValidationUtil.checkCloudflareOrError(document)
+        HtmlWorkCandidateValidation.requireWork(document)
         if (document.select(titleSelector).none { it.text().isNotBlank() } || document.select(structure).isEmpty()) {
             throw IOException("Details response is not a manga representation")
         }
         val url = document.location().toHttpUrlOrNull()
-        if (url != null && (url.encodedPath.trim('/').isEmpty() || madaraRoute &&
-                !Regex("/manga/[^/]+/?").matches(url.encodedPath))) throw IOException("Manga details redirected outside manga route")
+        if (url != null &&
+            (
+                url.encodedPath.trim('/').isEmpty() || (
+                    madaraRoute &&
+                        !Regex("/manga/[^/]+/?").matches(url.encodedPath)
+                    )
+                )
+        ) {
+            throw IOException("Manga details redirected outside manga route")
+        }
     }
 }

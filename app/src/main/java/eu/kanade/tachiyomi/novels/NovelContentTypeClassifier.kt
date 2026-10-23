@@ -32,8 +32,13 @@ internal object NovelContentTypeClassifier {
     /** Measurements from an identity-checked public reader container, not the cover/page body.
      * sequentialPanels counts source-format-marked panels, never ordinary illustrations.
      */
-    data class ReadingSample(val httpStatus: Int, val canonicalMatches: Boolean,
-        val proseParagraphs: Int, val proseCharacters: Int, val sequentialPanels: Int)
+    data class ReadingSample(
+        val httpStatus: Int,
+        val canonicalMatches: Boolean,
+        val proseParagraphs: Int,
+        val proseCharacters: Int,
+        val sequentialPanels: Int,
+    )
     fun readingFormat(sample: ReadingSample): NovelContentType = when {
         sample.httpStatus != 200 || !sample.canonicalMatches || sample.proseParagraphs < 0 ||
             sample.proseCharacters < 0 || sample.sequentialPanels < 0 -> NovelContentType.UNKNOWN
@@ -55,22 +60,32 @@ internal object NovelContentTypeClassifier {
             it.value.length <= 160 && (it.validUntil == null || now in it.observedAt..it.validUntil)
         }
         val authorMatches = novel.author.isNullOrBlank() || NovelIdentity.normalize(novel.author) == "guiltythree"
-        val reviewed = if (novel.id == REVIEWED_EDITION && authorMatches && now in REVIEWED_AT..REVIEWED_UNTIL)
-            NovelContentFormat(readingFormat(ReadingSample(200, true, 0, 0, 37)), NovelFormatProvenance.VERIFIED_READER,
-                "cenele.webtoon-panels.v1:37:no-prose", REVIEWED_AT, REVIEWED_UNTIL) else null
+        val reviewed = if (novel.id == REVIEWED_EDITION && authorMatches && now in REVIEWED_AT..REVIEWED_UNTIL) {
+            NovelContentFormat(
+                readingFormat(ReadingSample(200, true, 0, 0, 37)),
+                NovelFormatProvenance.VERIFIED_READER,
+                "cenele.webtoon-panels.v1:37:no-prose",
+                REVIEWED_AT,
+                REVIEWED_UNTIL,
+            )
+        } else {
+            null
+        }
         val evidence = listOfNotNull(supplied, reviewed)
         if (evidence.isEmpty()) return unknown
         val rank = evidence.maxOf { it.provenance.ordinal }
         val best = evidence.filter { it.provenance.ordinal == rank }
         val newest = best.maxOf { it.observedAt }
         val current = best.filter { it.observedAt == newest }
-        if (current.map { it.type }.distinct().size != 1)
+        if (current.map { it.type }.distinct().size != 1) {
             return Result(NovelContentType.UNKNOWN, "CONFLICTING_FORMAT_EVIDENCE")
+        }
         val value = current.first()
         return Result(value.type, "${value.provenance}:${value.value}")
     }
 
-    fun eligible(novel: Novel): Boolean = classify(novel).type != NovelContentType.COMIC
+    fun eligible(novel: Novel): Boolean = classify(novel).type != NovelContentType.COMIC &&
+        tachiyomi.domain.manga.model.DiscoveryEligibility.valid(novel.title, novel.url)
 
     /** Only dedicated type/format fields, never generic 'type' (often country), genre or title. */
     fun jsonFormat(row: JsonObject): NovelContentFormat? = declared(
@@ -80,26 +95,37 @@ internal object NovelContentTypeClassifier {
 
     /** Call on the source's individual card or main metadata container, not the whole page. */
     fun htmlFormat(metadata: Element?): NovelContentFormat? = metadata?.let { root ->
-        declared(listOf("data-content-type", "data-content-format").mapNotNull {
-            root.attr(it).takeIf(String::isNotBlank)
-        } + root.select("[itemprop=bookFormat]").map { it.attr("content").ifBlank { it.text() } })
+        declared(
+            listOf("data-content-type", "data-content-format").mapNotNull {
+                root.attr(it).takeIf(String::isNotBlank)
+            } + root.select("[itemprop=bookFormat]").map { it.attr("content").ifBlank { it.text() } },
+        )
     }
 
     /** Exact controlled labels; an adaptation mention or a sentence is never a format tag. */
-    fun declared(values: List<String>, provenance: NovelFormatProvenance = NovelFormatProvenance.SOURCE_FORMAT): NovelContentFormat? {
-        if (values.size > 8 || values.any { it.length > 160 })
+    fun declared(
+        values: List<String>,
+        provenance: NovelFormatProvenance = NovelFormatProvenance.SOURCE_FORMAT,
+    ): NovelContentFormat? {
+        if (values.size > 8 || values.any { it.length > 160 }) {
             return NovelContentFormat(NovelContentType.UNKNOWN, provenance, "oversized-format-metadata")
+        }
         val bounded = values.map(String::trim).filter(String::isNotBlank)
         if (bounded.isEmpty()) return null
         val types = bounded.map { value ->
             when (NovelIdentity.normalize(value)) {
                 "manga", "manhwa", "manhua", "comic", "comics", "webtoon", "comic book",
-                "مانجا", "مانغا", "مانغوا", "مانهوا", "مانها", "مانوا", "قصه مصوره", "قصص مصوره" -> NovelContentType.COMIC
-                "novel", "text novel", "web novel", "webnovel", "light novel", "روايه", "روايه نصيه", "روايه خفيفه" -> NovelContentType.TEXT_NOVEL
+                "مانجا", "مانغا", "مانغوا", "مانهوا", "مانها", "مانوا", "قصه مصوره", "قصص مصوره",
+                -> NovelContentType.COMIC
+                "novel", "text novel", "web novel", "webnovel", "light novel", "روايه", "روايه نصيه", "روايه خفيفه" ->
+                    NovelContentType.TEXT_NOVEL
                 else -> NovelContentType.UNKNOWN
             }
         }.distinct()
-        return NovelContentFormat(types.singleOrNull() ?: NovelContentType.UNKNOWN, provenance,
-            if (types.size > 1) "conflicting-source-format" else bounded.first())
+        return NovelContentFormat(
+            types.singleOrNull() ?: NovelContentType.UNKNOWN,
+            provenance,
+            if (types.size > 1) "conflicting-source-format" else bounded.first(),
+        )
     }
 }

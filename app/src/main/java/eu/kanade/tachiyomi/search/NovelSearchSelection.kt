@@ -34,6 +34,8 @@ internal class NovelSearchSelection(private val repository: NovelRepository) {
     private val reservationLock = Any()
     private val checkedIndexes = ConcurrentHashMap.newKeySet<String>()
     private val indexBudget = java.util.concurrent.atomic.AtomicInteger(4)
+    private val sampleBudget = java.util.concurrent.atomic.AtomicInteger(2)
+    private val sampled = ConcurrentHashMap.newKeySet<String>()
     fun reset() {
         selection.restore(emptyList())
         counts.clear()
@@ -41,20 +43,14 @@ internal class NovelSearchSelection(private val repository: NovelRepository) {
         checkedIndexes.clear()
         remaining.set(4)
         indexBudget.set(4)
+        sampleBudget.set(2)
+        sampled.clear()
     }
     fun candidate(n: Novel, priority: Int): SearchWorkCandidate {
-        val ids = n.workIdentifiers.mapNotNull { id ->
-            id.split(':', limit = 2).takeIf { it.size == 2 }?.let { it[0] to it[1] }
-        }.toMap()
-        return SearchWorkCandidate(
-            n.id, n.sourceId, SearchWorkKind.NOVEL, n.title,
-            (n.alternativeTitles + listOfNotNull(n.originalTitle) + n.originalTitle.orEmpty().split('|')).filter {
-                it.isNotBlank()
-            }.toSet(),
-            ids, n.author?.let(NovelIdentity::searchAuthorKey), priority = priority,
+        val base = NovelCatalogCards.candidate(n, repository.catalog.value.evidence[n.id], priority)
+        return base.copy(
             chapters =
-            counts[n.id] ?: SearchChapterEvidence(),
-            originalTitle = n.originalTitle, metadataOrigin = "native-novel-metadata",
+            counts[n.id]?.let { SearchChapterVerifier.merge(base.chapters, it) } ?: base.chapters,
         )
     }
     fun groups(
@@ -68,7 +64,12 @@ internal class NovelSearchSelection(private val repository: NovelRepository) {
         val eligible = NovelCatalogCards.eligiblePage(repository.catalog.value, NovelPage(novels)).novels
         val candidates = eligible.distinctBy { it.id }.map { candidate(it, priority[it.sourceId] ?: Int.MAX_VALUE) }
         val byId = candidates.associateBy { it.id }
-        val verified = established.associate { work -> work.id to work.editions.mapNotNull { byId[it.id] } }
+        // Presentation groups can contain provisional links. Only source-owned native
+        // catalogue groups may supply established identity authority to the resolver.
+        val native = repository.catalog.value
+        val verified = native.works.groupBy { native.resolve(it.id) }.mapValues { (_, works) ->
+            works.flatMap { it.editions }.distinctBy { it.id }.mapNotNull { byId[it.id] }
+        }
         return selection.present(selection.generation, candidates, verified).orEmpty().also {
             WorkIdentityDiagnostics.observe("novel-search", candidates, it)
         }
@@ -92,11 +93,12 @@ internal class NovelSearchSelection(private val repository: NovelRepository) {
             val fresh = if (index == null || index.editionId != n.id) {
                 SearchChapterEvidence(readable = access?.accessWorks)
             } else {
-                val distinct = index.chapters.distinctBy { it.id }.size
+                val listed = index.chapters.distinctBy { it.id }
+                val distinct = listed.count { it.available }
                 val full = index.complete && index.nextPage == null && index.fetchedPages.isNotEmpty() &&
-                    (index.declaredTotal == null || index.declaredTotal == distinct)
+                    (index.declaredTotal == null || index.declaredTotal == listed.size)
                 SearchChapterEvidence(
-                    distinct,
+                    distinct.takeIf { full || it > 0 },
                     full,
                     if (full &&
                         index.availableCount == 0
@@ -123,6 +125,16 @@ internal class NovelSearchSelection(private val repository: NovelRepository) {
         val targets = buildList {
             for (i in 0 until (sources.maxOfOrNull { it.size } ?: 0)) {
                 sources.forEach { it.getOrNull(i)?.let(::add) }
+            }
+        }.sortedBy { n ->
+            if (AtlasCandidateIndex.authoritative(candidate(n, 0))) {
+                2
+            } else if (!n.author.isNullOrBlank() &&
+                (n.originalTitle != null || n.alternativeTitles.isNotEmpty())
+            ) {
+                1
+            } else {
+                0
             }
         }.take(remaining.get().coerceAtLeast(0))
         withTimeoutOrNull(6_000) {
@@ -180,6 +192,34 @@ internal class NovelSearchSelection(private val repository: NovelRepository) {
             ) { /* Last-good index remains available; unknown never becomes zero. */ }
         }
         cached(detailed)
+        // Existing source preflight, at most two genuine available chapter samples per query.
+        // No reading position, completion or XP operation is performed by this public-content probe.
+        val samples = detailed.distinctBy { it.id }.filter { it.id in competing && it.id !in sampled }
+            .sortedByDescending { counts[it.id]?.distinct ?: -1 }
+        for (novel in samples) {
+            ensureActive()
+            if (sampleBudget.get() <= 0) break
+            val index =
+                repository.indexSnapshot(novel)?.takeIf { it.editionId == novel.id && it.availableCount > 0 }
+                    ?: continue
+            val access = repository.catalog.value.evidence[novel.id]
+            val ttl = if (access?.accessWorks == true) 21_600_000L else 30_000L
+            if (access?.accessWorks != null &&
+                System.currentTimeMillis() - access.accessCheckedAt in 0 until ttl
+            ) {
+                continue
+            }
+            val reserved = synchronized(reservationLock) {
+                sampleBudget.get() > 0 && sampled.add(novel.id).also { if (it) sampleBudget.decrementAndGet() }
+            }
+            if (!reserved) continue
+            try {
+                withTimeoutOrNull(4_000) { repository.verifyEditionAccess(novel, index, maxSamples = 1) }
+            } catch (c: CancellationException) {
+                throw c
+            } catch (_: Exception) { /* Transport failure is not proof of zero or a read event. */ }
+        }
+        cached(detailed)
     }
     data class EvidenceInput(val rows: List<Novel>, val visible: List<Novel>, val catalog: NovelCatalogState)
 
@@ -191,7 +231,8 @@ internal class NovelSearchSelection(private val repository: NovelRepository) {
                 val detailed = input.rows.filter { NovelSourceAvailability.active(it.sourceId) }.distinctBy { it.id }
                     .map { n -> input.catalog.work(n.id)?.editions?.firstOrNull { it.id == n.id } ?: n }
                 val ids = SearchWorkIdentity.enrichmentCandidates(detailed.map { candidate(it, 0) })
-                detailed.filter { it.id in ids }
+                val visible = input.visible.take(12).mapTo(hashSetOf()) { it.id }
+                detailed.filter { it.id in ids || it.id in visible }
             }
             cached(input.visible)
             enrich(grouped)

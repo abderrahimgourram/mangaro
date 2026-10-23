@@ -9,19 +9,32 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonObject
 import mihon.domain.source.discovery.model.CapabilitySupport
 import mihon.domain.source.discovery.model.DiscoveryCategory
 import mihon.domain.source.discovery.model.SourceDiscoveryItem
 import mihon.domain.source.discovery.model.SourceDiscoveryResult
+import mihon.domain.source.health.SourceHealthMonitor
+import tachiyomi.domain.manga.model.DiscoveryEligibility
+import tachiyomi.domain.manga.service.WorkMetadata
+import java.util.concurrent.ConcurrentHashMap
 
 class GetSourceDiscovery(
     private val getSourceCapabilities: GetSourceCapabilities = GetSourceCapabilities(),
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
-    private val health: mihon.domain.source.health.SourceHealthMonitor = mihon.domain.source.health.SourceHealthMonitor.shared,
+    private val health: SourceHealthMonitor = SourceHealthMonitor.shared,
 ) {
 
-    private val cached = if (health === mihon.domain.source.health.SourceHealthMonitor.shared) sharedSnapshots else java.util.concurrent.ConcurrentHashMap<String, SourceDiscoveryResult>()
-    companion object { private val sharedSnapshots = java.util.concurrent.ConcurrentHashMap<String, SourceDiscoveryResult>() }
+    private val cached = if (health ===
+        SourceHealthMonitor.shared
+    ) {
+        sharedSnapshots
+    } else {
+        ConcurrentHashMap<String, SourceDiscoveryResult>()
+    }
+    companion object {
+        private val sharedSnapshots = ConcurrentHashMap<String, SourceDiscoveryResult>()
+    }
 
     suspend operator fun invoke(
         source: CatalogueSource,
@@ -37,7 +50,16 @@ class GetSourceDiscovery(
             DiscoveryCategory.COMPLETED -> capabilities.supportsCompletedFilter == CapabilitySupport.SUPPORTED
             DiscoveryCategory.NEW -> capabilities.supportsNewFilter == CapabilitySupport.SUPPORTED
         }
-        if (!supported) return@withContext SourceDiscoveryResult(source.id, source.name, category, page, false, emptyList())
+        if (!supported) {
+            return@withContext SourceDiscoveryResult(
+                source.id,
+                source.name,
+                category,
+                page,
+                false,
+                emptyList(),
+            )
+        }
         val mangasPage: MangasPage = try {
             health.run(source.id) {
                 when (category) {
@@ -46,10 +68,13 @@ class GetSourceDiscovery(
                     DiscoveryCategory.COMPLETED -> source.getSearchManga(page, "", prepareCompletedFilter(source))
                     DiscoveryCategory.NEW -> source.getSearchManga(page, "", prepareNewFilter(source))
                 }.also { result ->
-                    if (result.mangas.any { it.url.isBlank() || it.title.isBlank() }) throw java.io.IOException("Source returned invalid catalogue identities")
+                    DiscoveryEligibility.filterCandidates(result.mangas, { it.title }, { it.url })
                     if (category == DiscoveryCategory.POPULAR && page == 1) {
-                        if (result.mangas.isNotEmpty()) health.expectCatalogue(source.id)
-                        else if (!result.hasNextPage && (health.expectsCatalogue(source.id) || cached[cacheKey]?.items?.isNotEmpty() == true)) {
+                        if (result.mangas.isNotEmpty()) {
+                            health.expectCatalogue(source.id)
+                        } else if (!result.hasNextPage &&
+                            (health.expectsCatalogue(source.id) || cached[cacheKey]?.items?.isNotEmpty() == true)
+                        ) {
                             throw java.io.IOException("Source returned an impossible empty popular catalogue")
                         }
                     }
@@ -58,7 +83,16 @@ class GetSourceDiscovery(
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
-            if (health.discoverable(source.id)) cached[cacheKey]?.let { return@withContext it.copy(isFresh = false) }
+            if (health.discoverable(source.id)) {
+                cached[cacheKey]?.let {
+                    return@withContext it.copy(
+                        isFresh = false,
+                        items = it.items.filter { row ->
+                            DiscoveryEligibility.valid(row.title, row.url)
+                        },
+                    )
+                }
+            }
             return@withContext SourceDiscoveryResult(
                 sourceId = source.id,
                 sourceName = source.name,
@@ -70,7 +104,7 @@ class GetSourceDiscovery(
             )
         }
 
-        val items = mangasPage.mangas.map { sManga ->
+        val items = mangasPage.mangas.filter { DiscoveryEligibility.valid(it.title, it.url) }.map { sManga ->
             sManga.toSourceDiscoveryItem(source.id, source.name)
         }
 
@@ -194,7 +228,7 @@ class GetSourceDiscovery(
             status = status,
             genre = getGenres() ?: emptyList(),
             localMangaId = null,
-            workIdentity = memo[tachiyomi.domain.manga.service.WorkMetadata.MEMO_KEY] as? kotlinx.serialization.json.JsonObject,
+            workIdentity = memo[WorkMetadata.MEMO_KEY] as? JsonObject,
         )
     }
 }
