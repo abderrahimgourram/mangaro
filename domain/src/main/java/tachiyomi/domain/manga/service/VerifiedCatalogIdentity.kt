@@ -25,10 +25,20 @@ object VerifiedCatalogIdentity {
     private fun conflict(a: String?, b: String?) = !a.isNullOrBlank() && !b.isNullOrBlank() &&
         WorkTitleNormalizer.normalize(a) != WorkTitleNormalizer.normalize(b)
 
+    /** Retrieval hints only; every attachment must still pass matches and all conflict vetoes. */
+    fun lookupKeys(value: CatalogIdentity): Set<String> = buildSet {
+        if (value.route.isNotBlank()) add("route:${value.source}:${value.route}")
+        value.providerId?.takeIf(String::isNotBlank)?.let { add("provider:${value.source}:$it") }
+        reviewed(value)?.let { add("work:$it") }
+        ids(value).forEach { (authority, id) -> add("external:$authority:$id") }
+    }
+
     fun matches(a: CatalogIdentity, b: CatalogIdentity): Boolean {
-        val ai = ids(a); val bi = ids(b)
+        val ai = ids(a)
+        val bi = ids(b)
         if (ai.keys.intersect(bi.keys).any { ai[it] != bi[it] }) return false
-        val ar = reviewed(a); val br = reviewed(b)
+        val ar = reviewed(a)
+        val br = reviewed(b)
         if (ar != null && br != null && ar != br) return false
         if (conflict(a.format, b.format) || conflict(a.edition, b.edition)) return false
         if (a.source == b.source && a.route.isNotBlank() && a.route == b.route) return true
@@ -46,16 +56,26 @@ object VerifiedCatalogIdentity {
         val authorities = members.flatMap { ids(it).entries }.associate { it.key to it.value }
         authorities.toSortedMap().entries.firstOrNull()?.let { return "external:${it.key}:${it.value}" }
         val first = members.minBy { it.editionKey }
-        if (!first.providerId.isNullOrBlank() && members.all { it.source == first.source && it.providerId == first.providerId }) {
+        if (!first.providerId.isNullOrBlank() &&
+            members.all { it.source == first.source && it.providerId == first.providerId }
+        ) {
             return "provider:${first.source}:${first.providerId}"
         }
         return "edition:${first.editionKey}"
     }
 
     fun from(work: WorkMetadata) = CatalogIdentity(
-        work.reference.sourceId.toString(), work.reference.url,
-        if (work.reference.url.isNotBlank()) CommunityMangaKey.fromSource(work.reference.sourceId, work.reference.url).value
-        else "${work.reference.sourceId}:${work.reference.mangaId}",
-        work.externalIds, work.reviewedWorkKey, work.providerId, work.format, work.edition,
+        work.reference.sourceId.toString(),
+        work.reference.url,
+        if (work.reference.url.isNotBlank()) {
+            CommunityMangaKey.fromSource(work.reference.sourceId, work.reference.url).value
+        } else {
+            "${work.reference.sourceId}:${work.reference.mangaId}"
+        },
+        work.externalIds,
+        work.reviewedWorkKey,
+        work.providerId,
+        work.format,
+        work.edition,
     )
 }

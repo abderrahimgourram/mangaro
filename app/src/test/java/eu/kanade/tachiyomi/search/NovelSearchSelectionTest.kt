@@ -56,6 +56,7 @@ class NovelSearchSelectionTest {
         coEvery { r.indexSnapshot(a) } returns ai
         coEvery { r.indexSnapshot(b) } returns bi
         coEvery { r.detail(any()) } answers { firstArg() }
+        coEvery { r.verifyEditionAccess(any(), any(), any()) } returns Unit
         coEvery {
             r.completeIndex(any(), any(), any<Int>(), any())
         } answers { if (firstArg<Novel>().id == a.id) ai!! else bi!! }
@@ -70,7 +71,7 @@ class NovelSearchSelectionTest {
         group.provisional shouldBe false
     }
 
-    @Test fun incompleteIndexIsALowerBoundAndEnrichmentUsesBoundedMetadataWithoutDownloadingText() = runTest {
+    @Test fun incompleteIndexUsesBoundedMetadataAndExistingAccessPreflightWithoutDirectTextCrawl() = runTest {
         val r = repo(index(a, 400, false), index(b, 205))
         val profile = NovelSearchSelection(r)
         profile.enrich(listOf(a, b))
@@ -80,6 +81,7 @@ class NovelSearchSelectionTest {
         coVerify(exactly = 1) { r.completeIndex(a, false, 2, any()) }
         coVerify(exactly = 0) { r.completeIndex(b, any(), any<Int>(), any()) }
         coVerify(exactly = 0) { r.chapterText(any(), any()) }
+        coVerify(exactly = 2) { r.verifyEditionAccess(any(), any(), 1) }
     }
 
     @Test fun anotherEditionOrMismatchedOfficialTotalCannotBecomeACompleteCount() = runTest {
@@ -154,6 +156,7 @@ class NovelSearchSelectionTest {
         result.groups.single().provisional shouldBe true
         r.catalog.value.works.size shouldBe 2
         coVerify(exactly = 0) { r.chapterText(any(), any()) }
+        coVerify(exactly = 0) { r.verifyEditionAccess(any(), any(), any()) }
     }
 
     @Test fun partialRefreshCannotEraseCompleteNovelIndexEvidence() = runTest {

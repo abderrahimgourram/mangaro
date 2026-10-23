@@ -348,7 +348,12 @@ class NovelRepository private constructor(context: Context) {
     suspend fun ingest(novels: List<Novel>) = withContext(Dispatchers.IO) {
         ready.await()
         catalogLock.withLock {
-            val reconciled = NovelWorkReconciler.ingest(mutableCatalog.value, novels)
+            val reconciled = NovelWorkReconciler.ingest(
+                mutableCatalog.value,
+                novels.filter {
+                    tachiyomi.domain.manga.model.DiscoveryEligibility.valid(it.title, it.url)
+                },
+            )
             val protected = library.value.map { it.novel.id }.toSet() + novels.map { it.id } +
                 if (activeDownloads() != null) downloads.tasks.value.map { it.novel.id }.toSet() else emptySet()
             val retained = reconciled.works.filter { w -> w.editions.any { it.id in protected } } +
@@ -548,8 +553,11 @@ class NovelRepository private constructor(context: Context) {
                 )?.copy(notice = "تعذّر تحديث المصدر؛ تُعرض بيانات الاكتشاف المحفوظة.")
                     ?: throw e
             }
-            ingest(result.novels)
-            val snapshot = DiscoveryCache(result, System.currentTimeMillis())
+            val valid = tachiyomi.domain.manga.model.DiscoveryEligibility.filterCandidates(result.novels, {
+                it.title
+            }, { it.url })
+            ingest(valid)
+            val snapshot = DiscoveryCache(result.copy(novels = valid), System.currentTimeMillis())
             synchronized(discoveryCache) {
                 discoveryCache[key] = snapshot
                 while (discoveryCache.size > 16) discoveryCache.remove(discoveryCache.keys.first())
@@ -1588,13 +1596,13 @@ class NovelRepository private constructor(context: Context) {
                 }
                 val result = collect()
                 checkpoint(result)
-                if (result.complete) {
+                if (result.chapters.isNotEmpty() || result.complete) {
                     updateEvidence(
                         novel,
                         NovelEditionEvidence(
-                            true,
-                            result.availableCount,
-                            catalog.value.evidence[novel.id]?.accessWorks,
+                            result.complete,
+                            result.chapters.distinctBy { it.id }.count { it.available },
+                            null, // Index retrieval is not a new reader-access sample.
                             result.updatedAt,
                         ),
                     )
@@ -1666,13 +1674,13 @@ class NovelRepository private constructor(context: Context) {
                         },
                     )
                     persistIndex(novel, result)
-                    if (result.complete) {
+                    if (result.chapters.isNotEmpty() || result.complete) {
                         updateEvidence(
                             novel,
                             NovelEditionEvidence(
-                                true,
-                                result.availableCount,
-                                catalog.value.evidence[novel.id]?.accessWorks,
+                                result.complete,
+                                result.chapters.distinctBy { it.id }.count { it.available },
+                                null, // Preserve separately timestamped last reader evidence.
                                 result.updatedAt,
                             ),
                         )
@@ -1740,23 +1748,31 @@ class NovelRepository private constructor(context: Context) {
             catalogWrites.trySend(next)
         }
     }
-    suspend fun verifyEditionAccess(novel: Novel, index: NovelChapterIndex) {
-        val old = catalog.value.evidence[novel.id] ?: return
-        if (old.accessWorks != null && System.currentTimeMillis() - old.checkedAt < 21_600_000) return
+    suspend fun verifyEditionAccess(novel: Novel, index: NovelChapterIndex, maxSamples: Int = 2) {
+        require(maxSamples in 1..2 && index.editionId == novel.id)
+        val old = catalog.value.evidence[novel.id] ?: NovelEditionEvidence(
+            index.complete,
+            index.chapters.distinctBy { it.id }.count { it.available },
+            checkedAt = index.updatedAt,
+        )
+        val ttl = if (old.accessWorks == true) 21_600_000L else 30_000L
+        if (old.accessWorks != null && System.currentTimeMillis() - old.accessCheckedAt in 0 until ttl) return
+        val samples = listOfNotNull(
+            index.chapters.firstOrNull {
+                it.available
+            },
+            index.chapters.lastOrNull { it.available },
+        )
+            .distinctBy { it.id }.take(maxSamples)
+        if (samples.isEmpty()) return // An unfinished/locked list is not a failed reader sample.
         try {
-            val samples = listOfNotNull(
-                index.chapters.firstOrNull {
-                    it.available
-                },
-                index.chapters.lastOrNull { it.available },
-            ).distinctBy { it.id }
             for (chapter in samples) chapterText(novel, chapter)
-            updateEvidence(novel, old.copy(accessWorks = samples.isNotEmpty(), checkedAt = System.currentTimeMillis()))
+            updateEvidence(novel, old.copy(accessWorks = true, accessCheckedAt = System.currentTimeMillis()))
         } catch (c: CancellationException) {
             throw c
         } catch (e: Exception) {
             if ((e as? NovelSourceFailure)?.httpStatus in setOf(401, 403, 404, 410)) {
-                updateEvidence(novel, old.copy(accessWorks = false, checkedAt = System.currentTimeMillis()))
+                updateEvidence(novel, old.copy(accessWorks = false, accessCheckedAt = System.currentTimeMillis()))
             }
             android.util.Log.w("MangaroNovels", "Edition sample unavailable", e)
         }

@@ -33,6 +33,7 @@ internal class SearchRelevance(query: String) {
         return items.flatMap { (source, result) ->
             (result as? SearchItemResult.Success)?.result.orEmpty()
                 .distinctBy { it.url }
+                .filter { tachiyomi.domain.manga.model.DiscoveryEligibility.valid(it.title, it.url) }
                 .mapIndexed { index, manga ->
                     // Supplied Arabic/English names rank the SAME edition. This is not a
                     // cross-provider merge and adds no requests or persistent identities.

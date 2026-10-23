@@ -454,7 +454,11 @@ abstract class SearchViewModel(
                                     val page = SourceHealthMonitor.shared.run(source.id, 30_000) {
                                         source.getSearchManga(1, query, source.getFilterList())
                                     }
-                                    val titles = page.mangas
+                                    val titles = tachiyomi.domain.manga.model.DiscoveryEligibility.filterCandidates(
+                                        page.mangas,
+                                        { it.title },
+                                        { it.url },
+                                    )
                                         .map { it.toDomainManga(source.id) }
                                         .distinctBy { it.url }
                                         .let { networkToLocalManga(it) }
@@ -585,7 +589,11 @@ abstract class SearchViewModel(
                                         source.getSearchManga(progress.next, query, source.getFilterList())
                                     }
                                     val titles = networkToLocalManga(
-                                        page.mangas.map {
+                                        tachiyomi.domain.manga.model.DiscoveryEligibility.filterCandidates(
+                                            page.mangas,
+                                            { it.title },
+                                            { it.url },
+                                        ).map {
                                             it.toDomainManga(source.id)
                                         }.distinctBy { it.url },
                                     )

@@ -11,6 +11,7 @@ import tachiyomi.domain.manga.service.CatalogSelectionContext
 import tachiyomi.domain.manga.service.SourceWorkReference
 import tachiyomi.domain.manga.service.WorkLinker
 import tachiyomi.domain.manga.service.WorkMetadata
+import uy.kohesive.injekt.api.get
 import java.util.concurrent.ConcurrentHashMap
 
 /** Presentation preference only. IDs and library/download/history ownership never change. */
@@ -22,9 +23,20 @@ object PreferredMangaVariants {
         val actualChapterCount: Int?,
         val successfulAt: Long,
         val publishedAt: Long?,
+        val coverUrl: String?,
+        val owner: tachiyomi.core.common.util.lang.LocalAccountScope.Token,
+        val indexUsable: Boolean? = null,
+        val uncertain: Boolean = false,
+        val availabilityAt: Long = 0,
+        val discoveryObserved: Boolean = false,
     )
     val changes = kotlinx.coroutines.flow.MutableStateFlow(0L)
     private val qualities = ConcurrentHashMap<Long, Quality>()
+
+    // Source index counts are public metadata, not an account's read counts. Only
+    // discovery promotion below is session-scoped; provided cards keep their valid evidence.
+    private fun quality(id: Long) = qualities[id]
+
     private val invalid = ConcurrentHashMap.newKeySet<Long>()
     fun eligible(id: Long): Boolean = id !in invalid
     private val readers = ConcurrentHashMap<Long, Pair<Boolean, Long>>()
@@ -48,21 +60,66 @@ object PreferredMangaVariants {
             ChapterListIntegrity.actualChapterCount(manga),
             ChapterListIntegrity.lastSuccessfulAt(manga),
             ChapterListIntegrity.catalogPublishedAt(manga),
+            CoverUrl.valid(manga.thumbnailUrl),
+            tachiyomi.core.common.util.lang.LocalAccountScope.capture(),
         )
         var replaced = false
         qualities.compute(manga.id) { _, old ->
             // An older catalogue snapshot must not overwrite a newer reconciled count.
-            val next = if (old != null && old.work.reference == quality.work.reference &&
-                old.successfulAt > quality.successfulAt
+            val next = if (old != null && old.owner == quality.owner && old.work.reference == quality.work.reference &&
+                old.successfulAt >= quality.successfulAt
             ) {
-                old.copy(work = quality.work)
+                old.copy(work = quality.work, metadata = quality.metadata, coverUrl = quality.coverUrl)
             } else {
-                quality
+                quality.copy(
+                    discoveryObserved =
+                    old?.takeIf {
+                        it.owner == quality.owner && it.work.reference == quality.work.reference
+                    }?.discoveryObserved ==
+                        true,
+                )
             }
             next.also { replaced = old != it }
         }
+        if (qualities.size > 1024) {
+            qualities.entries.sortedWith(compareBy({ it.value.successfulAt }, { it.key })).take(qualities.size - 1024)
+                .forEach { qualities.remove(it.key, it.value) }
+        }
         CatalogWorkEvidence.request(listOf(quality.work))
         return changed || replaced
+    }
+
+    /** Reuse bounded Search verification without writing any Manga/chapter/library rows. */
+    internal fun observeIndex(manga: Manga, incoming: CatalogEditionEvidence) {
+        var changed = rememberQuality(manga)
+        qualities.computeIfPresent(manga.id) { _, old ->
+            if (old.owner != tachiyomi.core.common.util.lang.LocalAccountScope.capture() ||
+                old.work.reference != SourceWorkReference(manga.source, manga.id, manga.url)
+            ) {
+                return@computeIfPresent old
+            }
+            val retain = incoming.indexedChapters == null || incoming.indexSucceededAt < old.successfulAt ||
+                (
+                    old.complete && !incoming.complete &&
+                        (incoming.indexedChapters ?: -1) <= (old.actualChapterCount ?: -1)
+                    )
+            val next = old.copy(
+                actualChapterCount = if (retain) old.actualChapterCount else incoming.indexedChapters,
+                complete = if (retain) old.complete else incoming.complete,
+                successfulAt = if (retain) old.successfulAt else incoming.indexSucceededAt,
+                indexUsable = incoming.indexUsable,
+                uncertain = incoming.uncertain,
+                discoveryObserved = true,
+            )
+            val nextChanged = next != old
+            changed = changed || nextChanged
+            if (nextChanged) next.copy(availabilityAt = System.nanoTime()) else old
+        }
+        incoming.readable?.let { reader(manga.id, it) }
+        if (changed) changes.update { it + 1 }
+    }
+    private fun currentAvailability(q: Quality?) = q?.takeIf {
+        System.nanoTime() - it.availabilityAt in 0 until 30_000_000_000L
     }
     fun reader(mangaId: Long, usable: Boolean) {
         val old = readerUsable(mangaId)
@@ -78,7 +135,7 @@ object PreferredMangaVariants {
         SourceHealthMonitor.State.UNAVAILABLE -> 0
     }
     fun evidence(item: HomeDiscoveryItem): CatalogEditionEvidence {
-        val quality = qualities[item.mangaId]?.takeIf {
+        val quality = quality(item.mangaId)?.takeIf {
             it.work.reference ==
                 SourceWorkReference(item.sourceId, item.mangaId, item.url)
         }
@@ -88,6 +145,10 @@ object PreferredMangaVariants {
             health(item.sourceId),
             quality?.successfulAt ?: 0,
             readerUsable(item.mangaId),
+            complete = quality?.complete == true,
+            indexUsable = currentAvailability(quality)?.indexUsable,
+            uncertain =
+            currentAvailability(quality)?.uncertain == true,
         )
     }
     fun compare(a: HomeDiscoveryItem, b: HomeDiscoveryItem, context: CatalogSelectionContext): Int {
@@ -101,43 +162,80 @@ object PreferredMangaVariants {
         }
     }
     fun compare(sourceA: Long, idA: Long, coverA: String?, sourceB: Long, idB: Long, coverB: String?): Int {
-        val a = qualities[idA]?.takeIf { it.work.reference.sourceId == sourceA }
-        val b = qualities[idB]?.takeIf { it.work.reference.sourceId == sourceB }
-        val scoresA = listOf(
-            if (readerUsable(idA) ==
-                false
-            ) {
-                -1L
-            } else {
-                0L
-            },
-            (a?.actualChapterCount ?: -1).toLong(),
-            if (a?.complete == true) 1L else 0L,
-            health(sourceA).toLong(),
-            if (readerUsable(idA) == true) 1L else 0L,
-            if (a?.metadata == true) 1L else 0L,
-            if (CoverUrl.valid(coverA) != null) 1L else 0L,
+        val a = quality(idA)?.takeIf { it.work.reference.sourceId == sourceA }
+        val b = quality(idB)?.takeIf { it.work.reference.sourceId == sourceB }
+        fun quality(q: Quality?, source: Long, id: Long) = CatalogEditionEvidence(
+            indexedChapters = q?.actualChapterCount,
+            complete = q?.complete == true,
+            readable = readerUsable(id),
+            sourceReliability = health(source),
+            indexUsable = currentAvailability(q)?.indexUsable,
+            uncertain = currentAvailability(q)?.uncertain == true,
         )
-        val scoresB = listOf(
-            if (readerUsable(idB) ==
-                false
-            ) {
-                -1L
-            } else {
-                0L
-            },
-            (b?.actualChapterCount ?: -1).toLong(),
-            if (b?.complete == true) 1L else 0L,
-            health(sourceB).toLong(),
-            if (readerUsable(idB) == true) 1L else 0L,
-            if (b?.metadata == true) 1L else 0L,
-            if (CoverUrl.valid(coverB) != null) 1L else 0L,
+        val compared = CatalogEditionSelection.compareQuality(quality(a, sourceA, idA), quality(b, sourceB, idB))
+        if (compared != 0) return compared
+        return compareValuesBy(
+            sourceB.toString() to (b?.work?.reference?.url ?: idB.toString()),
+            sourceA.toString() to (a?.work?.reference?.url ?: idA.toString()),
+            { it.first },
+            { it.second },
         )
-        for (i in scoresA.indices) if (scoresA[i] != scoresB[i]) return scoresA[i].compareTo(scoresB[i])
-        // Stable tie-breaker avoids reshuffling as concurrent source results arrive.
-        return compareValuesBy(idA to sourceA, idB to sourceB, { -it.second }, { -it.first })
     }
-    fun actualChapterCount(item: HomeDiscoveryItem): Int? = qualities[item.mangaId]?.takeIf {
+
+    internal fun sourceEnabled(id: Long): Boolean = runCatching {
+        val preferences = uy.kohesive.injekt.Injekt.get<eu.kanade.domain.source.service.SourcePreferences>()
+        if (id.toString() in preferences.disabledSources.get()) return@runCatching false
+        val source = uy.kohesive.injekt.Injekt.get<tachiyomi.domain.source.service.SourceManager>().get(id)
+        source?.lang?.takeIf(String::isNotBlank)?.let { it in preferences.enabledLanguages.get() } ?: true
+    }.getOrDefault(true)
+
+    /** Only verified same-work references may expand a recommendation's alternatives.
+     * No library record is changed and no network call is performed here. */
+    fun related(items: List<HomeDiscoveryItem>, allowed: (Long) -> Boolean = ::sourceEnabled): List<HomeDiscoveryItem> {
+        val known = items.map(::work).map(tachiyomi.domain.manga.service.VerifiedCatalogIdentity::from)
+        val index = known.flatMap { value ->
+            tachiyomi.domain.manga.service.VerifiedCatalogIdentity.lookupKeys(value).map {
+                it to
+                    value
+            }
+        }
+            .groupBy({ it.first }, { it.second })
+        return qualities.values.asSequence().map { q ->
+            // Reviewed source references may be withdrawn while public index evidence
+            // is still cached. Re-resolve authority before promoting that edition.
+            q.copy(work = CatalogWorkEvidence.resolve(q.work))
+        }.filter { q ->
+            q.discoveryObserved &&
+                items.none { it.sourceId == q.work.reference.sourceId && it.url == q.work.reference.url } &&
+                q.owner == tachiyomi.core.common.util.lang.LocalAccountScope.capture() && allowed(
+                    q.work.reference.sourceId,
+                ) &&
+                q.actualChapterCount != null &&
+                eligible(q.work.reference.mangaId) &&
+                tachiyomi.domain.manga.service.VerifiedCatalogIdentity.from(q.work).let { candidate ->
+                    tachiyomi.domain.manga.service.VerifiedCatalogIdentity.lookupKeys(candidate).flatMap {
+                        index[it].orEmpty()
+                    }
+                        .any { tachiyomi.domain.manga.service.VerifiedCatalogIdentity.matches(it, candidate) }
+                }
+        }.map { q ->
+            val ref = q.work.reference
+            HomeDiscoveryItem(
+                ref.mangaId,
+                q.work.title,
+                tachiyomi.domain.manga.model.MangaCover(ref.mangaId, ref.sourceId, false, q.coverUrl, 0),
+                ref.sourceId,
+                items.firstOrNull { it.sourceId == ref.sourceId }?.sourceName
+                    ?: runCatching {
+                        uy.kohesive.injekt.Injekt.get<tachiyomi.domain.source.service.SourceManager>().get(
+                            ref.sourceId,
+                        )?.name
+                    }.getOrNull().orEmpty(),
+                ref.url,
+            )
+        }.take(128).toList()
+    }
+    fun actualChapterCount(item: HomeDiscoveryItem): Int? = quality(item.mangaId)?.takeIf {
         it.work.reference == SourceWorkReference(item.sourceId, item.mangaId, item.url)
     }?.actualChapterCount
     fun work(item: HomeDiscoveryItem): WorkMetadata {
@@ -149,7 +247,7 @@ object PreferredMangaVariants {
     }
     fun usable(source: Long, id: Long): Boolean = eligible(id) &&
         (
-            (qualities[id]?.takeIf { it.work.reference.sourceId == source }?.actualChapterCount ?: 0) > 0 ||
+            (quality(id)?.takeIf { it.work.reference.sourceId == source }?.actualChapterCount ?: 0) > 0 ||
                 SourceHealthMonitor.shared.discoverable(source)
             )
 

@@ -1,10 +1,13 @@
 package eu.kanade.tachiyomi.ui.home
 
 import mihon.domain.source.discovery.model.DiscoveryCategory
+import mihon.domain.source.health.SourceHealthMonitor
+import tachiyomi.core.common.util.lang.LocalAccountScope
 import tachiyomi.domain.manga.service.CatalogEditionSelection
 import tachiyomi.domain.manga.service.CatalogSelectionContext
 import tachiyomi.domain.manga.service.VerifiedCatalogIdentity
 import tachiyomi.domain.manga.service.WorkLinker
+import tachiyomi.domain.manga.service.WorkMetadata
 import tachiyomi.domain.manga.service.WorkTitleNormalizer
 
 fun DiscoveryCategory.selectionContext(): CatalogSelectionContext = when (this) {
@@ -14,8 +17,15 @@ fun DiscoveryCategory.selectionContext(): CatalogSelectionContext = when (this) 
 }
 
 object GroupDiscoveryItems {
-    private data class ProjectionKey(val items: List<HomeDiscoveryItem>, val evidence: List<tachiyomi.domain.manga.service.WorkMetadata>,
-        val revision: Long, val health: Map<Long, mihon.domain.source.health.SourceHealthMonitor.State>, val context: CatalogSelectionContext)
+    private data class ProjectionKey(
+        val items: List<HomeDiscoveryItem>,
+        val evidence: List<WorkMetadata>,
+        val revision: Long,
+        val health: Map<Long, SourceHealthMonitor.State>,
+        val context: CatalogSelectionContext,
+        val owner: LocalAccountScope.Token,
+        val enabledSources: Set<Long>,
+    )
     internal val projectionMemo = CatalogProjectionMemo<Any, List<HomeDiscoveryItem>>()
 
     fun normalizeTitle(title: String): String = WorkTitleNormalizer.normalize(title)
@@ -23,15 +33,18 @@ object GroupDiscoveryItems {
         ?: VerifiedCatalogIdentity.key(listOf(VerifiedCatalogIdentity.from(PreferredMangaVariants.work(item))))
 
     fun findSelectedWork(items: List<HomeDiscoveryItem>, selected: HomeDiscoveryItem?): HomeDiscoveryItem? =
-        items.firstOrNull { item -> (listOf(item) + item.alternatives).any {
-            it.sourceId == selected?.sourceId && it.mangaId == selected?.mangaId
-        } }
+        items.firstOrNull { item ->
+            (listOf(item) + item.alternatives).any {
+                it.sourceId == selected?.sourceId && it.mangaId == selected?.mangaId
+            }
+        }
 
     /** Home sections are already grouped. Reconcile only the selected work on a user action,
      * never the entire multi-section catalog during composition. Keep all of its alternatives.
      */
     fun forManga(items: List<HomeDiscoveryItem>, mangaId: Long): HomeDiscoveryItem? {
-        fun contains(item: HomeDiscoveryItem) = item.mangaId == mangaId || item.alternatives.any { it.mangaId == mangaId }
+        fun contains(item: HomeDiscoveryItem) =
+            item.mangaId == mangaId || item.alternatives.any { it.mangaId == mangaId }
         val matches = items.filter(::contains)
         if (matches.isEmpty()) return null
         val keys = matches.map(::presentationKey).toSet()
@@ -43,15 +56,36 @@ object GroupDiscoveryItems {
     fun popularProjection(items: List<HomeDiscoveryItem>, selected: HomeDiscoveryItem?): PopularProjection {
         val grouped = group(items, CatalogSelectionContext.POPULAR)
         val featured = findSelectedWork(grouped, selected) ?: grouped.firstOrNull()
-        return PopularProjection(featured, grouped.filterNot { presentationKey(it) == featured?.let(::presentationKey) })
+        return PopularProjection(
+            featured,
+            grouped.filterNot {
+                presentationKey(it) == featured?.let(::presentationKey)
+            },
+        )
     }
 
-    fun group(items: List<HomeDiscoveryItem>, context: CatalogSelectionContext = CatalogSelectionContext.DEFAULT): List<HomeDiscoveryItem> {
-        val variants = items.flatMap { listOf(it.copy(alternatives = emptyList())) + it.alternatives }
+    fun group(
+        items: List<HomeDiscoveryItem>,
+        context: CatalogSelectionContext = CatalogSelectionContext.DEFAULT,
+        allowed: (Long) -> Boolean = PreferredMangaVariants::sourceEnabled,
+    ): List<HomeDiscoveryItem> {
+        val incoming = items.flatMap { listOf(it.copy(alternatives = emptyList())) + it.alternatives }
+        val variants = (incoming + PreferredMangaVariants.related(incoming, allowed))
             .distinctBy { it.sourceId to it.mangaId }
         val evidence = variants.map(PreferredMangaVariants::work)
-        val key = ProjectionKey(variants, evidence, PreferredMangaVariants.changes.value,
-            variants.map { it.sourceId }.distinct().associateWith { mihon.domain.source.health.SourceHealthMonitor.shared.health(it).state }, context)
+        val key = ProjectionKey(
+            variants,
+            evidence,
+            PreferredMangaVariants.changes.value,
+            variants.map {
+                it.sourceId
+            }.distinct().associateWith {
+                SourceHealthMonitor.shared.health(it).state
+            },
+            context,
+            LocalAccountScope.capture(),
+            variants.filter { allowed(it.sourceId) }.mapTo(hashSetOf()) { it.sourceId },
+        )
         if (variants.size <= 256) projectionMemo.get(key)?.let { return it }
         val byReference = variants.zip(evidence).associate { (item, work) -> work.reference to item }
         val order = evidence.mapIndexed { index, work -> work.reference to index }.toMap()
@@ -59,19 +93,50 @@ object GroupDiscoveryItems {
         val result = works.mapNotNull { work ->
             val members = work.members.mapNotNull { byReference[it.reference] }
             val eligible = members.filter {
-                PreferredMangaVariants.usable(it.sourceId, it.mangaId) && it.title.isNotBlank() &&
-                    (it.url.isBlank() && it.mangaId > 0 || tachiyomi.domain.manga.model.DiscoveryEligibility.valid(it.title, it.url))
+                allowed(
+                    it.sourceId,
+                ) && PreferredMangaVariants.usable(it.sourceId, it.mangaId) && it.title.isNotBlank() &&
+                    (
+                        (it.url.isBlank() && it.mangaId > 0) ||
+                            tachiyomi.domain.manga.model.DiscoveryEligibility.valid(it.title, it.url)
+                        )
             }
-            val winner = eligible.maxWithOrNull { a, b -> PreferredMangaVariants.compare(a, b, context) } ?: return@mapNotNull null
-            winner.copy(canonicalWorkId = work.id, actualChapterCount = PreferredMangaVariants.actualChapterCount(winner),
-                chapterPublishedAt = eligible.mapNotNull { PreferredMangaVariants.evidence(it).publishedAt }.maxOrNull(),
-                availableVersions = if (members.size > 1) members.map {
-                    HomeSourceVersion(it.mangaId, it.sourceId, it.sourceName, it.url, it.title)
-                } else emptyList(), alternatives = members.filterNot { it.sourceId == winner.sourceId && it.mangaId == winner.mangaId })
+            val winner =
+                eligible.maxWithOrNull { a, b -> PreferredMangaVariants.compare(a, b, context) }
+                    ?: return@mapNotNull null
+            val aggregate = winner.copy(
+                canonicalWorkId = work.id,
+                actualChapterCount = PreferredMangaVariants.actualChapterCount(winner),
+                chapterPublishedAt = eligible.mapNotNull {
+                    PreferredMangaVariants.evidence(it).publishedAt
+                }.maxOrNull(),
+                availableVersions = if (members.size > 1) {
+                    members.map {
+                        HomeSourceVersion(it.mangaId, it.sourceId, it.sourceName, it.url, it.title)
+                    }
+                } else {
+                    emptyList()
+                },
+                alternatives = members.filterNot {
+                    it.sourceId == winner.sourceId &&
+                        it.mangaId == winner.mangaId
+                },
+            )
+            aggregate
         }
         CatalogDuplicateDiagnostics.record(evidence, works, result.associate { it.canonicalWorkId!! to it.mangaId })
-        val projection = if (context == CatalogSelectionContext.LATEST) CatalogEditionSelection.orderLatest(result) { it.chapterPublishedAt } else result
-        if (variants.size <= 256 && key.revision == PreferredMangaVariants.changes.value) projectionMemo.put(key, projection)
+        val projection = if (context ==
+            CatalogSelectionContext.LATEST
+        ) {
+            CatalogEditionSelection.orderLatest(result) { it.chapterPublishedAt }
+        } else {
+            result
+        }
+        if (variants.size <= 256 &&
+            key.revision == PreferredMangaVariants.changes.value
+        ) {
+            projectionMemo.put(key, projection)
+        }
         return projection
     }
 }

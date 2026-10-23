@@ -75,6 +75,34 @@ internal object WorkIdentityDiagnostics {
                                 put("title", safe(c.title))
                                 put("normalizedTitle", WorkIdentityNormalizer.title(c.title, c.kind))
                                 put("kind", c.kind.name)
+                                val reference = c.catalogIdentity?.route ?: c.id.substringAfter(':', c.id)
+                                val classification = tachiyomi.domain.manga.model.WorkCandidateClassification.classify(
+                                    reference,
+                                )
+                                put("candidateType", classification.kind.name)
+                                put("candidateTypeReason", classification.reason)
+                                val selected = groups.firstOrNull { group ->
+                                    group.members.any { it.id == c.id }
+                                }?.winner
+                                fun quality(
+                                    row: SearchWorkCandidate,
+                                ) = tachiyomi.domain.manga.service.CatalogEditionEvidence(
+                                    indexedChapters = row.chapters.distinct,
+                                    complete = row.chapters.complete,
+                                    readable = row.chapters.readable,
+                                    indexUsable = row.chapters.indexUsable,
+                                    uncertain = row.chapters.indexUncertain,
+                                )
+                                put(
+                                    "editionSelectionReason",
+                                    selected?.let {
+                                        tachiyomi.domain.manga.service.CatalogEditionSelection.reason(
+                                            quality(it),
+                                            quality(c),
+                                        )
+                                    } ?: "no-group",
+                                )
+
                                 put("originalTitle", c.originalTitle?.let(::safe)?.let(::JsonPrimitive) ?: JsonNull)
                                 put("aliases", JsonArray(c.aliases.take(16).map { JsonPrimitive(safe(it)) }))
                                 put(

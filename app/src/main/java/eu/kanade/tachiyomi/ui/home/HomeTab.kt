@@ -1,6 +1,5 @@
 package eu.kanade.tachiyomi.ui.home
 
-import uy.kohesive.injekt.api.get
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -23,6 +22,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.Extension
+import androidx.compose.material.icons.outlined.FiberNew
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.PlayCircle
+import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.Whatshot
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -32,9 +37,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -46,37 +50,35 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.Navigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cafe.adriel.voyager.navigator.tab.LocalTabNavigator
 import cafe.adriel.voyager.navigator.tab.TabOptions
+import eu.kanade.presentation.account.AccountScreen
 import eu.kanade.presentation.home.MangaroContinueReading
-import eu.kanade.presentation.home.MangaroWeeklyPicks
+import eu.kanade.presentation.home.MangaroHomeDrawer
 import eu.kanade.presentation.home.MangaroHomeHeader
 import eu.kanade.presentation.home.MangaroLatestShelf
 import eu.kanade.presentation.home.MangaroNewShelf
 import eu.kanade.presentation.home.MangaroPopularShelf
 import eu.kanade.presentation.home.MangaroSectionHeader
 import eu.kanade.presentation.home.MangaroStandardShelf
+import eu.kanade.presentation.home.MangaroWeeklyPicks
+import eu.kanade.presentation.inbox.NotificationCenterScreen
 import eu.kanade.presentation.theme.MangaroDesignSystem
 import eu.kanade.presentation.util.Tab
-import eu.kanade.tachiyomi.ui.manga.MangaScreen
+import eu.kanade.tachiyomi.ui.history.ReadingHistoryScreen
 import eu.kanade.tachiyomi.ui.library.LibraryTab
-import eu.kanade.presentation.account.AccountScreen
-import eu.kanade.presentation.home.MangaroHomeDrawer
+import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
 import mihon.domain.source.discovery.model.DiscoveryCategory
 import tachiyomi.presentation.core.components.ScrollbarLazyColumn
 import tachiyomi.presentation.core.components.material.PullRefresh
 import tachiyomi.presentation.core.components.material.Scaffold
-import androidx.compose.material.icons.outlined.Extension
-import androidx.compose.material.icons.outlined.FiberNew
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.PlayCircle
-import androidx.compose.material.icons.outlined.Schedule
-import androidx.compose.material.icons.outlined.Whatshot
+import uy.kohesive.injekt.api.get
 
 const val HOME_DISCOVERY_PREVIEW_LIMIT = 8
 
@@ -101,34 +103,58 @@ object HomeTab : Tab {
     @Composable
     override fun Content() {
         val viewModel = viewModel<HomeViewModel>()
-        val state by viewModel.state.collectAsStateWithLifecycle()
+        val rawState by viewModel.state.collectAsStateWithLifecycle()
+        val editionRevision by PreferredMangaVariants.changes.collectAsStateWithLifecycle()
+        val editionOwner by tachiyomi.core.common.util.lang.LocalAccountScope.changes.collectAsStateWithLifecycle()
+        val state = androidx.compose.runtime.remember(rawState, editionRevision, editionOwner.token) {
+            rawState.copy(
+                popularManga = rawState.popularManga.map(CatalogEditionOpening::forDisplay),
+                latestManga = rawState.latestManga.map(CatalogEditionOpening::forDisplay),
+                newManga = rawState.newManga.map(CatalogEditionOpening::forDisplay),
+                completedManga = rawState.completedManga.map(CatalogEditionOpening::forDisplay),
+                discoveryFeatured = rawState.discoveryFeatured?.let(CatalogEditionOpening::forDisplay),
+            )
+        }
         val weekly = viewModel<WeeklyPicksViewModel>()
         val weeklyState by weekly.state.collectAsStateWithLifecycle()
-        androidx.compose.runtime.LaunchedEffect(state.popularManga,state.latestManga,state.discoveryFeatured) {
+        androidx.compose.runtime.LaunchedEffect(state.popularManga, state.latestManga, state.discoveryFeatured) {
             weekly.offer(state.popularManga + state.latestManga + listOfNotNull(state.discoveryFeatured))
         }
         val context = LocalContext.current
         val tabNavigator = LocalTabNavigator.current
         val navigator = LocalNavigator.currentOrThrow
-        var selectedCatalogId by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<Long?>(null) }
-        val catalogItems = androidx.compose.runtime.remember(state.popularManga, state.latestManga,
-            state.newManga, state.completedManga, state.discoveryFeatured) {
-            state.popularManga + state.latestManga + state.newManga + state.completedManga + listOfNotNull(state.discoveryFeatured)
+        var selectedCatalogId by androidx.compose.runtime.remember {
+            androidx.compose.runtime.mutableStateOf<Long?>(null)
+        }
+        val catalogItems = androidx.compose.runtime.remember(
+            state.popularManga,
+            state.latestManga,
+            state.newManga,
+            state.completedManga,
+            state.discoveryFeatured,
+        ) {
+            state.popularManga + state.latestManga + state.newManga + state.completedManga +
+                listOfNotNull(state.discoveryFeatured)
         }
         val selectedCatalog = androidx.compose.runtime.remember(catalogItems, selectedCatalogId) {
             selectedCatalogId?.let { GroupDiscoveryItems.forManga(catalogItems, it) }
         }
         val openCatalog: (Long) -> Unit = { id ->
-            val group = GroupDiscoveryItems.forManga(catalogItems, id)
-            // Preserve the clicked Popular/Latest representative unless an explicit preference exists.
-            navigator.push(MangaScreen(group?.let { CatalogEditionOpening.preferred(it)?.mangaId } ?: id, true))
+            // The rendered card already captures its exact (possibly explicit) edition.
+            // Never resolve a different destination at click time after async evidence changes.
+            navigator.push(MangaScreen(id, true))
         }
         if (selectedCatalog != null && selectedCatalog.availableVersions.size > 1) {
-            eu.kanade.presentation.home.MangaroSourceChooserSheet(selectedCatalog,
-                onSelectVersion = { navigator.push(MangaScreen(it, true)) }, onDismiss = { selectedCatalogId = null })
+            eu.kanade.presentation.home.MangaroSourceChooserSheet(
+                selectedCatalog,
+                onSelectVersion = { navigator.push(MangaScreen(it, true)) },
+                onDismiss = { selectedCatalogId = null },
+            )
         }
 
-        val account = androidx.compose.runtime.remember { uy.kohesive.injekt.Injekt.get<mihon.domain.account.AccountFoundation>() }
+        val account = androidx.compose.runtime.remember {
+            uy.kohesive.injekt.Injekt.get<mihon.domain.account.AccountFoundation>()
+        }
         val accountSession by account.session.collectAsStateWithLifecycle()
         val inbox = viewModel<eu.kanade.presentation.inbox.InboxViewModel>(key = "home-inbox")
         val inboxState by inbox.state.collectAsStateWithLifecycle()
@@ -136,21 +162,28 @@ object HomeTab : Tab {
         val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
         androidx.compose.runtime.DisposableEffect(lifecycleOwner, inbox) {
             val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-                if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) { inbox.refreshBadge(); weekly.refresh() }
+                if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                    inbox.refreshBadge()
+                    weekly.refresh()
+                }
             }
             lifecycleOwner.lifecycle.addObserver(observer)
             onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
         }
         val currentInboxOwner = (accountSession as? mihon.domain.account.AccountSession.Authenticated)?.profile?.userId
-        val hasUnreadInbox = workNotices.any { it.owner == currentInboxOwner && it.readAt == null } || (inboxState.owner == currentInboxOwner && inboxState.unread > 0)
+        val hasUnreadInbox =
+            workNotices.any { it.owner == currentInboxOwner && it.readAt == null } ||
+                (inboxState.owner == currentInboxOwner && inboxState.unread > 0)
 
         val snackbarHostState = androidx.compose.runtime.remember { androidx.compose.material3.SnackbarHostState() }
-        val chapterRefresh = eu.kanade.presentation.library.rememberLibraryUpdateRefresh { snackbarHostState.showSnackbar(it) }
+        val chapterRefresh = eu.kanade.presentation.library.rememberLibraryUpdateRefresh {
+            snackbarHostState.showSnackbar(it)
+        }
 
         MangaroHomeDrawer(
             activeDownloadsCount = state.activeDownloadsCount,
             onLibrary = { tabNavigator.current = LibraryTab },
-            onHistory = { if (navigator.lastItem !is eu.kanade.tachiyomi.ui.history.ReadingHistoryScreen) navigator.push(eu.kanade.tachiyomi.ui.history.ReadingHistoryScreen()) },
+            onHistory = { if (navigator.lastItem !is ReadingHistoryScreen) navigator.push(ReadingHistoryScreen()) },
             onDownloads = { tabNavigator.current = DownloadsTab },
             onAccount = { navigator.push(AccountScreen()) },
             onAchievements = { navigator.push(eu.kanade.presentation.sigils.SigilCollectionScreen()) },
@@ -158,190 +191,207 @@ object HomeTab : Tab {
             accountState = accountSession,
             onProfile = { navigator.push(AccountScreen()) },
         ) { openDrawer ->
-        Scaffold(
-            contentWindowInsets = WindowInsets(0),
-            snackbarHost = { eu.kanade.presentation.components.MangaroSnackbarHost(snackbarHostState) },
-        ) { paddingValues ->
-            PullRefresh(
-                refreshing = state.isSwipeRefreshing || chapterRefresh.refreshing,
-                enabled = true,
-                onRefresh = { viewModel.onHomeSwipeRefresh(); weekly.refresh(force=true); chapterRefresh.refresh() },
-            ) {
-                ScrollbarLazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(MangaroDesignSystem.BackgroundDark),
-                    contentPadding = paddingValues,
+            Scaffold(
+                contentWindowInsets = WindowInsets(0),
+                snackbarHost = { eu.kanade.presentation.components.MangaroSnackbarHost(snackbarHostState) },
+            ) { paddingValues ->
+                PullRefresh(
+                    refreshing = state.isSwipeRefreshing || chapterRefresh.refreshing,
+                    enabled = true,
+                    onRefresh = {
+                        viewModel.onHomeSwipeRefresh()
+                        weekly.refresh(force = true)
+                        chapterRefresh.refresh()
+                    },
                 ) {
-                    // Home Header as scrolling top item
-                    item(key = "home_header") {
-                        MangaroHomeHeader(
-                            onSearchClick = {
-                                SearchTab.requestFocus()
-                                tabNavigator.current = SearchTab
-                            },
-                            onMenuClick = openDrawer,
-                            hasUnreadNotifications = hasUnreadInbox,
-                            onNotificationsClick = { if (navigator.lastItem !is eu.kanade.presentation.inbox.NotificationCenterScreen) navigator.push(eu.kanade.presentation.inbox.NotificationCenterScreen()) },
-                        )
-                    }
-
-                    item(key = "novel_shelf") {
-                        eu.kanade.presentation.novels.HomeNovelShelf()
-                    }
-
-                    item(key = "weekly_community_picks") {
-                        MangaroWeeklyPicks(weeklyState,onOpen={ id ->
-                            if(navigator.lastItem !is MangaScreen) navigator.push(MangaScreen(id,true))
-                        },onRetry={ weekly.refresh(force=true); viewModel.refreshDiscovery() })
-                    }
-
-                    // Section 2: Continue Reading (Compact Strip)
-                    if (state.recentHistory.isNotEmpty()) {
-                        item(key = "continue_reading_header") {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            MangaroSectionHeader(
-                                title = "استكمل القراءة",
-                                icon = Icons.Outlined.PlayCircle,
+                    ScrollbarLazyColumn(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MangaroDesignSystem.BackgroundDark),
+                        contentPadding = paddingValues,
+                    ) {
+                        // Home Header as scrolling top item
+                        item(key = "home_header") {
+                            MangaroHomeHeader(
+                                onSearchClick = {
+                                    SearchTab.requestFocus()
+                                    tabNavigator.current = SearchTab
+                                },
+                                onMenuClick = openDrawer,
+                                hasUnreadNotifications = hasUnreadInbox,
+                                onNotificationsClick = {
+                                    if (navigator.lastItem !is NotificationCenterScreen) {
+                                        navigator.push(
+                                            NotificationCenterScreen(),
+                                        )
+                                    }
+                                },
                             )
                         }
 
-                        item(key = "continue_reading_card") {
-                            val lastHistory = state.recentHistory.first()
-                            MangaroContinueReading(
-                                history = lastHistory,
-                                onResumeClick = {
-                                    val intent = ReaderActivity.newIntent(
-                                        context,
-                                        lastHistory.mangaId,
-                                        lastHistory.chapterId,
+                        item(key = "novel_shelf") {
+                            eu.kanade.presentation.novels.HomeNovelShelf()
+                        }
+
+                        item(key = "weekly_community_picks") {
+                            MangaroWeeklyPicks(weeklyState, onOpen = { id ->
+                                if (navigator.lastItem !is MangaScreen) navigator.push(MangaScreen(id, true))
+                            }, onRetry = {
+                                weekly.refresh(force = true)
+                                viewModel.refreshDiscovery()
+                            })
+                        }
+
+                        // Section 2: Continue Reading (Compact Strip)
+                        if (state.recentHistory.isNotEmpty()) {
+                            item(key = "continue_reading_header") {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                MangaroSectionHeader(
+                                    title = "استكمل القراءة",
+                                    icon = Icons.Outlined.PlayCircle,
+                                )
+                            }
+
+                            item(key = "continue_reading_card") {
+                                val lastHistory = state.recentHistory.first()
+                                MangaroContinueReading(
+                                    history = lastHistory,
+                                    onResumeClick = {
+                                        val intent = ReaderActivity.newIntent(
+                                            context,
+                                            lastHistory.mangaId,
+                                            lastHistory.chapterId,
+                                        )
+                                        context.startActivity(intent)
+                                    },
+                                    onMangaClick = {
+                                        navigator.push(MangaScreen(lastHistory.mangaId))
+                                    },
+                                )
+                            }
+                        }
+
+                        // Section 3: شائع الآن (Popular Manga)
+                        if (state.popularManga.isNotEmpty() || !state.popularResolved) {
+                            item(key = "popular_manga_header") {
+                                Spacer(modifier = Modifier.height(12.dp))
+                                MangaroSectionHeader(
+                                    title = "شائع الآن",
+                                    icon = Icons.Outlined.Whatshot,
+                                    actionText = "عرض المزيد",
+                                    onActionClick = {
+                                        DiscoverySnapshotStore.setSnapshot(
+                                            DiscoveryCategory.POPULAR,
+                                            state.popularManga,
+                                        )
+                                        navigator.push(DiscoveryCategoryGridScreen("POPULAR", "شائع الآن"))
+                                    },
+                                )
+                            }
+
+                            item(key = "popular_manga_row") {
+                                if (state.popularManga.isNotEmpty()) {
+                                    MangaroPopularShelf(
+                                        items = state.popularManga,
+                                        onMangaClick = openCatalog,
+                                        onChooseEdition = { selectedCatalogId = it },
                                     )
-                                    context.startActivity(intent)
-                                },
-                                onMangaClick = {
-                                    navigator.push(MangaScreen(lastHistory.mangaId))
-                                },
-                            )
-                        }
-                    }
-
-                    // Section 3: شائع الآن (Popular Manga)
-                    if (state.popularManga.isNotEmpty() || !state.popularResolved) {
-                        item(key = "popular_manga_header") {
-                            Spacer(modifier = Modifier.height(12.dp))
-                            MangaroSectionHeader(
-                                title = "شائع الآن",
-                                icon = Icons.Outlined.Whatshot,
-                                actionText = "عرض المزيد",
-                                onActionClick = {
-                                    DiscoverySnapshotStore.setSnapshot(DiscoveryCategory.POPULAR, state.popularManga)
-                                    navigator.push(DiscoveryCategoryGridScreen("POPULAR", "شائع الآن"))
-                                },
-                            )
+                                } else {
+                                    MangaCardSkeletonRow()
+                                }
+                            }
                         }
 
-                        item(key = "popular_manga_row") {
-                            if (state.popularManga.isNotEmpty()) {
-                                MangaroPopularShelf(
-                                    items = state.popularManga,
-                                    onMangaClick = openCatalog,
-                                    onChooseEdition = { selectedCatalogId = it },
+                        // Section 4: جديد (New Manga)
+                        if (state.newManga.isNotEmpty() || !state.newResolved) {
+                            item(key = "new_manga_header") {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                MangaroSectionHeader(
+                                    title = "جديد",
+                                    icon = Icons.Outlined.FiberNew,
+                                    actionText = "عرض المزيد",
+                                    onActionClick = {
+                                        DiscoverySnapshotStore.setSnapshot(DiscoveryCategory.NEW, state.newManga)
+                                        navigator.push(DiscoveryCategoryGridScreen("NEW", "جديد"))
+                                    },
                                 )
-                            } else {
-                                MangaCardSkeletonRow()
+                            }
+
+                            item(key = "new_manga_row") {
+                                if (state.newManga.isNotEmpty()) {
+                                    MangaroNewShelf(
+                                        items = state.newManga,
+                                        onMangaClick = openCatalog,
+                                        onChooseEdition = { selectedCatalogId = it },
+                                    )
+                                } else {
+                                    MangaCardSkeletonRow()
+                                }
+                            }
+                        }
+
+                        // Section 5: آخر التحديثات (Latest Updates)
+                        if (state.latestManga.isNotEmpty() || !state.latestResolved) {
+                            item(key = "latest_manga_header") {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                MangaroSectionHeader(
+                                    title = "آخر التحديثات",
+                                    icon = Icons.Outlined.Schedule,
+                                    actionText = "عرض المزيد",
+                                    onActionClick = {
+                                        DiscoverySnapshotStore.setSnapshot(DiscoveryCategory.LATEST, state.latestManga)
+                                        navigator.push(DiscoveryCategoryGridScreen("LATEST", "آخر التحديثات"))
+                                    },
+                                )
+                            }
+
+                            item(key = "latest_manga_row") {
+                                if (state.latestManga.isNotEmpty()) {
+                                    MangaroLatestShelf(
+                                        items = state.latestManga,
+                                        onMangaClick = openCatalog,
+                                        onChooseEdition = { selectedCatalogId = it },
+                                    )
+                                } else {
+                                    MangaCardSkeletonRow()
+                                }
+                            }
+                        }
+
+                        // Section 6: مكتمل (Completed Manga)
+                        if (state.completedManga.isNotEmpty() || !state.completedResolved) {
+                            item(key = "completed_manga_header") {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                MangaroSectionHeader(
+                                    title = "مكتمل",
+                                    icon = Icons.Outlined.CheckCircle,
+                                    actionText = "عرض المزيد",
+                                    onActionClick = {
+                                        DiscoverySnapshotStore.setSnapshot(
+                                            DiscoveryCategory.COMPLETED,
+                                            state.completedManga,
+                                        )
+                                        navigator.push(DiscoveryCategoryGridScreen("COMPLETED", "مكتمل"))
+                                    },
+                                )
+                            }
+
+                            item(key = "completed_manga_row") {
+                                if (state.completedManga.isNotEmpty()) {
+                                    MangaroStandardShelf(
+                                        category = "completed",
+                                        items = state.completedManga,
+                                        onMangaClick = openCatalog,
+                                        onChooseEdition = { selectedCatalogId = it },
+                                    )
+                                } else {
+                                    MangaCardSkeletonRow()
+                                }
                             }
                         }
                     }
-
-                    // Section 4: جديد (New Manga)
-                    if (state.newManga.isNotEmpty() || !state.newResolved) {
-                        item(key = "new_manga_header") {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            MangaroSectionHeader(
-                                title = "جديد",
-                                icon = Icons.Outlined.FiberNew,
-                                actionText = "عرض المزيد",
-                                onActionClick = {
-                                    DiscoverySnapshotStore.setSnapshot(DiscoveryCategory.NEW, state.newManga)
-                                    navigator.push(DiscoveryCategoryGridScreen("NEW", "جديد"))
-                                },
-                            )
-                        }
-
-                        item(key = "new_manga_row") {
-                            if (state.newManga.isNotEmpty()) {
-                                MangaroNewShelf(
-                                    items = state.newManga,
-                                    onMangaClick = openCatalog,
-                                    onChooseEdition = { selectedCatalogId = it },
-                                )
-                            } else {
-                                MangaCardSkeletonRow()
-                            }
-                        }
-                    }
-
-                    // Section 5: آخر التحديثات (Latest Updates)
-                    if (state.latestManga.isNotEmpty() || !state.latestResolved) {
-                        item(key = "latest_manga_header") {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            MangaroSectionHeader(
-                                title = "آخر التحديثات",
-                                icon = Icons.Outlined.Schedule,
-                                actionText = "عرض المزيد",
-                                onActionClick = {
-                                    DiscoverySnapshotStore.setSnapshot(DiscoveryCategory.LATEST, state.latestManga)
-                                    navigator.push(DiscoveryCategoryGridScreen("LATEST", "آخر التحديثات"))
-                                },
-                            )
-                        }
-
-                        item(key = "latest_manga_row") {
-                            if (state.latestManga.isNotEmpty()) {
-                                MangaroLatestShelf(
-                                    items = state.latestManga,
-                                    onMangaClick = openCatalog,
-                                    onChooseEdition = { selectedCatalogId = it },
-                                )
-                            } else {
-                                MangaCardSkeletonRow()
-                            }
-                        }
-                    }
-
-                    // Section 6: مكتمل (Completed Manga)
-                    if (state.completedManga.isNotEmpty() || !state.completedResolved) {
-                        item(key = "completed_manga_header") {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            MangaroSectionHeader(
-                                title = "مكتمل",
-                                icon = Icons.Outlined.CheckCircle,
-                                actionText = "عرض المزيد",
-                                onActionClick = {
-                                    DiscoverySnapshotStore.setSnapshot(DiscoveryCategory.COMPLETED, state.completedManga)
-                                    navigator.push(DiscoveryCategoryGridScreen("COMPLETED", "مكتمل"))
-                                },
-                            )
-                        }
-
-                        item(key = "completed_manga_row") {
-                            if (state.completedManga.isNotEmpty()) {
-                                MangaroStandardShelf(
-                                    category = "completed",
-                                    items = state.completedManga,
-                                    onMangaClick = openCatalog,
-                                    onChooseEdition = { selectedCatalogId = it },
-                                )
-                            } else {
-                                MangaCardSkeletonRow()
-                            }
-                        }
-                    }
-
-
                 }
             }
-        }
         }
     }
 

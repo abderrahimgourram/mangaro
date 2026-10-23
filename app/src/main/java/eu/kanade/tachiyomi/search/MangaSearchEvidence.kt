@@ -177,6 +177,17 @@ internal class MangaSearchEvidence(
                 metadata[key(manga)] = manga
                 counts[key(manga)] = proof
             }
+            if (proof.distinct != null) {
+                PreferredMangaVariants.observeIndex(
+                    manga,
+                    tachiyomi.domain.manga.service.CatalogEditionEvidence(
+                        indexedChapters = proof.distinct,
+                        complete = proof.complete,
+                        readable = proof.readable,
+                        indexSucceededAt = proof.checkedAt,
+                    ),
+                )
+            }
             val cached = cachedMetadata(manga)
             if (cached != null) {
                 synchronized(this@MangaSearchEvidence) {
@@ -269,17 +280,35 @@ internal class MangaSearchEvidence(
                 val manga = metadata[key(it.manga)] ?: it.manga
                 val known = evidence(manga)
                 key(it.manga) in competing && it.source is eu.kanade.tachiyomi.source.online.HttpSource &&
-                    !(known.complete && System.currentTimeMillis() - known.checkedAt in 0 until 300_000L)
+                    !(
+                        known.complete && !known.indexUncertain && known.indexUsable != false &&
+                            System.currentTimeMillis() - known.checkedAt in 0 until 300_000L
+                        )
             }.take(4)) {
                 currentCoroutineContext().ensureActive()
                 val manga = metadata[key(row.manga)] ?: row.manga
                 val retained = evidence(manga)
-                if (retained.complete && System.currentTimeMillis() - retained.checkedAt in 0 until 300_000L) continue
+                if (retained.complete && !retained.indexUncertain && retained.indexUsable != false &&
+                    System.currentTimeMillis() - retained.checkedAt in 0 until 300_000L
+                ) {
+                    continue
+                }
                 val verified = chapterVerifier.verify(row, manga, retained)
                 synchronized(this@MangaSearchEvidence) {
                     if (owner != epoch) return@withContext
                     counts[key(manga)] = verified
                 }
+                PreferredMangaVariants.observeIndex(
+                    manga,
+                    tachiyomi.domain.manga.service.CatalogEditionEvidence(
+                        indexedChapters = verified.distinct,
+                        complete = verified.complete,
+                        readable = verified.readable,
+                        indexSucceededAt = verified.checkedAt,
+                        indexUsable = verified.indexUsable,
+                        uncertain = verified.indexUncertain,
+                    ),
+                )
                 delay(250)
             }
         }

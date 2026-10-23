@@ -71,10 +71,18 @@ data class DiscoveryCategoryGridScreen(
 
         val navigator = LocalNavigator.currentOrThrow
         val gridViewModel = viewModel<DiscoveryCategoryGridViewModel>(
-            factory = DiscoveryCategoryGridViewModel.Factory(category)
+            factory = DiscoveryCategoryGridViewModel.Factory(category),
         )
         val state by gridViewModel.state.collectAsState()
-        val renderedItems = remember(state.items, category) { GroupDiscoveryItems.group(state.items, category.selectionContext()) }
+        val editionRevision by PreferredMangaVariants.changes.collectAsState()
+        val editionOwner by tachiyomi.core.common.util.lang.LocalAccountScope.changes.collectAsState()
+        val renderedItems =
+            remember(state.items, category, editionRevision, editionOwner.token) {
+                GroupDiscoveryItems.group(
+                    state.items,
+                    category.selectionContext(),
+                ).map(CatalogEditionOpening::forDisplay)
+            }
         val gridState = rememberLazyGridState()
         var selectedMultiSourceItem by remember { mutableStateOf<HomeDiscoveryItem?>(null) }
 
@@ -157,7 +165,9 @@ data class DiscoveryCategoryGridScreen(
                                 )
                                 Button(
                                     onClick = { gridViewModel.loadInitialPage(isRefresh = true) },
-                                    colors = ButtonDefaults.buttonColors(containerColor = MangaroDesignSystem.GoldPrimary),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = MangaroDesignSystem.GoldPrimary,
+                                    ),
                                     shape = RoundedCornerShape(10.dp),
                                 ) {
                                     Text("إعادة المحاولة", color = MaterialTheme.colorScheme.surface)
@@ -179,9 +189,15 @@ data class DiscoveryCategoryGridScreen(
                             ) { item ->
                                 MangaroMangaCard(
                                     item = item,
-                                    onChooseEdition = if (item.availableVersions.size > 1) ({ selectedMultiSourceItem = item }) else null,
+                                    onChooseEdition = if (item.availableVersions.size >
+                                        1
+                                    ) {
+                                        ({ selectedMultiSourceItem = item })
+                                    } else {
+                                        null
+                                    },
                                     onMangaClick = {
-                                        navigator.push(MangaScreen(CatalogEditionOpening.selected(item).mangaId, true))
+                                        navigator.push(MangaScreen(item.mangaId, true))
                                     },
                                     cardWidth = 150.dp,
                                 )
