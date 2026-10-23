@@ -486,7 +486,6 @@
     "data/src/main/java/tachiyomi/data/category/CategoryRepositoryImpl.kt": "bab3f2e34c1d69cb4f9bfc0e6aec813f26f4b71eabb143dadae4c659456a9c84",
     "data/src/main/java/tachiyomi/data/chapter/ChapterRepositoryImpl.kt": "68652c3a3fde79311796d742c718fdccc4f65e2242252deeb80dd9d8acd42e72",
     "data/src/main/java/tachiyomi/data/history/HistoryRepositoryImpl.kt": "827134ff2bdd30683fad9b6e9388d0907cdcd6a290a7c372addbe452dd219bed",
-    "data/src/main/java/tachiyomi/data/manga/MangaRepositoryImpl.kt": "baf0d4753a22775b25c255b50f029cc169f08d8b9237fa83974856b932cf966a",
     "data/src/main/java/tachiyomi/data/source/SourcePagingSource.kt": "fa51a6e78e4a42fc295aa51d99f09cdf0c6d398dc422d0f7621caf10245b3916",
     "data/src/main/java/tachiyomi/data/track/TrackRepositoryImpl.kt": "017145c99290413b3c99d96777383021b072f77fb40a58e842bd351541c5968a",
     "domain/src/main/java/mihon/domain/account/AccountFoundation.kt": "0e1b87a604598edd390f651d05b54a462a8cee3b640532b4378a2b52a418f02a",
@@ -582,7 +581,8 @@
     "app/src/test/java/eu/kanade/tachiyomi/data/stories/ConnectedStoryMetadataTest.kt": "Release-only repair: retain source-declared identity metadata and resolve reviewed Connected Stories membership for existing editions; entire touched file formatted with original ktlint rules.",
     "app/src/test/java/eu/kanade/tachiyomi/source/internal/mangaswat/MangaSwatTest.kt": "Release-only repair: retain source-declared identity metadata and resolve reviewed Connected Stories membership for existing editions; entire touched file formatted with original ktlint rules.",
     "app/src/main/java/eu/kanade/tachiyomi/search/AtlasCandidateIndex.kt": "Release runtime identity repair: format the entire modified file under original rules; preserve authority vetoes, source-qualified editions and bounded query verification.",
-    "app/src/main/java/eu/kanade/tachiyomi/search/WorkIdentityResolverV2.kt": "Release runtime identity repair: format the entire modified file under original rules; preserve authority vetoes, source-qualified editions and bounded query verification."
+    "app/src/main/java/eu/kanade/tachiyomi/search/WorkIdentityResolverV2.kt": "Release runtime identity repair: format the entire modified file under original rules; preserve authority vetoes, source-qualified editions and bounded query verification.",
+    "data/src/main/java/tachiyomi/data/manga/MangaRepositoryImpl.kt": "Release catalog repair: formatted modified public metadata persistence under unchanged original rules."
   },
   "schema": 1
 }

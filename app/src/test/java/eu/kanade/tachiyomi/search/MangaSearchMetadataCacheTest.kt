@@ -19,6 +19,21 @@ import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.fullType
 
 class MangaSearchMetadataCacheTest {
+    private lateinit var previousScope: uy.kohesive.injekt.api.InjektScope
+
+    @org.junit.jupiter.api.BeforeEach
+    fun isolateDependencies() {
+        previousScope = Injekt
+        uy.kohesive.injekt.Injekt = uy.kohesive.injekt.api.InjektScope(
+            uy.kohesive.injekt.registry.default.DefaultRegistrar(),
+        )
+    }
+
+    @org.junit.jupiter.api.AfterEach
+    fun restoreDependencies() {
+        uy.kohesive.injekt.Injekt = previousScope
+    }
+
     @Test fun `adapter names and medium survive query reset without repeated requests`(): Unit = runBlocking {
         val network = mockk<NetworkHelper>()
         every { network.defaultUserAgentProvider() } returns "Test Agent"
@@ -38,8 +53,20 @@ class MangaSearchMetadataCacheTest {
         )
         val manga = Manga.create().copy(id = 234567, source = source.id, url = "123456", title = "A Genuine Work")
         val db = mockk<GetManga>()
-        coEvery { db.await(manga.id) } returns manga
-        val evidence = MangaSearchEvidence(db) { emptyList() }
+        var persisted = manga
+        coEvery { db.await(manga.id) } answers { persisted }
+        val evidence = MangaSearchEvidence(db, { emptyList() }) { expected, fresh ->
+            val patch = tachiyomi.domain.manga.service.SourceMetadataRefresh.plan(persisted, expected, fresh)
+            if (patch != null) {
+                persisted = persisted.copy(
+                    memo = patch.memo ?: persisted.memo,
+                    author = patch.author ?: persisted.author,
+                    artist = patch.artist ?: persisted.artist,
+                    initialized = patch.initialized ?: persisted.initialized,
+                )
+            }
+            patch != null
+        }
         val row = RankedSearchResult(source, manga)
         evidence.refresh(listOf(row))
         val before = evidence.candidate(row, 0)
@@ -61,6 +88,13 @@ class MangaSearchMetadataCacheTest {
         evidence.candidate(row.copy(manga = changed), 0).format shouldBe "novel"
         evidence.resetBudget(recheck = true)
         evidence.candidate(row, 0).aliases shouldBe emptySet()
+        requests shouldBe 1
+        // A reconstructed query reads durable public metadata even after clearing
+        // the process-local proof cache. No extra detail request is needed.
+        val recreated = MangaSearchEvidence(db) { emptyList() }
+        recreated.refresh(listOf(row.copy(manga = persisted)))
+        recreated.candidate(row.copy(manga = persisted), 0).aliases shouldBe before.aliases
+        recreated.candidate(row.copy(manga = persisted), 0).format shouldBe "manhwa"
         requests shouldBe 1
     }
 }

@@ -26,12 +26,16 @@ import java.util.concurrent.ConcurrentHashMap
 internal class MangaSearchEvidence(
     private val getManga: GetManga,
     private val getChapters: suspend (Long) -> List<Chapter>,
+    private val storeMetadata: (suspend (Manga, Manga) -> Boolean)?,
 ) {
+    constructor(getManga: GetManga, getChapters: suspend (Long) -> List<Chapter>) : this(getManga, getChapters, null)
+
     private val chapterVerifier = SearchChapterVerifier()
     private val metadata = ConcurrentHashMap<String, Manga>()
     private val counts = ConcurrentHashMap<String, SearchChapterEvidence>()
     private val attempted = mutableSetOf<String>()
     private var remaining = 4
+    private var forceMetadata = false
     private data class Cached(
         val at: Long,
         val author: String?,
@@ -74,6 +78,7 @@ internal class MangaSearchEvidence(
         metadata.clear()
         attempted.clear()
         remaining = 4
+        forceMetadata = recheck
         chapterVerifier.reset(recheck)
         if (recheck) {
             counts.clear()
@@ -122,13 +127,15 @@ internal class MangaSearchEvidence(
             checkedAt = ChapterListIntegrity.lastSuccessfulAt(manga),
         )
     }
+    private fun authoritative(work: tachiyomi.domain.manga.service.WorkMetadata): Boolean =
+        work.reviewedWorkKey != null || work.externalIds.any { (namespace, value) ->
+            namespace in setOf("anilist", "myanimelist", "mangadex", "mangaupdates", "kitsu", "novelupdates") &&
+                AtlasCandidateIndex.validId(value)
+        }
+
     private fun metadataPriority(manga: Manga): Int {
         val known = CatalogWorkEvidence.from(manga)
-        if (known.reviewedWorkKey != null || known.externalIds.any { (namespace, value) ->
-                namespace in setOf("anilist", "myanimelist", "mangadex", "mangaupdates", "kitsu", "novelupdates") &&
-                    AtlasCandidateIndex.validId(value)
-            }
-        ) {
+        if (authoritative(known)) {
             return 2
         }
         if (cachedMetadata(manga) != null ||
@@ -149,7 +156,11 @@ internal class MangaSearchEvidence(
         // two large known groups can fill the frame and hide every useful detail probe.
         // Retain the first four display candidates for SQL/cache integrity hydration.
         val distinct = rows.distinctBy { key(it.manga) }
-        val priority = compareBy<RankedSearchResult>({ it.queryMatchRank }, { metadataPriority(it.manga) })
+        val priority = compareBy<RankedSearchResult>(
+            { if (!forceMetadata && authoritative(CatalogWorkEvidence.from(it.manga))) 1 else 0 },
+            { it.queryMatchRank },
+            { metadataPriority(it.manga) },
+        )
         val frame = (distinct.sortedWith(priority).take(12) + distinct.sortedBy { it.queryMatchRank }.take(4))
             .distinctBy { key(it.manga) }.map { row ->
                 ensureActive()
@@ -158,7 +169,13 @@ internal class MangaSearchEvidence(
                         it.source == row.manga.source && it.url == row.manga.url
                     } ?: row.manga
                     )
-            }.sortedWith(compareBy({ (row, _) -> row.queryMatchRank }, { (_, manga) -> metadataPriority(manga) }))
+            }.sortedWith(
+                compareBy(
+                    { (_, manga) -> if (!forceMetadata && authoritative(CatalogWorkEvidence.from(manga))) 1 else 0 },
+                    { (row, _) -> row.queryMatchRank },
+                    { (_, manga) -> metadataPriority(manga) },
+                ),
+            )
         for ((row, manga) in frame) {
             ensureActive()
             // The current record is authoritative; don't resurrect removed external IDs from an older memo.
@@ -210,7 +227,7 @@ internal class MangaSearchEvidence(
             val matchTier = row.queryMatchRank ushr 32
             if (!allowWeakMatches && row.queryMatchRank != Long.MAX_VALUE && matchTier > 4) continue
             val known = CatalogWorkEvidence.from(manga)
-            if (manga.initialized && WorkIdentityNormalizer.creator(manga.author) != null &&
+            if (!forceMetadata && manga.initialized && WorkIdentityNormalizer.creator(manga.author) != null &&
                 (known.aliases.isNotEmpty() || known.externalIds.isNotEmpty() || known.reviewedWorkKey != null)
             ) {
                 continue
@@ -265,6 +282,7 @@ internal class MangaSearchEvidence(
                     author = updated.author?.takeIf { it.isNotBlank() } ?: manga.author,
                     artist = updated.artist?.takeIf { it.isNotBlank() } ?: manga.artist,
                     memo = memoFields,
+                    initialized = manga.initialized || updated.initialized,
                 )
                 synchronized(this@MangaSearchEvidence) {
                     if (owner != epoch) return@withContext
@@ -280,6 +298,13 @@ internal class MangaSearchEvidence(
                         )
                     while (details.size > 128)details.remove(details.keys.first())
                 }
+                // Persist only public source metadata through the repository's atomic
+                // account/ref guard. A private memo or a newer response cannot be rewound.
+                try {
+                    storeMetadata?.invoke(manga, enriched)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) { /* Query evidence remains usable if optional persistence is unavailable. */ }
             } catch (c: CancellationException) {
                 throw c
             } catch (_: Exception) { /* Unknown remains unknown. */ }

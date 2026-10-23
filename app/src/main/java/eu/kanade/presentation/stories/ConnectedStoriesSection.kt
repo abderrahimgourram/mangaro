@@ -151,17 +151,7 @@ internal fun ConnectedStoriesSection(origin: StoryDestination, inset: Boolean = 
                 ) {
                     return@refreshOrigin
                 }
-                check(
-                    Injekt.get<MangaRepository>().update(
-                        tachiyomi.domain.manga.model.MangaUpdate(
-                            id = merged.id,
-                            memo = merged.memo,
-                            author = merged.author,
-                            artist = merged.artist,
-                            accountToken = token,
-                        ),
-                    ),
-                )
+                if (!Injekt.get<MangaRepository>().updateSourceMetadata(origin.manga, merged)) return@refreshOrigin
                 PreferredMangaVariants.remember(merged)
             }
         }
@@ -175,6 +165,9 @@ internal fun ConnectedStoriesSection(origin: StoryDestination, inset: Boolean = 
             NovelRepository.get(context).catalog,
             comicAvailable = { sources.get(it) is HttpSource },
             sourceChanges = merge(sources.sources.map { Unit }, PreferredMangaVariants.changes.map { Unit }),
+            additionalComics = { registry, relation, token ->
+                PreferredMangaVariants.relatedStoryEditions(registry, relation, token)
+            },
         )
     }
     LaunchedEffect(reviewed, origin.edition, workspace, relation) {

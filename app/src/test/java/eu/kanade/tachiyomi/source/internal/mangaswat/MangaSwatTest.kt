@@ -22,8 +22,19 @@ import org.junit.jupiter.api.assertThrows
 import java.io.IOException
 
 class MangaSwatTest {
+    private lateinit var previousScope: uy.kohesive.injekt.api.InjektScope
+
+    @org.junit.jupiter.api.AfterEach
+    fun restoreDependencies() {
+        uy.kohesive.injekt.Injekt = previousScope
+    }
+
     @org.junit.jupiter.api.BeforeEach
     fun setup() {
+        previousScope = uy.kohesive.injekt.Injekt
+        uy.kohesive.injekt.Injekt = uy.kohesive.injekt.api.InjektScope(
+            uy.kohesive.injekt.registry.default.DefaultRegistrar(),
+        )
         val network = mockk<eu.kanade.tachiyomi.network.NetworkHelper>()
         every { network.defaultUserAgentProvider() } returns "Test Agent"
         uy.kohesive.injekt.Injekt.addSingletonFactory(

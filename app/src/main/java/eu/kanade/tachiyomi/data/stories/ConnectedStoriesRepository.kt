@@ -39,6 +39,12 @@ internal class ConnectedStoriesRepository(
     private val novelActive: (String) -> Boolean = NovelSourceAvailability::active,
     private val comicReadable: (Long) -> Boolean? = PreferredMangaVariants::readerUsable,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val additionalComics: (
+        VerifiedStoryRelationshipRegistry,
+        StoryRelationship,
+        LocalAccountScope.Token,
+    ) -> List<StoryEditionRef> =
+        { _, _, _ -> emptyList() },
 ) {
     fun observe(
         origin: StoryDestination,
@@ -57,8 +63,13 @@ internal class ConnectedStoriesRepository(
                 if (!state.ready) {
                     flowOf(null)
                 } else {
-                    // At most eight enrolled comic routes, not an unrestricted library scan or source search.
-                    val comicFlows = relation.adaptation.editions.map { route ->
+                    // Enrolled routes plus at most sixteen independently verified public
+                    // editions. The fetched row is checked again by the resolver.
+                    val routes = (
+                        relation.adaptation.editions + additionalComics(reviewed, relation, state.token)
+                            .filter { it.format == StoryFormat.MANHWA }.take(16)
+                        ).distinctBy { it.lookupKey() }.take(24)
+                    val comicFlows = routes.map { route ->
                         combine(
                             (
                                 listOf(route.url) +

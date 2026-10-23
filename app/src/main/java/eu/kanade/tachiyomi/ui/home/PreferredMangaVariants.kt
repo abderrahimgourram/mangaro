@@ -54,7 +54,7 @@ object PreferredMangaVariants {
         val allowed = tachiyomi.domain.manga.model.DiscoveryEligibility.valid(manga.title, manga.url)
         val changed = if (allowed) invalid.remove(manga.id) else invalid.add(manga.id)
         val quality = Quality(
-            CatalogWorkEvidence.from(manga),
+            CatalogWorkEvidence.source(manga),
             ChapterListIntegrity.retainedComplete(manga),
             manga.initialized && CoverUrl.valid(manga.thumbnailUrl) != null,
             ChapterListIntegrity.actualChapterCount(manga),
@@ -235,6 +235,39 @@ object PreferredMangaVariants {
             )
         }.take(128).toList()
     }
+
+    /** Reuse bounded, account-scoped public evidence for a reviewed related-work
+     * recommendation. Each route must independently satisfy the current registry;
+     * this does not enroll a route, scan a library or fetch a source. */
+    internal fun relatedStoryEditions(
+        registry: eu.kanade.tachiyomi.data.stories.VerifiedStoryRelationshipRegistry,
+        relation: eu.kanade.tachiyomi.data.stories.StoryRelationship,
+        token: tachiyomi.core.common.util.lang.LocalAccountScope.Token,
+        allowed: (Long) -> Boolean = ::sourceEnabled,
+    ): List<eu.kanade.tachiyomi.data.stories.StoryEditionRef> = qualities.values.asSequence()
+        .filter {
+            it.owner == token && it.metadata && (it.actualChapterCount ?: 0) > 0 &&
+                eligible(it.work.reference.mangaId) && allowed(it.work.reference.sourceId)
+        }
+        .sortedWith(compareByDescending<Quality> { it.actualChapterCount }.thenBy { it.work.reference.url })
+        .mapNotNull { q ->
+            val ref = q.work.reference
+            val work = CatalogWorkEvidence.resolve(q.work)
+            val candidate = eu.kanade.tachiyomi.data.stories.connectedComicCandidate(
+                Manga.create().copy(
+                    id = ref.mangaId,
+                    source = ref.sourceId,
+                    url = ref.url,
+                    title = work.title,
+                    thumbnailUrl = q.coverUrl,
+                    author = work.author,
+                    artist = work.artist,
+                ),
+                metadata = { work },
+            )
+            candidate.destination.edition.takeIf { registry.relationship(candidate) == relation }
+        }.distinct().take(16).toList()
+
     fun actualChapterCount(item: HomeDiscoveryItem): Int? = quality(item.mangaId)?.takeIf {
         it.work.reference == SourceWorkReference(item.sourceId, item.mangaId, item.url)
     }?.actualChapterCount

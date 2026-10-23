@@ -76,7 +76,9 @@ abstract class SearchViewModel(
     private val enrichmentRevision = AtomicLong()
     private var workSelection = SearchResultPresentationFilter(sessions.generation())
     internal fun workGroups() = workSelection.snapshot()
-    private val searchEvidence = MangaSearchEvidence(getManga, chapterLookup)
+    private val searchEvidence = MangaSearchEvidence(getManga, chapterLookup) { expected, fresh ->
+        Injekt.get<tachiyomi.domain.manga.repository.MangaRepository>().updateSourceMetadata(expected, fresh)
+    }
 
     /** Actual error/loading state remains visible; only presentation reuses same-query rows. */
     private fun projectionItems(items: Map<Source, SearchItemResult>): Map<Source, SearchItemResult> =

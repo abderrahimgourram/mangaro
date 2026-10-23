@@ -46,6 +46,52 @@ class SearchEnrichmentRelevanceTest {
         requested.size shouldBe 4
     }
 
+    @Test fun `verified editions preserve the unresolved metadata budget`(): Unit = runBlocking {
+        val mangas = (1L..24).map { i ->
+            val m = Manga.create().copy(id = 995000 + i, source = 995000 + i, url = "/work/$i", title = "Candidate $i")
+            if (i <= 20) {
+                m.copy(
+                    memo = kotlinx.serialization.json.buildJsonObject {
+                        put(
+                            tachiyomi.domain.manga.service.WorkMetadata.MEMO_KEY,
+                            kotlinx.serialization.json.buildJsonObject {
+                                put(
+                                    "externalIds",
+                                    kotlinx.serialization.json.buildJsonObject {
+                                        put("anilist", kotlinx.serialization.json.JsonPrimitive("verified-$i"))
+                                    },
+                                )
+                            },
+                        )
+                    },
+                )
+            } else {
+                m
+            }
+        }
+        val requested = mutableListOf<Long>()
+        val rows = mangas.mapIndexed { i, manga ->
+            val source = mockk<HttpSource>()
+            every { source.id } returns manga.source
+            coEvery { source.getMangaUpdate(any(), any(), true, false) } answers {
+                requested += manga.id
+                SMangaUpdate(
+                    SManga.create().apply {
+                        url = manga.url
+                        title = manga.title
+                        author = "Writer ${manga.id}"
+                    },
+                    emptyList(),
+                )
+            }
+            RankedSearchResult(source, manga, queryMatchRank = if (i < 20) 0 else 2L shl 32)
+        }
+        val db = mockk<GetManga>()
+        coEvery { db.await(any()) } answers { mangas.single { it.id == firstArg<Long>() } }
+        MangaSearchEvidence(db) { emptyList() }.refresh(rows)
+        requested shouldBe mangas.takeLast(4).map { it.id }
+    }
+
     @Test fun `exact matches keep the metadata budget ahead of unrelated rows`(): Unit = runBlocking {
         val mangas = (1L..12).map { i ->
             Manga.create().copy(id = 990000 + i, source = 990000 + i, url = "/work/$i", title = "Source Work $i")

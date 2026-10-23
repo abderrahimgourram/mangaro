@@ -16,7 +16,7 @@ internal object AtlasDeclaredNames {
 
     // Separate from WorkMetadata: the existing SQL merge replaces individual memo keys.
     // A partial search response must never replace cached external IDs/edition evidence.
-    const val MEMO_KEY = "mangaro.atlas.declaredNames"
+    const val MEMO_KEY = tachiyomi.domain.manga.service.SourceMetadataRefresh.DECLARED_NAMES_KEY
     fun retain(
         memo: JsonObject,
         source: String,
