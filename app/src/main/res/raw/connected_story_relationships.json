@@ -183,7 +183,23 @@
             "source": "215553151312092548",
             "url": "/manhwa/return-of-the-mount-hua-sect#6a49e00234c268b77054833e"
           }
-        ]
+        ],
+        "identity": {
+          "originalNames": [
+            "화산귀환"
+          ],
+          "translatedNames": [
+            "Return of the Mount Hua Sect",
+            "Return of the Blossoming Blade"
+          ],
+          "creators": [
+            "Biga",
+            "비가"
+          ],
+          "formats": [
+            "manhwa"
+          ]
+        }
       },
       "original": {
         "work": {
@@ -205,7 +221,8 @@
         "https://m.comic.naver.com/webtoon/list?titleId=769209",
         "https://navercorp.com/media/pressReleasesDetail?seq=30834",
         "https://mangatime.org/manhwa/return-of-the-mount-hua-sect",
-        "https://seanovel.org/novels/return-of-the-blossoming-blade"
+        "https://seanovel.org/novels/return-of-the-blossoming-blade",
+        "https://www.webtoons.com/en/action/return-of-the-blossoming-blade/list?title_no=2849"
       ],
       "reviewedAt": "2026-10-20",
       "reviewer": "Mangaro Naver publisher and source metadata review"

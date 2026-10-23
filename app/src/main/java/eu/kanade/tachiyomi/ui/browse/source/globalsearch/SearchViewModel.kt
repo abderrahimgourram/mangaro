@@ -148,7 +148,11 @@ abstract class SearchViewModel(
             }
             val crossSourceResults = snapshot.items.values.filterIsInstance<SearchItemResult.Success>()
                 .count { it.result.isNotEmpty() } >= 2
-            searchEvidence.refresh(interleaved, allowNetwork = crossSourceResults || !snapshot.isSearching)
+            searchEvidence.refresh(
+                interleaved,
+                allowNetwork = crossSourceResults || !snapshot.isSearching,
+                allowWeakMatches = !snapshot.isSearching,
+            )
             resultMutex.withLock {
                 if (!isActive || !sessions.accepts(request) ||
                     state.value.activeQuery != snapshot.activeQuery

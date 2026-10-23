@@ -30,6 +30,7 @@ internal data class StoryCandidate(
     val verifiedCount: Int? = null,
     val canonicalNovelKey: String? = null,
     val providerWorkId: String? = null,
+    val comicMetadata: tachiyomi.domain.manga.service.WorkMetadata? = null,
 )
 internal data class ConnectedStoryUiModel(
     val relationship: StoryRelationship,

@@ -8,6 +8,7 @@ import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import mihon.domain.manga.model.toDomainManga
 import mihon.domain.source.registry.DefaultInternalSourceRegistry
 import mihon.domain.source.registry.DefaultSourceCollisionPolicy
 import mihon.domain.source.registry.SourceOrigin
@@ -25,7 +26,11 @@ class MangaSwatTest {
     fun setup() {
         val network = mockk<eu.kanade.tachiyomi.network.NetworkHelper>()
         every { network.defaultUserAgentProvider() } returns "Test Agent"
-        uy.kohesive.injekt.Injekt.addSingletonFactory(uy.kohesive.injekt.api.fullType<eu.kanade.tachiyomi.network.NetworkHelper>()) { network }
+        uy.kohesive.injekt.Injekt.addSingletonFactory(
+            uy.kohesive.injekt.api.fullType<eu.kanade.tachiyomi.network.NetworkHelper>(),
+        ) {
+            network
+        }
     }
 
     private fun source(responder: (okhttp3.Request) -> String) = MangaSwat(
@@ -34,15 +39,47 @@ class MangaSwatTest {
                 .body(responder(chain.request()).toResponseBody()).build()
         }.build(),
     )
-    private fun manga() = SManga.create().apply { url = "1624038"; title = "Sword Hound"; thumbnail_url = "https://meshmanga.com/cover.webp" }
-    private fun chapter(id: Int) = """{"id":$id,"slug":"chapter-$id","chapter":"$id FREE","created_at":"2023-04-14T14:42:37Z"}"""
+    private fun manga() = SManga.create().apply {
+        url = "1624038"
+        title = "Sword Hound"
+        thumbnail_url =
+            "https://meshmanga.com/cover.webp"
+    }
+    private fun chapter(
+        id: Int,
+    ) = """{"id":$id,"slug":"chapter-$id","chapter":"$id FREE","created_at":"2023-04-14T14:42:37Z"}"""
     private fun batch(ids: List<Int>, count: Int?, next: String? = null) =
-        """{"results":[${ids.joinToString(",") { chapter(it) }}],${count?.let { "\"count\":$it," } ?: ""}"next":${next?.let { "\"$it\"" } ?: "null"}}"""
+        """{"results":[${ids.joinToString(",") {
+            chapter(it)
+        }}],${count?.let { "\"count\":$it," } ?: ""}"next":${next?.let { "\"$it\"" } ?: "null"}}"""
+
+    @Test
+    fun `source detail retains distinct alternative names and explicit medium without changing identity`() {
+        val input = SManga.create().apply {
+            url = "649313"
+            title = "Cached title"
+        }
+        val detail = MangaSwat().parseDetails(
+            """{"id":649313,"title":"Return of the Mount Hua Sect","alternative":"Return of the Blossoming Blade | 화산귀환","type":{"id":131,"name":"manhwa"},"author":{"name":"Biga"}}""",
+            input,
+        )
+        val stored = detail.toDomainManga(7657007209499352344L)
+        eu.kanade.tachiyomi.search.AtlasDeclaredNames.aliases(stored) shouldBe setOf(
+            "Return of the Mount Hua Sect",
+            "Return of the Blossoming Blade",
+            "화산귀환",
+        )
+        eu.kanade.tachiyomi.search.AtlasDeclaredNames.format(stored) shouldBe "manhwa"
+        detail.url shouldBe "649313"
+        detail.author shouldBe "Biga"
+    }
 
     @Test
     fun `live TBATE chapter 235 empty slug retains remote ID and resolves by ID`() {
         val source = MangaSwat()
-        val row = source.parseChapterBatch("""{"count":1,"next":null,"results":[{"id":1743844,"slug":"","chapter":"235","title":"قصيدة البطل المرتقب","created_at":"2026-05-14T19:19:57.939679Z"}]}""").chapters.single()
+        val row = source.parseChapterBatch(
+            """{"count":1,"next":null,"results":[{"id":1743844,"slug":"","chapter":"235","title":"قصيدة البطل المرتقب","created_at":"2026-05-14T19:19:57.939679Z"}]}""",
+        ).chapters.single()
         row.url shouldBe "/chapters/1743844/"
         row.memo["id"].toString() shouldBe "1743844"
         row.name shouldBe "235"
@@ -61,17 +98,34 @@ class MangaSwatTest {
         DefaultInternalSourceRegistry(listOf(internal)).getSources().single() shouldBe internal
         val external = mockk<Source> { every { id } returns internal.id }
         val policy = DefaultSourceCollisionPolicy()
-        val collision = policy.resolveCollision(internal.id, internal, external, SourcePreferenceMode.EXTERNAL_PREFERRED)
+        val collision = policy.resolveCollision(
+            internal.id,
+            internal,
+            external,
+            SourcePreferenceMode.EXTERNAL_PREFERRED,
+        )
         collision.selectedSource shouldBe external
         collision.fallbackSource shouldBe internal
-        policy.resolveCollision(internal.id, internal, null, SourcePreferenceMode.EXTERNAL_PREFERRED).selectedOrigin shouldBe SourceOrigin.INTERNAL
+        policy.resolveCollision(
+            internal.id,
+            internal,
+            null,
+            SourcePreferenceMode.EXTERNAL_PREFERRED,
+        ).selectedOrigin shouldBe
+            SourceOrigin.INTERNAL
     }
 
     @Test
     fun `catalogue details chapters preserve pinned numeric paths and remote memo`() {
         val source = MangaSwat()
-        val manga = source.parseCatalogue("""{"results":[{"id":1624038,"title":"Sword Hound","poster":{"medium":"https://meshmanga.com/cover.webp"}}],"next":null}""").mangas.single()
-        source.parseDetails("""{"id":1624038,"title":"Sword Hound","author":null,"artist":null,"genres":null}""", manga).url shouldBe "1624038"
+        val manga = source.parseCatalogue(
+            """{"results":[{"id":1624038,"title":"Sword Hound","poster":{"medium":"https://meshmanga.com/cover.webp"}}],"next":null}""",
+        ).mangas.single()
+        source.parseDetails(
+            """{"id":1624038,"title":"Sword Hound","author":null,"artist":null,"genres":null}""",
+            manga,
+        ).url shouldBe
+            "1624038"
         source.getMangaUrl(manga) shouldBe "https://meshmanga.com/series/1624038"
         val chapter = source.parseChapterBatch(batch(listOf(1624040), 1)).chapters.single()
         chapter.url shouldBe "/chapters/1624040/chapter-1624040/"
@@ -96,22 +150,40 @@ class MangaSwatTest {
     }
 
     @Test
-    fun `missing proof is DEGRADED and truncation repeated IDs and cursor loops are clean errors`(): Unit = runBlocking {
-        source { batch(listOf(1), null) }.getMangaUpdate(manga(), emptyList(), false, true).chapterCompleteness shouldBe ChapterFetchCompleteness.DEGRADED
+    fun `missing proof is DEGRADED while truncated repeated or looping indexes fail`(): Unit = runBlocking {
+        source { batch(listOf(1), null) }.getMangaUpdate(manga(), emptyList(), false, true).chapterCompleteness shouldBe
+            ChapterFetchCompleteness.DEGRADED
         val next = "https://meshmanga.com/v2/api/v2/chapters/?serie=1624038&page=2"
-        for (body in listOf(batch(listOf(1), 2), batch(listOf(1, 1), 2), batch(listOf(1), 2, next), """{"results":[],"count":2,"next":"$next"}""")) {
+        for (body in listOf(
+            batch(listOf(1), 2),
+            batch(listOf(1, 1), 2),
+            batch(listOf(1), 2, next),
+            """{"results":[],"count":2,"next":"$next"}""",
+        )) {
             assertThrows<IOException> { source { body }.getMangaUpdate(manga(), emptyList(), false, true) }
         }
     }
 
     @Test
     fun `wrong series cursors errors challenges and missing required fields fail cleanly`(): Unit = runBlocking {
-        assertThrows<IOException> { source { batch(listOf(1), 2, "https://meshmanga.com/v2/api/v2/chapters/?serie=999&page=2") }.getMangaUpdate(manga(), emptyList(), false, true) }
+        assertThrows<IOException> {
+            source {
+                batch(listOf(1), 2, "https://meshmanga.com/v2/api/v2/chapters/?serie=999&page=2")
+            }.getMangaUpdate(manga(), emptyList(), false, true)
+        }
         val source = MangaSwat()
-        for (body in listOf("null", "<html>Just a moment...</html>", """{"detail":"Not found"}""", """{"results":[{"id":null,"title":"Invalid"}],"next":null}""", """{"results":[],"next":"https://invalid.example/next"}""")) {
+        for (body in listOf(
+            "null",
+            "<html>Just a moment...</html>",
+            """{"detail":"Not found"}""",
+            """{"results":[{"id":null,"title":"Invalid"}],"next":null}""",
+            """{"results":[],"next":"https://invalid.example/next"}""",
+        )) {
             assertThrows<IOException> { source.parseCatalogue(body) }
         }
-        assertThrows<IOException> { source.parsePages("""{"images_count":2,"images":[{"image":"https://meshmanga.com/1.webp"}]}""") }
+        assertThrows<IOException> {
+            source.parsePages("""{"images_count":2,"images":[{"image":"https://meshmanga.com/1.webp"}]}""")
+        }
         assertThrows<IOException> { source.parsePages("""{"images":[null]}""") }
         assertThrows<IOException> { source.parsePages("""{"images":null}""") }
     }

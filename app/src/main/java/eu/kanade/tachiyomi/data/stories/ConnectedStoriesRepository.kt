@@ -130,5 +130,6 @@ internal fun connectedComicCandidate(
             ChapterListIntegrity.retainedComplete(manga)
         },
         providerWorkId = proof.providerId,
+        comicMetadata = proof,
     )
 }

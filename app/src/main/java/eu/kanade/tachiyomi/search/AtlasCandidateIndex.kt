@@ -4,7 +4,9 @@ package eu.kanade.tachiyomi.search
 internal class AtlasCandidateIndex {
     private val groupsByKey = hashMapOf<String, MutableSet<Int>>()
     fun find(keys: Set<String>): List<Int> = keys.flatMap { groupsByKey[it].orEmpty() }.distinct().sorted()
-    fun add(keys: Set<String>, group: Int) { keys.forEach { groupsByKey.getOrPut(it) { linkedSetOf() }.add(group) } }
+    fun add(keys: Set<String>, group: Int) {
+        keys.forEach { groupsByKey.getOrPut(it) { linkedSetOf() }.add(group) }
+    }
 
     companion object {
         private val arabic = Regex("[\\u0600-\\u06ff]")
@@ -25,11 +27,22 @@ internal class AtlasCandidateIndex {
         }
         fun keys(e: WorkIdentityResolverV2.Evidence): Set<String> = buildSet {
             addAll(verifiedKeys(e))
-            for (name in e.names) for (creator in listOfNotNull(e.author, e.artist).distinct())
-                add("name:${e.row.kind}:$name:creator:$creator")
-            for (original in e.originals.filter(WorkIdentityNormalizer::distinctive))
-                for (name in e.names.filter { WorkIdentityNormalizer.distinctive(it) && arabic.containsMatchIn(it) != arabic.containsMatchIn(original) })
+            for (name in e.names) {
+                for (creator in (
+                    CreatorNameEvidence.keys(e.row.author, e.row.format) +
+                        WorkIdentityNormalizer.artistCredits(e.row.artist)
+                    )) {
+                    add("name:${e.row.kind}:$name:creator:$creator")
+                }
+            }
+            for (original in e.originals.filter(WorkIdentityNormalizer::distinctive)) {
+                for (name in e.names.filter {
+                    WorkIdentityNormalizer.distinctive(it) &&
+                        arabic.containsMatchIn(it) != arabic.containsMatchIn(original)
+                }) {
                     add("bilingual:${e.row.kind}:$original:$name")
+                }
+            }
         }
     }
 }

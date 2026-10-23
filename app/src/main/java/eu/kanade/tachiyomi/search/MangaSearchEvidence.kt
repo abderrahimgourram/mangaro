@@ -37,6 +37,7 @@ internal class MangaSearchEvidence(
         val author: String?,
         val artist: String?,
         val identity: kotlinx.serialization.json.JsonElement?,
+        val declaredNames: kotlinx.serialization.json.JsonElement?,
         val baseline: List<String?>,
     )
     private val details = linkedMapOf<String, Cached>()
@@ -46,7 +47,7 @@ internal class MangaSearchEvidence(
         manga.author,
         manga.artist,
         manga.memo[tachiyomi.domain.manga.service.WorkMetadata.MEMO_KEY]?.toString(),
-        AtlasDeclaredNames.aliases(manga).sorted().toString(),
+        manga.memo[AtlasDeclaredNames.MEMO_KEY]?.toString(),
     )
 
     /** Cache restoration ranks synchronously, before SQL refresh. Reuse only still-valid,
@@ -57,13 +58,12 @@ internal class MangaSearchEvidence(
         manga.copy(
             author = cached.author,
             artist = cached.artist,
-            memo = if (cached.identity == null) {
-                manga.memo
-            } else {
-                kotlinx.serialization.json.JsonObject(
-                    manga.memo + (tachiyomi.domain.manga.service.WorkMetadata.MEMO_KEY to cached.identity),
-                )
-            },
+            memo = kotlinx.serialization.json.JsonObject(
+                manga.memo + buildMap {
+                    cached.identity?.let { put(tachiyomi.domain.manga.service.WorkMetadata.MEMO_KEY, it) }
+                    cached.declaredNames?.let { put(AtlasDeclaredNames.MEMO_KEY, it) }
+                },
+            ),
         )
     }
 
@@ -139,13 +139,18 @@ internal class MangaSearchEvidence(
         return 0
     }
 
-    suspend fun refresh(rows: List<RankedSearchResult>, allowNetwork: Boolean = true) = withContext(Dispatchers.IO) {
+    suspend fun refresh(
+        rows: List<RankedSearchResult>,
+        allowNetwork: Boolean = true,
+        allowWeakMatches: Boolean = true,
+    ) = withContext(Dispatchers.IO) {
         val owner = synchronized(this@MangaSearchEvidence) { epoch }
         // Choose the bounded frame AFTER prioritizing unresolved editions. Otherwise
         // two large known groups can fill the frame and hide every useful detail probe.
         // Retain the first four display candidates for SQL/cache integrity hydration.
         val distinct = rows.distinctBy { key(it.manga) }
-        val frame = (distinct.sortedBy { metadataPriority(it.manga) }.take(12) + distinct.take(4))
+        val priority = compareBy<RankedSearchResult>({ it.queryMatchRank }, { metadataPriority(it.manga) })
+        val frame = (distinct.sortedWith(priority).take(12) + distinct.sortedBy { it.queryMatchRank }.take(4))
             .distinctBy { key(it.manga) }.map { row ->
                 ensureActive()
                 row to (
@@ -153,7 +158,7 @@ internal class MangaSearchEvidence(
                         it.source == row.manga.source && it.url == row.manga.url
                     } ?: row.manga
                     )
-            }.sortedBy { (_, manga) -> metadataPriority(manga) }
+            }.sortedWith(compareBy({ (row, _) -> row.queryMatchRank }, { (_, manga) -> metadataPriority(manga) }))
         for ((row, manga) in frame) {
             ensureActive()
             // The current record is authoritative; don't resurrect removed external IDs from an older memo.
@@ -199,6 +204,11 @@ internal class MangaSearchEvidence(
             // First-source arrival may hydrate SQL/cache immediately, but must not spend
             // the whole query's detail budget before cross-provider candidates exist.
             if (!allowNetwork) continue
+            // An early broad provider response must not exhaust the query before exact
+            // matches arrive. Weak cross-language candidates are still eligible once
+            // source search completes; they remain visible throughout.
+            val matchTier = row.queryMatchRank ushr 32
+            if (!allowWeakMatches && row.queryMatchRank != Long.MAX_VALUE && matchTier > 4) continue
             val known = CatalogWorkEvidence.from(manga)
             if (manga.initialized && WorkIdentityNormalizer.creator(manga.author) != null &&
                 (known.aliases.isNotEmpty() || known.externalIds.isNotEmpty() || known.reviewedWorkKey != null)
@@ -207,6 +217,10 @@ internal class MangaSearchEvidence(
             }
             val allowed = synchronized(this@MangaSearchEvidence) {
                 owner == epoch && remaining > 0 &&
+                    (
+                        allowWeakMatches || row.queryMatchRank == 0L || row.queryMatchRank == Long.MAX_VALUE ||
+                            remaining > 2
+                        ) &&
                     attempted.add(key(manga)).also { if (it) remaining-- }
             }
             if (!allowed) continue
@@ -261,6 +275,7 @@ internal class MangaSearchEvidence(
                             enriched.author,
                             enriched.artist,
                             enriched.memo[tachiyomi.domain.manga.service.WorkMetadata.MEMO_KEY],
+                            enriched.memo[AtlasDeclaredNames.MEMO_KEY],
                             baseline(manga),
                         )
                     while (details.size > 128)details.remove(details.keys.first())
@@ -276,10 +291,11 @@ internal class MangaSearchEvidence(
             val resolved = WorkIdentityResolverV2().resolve(candidates)
             val competing = resolved.groups.values
                 .filter { it.size > 1 }.flatten().map { it.id }.toSet()
-            for (row in rows.distinctBy { key(it.manga) }.filter {
+            for (row in rows.distinctBy { key(it.manga) }.sortedBy { it.queryMatchRank }.filter {
                 val manga = metadata[key(it.manga)] ?: it.manga
                 val known = evidence(manga)
                 key(it.manga) in competing && it.source is eu.kanade.tachiyomi.source.online.HttpSource &&
+                    (allowWeakMatches || it.queryMatchRank == 0L || it.queryMatchRank == Long.MAX_VALUE) &&
                     !(
                         known.complete && !known.indexUncertain && known.indexUsable != false &&
                             System.currentTimeMillis() - known.checkedAt in 0 until 300_000L

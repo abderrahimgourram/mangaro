@@ -16,7 +16,7 @@ internal object AtlasDeclaredNames {
 
     // Separate from WorkMetadata: the existing SQL merge replaces individual memo keys.
     // A partial search response must never replace cached external IDs/edition evidence.
-    private const val KEY = "mangaro.atlas.declaredNames"
+    const val MEMO_KEY = "mangaro.atlas.declaredNames"
     fun retain(
         memo: JsonObject,
         source: String,
@@ -29,12 +29,14 @@ internal object AtlasDeclaredNames {
                 ?.let { field to it }
         }.take(LIMIT).toMap()
         if (declared.isEmpty()) return memo
-        val prior = (memo[KEY] as? JsonObject)?.takeIf { (it["source"] as? JsonPrimitive)?.contentOrNull == source }
+        val prior = (memo[MEMO_KEY] as? JsonObject)?.takeIf {
+            (it["source"] as? JsonPrimitive)?.contentOrNull == source
+        }
         val old = (prior?.get("aliases") as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
         val names = (old + declared.values).distinct().take(LIMIT)
         return JsonObject(
             memo + (
-                KEY to buildJsonObject {
+                MEMO_KEY to buildJsonObject {
                     put("source", source)
                     put("contract", contract)
                     (format ?: (prior?.get("format") as? JsonPrimitive)?.contentOrNull)?.let { put("format", it) }
@@ -45,7 +47,7 @@ internal object AtlasDeclaredNames {
         )
     }
 
-    private fun record(manga: Manga): JsonObject? = (manga.memo[KEY] as? JsonObject)?.takeIf {
+    private fun record(manga: Manga): JsonObject? = (manga.memo[MEMO_KEY] as? JsonObject)?.takeIf {
         (it["source"] as? JsonPrimitive)?.contentOrNull == manga.source.toString()
     }
     fun aliases(manga: Manga): Set<String> = (record(manga)?.get("aliases") as? JsonArray).orEmpty()

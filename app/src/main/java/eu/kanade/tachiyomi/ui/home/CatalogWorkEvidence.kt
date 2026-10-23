@@ -181,6 +181,7 @@ internal object CatalogWorkEvidence {
         val metadata = WorkMetadata.from(manga)
         val work =
             metadata.copy(
+                aliases = metadata.aliases + eu.kanade.tachiyomi.search.AtlasDeclaredNames.aliases(manga),
                 format =
                 metadata.format ?: eu.kanade.tachiyomi.search.AtlasDeclaredNames
                     .format(manga),

@@ -117,8 +117,56 @@ internal fun ConnectedStoriesSection(origin: StoryDestination, inset: Boolean = 
             origin.identityEvidence()
         }
     }
-    val relation = reviewed.relationship(originEvidence) ?: return
     val workspace by LocalAccountScope.changes.collectAsStateWithLifecycle()
+    // Do not return before legacy editions have a chance to acquire missing source-owned names.
+    // This request never switches editions or fetches chapter bodies.
+    LaunchedEffect(reviewed, origin.edition, workspace.token) {
+        if (!workspace.ready || origin !is StoryDestination.Comic) return@LaunchedEffect
+        val token = workspace.token
+        withContext(Dispatchers.IO + LocalAccountScope.Element(token)) {
+            connectedStoryMetadata.refreshOrigin(reviewed, originEvidence, token) {
+                LocalAccountScope.check(token)
+                val source = Injekt.get<SourceManager>().get(origin.manga.source) as? HttpSource
+                    ?: return@refreshOrigin
+                val request = eu.kanade.tachiyomi.source.model.SManga.create().apply {
+                    url = origin.manga.url
+                    title = origin.manga.title
+                    memo = origin.manga.memo
+                }
+                val fresh = source.getMangaUpdate(request, emptyList(), true, false).manga
+                LocalAccountScope.check(token)
+                check(fresh.url == origin.manga.url)
+                check(
+                    tachiyomi.domain.manga.service.WorkTitleNormalizer.normalize(fresh.title) ==
+                        tachiyomi.domain.manga.service.WorkTitleNormalizer.normalize(origin.manga.title),
+                )
+                val merged = origin.manga.copy(
+                    memo = kotlinx.serialization.json.JsonObject(origin.manga.memo + fresh.memo),
+                    author = fresh.author?.takeIf { it.isNotBlank() } ?: origin.manga.author,
+                    artist = fresh.artist?.takeIf { it.isNotBlank() } ?: origin.manga.artist,
+                )
+                // A title-only or conflicting response cannot install evidence for a relationship.
+                if (reviewed.relationship(StoryDestination.Comic(merged).identityEvidence()) ==
+                    null
+                ) {
+                    return@refreshOrigin
+                }
+                check(
+                    Injekt.get<MangaRepository>().update(
+                        tachiyomi.domain.manga.model.MangaUpdate(
+                            id = merged.id,
+                            memo = merged.memo,
+                            author = merged.author,
+                            artist = merged.artist,
+                            accountToken = token,
+                        ),
+                    ),
+                )
+                PreferredMangaVariants.remember(merged)
+            }
+        }
+    }
+    val relation = reviewed.relationship(originEvidence) ?: return
     val repository = remember(graph, context) {
         val sources = Injekt.get<SourceManager>()
         ConnectedStoriesRepository(
