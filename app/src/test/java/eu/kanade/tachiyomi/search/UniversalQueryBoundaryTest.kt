@@ -82,4 +82,20 @@ class UniversalQueryBoundaryTest {
     @Test fun `Arabic marks punctuation and Unicode normalization preserve exact relevance`() {
         (rank("البداية بعد النهاية", "البِدايةُ بعد النِّهاية").single().queryMatchRank ushr 32) shouldBe 0
     }
+
+    @Test fun `partial token overlap needs support from both query and candidate rather than unrelated extra words`() {
+        (
+            rank("The Beginning After the End", "Attack on Titan The End The Beginning")
+                .single().queryMatchRank ushr 32 >= 7
+            ) shouldBe true
+        (
+            rank("The Silver Harbor Returns", "Crimson Wolves Silver Harbor")
+                .single().queryMatchRank ushr 32 >= 7
+            ) shouldBe true
+        // Retain useful near-title results and every source result, rather than deleting them.
+        val results = rank("Mystic River Sect", "Mystic River School", "Unrelated Public Work")
+        results.size shouldBe 2
+        (results.first().queryMatchRank ushr 32 < 7) shouldBe true
+        (results.last().queryMatchRank ushr 32 >= 7) shouldBe true
+    }
 }

@@ -74,3 +74,34 @@ unchanged legacy violations, not a clean full-Spotless status. OSV passed on 866
 resolved Maven versions; its ten negative tests and the nineteen formatting-policy
 tests passed. All sixteen protected advertising source hashes matched. These local
 results do not replace new-head GitHub CI, signed Release or held-out acceptance.
+
+## The next signed Release exposed a second veto
+
+The correctly featured 4d Release still rendered two tbat/TBATE groups. Its real
+records included a five-name comma artist enumeration, a semicolon artist/studio
+list and a third edition naming one artist. The earlier format-only fixture had
+omitted these fields. A new captured-data fixture first failed, then was extended
+to all three editions and failed again until every member pair was corroborated.
+Complete-link conflict protection has not been relaxed.
+
+Artist strings remain intact. Strict semicolon-credit subset matching is unchanged.
+Extra artists are not exhaustive work-identity contracts: an otherwise conflicting
+list may be corroborated by a shared writer, independent exact bilingual full
+names and an informative art credit. Without bilingual names, an exact full work
+title and writer need a whole matching complete personal-name/alphanumeric penname
+label from an enumeration. A comma surname/given-name fragment, personal-name
+suffix, generic studio, disjoint artist or missing writer cannot supply that proof.
+Conflicting IDs, concrete media, authors, years, sequels and editions still veto.
+The result is reversible presentation evidence, never a new stored canonical ID.
+
+An unrelated Attack on Titan work also remained primary for a full-title query
+through partial token overlap. Partial matches now need token coverage on both
+sides. Useful near-title substitutions remain meaningful; weaker candidates remain
+accessible as uncertain additional matches instead of being deleted.
+
+Current full local regression: 1,392 passed, 20 optional skipped, zero failures
+(1,412 total). Actual baseline-aware Spotless passed, 476 inherited files unchanged;
+all 16 protected ad sources remain byte-identical. Existing dependency inventory and
+OSV evidence is unchanged (866 versions, PASS); new-head CI must recheck it. These
+results still do not constitute signed Release or held-out acceptance. The 4d APK
+is explicitly a failed acceptance candidate, and PR13 remains draft until retested.

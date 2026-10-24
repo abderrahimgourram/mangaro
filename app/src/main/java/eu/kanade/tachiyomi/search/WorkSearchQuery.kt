@@ -46,7 +46,12 @@ internal class WorkSearchQuery(value: String) {
             val typoComplete = unmatched.size == distances.size && unmatched.zip(distances).all { (word, d) ->
                 d <= if (word.length <= 5) 1 else 2
             }
-            val enough = prefixes >= minimum
+            // Partial overlap must explain the candidate too. Two shared words
+            // cannot promote a longer, otherwise unrelated work. Complete query
+            // matches, useful near-title substitutions and typo recovery remain.
+            val candidateWords = tokens.filterNot { it in glue }.distinct()
+            val candidateMatches = candidateWords.count { token -> informative.any { token.startsWith(it) } }
+            val enough = prefixes >= minimum && candidateMatches >= (candidateWords.size * 3 + 4) / 5
             val tier = when {
                 prefixes == informative.size -> 4
                 enough -> 5

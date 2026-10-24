@@ -47,6 +47,54 @@ internal object WorkIdentityNormalizer {
         val y = artistCredits(b)
         return x.isNotEmpty() && y.isNotEmpty() && (x.containsAll(y) || y.containsAll(x))
     }
+
+    /** Weak overlap only. Commas in a person's name never supply creator identity.
+     * A long comma enumeration can corroborate independently proven names/writer,
+     * but must NOT enter the strict artist-subset or standalone creator comparison.
+     */
+    fun overlappingArtEnumeration(a: String?, b: String?): Boolean {
+        fun hints(raw: String?): Set<String> = raw.orEmpty().take(1024).split(';').take(12).flatMap { part ->
+            val enumeration = part.split(',').map(String::trim)
+            if (enumeration.size >= 3) enumeration.take(12) else listOf(part)
+        }.take(24).mapNotNull(::creator).filter {
+            it.length >= 4 && it.any(Char::isLetter) && it !in setOf("studio", "artist", "team", "illustrator")
+        }.toSet()
+        return hints(a).intersect(hints(b)).isNotEmpty()
+    }
+
+    /** Only a complete label can corroborate an exact name/writer pair without
+     * bilingual names. Never turn a surname/given-name comma fragment into proof.
+     * Structured semicolon credits retain their existing strict subset semantics.
+     */
+    fun completeArtLabelFromEnumeration(a: String?, b: String?): Boolean {
+        val roles = setOf("art", "artist", "studio", "team", "illustrator", "unknown", "author", "writer")
+        fun complete(value: String): Boolean {
+            val name = creator(value) ?: return false
+            return (name.any(Char::isLetter) && name.any(Char::isDigit)) ||
+                name.split(' ').count { it.length >= 2 && it !in roles } >= 2
+        }
+        fun matches(enumeration: String?, individual: String?): Boolean {
+            val credits = enumeration.orEmpty().take(1024).split(';').take(12).flatMap { field ->
+                val parts = field.split(',').mapNotNull(::creator)
+                if (parts.size >= 3 && parts.none { it in setOf("jr", "sr", "junior", "senior", "ii", "iii", "iv") }) {
+                    parts.take(12)
+                } else {
+                    emptyList()
+                }
+            }.toSet()
+            return individual.orEmpty().take(1024).split(';').take(12).filter { ',' !in it && complete(it) }
+                .mapNotNull(::creator).any { it in credits }
+        }
+        return matches(a, b) || matches(b, a)
+    }
+
+    /** Exact source-declared full names in different scripts, not acronyms or fuzzy translations. */
+    fun independentlyTranslatedNames(shared: Set<String>): Boolean {
+        val scripts = shared.filter(::distinctive).map { name ->
+            name.filter(Char::isLetter).map { Character.UnicodeScript.of(it.code) }.toSet()
+        }.filter(Set<Character.UnicodeScript>::isNotEmpty).distinct()
+        return scripts.any { a -> scripts.any { b -> a.intersect(b).isEmpty() } }
+    }
     fun names(c: SearchWorkCandidate): Set<String> = (listOf(c.title) + c.aliases + listOfNotNull(c.originalTitle))
         .take(24).flatMap {
             it.split('|').take(16)
@@ -173,9 +221,20 @@ internal class WorkIdentityResolverV2 {
         if (x.source == y.source) return reject("different-provider-editions-without-alias-proof")
         if (x.year != null && y.year != null && x.year != y.year) return reject("publication-year-conflict")
         val sharedArtist = WorkIdentityNormalizer.compatibleArtists(x.artist, y.artist)
-        if (a.artist != null && b.artist != null && !sharedArtist) return reject("artist-conflict")
-        val creator = sharedAuthor || sharedArtist
         val shared = a.names.intersect(b.names)
+        // Provider artist lists are not exhaustive publication contracts. Different
+        // extra credits cannot veto a shared writer + independent bilingual names
+        // + informative art credit. Disjoint credits and every earlier veto remain.
+        val completeArtLabel = mainA == mainB && WorkIdentityNormalizer.distinctive(mainA) &&
+            WorkIdentityNormalizer.completeArtLabelFromEnumeration(x.artist, y.artist)
+        val bilingualArt = WorkIdentityNormalizer.independentlyTranslatedNames(shared) &&
+            WorkIdentityNormalizer.overlappingArtEnumeration(x.artist, y.artist)
+        val corroboratedArtHistory = x.kind == SearchWorkKind.COMIC && !sharedArtist && sharedAuthor &&
+            (completeArtLabel || bilingualArt)
+        if (a.artist != null && b.artist != null && !sharedArtist && !corroboratedArtHistory) {
+            return reject("artist-conflict")
+        }
+        val creator = sharedAuthor || sharedArtist
         val original = a.originals.intersect(b.originals).filter(WorkIdentityNormalizer::distinctive)
         // Two source-declared names in different scripts corroborate one another. Repeating
         // the displayed title in an "original" field supplies no independent evidence.
@@ -209,7 +268,13 @@ internal class WorkIdentityResolverV2 {
         }
         return WorkIdentityDecision(
             WorkIdentityVerdict.LIKELY_SAME_WORK,
-            "exact-distinctive-name-and-creator",
+            if (corroboratedArtHistory && completeArtLabel) {
+                "shared-writer-full-title-and-complete-art-credit"
+            } else if (corroboratedArtHistory) {
+                "shared-writer-bilingual-names-and-nonexclusive-art-credits"
+            } else {
+                "exact-distinctive-name-and-creator"
+            },
             setOf(x.metadataOrigin, y.metadataOrigin, "presentation-only-not-canonical"),
         )
     }
