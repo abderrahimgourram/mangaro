@@ -41,6 +41,7 @@ internal data class SearchWorkCandidate(
     val originalTitle: String? = null,
     val metadataOrigin: String = "source-result",
     val queryMatchRank: Long = Long.MAX_VALUE,
+    val queryMatchReason: String = "",
 )
 internal data class SearchWorkGroup(
     val key: String,

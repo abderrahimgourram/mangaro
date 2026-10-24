@@ -6,12 +6,15 @@ package eu.kanade.tachiyomi.search
 internal class SearchResultPresentationFilter(val generation: Long = 0) {
     private val selection = SearchWorkSelection(readableFirst = true)
     private val resolver = WorkIdentityResolverV2()
-    private var lastCandidates:List<SearchWorkCandidate>? = null
-    private var lastEstablished:Map<String,List<SearchWorkCandidate>>? = null
+    private var lastCandidates: List<SearchWorkCandidate>? = null
+    private var lastEstablished: Map<String, List<SearchWorkCandidate>>? = null
 
     @Synchronized fun snapshot(): List<SearchWorkGroup> = selection.snapshot()
+
     @Synchronized fun restore(groups: List<SearchWorkGroup>) {
-        lastCandidates=null;lastEstablished=null;selection.restore(groups)
+        lastCandidates = null
+        lastEstablished = null
+        selection.restore(groups)
     }
 
     @Synchronized fun present(
@@ -20,17 +23,28 @@ internal class SearchResultPresentationFilter(val generation: Long = 0) {
         establishedNovelGroups: Map<String, List<SearchWorkCandidate>>? = null,
     ): List<SearchWorkGroup>? {
         if (request != generation) return null
-        require(candidates.map { it.kind }.distinct().size <= 1) { "Separate comic and novel search sessions" }
         val unique = candidates.distinctBy { Triple(it.kind, it.source, it.id) }
-        if(lastCandidates==unique && lastEstablished==establishedNovelGroups)return selection.snapshot()
-        val resolution = resolver.resolve(unique, establishedNovelGroups,selection.snapshot())
-        val decisionByMember=resolution.groups.flatMap { (key,rows) -> rows.map {it.id to resolution.decisions.getValue(key)} }.toMap()
+        if (lastCandidates == unique && lastEstablished == establishedNovelGroups) return selection.snapshot()
+        val resolution = resolver.resolve(unique, establishedNovelGroups, selection.snapshot())
+        require(resolution.groups.values.all { rows -> rows.map { it.kind }.distinct().size == 1 }) {
+            "A work group must retain one content medium"
+        }
+        val decisionByMember = resolution.groups.flatMap { (key, rows) ->
+            rows.map {
+                it.id to
+                    resolution.decisions.getValue(key)
+            }
+        }.toMap()
         return selection.select(unique, resolution.groups).map { group ->
-            val decision=decisionByMember[group.members.first().id]
-            group.copy(provisional=group.provisional||decision?.verdict==WorkIdentityVerdict.LIKELY_SAME_WORK,identityDecision=decision)
+            val decision = decisionByMember[group.members.first().id]
+            group.copy(
+                provisional = group.provisional || decision?.verdict == WorkIdentityVerdict.LIKELY_SAME_WORK,
+                identityDecision = decision,
+            )
         }.also {
-            selection.restore(it);lastCandidates=unique
-            lastEstablished=establishedNovelGroups?.mapValues { (_,rows)->rows.toList() }
+            selection.restore(it)
+            lastCandidates = unique
+            lastEstablished = establishedNovelGroups?.mapValues { (_, rows) -> rows.toList() }
         }
     }
 }

@@ -24,6 +24,19 @@ internal object WorkIdentityNormalizer {
     fun title(value: String, kind: SearchWorkKind): String = SearchWorkIdentity.normalize(value).let {
         if (kind == SearchWorkKind.NOVEL) it.removePrefix("رواية ").removePrefix("روايه ") else it
     }
+
+    // A source-declared unmarked alias can explain a narrow translation annotation.
+    // It supplies no new identity authority and cannot strip arbitrary subtitles/sequels.
+    fun comparisonTitle(c: SearchWorkCandidate): String {
+        val name = c.title.trim()
+        val marker = Regex("(?i)\\s*\\((?:مترجم|مترجمة|translated|translation)\\)\\s*$")
+        val base = name.replace(marker, "").trim()
+        return if (base != name && c.aliases.any { title(it, c.kind) == title(base, c.kind) }) {
+            title(base, c.kind)
+        } else {
+            title(name, c.kind)
+        }
+    }
     fun creator(value: String?): String? = value?.let(SearchWorkIdentity::normalize)?.takeIf {
         it.length >= 3 &&
             it !in placeholders
@@ -149,8 +162,8 @@ internal class WorkIdentityResolverV2 {
                 setOf("native-catalog"),
             )
         }
-        val mainA = WorkIdentityNormalizer.title(x.title, x.kind)
-        val mainB = WorkIdentityNormalizer.title(y.title, y.kind)
+        val mainA = WorkIdentityNormalizer.comparisonTitle(x)
+        val mainB = WorkIdentityNormalizer.comparisonTitle(y)
         if (mainA != mainB && (mainA.startsWith("$mainB ") || mainB.startsWith("$mainA ")) &&
             !(mainA in b.names && mainB in a.names)
         ) {

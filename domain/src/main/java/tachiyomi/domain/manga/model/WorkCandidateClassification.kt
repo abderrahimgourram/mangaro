@@ -88,7 +88,11 @@ object WorkCandidateClassification {
             return result(Kind.REAL_WORK, "native-fragment-identity")
         }
         val catalogRoot = parts.size == 1 && first in workRoots &&
-            (path.endsWith('/') || first in setOf("novels", "mangas", "works", "books", "series"))
+            (
+                path.endsWith('/') || first in setOf(
+                    "novel", "novels", "manga", "mangas", "manhwa", "manhua", "series", "cont", "works", "books",
+                )
+                )
         val directoryRoot = first in setOf(
             "page", "archive", "archives", "browse", "catalog", "directory", "all", "list",
             "manga-list", "novel-list", "all-manga", "all-novels", "latest-updates",

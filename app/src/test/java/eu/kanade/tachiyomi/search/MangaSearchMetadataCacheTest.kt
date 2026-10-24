@@ -34,6 +34,78 @@ class MangaSearchMetadataCacheTest {
         uy.kohesive.injekt.Injekt = previousScope
     }
 
+    @Test fun `a cached self title is not a complete alternative name declaration`(): Unit = runBlocking {
+        val manga = Manga.create().copy(
+            id = 234568,
+            source = 981234568,
+            url = "/work/partial",
+            title = "Actual Work",
+            initialized = true,
+            author = "Writer",
+        )
+        val partial = manga.copy(
+            memo = AtlasDeclaredNames.retain(
+                manga.memo,
+                manga.source.toString(),
+                "source.v1",
+                mapOf("title" to manga.title),
+                "manhwa",
+            ),
+        )
+        val source = mockk<eu.kanade.tachiyomi.source.Source>()
+        every { source.id } returns manga.source
+        var requests = 0
+        io.mockk.coEvery { source.getMangaUpdate(any(), any(), true, false) } answers {
+            requests++
+            eu.kanade.tachiyomi.source.model.SMangaUpdate(
+                eu.kanade.tachiyomi.source.model.SManga.create().apply {
+                    url = manga.url
+                    title = manga.title
+                    author = manga.author
+                    memo = AtlasDeclaredNames.retain(
+                        manga.memo,
+                        manga.source.toString(),
+                        "source.v1",
+                        mapOf("title" to manga.title, "alternative" to "原作名"),
+                        "manhwa",
+                    )
+                },
+                emptyList(),
+            )
+        }
+        val db = mockk<GetManga>()
+        coEvery { db.await(manga.id) } returns partial
+        val row = RankedSearchResult(source, partial)
+        val evidence = MangaSearchEvidence(db) { emptyList() }
+        evidence.refresh(listOf(row))
+        requests shouldBe 1
+        evidence.candidate(row, 0).aliases.contains("原作名") shouldBe true
+    }
+
+    @Test fun `an explicit prose format on a mixed source retains a distinct novel identity`() {
+        val source = mockk<eu.kanade.tachiyomi.source.Source>()
+        every { source.id } returns 991234567L
+        val manga = Manga.create().copy(
+            id = 55123,
+            source = source.id,
+            title = "A Source Declared Work",
+            url = "/manga/a-source-declared-work",
+        )
+        val prose = manga.copy(
+            memo = AtlasDeclaredNames.retain(
+                manga.memo,
+                manga.source.toString(),
+                "public.detail-header",
+                mapOf("title" to manga.title),
+                "novel",
+            ),
+        )
+        val db = mockk<GetManga>()
+        val evidence = MangaSearchEvidence(db) { emptyList() }
+        evidence.candidate(RankedSearchResult(source, prose), 0).kind shouldBe SearchWorkKind.NOVEL
+        evidence.candidate(RankedSearchResult(source, manga.copy(id = 55124)), 0).kind shouldBe SearchWorkKind.COMIC
+    }
+
     @Test fun `adapter names and medium survive query reset without repeated requests`(): Unit = runBlocking {
         val network = mockk<NetworkHelper>()
         every { network.defaultUserAgentProvider() } returns "Test Agent"

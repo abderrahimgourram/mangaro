@@ -99,18 +99,25 @@ abstract class SearchViewModel(
         val raw = relevance.rank(projectionItems(items), order)
         if (!liveSearch) return raw
         searchEvidence.requestMappings(raw)
-        val candidates = raw.map { searchEvidence.candidate(it, order[it.source.id] ?: Int.MAX_VALUE) }
+        val candidates = raw.map {
+            relevance.enrich(searchEvidence.candidate(it, order[it.source.id] ?: Int.MAX_VALUE))
+        }
         val groups = selector.present(sessions.generation(), candidates) ?: return emptyList()
         eu.kanade.tachiyomi.search.WorkIdentityDiagnostics.observe(
             state.value.activeQuery.orEmpty(),
             candidates,
             groups,
         )
-        val routes = raw.associateBy {
-            SearchEditionKey(SearchWorkKind.COMIC, it.manga.source.toString(), searchEvidence.key(it.manga))
+        val routes = raw.zip(candidates).associate { (row, candidate) ->
+            SearchEditionKey(candidate.kind, candidate.source, candidate.id) to row
         }
+        val groupMatches = groups.associate { group -> group.key to group.members.minBy { it.queryMatchRank } }
         return WorkPresentationProjection.project(groups, routes).map { work ->
+            val match = requireNotNull(groupMatches[work.key])
             work.selected.copy(
+                queryMatchRank = match.queryMatchRank,
+                queryMatchReason = match.queryMatchReason,
+                declaredNovel = groups.first { it.key == work.key }.winner.kind == SearchWorkKind.NOVEL,
                 workKey = work.key,
                 verifiedDistinctChapters = work.chapters.distinct,
                 indexComplete = work.chapters.complete,
@@ -695,6 +702,18 @@ abstract class SearchViewModel(
         val dialog: Dialog? = null,
         val useWorkSelection: Boolean = false,
     ) {
+        // Preserve all retrieved groups. Weak source matches remain explicitly available;
+        // they are neither identity failures nor deleted catalogue/library records.
+        val primaryRankedResults: List<RankedSearchResult> get() = rankedResults.filter {
+            !useWorkSelection || activeQuery.isNullOrBlank() || (it.queryMatchRank ushr 32) < 7
+        }
+        val additionalRankedResults: List<RankedSearchResult> get() = if (!useWorkSelection ||
+            activeQuery.isNullOrBlank()
+        ) {
+            emptyList()
+        } else {
+            rankedResults.filter { (it.queryMatchRank ushr 32) >= 7 }
+        }
         val hasMore: Boolean get() = pages.values.any { it.hasMore }
         val progress: Int = items.count { it.value !is SearchItemResult.Loading }
         val total: Int = items.size

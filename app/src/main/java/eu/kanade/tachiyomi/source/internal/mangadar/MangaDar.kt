@@ -398,6 +398,13 @@ class MangaDar(
                     else -> SManga.UNKNOWN
                 }
             initialized = true
+            eu.kanade.tachiyomi.source.internal.util.HtmlHeaderIdentity.retain(
+                document,
+                this,
+                baseUrl,
+                id,
+                "mangadar.detail-header.v1",
+            )
         }
     }
 

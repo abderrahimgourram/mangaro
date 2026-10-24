@@ -113,3 +113,73 @@ unrelated works, other hosts and custom user covers remain unchanged. This is an
 explicit artwork review entry, not a general identity inference from a cover or a
 title. A regression covers the exact newly observed URL, unrelated series/host,
 source mismatch and the unchanged custom-cover path.
+
+## Universal query and catalogue follow-up (PR13, acceptance pending)
+
+Live original-key Release observations on 2026-10-24 found 26 candidates for
+`erica`, rather than the earlier owner-observed 16. Seven had Erica titles.
+The other candidates included titles containing **America**: the old substring
+relevance rule matched `erica` inside that word. TeamX's live search document
+also explicitly returned two unrelated titles under the requested keyword; this
+was not a footer-selector defect. Neither observation proves the seven
+similarly named editions are the same medium or work. In particular, the
+public MangaDar detail header declares one of them a novel, while the Azora
+payload declares its record `MANHWA`. Missing credits stay missing.
+
+`WorkSearchQuery` now supplies shared bounded title/alias/token relevance and
+acronyms derived from known title tokens. These generated acronyms never enter
+identity aliases, trusted identifiers or relationship authority. Ambiguous
+acronyms can match several independent works. Interpretation cannot invent a
+full title that no enabled source or existing metadata has supplied.
+
+Search re-evaluates relevance **after** public detail/cache enrichment. A group's
+best matching member determines query order; the existing availability/count
+policy chooses its representative. The 200-route edition is not demoted merely
+because its translated display name matches less exactly than a 33-route
+edition. Weak source-only/infix matches remain accessible through an explicit
+additional-results control. Fewer primary results due to relevance are reported
+separately from actual same-work grouping.
+
+Slash-stripped known catalogue roots, such as `/manga`, are directories too.
+Ambiguous singular paths such as `/work` remain pending verification: an early
+expanded rule incorrectly rejected these and was caught by the complete suite.
+No title blacklist, zero-count filter or library cleanup is used.
+
+MangaDar's source-bound header aliases and explicit format now survive native
+parsing. A small sanitized real public header/credit excerpt is included in the
+fixtures; its test wrapper supplies the structural context omitted by excerpting.
+Azora retains source-declared alternatives and format. Its `createdby` publishing
+account is no longer borrowed as a bibliographic author. No uploader identity,
+response body or source authentication data enters identity diagnostics.
+
+Home uses the existing conflict-aware Search policy for group membership and
+the existing shared chapter-quality comparator for edition choice. Bounded,
+account-scoped public Search index evidence can nominate a better Home edition;
+the same complete-link resolver must still accept the whole group. No stored
+library, chapter, bookmark or progress identity is moved. A parenthesized
+translation annotation is comparable to the unmarked name only if the source
+itself declares that unmarked alias; independent corroboration and all trusted
+conflict vetoes remain necessary.
+
+Mixed provider batches can contain separately typed prose and comics. Every
+result group must contain exactly one medium. The former whole-batch exception
+regression is replaced with explicit checks that both groups, every comic
+edition, the 200-route winner and the separate prose route survive. The Home
+negative fixture now actually omits creator evidence: it previously supplied
+`Known Creator` while describing itself as title-only. Its two-card and unchanged
+route assertions remain. Source-wiring assertions accept formatter whitespace
+and braces while still requiring the exact production target and arguments.
+Functional ViewModel, identity, navigation projection and preservation tests
+remain independent of those wiring checks.
+
+The original formatter rules are unchanged. Modifying the previously exempt
+novel screen requires formatting that entire file and expanding its wildcard
+imports; the large whitespace diff is not a reader/UI rewrite. Each touched
+legacy exemption is deliberately retired with a reason. Advertising bytes remain
+protected. Full-clean repository Spotless is still not claimed.
+
+This follow-up is not final Release acceptance. The development and held-out
+Release matrices, final exact-head CI and deployment decision must be recorded
+separately. Unknown identity is not a successful duplicate removal; external
+403/timeout is not zero chapters. PR13 must remain open if real acceptance still
+finds an unresolved supported defect.

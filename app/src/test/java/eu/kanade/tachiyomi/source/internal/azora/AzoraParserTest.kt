@@ -3,14 +3,14 @@ package eu.kanade.tachiyomi.source.internal.azora
 import eu.kanade.tachiyomi.source.model.SManga
 import io.kotest.matchers.shouldBe
 import kotlinx.serialization.json.Json
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
-import java.io.IOException
-import okhttp3.ResponseBody.Companion.toResponseBody
-import okhttp3.MediaType.Companion.toMediaType
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.fullType
+import java.io.IOException
 
 class AzoraParserTest {
 
@@ -27,38 +27,98 @@ class AzoraParserTest {
         azora = Azora()
     }
 
+    @Test fun `details preserve bibliographic aliases and never use uploader as the author`() {
+        val base = SManga.create().apply {
+            url = "a-real-work#91"
+            title = "A Real Work"
+        }
+        val result = azora.parsePostDetailsResponse(
+            """{"post":{"id":91,"postTitle":"A Real Work",
+            "seriesType":"MANHWA","alternativeTitles":"عنوان حقيقي | 원작 제목",
+            "author":"","artist":"","createdby":{"name":"Uploader"}}}""",
+            base,
+            "a-real-work",
+            "91",
+        )
+        result.author shouldBe null
+        val manga = tachiyomi.domain.manga.model.Manga.create().copy(
+            source = azora.id,
+            url = result.url,
+            title = result.title,
+            memo = result.memo,
+        )
+        eu.kanade.tachiyomi.search.AtlasDeclaredNames.aliases(manga) shouldBe
+            setOf("A Real Work", "عنوان حقيقي", "원작 제목")
+        eu.kanade.tachiyomi.search.AtlasDeclaredNames.format(manga) shouldBe "manhwa"
+    }
+
     @Test fun recordedVillainessIndexRetainsAllRowsButHidesOnlyExplicitLocks() {
-        val rows=azora.parseChaptersResponse(fixture("villainess-access-index.json"),"thats-how-i-became-a-villainess","2845")
+        val rows = azora.parseChaptersResponse(
+            fixture("villainess-access-index.json"),
+            "thats-how-i-became-a-villainess",
+            "2845",
+        )
         rows.size shouldBe 20
-        val shown=rows.filter {AzoraChapterAvailability.visible(azora.id,it.memo)}
+        val shown = rows.filter { AzoraChapterAvailability.visible(azora.id, it.memo) }
         shown.size shouldBe 15
-        shown.maxOf {it.chapter_number} shouldBe 15f
-        rows.map {it.url}.distinct().size shouldBe 20
-        rows.all {AzoraChapterAvailability.PARSED in it.memo} shouldBe true
-        rows.filter {it.chapter_number>=16}.all {AzoraChapterAvailability.visible(azora.id,it.memo,downloaded=true)} shouldBe true
-        rows.filter {it.chapter_number>=16}.all {AzoraChapterAvailability.visible(99,it.memo)} shouldBe true
+        shown.maxOf { it.chapter_number } shouldBe 15f
+        rows.map { it.url }.distinct().size shouldBe 20
+        rows.all { AzoraChapterAvailability.PARSED in it.memo } shouldBe true
+        rows.filter {
+            it.chapter_number >= 16
+        }.all { AzoraChapterAvailability.visible(azora.id, it.memo, downloaded = true) } shouldBe
+            true
+        rows.filter { it.chapter_number >= 16 }.all { AzoraChapterAvailability.visible(99, it.memo) } shouldBe true
     }
+
     @Test fun availabilityRefreshRestoresSameIdentityWithoutChangingPersonalState() {
-        val rows=azora.parseChaptersResponse(fixture("villainess-access-index.json"),"thats-how-i-became-a-villainess","2845")
-        val locked=rows.first {it.chapter_number==20f}
-        val old=tachiyomi.domain.chapter.model.Chapter.create().copy(id=7,mangaId=10,url=locked.url,
-            bookmark=true,read=true,lastPageRead=9,memo=locked.memo)
-        val open=old.copy(memo=kotlinx.serialization.json.JsonObject(old.memo+
-            (AzoraChapterAvailability.LOCKED to kotlinx.serialization.json.JsonPrimitive(false))))
-        AzoraChapterAvailability.visible(azora.id,old.memo) shouldBe false
-        AzoraChapterAvailability.visible(azora.id,open.memo) shouldBe true
-        tachiyomi.domain.chapter.interactor.ShouldUpdateDbChapter().await(old,open) shouldBe true
-        open.id shouldBe old.id;open.url shouldBe old.url;open.lastPageRead shouldBe 9L
-        open.bookmark shouldBe true;open.read shouldBe true
-        AzoraChapterAvailability.needsMetadataRefresh(azora.id,old.memo) shouldBe false
-        AzoraChapterAvailability.needsMetadataRefresh(azora.id,kotlinx.serialization.json.JsonObject(emptyMap())) shouldBe true
-        AzoraChapterAvailability.needsMetadataRefresh(99,kotlinx.serialization.json.JsonObject(emptyMap())) shouldBe false
+        val rows = azora.parseChaptersResponse(
+            fixture("villainess-access-index.json"),
+            "thats-how-i-became-a-villainess",
+            "2845",
+        )
+        val locked = rows.first { it.chapter_number == 20f }
+        val old = tachiyomi.domain.chapter.model.Chapter.create().copy(
+            id = 7,
+            mangaId = 10,
+            url = locked.url,
+            bookmark = true,
+            read = true,
+            lastPageRead = 9,
+            memo = locked.memo,
+        )
+        val open = old.copy(
+            memo = kotlinx.serialization.json.JsonObject(
+                old.memo +
+                    (AzoraChapterAvailability.LOCKED to kotlinx.serialization.json.JsonPrimitive(false)),
+            ),
+        )
+        AzoraChapterAvailability.visible(azora.id, old.memo) shouldBe false
+        AzoraChapterAvailability.visible(azora.id, open.memo) shouldBe true
+        tachiyomi.domain.chapter.interactor.ShouldUpdateDbChapter().await(old, open) shouldBe true
+        open.id shouldBe old.id
+        open.url shouldBe old.url
+        open.lastPageRead shouldBe 9L
+        open.bookmark shouldBe true
+        open.read shouldBe true
+        AzoraChapterAvailability.needsMetadataRefresh(azora.id, old.memo) shouldBe false
+        AzoraChapterAvailability.needsMetadataRefresh(
+            azora.id,
+            kotlinx.serialization.json.JsonObject(emptyMap()),
+        ) shouldBe
+            true
+        AzoraChapterAvailability.needsMetadataRefresh(99, kotlinx.serialization.json.JsonObject(emptyMap())) shouldBe
+            false
     }
+
     @Test fun explicitSourceLockRemainsRestrictedEvenIfImageFieldsArePresent() {
         assertThrows<eu.kanade.tachiyomi.source.ChapterAccessRestrictedException> {
-            azora.parseChapterPagesResponse("""{"chapter":{"isLocked":true,"images":[{"url":"https://example.org/not-eligible.jpg"}]}}""")
+            azora.parseChapterPagesResponse(
+                """{"chapter":{"isLocked":true,"images":[{"url":"https://example.org/not-eligible.jpg"}]}}""",
+            )
         }
     }
+
     @Test
     fun `verify Azora source ID matches pinned baseline exact value`() {
         azora.id shouldBe 2482399499047903203L
@@ -137,7 +197,12 @@ class AzoraParserTest {
             }
         """.trimIndent()
 
-        val updated = azora.parsePostDetailsResponse(jsonResponse, initialManga, "i-bought-the-villains-with-money", "2820")
+        val updated = azora.parsePostDetailsResponse(
+            jsonResponse,
+            initialManga,
+            "i-bought-the-villains-with-money",
+            "2820",
+        )
         updated.title shouldBe "I Bought the Villains With Money"
         updated.description shouldBe "Reincarnated story"
         updated.status shouldBe SManga.ONGOING
@@ -201,18 +266,23 @@ class AzoraParserTest {
         pages[0].imageUrl shouldBe "https://storage.azorafly.com/upload/p1.jpg"
         pages[1].imageUrl shouldBe "https://storage.azorafly.com/upload/p2.jpg"
     }
+
     @Test
     fun `complete oversized response cannot advertise an endless next page`() {
-        val posts = (1..200).joinToString(",") { """{"id":$it,"slug":"sample-$it","seriesType":"MANHWA","postTitle":"Sample $it"}""" }
+        val posts = (1..200).joinToString(",") {
+            """{"id":$it,"slug":"sample-$it","seriesType":"MANHWA","postTitle":"Sample $it"}"""
+        }
         val page = azora.parsePostsResponse("""{"posts":[$posts],"totalCount":200}""")
         page.mangas.size shouldBe 200
         page.hasNextPage shouldBe false
-        azora.getFilterList().filterIsInstance<Azora.OrderFilter>().single().values.contains("عدد الفصول") shouldBe false
+        azora.getFilterList().filterIsInstance<Azora.OrderFilter>().single().values.contains("عدد الفصول") shouldBe
+            false
     }
 
     @Test
     fun `total count keeps pagination open when API returns fewer than requested entries`() {
-        val response = """{"posts":[{"id":702,"slug":"sample","seriesType":"MANHWA","postTitle":"Sample"}],"totalCount":1935}"""
+        val response = """{"posts":[{"id":702,"slug":"sample","seriesType":"MANHWA","postTitle":"Sample"}],
+            "totalCount":1935}"""
         azora.parsePostsResponse(response, 1).hasNextPage shouldBe true
         azora.parsePostsResponse(response, 81).hasNextPage shouldBe false
     }
@@ -226,7 +296,11 @@ class AzoraParserTest {
     @Test
     fun `live Rebirth null creator does not crash details`() {
         val body = javaClass.getResource("/source-null/rebirth-details.json")!!.readText()
-        val manga = SManga.create().apply { url = "rebirth-of-the-urban-immortal-cultivator#92"; title = "Rebirth Of The Urban Immortal Cultivator" }
+        val manga = SManga.create().apply {
+            url = "rebirth-of-the-urban-immortal-cultivator#92"
+            title =
+                "Rebirth Of The Urban Immortal Cultivator"
+        }
         val details = azora.parsePostDetailsResponse(body, manga, "rebirth-of-the-urban-immortal-cultivator", "92")
         details.author shouldBe null
         details.genre!!.contains("أكشن") shouldBe true
@@ -237,8 +311,20 @@ class AzoraParserTest {
     @Test
     fun `optional null objects and arrays are absent but required payloads fail cleanly`() {
         val manga = SManga.create().apply { title = "Existing" }
-        azora.parsePostDetailsResponse("""{"post":{"id":92,"createdby":null,"genres":null,"_count":null}}""", manga, "rebirth", "92").author shouldBe null
-        azora.parsePostDetailsResponse("""{"post":{"id":92,"genres":[null,{"name":"Action"}]}}""", manga, "rebirth", "92").genre shouldBe "Action"
+        azora.parsePostDetailsResponse(
+            """{"post":{"id":92,"createdby":null,"genres":null,"_count":null}}""",
+            manga,
+            "rebirth",
+            "92",
+        ).author shouldBe
+            null
+        azora.parsePostDetailsResponse(
+            """{"post":{"id":92,"genres":[null,{"name":"Action"}]}}""",
+            manga,
+            "rebirth",
+            "92",
+        ).genre shouldBe
+            "Action"
         assertThrows<IOException> { azora.parsePostDetailsResponse("""{"post":null}""", manga, "rebirth", "92") }
         assertThrows<IOException> { azora.parseChaptersResponse("""{"post":null}""", "rebirth") }
         assertThrows<IOException> { azora.parseChapterPagesResponse("""{"chapter":null}""") }
@@ -279,12 +365,13 @@ class AzoraParserTest {
     fun `only verified image types enter discovery without title heuristics`() {
         val types = listOf("MANGA", "MANHWA", "MANHUA", "NOVEL", "UNKNOWN", null)
         val posts = types.mapIndexed { index, type ->
-            """{"id":$index,"slug":"sample-$index","postTitle":"A novel title","seriesType":${type?.let { "\"$it\"" } ?: "null"}}"""
+            """{"id":$index,"slug":"sample-$index","postTitle":"A novel title","seriesType":${type?.let {
+                "\"$it\""
+            } ?: "null"}}"""
         }.joinToString(",")
         azora.parsePostsResponse("""{"posts":[$posts],"hasMore":false}""").mangas.map { it.url } shouldBe
             listOf("sample-0#0", "sample-1#1", "sample-2#2")
     }
-
 
     private fun fixture(name: String): String = javaClass.getResource("/azora/$name")!!.readText()
 
@@ -292,10 +379,20 @@ class AzoraParserTest {
         val client = okhttp3.OkHttpClient.Builder().addInterceptor { chain ->
             okhttp3.Response.Builder().request(chain.request()).protocol(okhttp3.Protocol.HTTP_1_1)
                 .code(200).message("OK")
-                .body((if (chain.request().url.encodedPath == "/api/post") details else chapters)
-                    .toResponseBody("application/json".toMediaType())).build()
+                .body(
+                    (if (chain.request().url.encodedPath == "/api/post") details else chapters)
+                        .toResponseBody("application/json".toMediaType()),
+                ).build()
         }.build()
-        Azora(client).getMangaUpdate(SManga.create().apply { url = "rabbit-holes#2822"; title = "Rabbit Holes" }, emptyList(), true, true)
+        Azora(client).getMangaUpdate(
+            SManga.create().apply {
+                url = "rabbit-holes#2822"
+                title = "Rabbit Holes"
+            },
+            emptyList(),
+            true,
+            true,
+        )
     }
 
     @Test
@@ -319,25 +416,45 @@ class AzoraParserTest {
 
     @Test
     fun `remote identity rejects repeated IDs even with different slugs and keeps same numbered chapters`() {
-        val rows = """{"chapters":[{"id":1,"slug":"chapter-1","number":1},{"id":1,"slug":"chapter-1-alt","number":1}],"totalChapterCount":2}"""
+        val rows = """{"chapters":[{"id":1,"slug":"chapter-1","number":1},
+            {"id":1,"slug":"chapter-1-alt","number":1}],"totalChapterCount":2}"""
         assertThrows<IOException> { azora.parseChaptersResponse(rows, "series") }
-        val chapters = azora.parseChaptersResponse(rows.replace("\"id\":1,\"slug\":\"chapter-1-alt", "\"id\":2,\"slug\":\"chapter-1-alt"), "series")
+        val chapters = azora.parseChaptersResponse(
+            rows.replace("\"id\":1,\"slug\":\"chapter-1-alt", "\"id\":2,\"slug\":\"chapter-1-alt"),
+            "series",
+        )
         chapters.size shouldBe 2
         chapters.map { it.chapter_number } shouldBe listOf(1f, 1f)
     }
 
     @Test
     fun `truncated response wrong post and duplicate URLs fail cleanly`() {
-        assertThrows<IOException> { azora.parseChaptersResponse("""{"chapters":[{"id":1}],"totalChapterCount":2}""", "series") }
-        assertThrows<IOException> { azora.parseChaptersResponse("""{"chapters":[{"id":1}],"hasMore":true}""", "series") }
-        assertThrows<IOException> { azora.parseChaptersResponse("""{"chapters":[],"totalChapterCount":0,"error":"unavailable"}""", "series") }
-        assertThrows<IOException> { azora.parseChaptersResponse("""{"chapters":[{"id":1,"mangaPostId":5}]}""", "series", "2822") }
-        assertThrows<IOException> { azora.parseChaptersResponse("""{"chapters":[{"id":1,"slug":"chapter-1"},{"id":1,"slug":"chapter-1"}]}""", "series") }
+        assertThrows<IOException> {
+            azora.parseChaptersResponse("""{"chapters":[{"id":1}],"totalChapterCount":2}""", "series")
+        }
+        assertThrows<IOException> {
+            azora.parseChaptersResponse("""{"chapters":[{"id":1}],"hasMore":true}""", "series")
+        }
+        assertThrows<IOException> {
+            azora.parseChaptersResponse("""{"chapters":[],"totalChapterCount":0,"error":"unavailable"}""", "series")
+        }
+        assertThrows<IOException> {
+            azora.parseChaptersResponse("""{"chapters":[{"id":1,"mangaPostId":5}]}""", "series", "2822")
+        }
+        assertThrows<IOException> {
+            azora.parseChaptersResponse(
+                """{"chapters":[{"id":1,"slug":"chapter-1"},{"id":1,"slug":"chapter-1"}]}""",
+                "series",
+            )
+        }
     }
 
     @Test
     fun `chapter identity date and metadata survive parsing`() {
-        val chapter = azora.parseChaptersResponse("""{"chapters":[{"id":137118,"slug":"chapter-332","number":332,"title":"special forces","createdAt":"2026-09-30T19:40:03.564Z","scanlator":"team"}],"totalChapterCount":1}""", "nano-machine-s").single()
+        val chapter = azora.parseChaptersResponse(
+            """{"chapters":[{"id":137118,"slug":"chapter-332","number":332,"title":"special forces","createdAt":"2026-09-30T19:40:03.564Z","scanlator":"team"}],"totalChapterCount":1}""",
+            "nano-machine-s",
+        ).single()
         chapter.url shouldBe "/series/nano-machine-s/chapter-332#137118"
         chapter.memo["azora.id"].toString() shouldBe "\"137118\""
         chapter.date_upload shouldBe java.time.Instant.parse("2026-09-30T19:40:03.564Z").toEpochMilli()

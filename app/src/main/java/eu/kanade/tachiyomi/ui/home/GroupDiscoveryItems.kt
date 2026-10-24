@@ -1,12 +1,12 @@
 package eu.kanade.tachiyomi.ui.home
 
+import eu.kanade.tachiyomi.search.searchCandidate
 import mihon.domain.source.discovery.model.DiscoveryCategory
 import mihon.domain.source.health.SourceHealthMonitor
 import tachiyomi.core.common.util.lang.LocalAccountScope
 import tachiyomi.domain.manga.service.CatalogEditionSelection
 import tachiyomi.domain.manga.service.CatalogSelectionContext
 import tachiyomi.domain.manga.service.VerifiedCatalogIdentity
-import tachiyomi.domain.manga.service.WorkLinker
 import tachiyomi.domain.manga.service.WorkMetadata
 import tachiyomi.domain.manga.service.WorkTitleNormalizer
 
@@ -89,7 +89,12 @@ object GroupDiscoveryItems {
         if (variants.size <= 256) projectionMemo.get(key)?.let { return it }
         val byReference = variants.zip(evidence).associate { (item, work) -> work.reference to item }
         val order = evidence.mapIndexed { index, work -> work.reference to index }.toMap()
-        val works = WorkLinker.group(evidence).sortedBy { work -> work.members.minOf { order.getValue(it.reference) } }
+        val candidates = evidence.map { it.searchCandidate() }
+        val records = candidates.zip(evidence).associate { (candidate, work) -> candidate.id to work }
+        val groups = eu.kanade.tachiyomi.search.SearchResultPresentationFilter().present(0, candidates).orEmpty()
+        val works = groups.map { group ->
+            tachiyomi.domain.manga.service.CanonicalWork(group.key, group.members.map { records.getValue(it.id) })
+        }.sortedBy { work -> work.members.minOf { order.getValue(it.reference) } }
         val result = works.mapNotNull { work ->
             val members = work.members.mapNotNull { byReference[it.reference] }
             val eligible = members.filter {

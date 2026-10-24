@@ -98,7 +98,16 @@ internal class MangaSearchEvidence(
             it.copy(aliases = (it.aliases + AtlasDeclaredNames.aliases(manga)).take(24).toSet())
         }
         return SearchWorkCandidate(
-            key(manga), manga.source.toString(), SearchWorkKind.COMIC, manga.title,
+            key(manga), manga.source.toString(),
+            if (
+                eu.kanade.tachiyomi.novels.NovelContentTypeClassifier.declared(listOfNotNull(identity.format))?.type ==
+                eu.kanade.tachiyomi.novels.NovelContentType.TEXT_NOVEL
+            ) {
+                SearchWorkKind.NOVEL
+            } else {
+                SearchWorkKind.COMIC
+            },
+            manga.title,
             identity.aliases, identity.externalIds, identity.author, identity.artist, identity.format,
             identity.edition, identity.year, priority,
             evidence(manga).let { it.copy(readable = PreferredMangaVariants.readerUsable(manga.id) ?: it.readable) },
@@ -133,13 +142,21 @@ internal class MangaSearchEvidence(
                 AtlasCandidateIndex.validId(value)
         }
 
+    private fun hasAlternativeNames(manga: Manga, work: tachiyomi.domain.manga.service.WorkMetadata): Boolean {
+        val title = tachiyomi.domain.manga.service.WorkTitleNormalizer.normalize(manga.title)
+        return work.aliases.any { tachiyomi.domain.manga.service.WorkTitleNormalizer.normalize(it) != title }
+    }
+
     private fun metadataPriority(manga: Manga): Int {
         val known = CatalogWorkEvidence.from(manga)
         if (authoritative(known)) {
             return 2
         }
         if (cachedMetadata(manga) != null ||
-            (manga.initialized && WorkIdentityNormalizer.creator(manga.author) != null && known.aliases.isNotEmpty())
+            (
+                manga.initialized && WorkIdentityNormalizer.creator(manga.author) != null &&
+                    hasAlternativeNames(manga, known)
+                )
         ) {
             return 1
         }
@@ -228,7 +245,7 @@ internal class MangaSearchEvidence(
             if (!allowWeakMatches && row.queryMatchRank != Long.MAX_VALUE && matchTier > 4) continue
             val known = CatalogWorkEvidence.from(manga)
             if (!forceMetadata && manga.initialized && WorkIdentityNormalizer.creator(manga.author) != null &&
-                (known.aliases.isNotEmpty() || known.externalIds.isNotEmpty() || known.reviewedWorkKey != null)
+                (hasAlternativeNames(manga, known) || known.externalIds.isNotEmpty() || known.reviewedWorkKey != null)
             ) {
                 continue
             }
@@ -279,8 +296,10 @@ internal class MangaSearchEvidence(
                     )
                 }
                 val enriched = manga.copy(
-                    author = updated.author?.takeIf { it.isNotBlank() } ?: manga.author,
-                    artist = updated.artist?.takeIf { it.isNotBlank() } ?: manga.artist,
+                    author =
+                    tachiyomi.domain.manga.service.SourceMetadataRefresh.creator(updated.author) ?: manga.author,
+                    artist =
+                    tachiyomi.domain.manga.service.SourceMetadataRefresh.creator(updated.artist) ?: manga.artist,
                     memo = memoFields,
                     initialized = manga.initialized || updated.initialized,
                 )
@@ -301,7 +320,7 @@ internal class MangaSearchEvidence(
                 // Persist only public source metadata through the repository's atomic
                 // account/ref guard. A private memo or a newer response cannot be rewound.
                 try {
-                    storeMetadata?.invoke(manga, enriched)
+                    if (storeMetadata?.invoke(manga, enriched) == true) PreferredMangaVariants.remember(enriched)
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (_: Exception) { /* Query evidence remains usable if optional persistence is unavailable. */ }

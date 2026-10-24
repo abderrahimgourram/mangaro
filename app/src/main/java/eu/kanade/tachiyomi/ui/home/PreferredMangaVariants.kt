@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.ui.home
 
+import eu.kanade.tachiyomi.search.searchCandidate
 import kotlinx.coroutines.flow.update
 import mihon.domain.source.health.SourceHealthMonitor
 import tachiyomi.domain.chapter.service.ChapterListIntegrity
@@ -192,48 +193,49 @@ object PreferredMangaVariants {
     /** Only verified same-work references may expand a recommendation's alternatives.
      * No library record is changed and no network call is performed here. */
     fun related(items: List<HomeDiscoveryItem>, allowed: (Long) -> Boolean = ::sourceEnabled): List<HomeDiscoveryItem> {
-        val known = items.map(::work).map(tachiyomi.domain.manga.service.VerifiedCatalogIdentity::from)
-        val index = known.flatMap { value ->
-            tachiyomi.domain.manga.service.VerifiedCatalogIdentity.lookupKeys(value).map {
-                it to
-                    value
-            }
-        }
-            .groupBy({ it.first }, { it.second })
-        return qualities.values.asSequence().map { q ->
-            // Reviewed source references may be withdrawn while public index evidence
-            // is still cached. Re-resolve authority before promoting that edition.
+        if (items.isEmpty()) return emptyList()
+        val policy = eu.kanade.tachiyomi.search.WorkIdentityResolverV2()
+        val known = items.map(::work).map { it.searchCandidate() }
+        val keys = known.flatMap {
+            eu.kanade.tachiyomi.search.AtlasCandidateIndex.keys(policy.evidence(it, null))
+        }.toSet()
+        val eligible = qualities.values.asSequence().map { q ->
+            // Re-resolve reviewed authority: revoked identity cannot be resurrected by cache.
             q.copy(work = CatalogWorkEvidence.resolve(q.work))
         }.filter { q ->
-            q.discoveryObserved &&
-                items.none { it.sourceId == q.work.reference.sourceId && it.url == q.work.reference.url } &&
-                q.owner == tachiyomi.core.common.util.lang.LocalAccountScope.capture() && allowed(
+            q.discoveryObserved && q.owner == tachiyomi.core.common.util.lang.LocalAccountScope.capture() &&
+                allowed(
                     q.work.reference.sourceId,
-                ) &&
-                q.actualChapterCount != null &&
-                eligible(q.work.reference.mangaId) &&
-                tachiyomi.domain.manga.service.VerifiedCatalogIdentity.from(q.work).let { candidate ->
-                    tachiyomi.domain.manga.service.VerifiedCatalogIdentity.lookupKeys(candidate).flatMap {
-                        index[it].orEmpty()
-                    }
-                        .any { tachiyomi.domain.manga.service.VerifiedCatalogIdentity.matches(it, candidate) }
-                }
-        }.map { q ->
-            val ref = q.work.reference
-            HomeDiscoveryItem(
-                ref.mangaId,
-                q.work.title,
-                tachiyomi.domain.manga.model.MangaCover(ref.mangaId, ref.sourceId, false, q.coverUrl, 0),
-                ref.sourceId,
-                items.firstOrNull { it.sourceId == ref.sourceId }?.sourceName
-                    ?: runCatching {
-                        uy.kohesive.injekt.Injekt.get<tachiyomi.domain.source.service.SourceManager>().get(
-                            ref.sourceId,
-                        )?.name
-                    }.getOrNull().orEmpty(),
-                ref.url,
-            )
-        }.take(128).toList()
+                ) && q.actualChapterCount != null && eligible(q.work.reference.mangaId) &&
+                items.none { it.sourceId == q.work.reference.sourceId && it.url == q.work.reference.url }
+        }.map { it to it.work.searchCandidate() }.filter { (_, candidate) ->
+            eu.kanade.tachiyomi.search.AtlasCandidateIndex.keys(policy.evidence(candidate, null)).any { it in keys }
+        }.toList()
+        if (eligible.isEmpty()) return emptyList()
+        // Indexed lookup only proposes candidates. The shared complete-link policy
+        // still decides every group and prevents conflicting transitive bridges.
+        val incomingIds = known.mapTo(hashSetOf()) { it.id }
+        val groups = eu.kanade.tachiyomi.search.SearchResultPresentationFilter()
+            .present(0, known + eligible.map { it.second }).orEmpty()
+        val relatedIds = groups.filter { group -> group.members.any { it.id in incomingIds } }
+            .flatMap { it.members }.mapTo(hashSetOf()) { it.id }
+        return eligible.asSequence().filter { it.second.id in relatedIds }.map { it.first }
+            .map { q ->
+                val ref = q.work.reference
+                HomeDiscoveryItem(
+                    ref.mangaId,
+                    q.work.title,
+                    tachiyomi.domain.manga.model.MangaCover(ref.mangaId, ref.sourceId, false, q.coverUrl, 0),
+                    ref.sourceId,
+                    items.firstOrNull { it.sourceId == ref.sourceId }?.sourceName
+                        ?: runCatching {
+                            uy.kohesive.injekt.Injekt.get<tachiyomi.domain.source.service.SourceManager>().get(
+                                ref.sourceId,
+                            )?.name
+                        }.getOrNull().orEmpty(),
+                    ref.url,
+                )
+            }.take(128).toList()
     }
 
     /** Reuse bounded, account-scoped public evidence for a reviewed related-work

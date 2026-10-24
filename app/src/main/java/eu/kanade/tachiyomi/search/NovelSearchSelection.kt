@@ -23,7 +23,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.ConcurrentHashMap
 
 /** Presentation over source-owned editions; no catalogue aliases, progress or library records are rewritten. */
-internal class NovelSearchSelection(private val repository: NovelRepository) {
+internal class NovelSearchSelection(private val repository: NovelRepository, query: String = "") {
+    private val interpretedQuery = WorkSearchQuery(query)
     data class Presentation(val works: List<UnifiedNovelWork>, val groups: List<SearchWorkGroup>)
     private val selection = SearchResultPresentationFilter()
     fun snapshot() = selection.snapshot()
@@ -48,7 +49,10 @@ internal class NovelSearchSelection(private val repository: NovelRepository) {
     }
     fun candidate(n: Novel, priority: Int): SearchWorkCandidate {
         val base = NovelCatalogCards.candidate(n, repository.catalog.value.evidence[n.id], priority)
+        val match = interpretedQuery.match(listOf(base.title) + base.aliases + listOfNotNull(base.originalTitle))
         return base.copy(
+            queryMatchRank = match.rank,
+            queryMatchReason = match.reason,
             chapters =
             counts[n.id]?.let { SearchChapterVerifier.merge(base.chapters, it) } ?: base.chapters,
         )

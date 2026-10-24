@@ -173,7 +173,9 @@ fun MangaroSearchScreen(
     val focusManager = LocalFocusManager.current
     // Matched work cards retain the selected source's actual identity and route.
     val context = LocalContext.current
-    val results = state.rankedResults
+    var showAdditional by rememberSaveable(state.activeQuery) { mutableStateOf(false) }
+    val additional = state.additionalRankedResults
+    val results = if (showAdditional) state.rankedResults else state.primaryRankedResults
     val mangaStarzId = 6058166507489091982L
     val mangaStarzError = remember(state.items) {
         state.items.entries.firstOrNull { it.key.id == mangaStarzId && it.value is SearchItemResult.Error }
@@ -258,6 +260,17 @@ fun MangaroSearchScreen(
                     color = Color(0xFF9E95AC),
                     style = MaterialTheme.typography.labelMedium,
                 )
+            }
+            if (hasSearch && currentResults && additional.isNotEmpty()) {
+                TextButton(onClick = { showAdditional = !showAdditional }, modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        if (showAdditional) {
+                            "إخفاء النتائج الإضافية"
+                        } else {
+                            "نتائج إضافية مطابقتها غير مؤكدة (${additional.size})"
+                        },
+                    )
+                }
             }
             Box(Modifier.fillMaxWidth().height(2.dp)) {
                 if (loading) {
@@ -557,6 +570,9 @@ private fun SearchMangaCard(
             }
         },
         metadata = {
+            if (result.declaredNovel) {
+                Text("رواية", color = MangaroDesignSystem.TextSecondary, style = MaterialTheme.typography.labelSmall)
+            }
             result.verifiedDistinctChapters?.let { count ->
                 Text(
                     if (result.indexComplete) "$count فصل موثّق" else "$count فصل مفهرس على الأقل",

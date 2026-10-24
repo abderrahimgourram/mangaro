@@ -101,7 +101,11 @@ class HomePreviewLimitAndHandoffTest {
         merged.map { it.mangaId } shouldContainExactly listOf(1L, 2L)
     }
 
-    private fun known(item: HomeDiscoveryItem, externalId: String? = null): HomeDiscoveryItem = item.copy(
+    private fun known(
+        item: HomeDiscoveryItem,
+        externalId: String? = null,
+        author: String? = "Known Creator",
+    ): HomeDiscoveryItem = item.copy(
         url = "/work/${item.mangaId}",
     ).also {
         PreferredMangaVariants.remember(
@@ -110,7 +114,7 @@ class HomePreviewLimitAndHandoffTest {
                 source = it.sourceId,
                 url = it.url,
                 title = it.title,
-                author = "Known Creator",
+                author = author,
                 memo = kotlinx.serialization.json.buildJsonObject {
                     if (externalId != null) {
                         put(
@@ -149,7 +153,7 @@ class HomePreviewLimitAndHandoffTest {
                 sourceName = "Source B",
             )
         // Publishing receives resolved groups. Snapshot restoration must not infer title-only links.
-        val grouped = GroupDiscoveryItems.group(listOf(known(itemA), known(itemB)))
+        val grouped = GroupDiscoveryItems.group(listOf(known(itemA, author = null), known(itemB, author = null)))
         DiscoverySnapshotStore.setSnapshot(DiscoveryCategory.LATEST, grouped)
         val retrieved = DiscoverySnapshotStore.getSnapshot(DiscoveryCategory.LATEST)
         retrieved.size shouldBe 2
