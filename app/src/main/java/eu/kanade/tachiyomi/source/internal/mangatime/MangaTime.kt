@@ -104,7 +104,9 @@ class MangaTime(
     public override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
         val trimmed = query.trim()
         val input = if (trimmed.isNotEmpty()) {
-            """{"json":{"query":${JsonPrimitive(trimmed)},"limit":24,"page":$page,"sortBy":"popularity"}}"""
+            // Match the public search UI: broad source matches must not push an
+            // exact title off page one behind unrelated popular catalogue items.
+            """{"json":{"query":${JsonPrimitive(trimmed)},"limit":24,"page":$page,"sortBy":"relevance"}}"""
         } else {
             """{"json":{"limit":24,"page":$page,"sortBy":"popularity"}}"""
         }

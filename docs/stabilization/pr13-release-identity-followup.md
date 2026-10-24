@@ -105,3 +105,36 @@ all 16 protected ad sources remain byte-identical. Existing dependency inventory
 OSV evidence is unchanged (866 versions, PASS); new-head CI must recheck it. These
 results still do not constitute signed Release or held-out acceptance. The 4d APK
 is explicitly a failed acceptance candidate, and PR13 remains draft until retested.
+
+## Live source retrieval is independent of identity grouping
+
+The full-feature original-key df71 Release grouped the three corroborated comic
+editions for `tbat`, `TBATE` and the Arabic query into one primary group. This is
+not universal acceptance: full-name queries and missing-creator editions still
+contain unresolved identities. The Erica novel remains separate from comic
+candidates. A frozen corpus consists of source-qualified candidates, not labelled
+same-work ground truth; missing native editions cannot be credited by substituting
+a similarly titled result.
+
+A held-out displayed-title query exposed a separate MangaTime retrieval problem.
+The adapter sent nonempty search queries with `sortBy: popularity`. Normal
+anonymous requests to the source's public endpoint returned 24 broad popular
+matches and omitted the requested native series ID. The actual public full-search
+UI uses `sortBy: relevance`. Controlled comparisons retained query/page/limit:
+changing batch transport alone or adding `searchMode: all` did not recover the
+series; changing ordering to relevance did, placing the exact series first.
+The undecorated query already returned four results under either ordering.
+
+The fix changes only the nonempty textual search ordering. Blank-query discovery,
+popular/latest requests, page numbers, page size, response pagination, work IDs,
+chapter endpoints and reader behavior remain unchanged. It neither guarantees
+source recall nor turns broad source matches into verified identity. Source-local
+relevance can still return unrelated candidates; shared query scoring retains the
+explicit uncertain-match boundary. No work title is special-cased.
+
+A new production-request regression failed on the original popularity ordering,
+then passed after the change. Separate assertions retain blank/popular discovery
+and verify unchanged query, limit and page. Local evidence includes actual public
+UI request shape and isolated parameter comparisons outside Git; it is not a
+mocked response presented as live acceptance. Final CI and the new signed Release
+must validate this commit before any merge.
