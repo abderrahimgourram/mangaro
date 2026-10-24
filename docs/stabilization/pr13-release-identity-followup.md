@@ -138,3 +138,33 @@ and verify unchanged query, limit and page. Local evidence includes actual publi
 UI request shape and isolated parameter comparisons outside Git; it is not a
 mocked response presented as live acceptance. Final CI and the new signed Release
 must validate this commit before any merge.
+
+## Terminal Compose state is separate from resolver correctness
+
+A later signed-Release Mount query showed an older 188-chapter edition in the
+card while the same group's chooser and policy exposed a different recommended
+edition. Opening the chooser triggered another composition; subsequent navigation
+reached the 194-row source. This lifecycle discrepancy cannot be accepted from
+resolver snapshots alone. Initial detail captures also preceded asynchronous
+related-story loading; the settled card and actual two-way navigation were then
+observed. An early missing card is not a persistent relationship failure.
+
+A new regression composes the actual production SearchViewModel.getManga inside a
+stable work key, changes the preferred source edition and delays the database flow.
+It failed on the original implementation: the displayed model kept the old ID,
+source, route and title. produceState's effect keys restart collection but do not
+reset its remembered value. The state is now scoped by account token, row ID,
+source and route, keeping the work's outer scroll key intact. A late emission from
+the previous edition cannot override the new initial model. A second scenario
+checks a changed synthetic account token on the same route; it does not change or
+claim acceptance of authentication itself. Android tracing is stubbed only in the
+JVM harness, which uses the real Compose runtime and production ViewModel method.
+
+This fixes a caller-state boundary, not another work matcher. New full tests,
+exact-head CI and signed Release verification remain mandatory; the previous c3db
+CI/Release does not validate these subsequent edits. Unknown-identity sources
+still cannot be merged by title or artwork alone. Public MangaTime metadata for
+the newly retrieved work actually has null author/artist and empty alternatives;
+no uploader or invented author is substituted. Its real application index holds
+205 distinct routes and the original native work ID, separate from reader-body
+acceptance and from identity grouping.

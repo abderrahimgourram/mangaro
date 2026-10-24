@@ -2,6 +2,7 @@ package eu.kanade.tachiyomi.ui.browse.source.globalsearch
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.key
 import androidx.compose.runtime.produceState
 import androidx.lifecycle.viewModelScope
 import eu.kanade.domain.source.service.SourcePreferences
@@ -286,12 +287,18 @@ abstract class SearchViewModel(
 
     @Composable
     fun getManga(initialManga: Manga): androidx.compose.runtime.State<Manga> {
-        return produceState(initialValue = initialManga, initialManga.source, initialManga.url) {
-            getManga.subscribe(initialManga.url, initialManga.source)
-                .filterNotNull()
-                .collectLatest { manga ->
-                    value = manga
-                }
+        // A work keeps its LazyGrid key when its preferred edition changes.
+        // produceState keys restart the collector, but do not reset remembered
+        // state. Never display or open the previous edition while the new flow
+        // is delayed, empty or awaiting an account-scoped database emission.
+        return key(initialManga.accountToken, initialManga.id, initialManga.source, initialManga.url) {
+            produceState(initialValue = initialManga, initialManga.source, initialManga.url) {
+                getManga.subscribe(initialManga.url, initialManga.source)
+                    .filterNotNull()
+                    .collectLatest { manga ->
+                        value = manga
+                    }
+            }
         }
     }
 
