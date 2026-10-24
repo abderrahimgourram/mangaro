@@ -41,9 +41,11 @@ class SearchEnrichmentRelevanceTest {
         evidence.refresh(rows.take(8), allowWeakMatches = false)
         requested shouldBe emptyList()
         evidence.refresh(rows, allowWeakMatches = false)
-        requested shouldBe mangas.takeLast(4).map { it.id }
+        // Exact matches have priority, but two slots remain reserved while the
+        // caller still reports pending providers. Completion must use all four.
+        requested shouldBe mangas.takeLast(4).take(2).map { it.id }
         evidence.refresh(rows)
-        requested.size shouldBe 4
+        requested shouldBe mangas.takeLast(4).map { it.id }
     }
 
     @Test fun `verified editions preserve the unresolved metadata budget`(): Unit = runBlocking {

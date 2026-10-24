@@ -118,7 +118,8 @@ internal class WorkIdentityResolverV2 {
         // Catalog and edition metadata must agree before a presentation-only relationship.
         if (idsConflict(ax.externalIds, by.externalIds) || idsConflict(x.externalIds, ax.externalIds) ||
             idsConflict(y.externalIds, by.externalIds) || idsConflict(x.externalIds, by.externalIds) ||
-            idsConflict(y.externalIds, ax.externalIds) || fieldConflict(ax.format, by.format) ||
+            idsConflict(y.externalIds, ax.externalIds) ||
+            tachiyomi.domain.manga.service.CatalogFormatCompatibility.conflicts(ax.format, by.format) ||
             fieldConflict(ax.edition, by.edition)
         ) {
             return reject("kind-format-edition-or-external-id-conflict")

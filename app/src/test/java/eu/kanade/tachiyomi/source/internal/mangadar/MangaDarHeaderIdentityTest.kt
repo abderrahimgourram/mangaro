@@ -3,9 +3,12 @@ package eu.kanade.tachiyomi.source.internal.mangadar
 import eu.kanade.tachiyomi.search.AtlasDeclaredNames
 import eu.kanade.tachiyomi.source.model.SManga
 import io.kotest.matchers.shouldBe
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import org.jsoup.Jsoup
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.manga.model.Manga
+import tachiyomi.domain.manga.service.WorkMetadata
 
 /** Minimal fixtures plus a sanitized header/credit excerpt captured from the public source.
  * No full page, reader body, analytics or user information is included. */
@@ -54,6 +57,25 @@ class MangaDarHeaderIdentityTest {
         AtlasDeclaredNames.aliases(result).contains("Erica - When a Friend Is Obsessed With Me (Novel)") shouldBe true
         parsed.author shouldBe "Jenui"
         parsed.artist shouldBe "Yanggae"
+    }
+
+    @Test fun `explicit bibliographic source links survive detail parsing without borrowing footer identities`() {
+        val route = "/manga/a-verified-public-work/"
+        val html = """<main><div class='thumb'></div><h1>A Verified Public Work</h1><div class='divide-y'>
+          <div><span>المصدر</span><a href='https://www.mangaupdates.com/series/hyi03qs/erica-when-my-friend-obsesses-over-me-novel'>عرض</a></div>
+          </div><footer><a href='https://anilist.co/manga/99999'>Other work</a></footer></main>"""
+        val parsed = source.parseMangaDetails(
+            Jsoup.parse(html, source.baseUrl + route),
+            SManga.create().apply {
+                url = route
+                title = "A Verified Public Work"
+            },
+        )
+        val value = Manga.create().copy(source = source.id, url = route, title = parsed.title, memo = parsed.memo)
+        WorkMetadata.from(value).externalIds shouldBe emptyMap()
+        val identity = value.memo[WorkMetadata.MEMO_KEY] as JsonObject
+        (identity["declaredExternalIds"] as JsonObject)["mangaupdates"] shouldBe JsonPrimitive("hyi03qs")
+        identity["declaredExternalIdsStatus"] shouldBe JsonPrimitive("PENDING_VERIFICATION")
     }
 
     @Test fun `navigation taxonomy and another work cannot supply a header medium`() {

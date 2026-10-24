@@ -33,6 +33,20 @@ class WorkIdentityResolverV2Test {
         ).size shouldBe 2
     }
 
+    @Test fun genericComicDeliveryLabelCannotSeparateCorroboratedManhwaEditions() {
+        val a = c("a", "An Independently Named Public Story", "Named Writer").copy(format = "manhwa")
+        val b = c("b", a.title, "Named Writer").copy(format = "webtoon")
+        cards(a, b).single().members.map { it.id }.toSet() shouldBe setOf(a.id, b.id)
+        cards(a, b.copy(author = null)).size shouldBe 2
+        cards(a, b.copy(kind = SearchWorkKind.NOVEL, format = "novel")).size shouldBe 2
+        cards(a, b.copy(format = "manga")).size shouldBe 2
+        cards(a, b.copy(title = a.title + " Ragnarok")).size shouldBe 2
+        cards(
+            a.copy(externalIds = mapOf("anilist" to "1")),
+            b.copy(externalIds = mapOf("anilist" to "2")),
+        ).size shouldBe 2
+    }
+
     @Test fun noAuthorityOrCreatorCannotBeInvented() {
         cards(c("a"), c("b")).size shouldBe 2
     }

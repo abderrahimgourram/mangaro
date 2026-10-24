@@ -1,0 +1,76 @@
+# PR13: findings after the af79 signed Release
+
+This continues PR13; it does not replace its existing search or catalog pipeline.
+The af79 JVM/CI success is not acceptance of subsequent edits or of the Release UI.
+
+## Reproduced defects
+
+The signed af79 Release on emulator-5556 kept two corroborated comic groups apart:
+one source declared `webtoon`, another `manhwa`, with matching declared names and
+TurtleMe credit. A string-format veto ran before identity comparison. Shared
+`CatalogFormatCompatibility` now separates reader medium, concrete publication
+subtype and delivery format. Compatibility removes a veto; it cannot prove same
+work identity. Concrete conflicting subtypes, prose/comic, editions and trusted
+identifier contradictions remain vetoes in the existing complete-link resolver.
+Home's authority matching and source metadata cache use the same compatibility.
+
+Full multiword queries also admitted unrelated works because a single common word
+was sufficient. Query scoring now requires informative-token coverage or bounded
+token typo evidence. Articles do not make an unrelated title a meaningful match.
+Acronyms remain derived relevance hints, never work identity. Weak source matches
+remain explicitly available as uncertain additional results.
+
+An exact early title could consume the four-request metadata budget before later
+providers arrived. The early phase now reserves two slots even for exact matches;
+completed sparse detail responses cannot starve never-checked candidates. The
+four-request limit, cancellation and per-source pacing remain in force.
+
+## External bibliographic declarations are not verified identifiers
+
+MangaDar's explicit work-level source row was ignored. Its source-bound detail
+parser now retains allowed catalogue references separately as `declaredExternalIds`
+with status `PENDING_VERIFICATION`. They are deliberately NOT `externalIds` and
+cannot supply grouping authority. Footer/related links, arbitrary hosts, unsafe
+URLs, article posters, malformed namespaces and a different work's redirect do
+not supply declarations. Contradictory declarations fail rather than picking one.
+
+A captured public Erica source row links to MangaUpdates `hyi03qs`; the anonymous
+official API lookup of decimal ID 39091387636 returned HTTP 404 during review.
+That is not verified identity and has not been promoted. Another normal public
+catalogue record was accessible, so a valid URL shape alone would have been an
+unsafe shortcut. The Starz public page supplied no original creator credit; its
+Article author was a poster, not the work author. No creator was invented.
+
+This extraction does not claim that every external catalogue reference has been
+validated, or that missing-author Erica editions are proven equivalent. Unknown
+identities stay separate; a prose edition cannot become an interchangeable comic
+source. A future promotion requires an actual first-party record, matching work,
+medium/adaptation, source binding and conflict checks within the existing budget.
+
+## Acceptance boundaries
+
+The earlier automation excluded cards with identical visible titles and could
+therefore click a weaker unrelated Mount query result. This is a test-locator gap,
+not proof of an application navigation defect. Updated local QA records ambiguous
+source binding rather than inferring it from the title and does not skip the best
+relevance card for that reason. A quiet observation window is distinguished from
+a timeout. The frozen held-out corpus is 40 candidates, not 40 verified successes.
+
+No library/source identity, chapter record, pinned edition, progress, XP, account,
+advertising, production SQL, signing, version or public rollout policy is changed.
+PR13 remains subject to exact-head CI and genuine signed Release acceptance.
+
+The first resumed full run found one old phase expectation: it required all four
+exact-match requests even while `allowWeakMatches=false` reported pending providers.
+The regression now requires the first two exact requests at that phase AND the
+original complete four-request ordered list after completion. This retains the
+final exact-match priority assertion and adds the newly required reservation check;
+no assertion was removed to suppress a network or production failure.
+
+Local verification of these edits: 1,389 passed, 20 optional skipped, zero failures
+(1,409 total app/domain/core-common cases), with SQLDelight verification. The
+actual baseline-aware Spotless gate passed; the full repository still has 476
+unchanged legacy violations, not a clean full-Spotless status. OSV passed on 866
+resolved Maven versions; its ten negative tests and the nineteen formatting-policy
+tests passed. All sixteen protected advertising source hashes matched. These local
+results do not replace new-head GitHub CI, signed Release or held-out acceptance.

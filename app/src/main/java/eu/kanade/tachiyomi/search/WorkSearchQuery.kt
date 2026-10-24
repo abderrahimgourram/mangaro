@@ -6,7 +6,8 @@ import java.util.Locale
 /** Relevance only. Generated acronyms never become aliases or identity authority. */
 internal class WorkSearchQuery(value: String) {
     val normalized = normalize(value.take(256))
-    private val words = normalized.split(' ').filter(String::isNotEmpty)
+    private val words = normalized.split(' ').filter(String::isNotEmpty).distinct()
+    private val informative = words.filterNot { it in glue }.ifEmpty { words }
     data class Match(val tier: Int, val penalty: Int, val reason: String, val matchedName: String? = null) {
         val rank: Long get() = (tier.toLong() shl 32) + penalty
         val meaningful get() = tier < 7
@@ -31,26 +32,43 @@ internal class WorkSearchQuery(value: String) {
                 return Match(4, 1, "derived-acronym-prefix")
             }
         }
-        val prefixes = words.count { word -> tokens.any { it.startsWith(word) } }
+        val prefixes = informative.count { word -> tokens.any { it.startsWith(word) } }
         if (prefixes > 0) {
-            val unmatched = words.filterNot { word -> tokens.any { it.startsWith(word) } }
-            val penalty = if (words.size <= 12 && tokens.size <= 32) {
-                unmatched.sumOf { word ->
+            val unmatched = informative.filterNot { word -> tokens.any { it.startsWith(word) } }
+            val distances = if (informative.size <= 12 && tokens.size <= 32) {
+                unmatched.map { word ->
                     if (word.length !in 3..48) 3 else tokens.minOfOrNull { distance(word, it, 2) } ?: 3
                 }
             } else {
-                unmatched.size * 3
+                List(unmatched.size) { 3 }
+            }
+            val minimum = if (informative.size <= 2) informative.size else maxOf(2, (informative.size * 3 + 4) / 5)
+            val typoComplete = unmatched.size == distances.size && unmatched.zip(distances).all { (word, d) ->
+                d <= if (word.length <= 5) 1 else 2
+            }
+            val enough = prefixes >= minimum
+            val tier = when {
+                prefixes == informative.size -> 4
+                enough -> 5
+                typoComplete -> 6
+                else -> 7
             }
             return Match(
-                if (prefixes == words.size) 4 else 5,
-                (words.size - prefixes) * 16 + penalty,
-                "query-token-prefix",
+                tier,
+                (informative.size - prefixes) * 16 + distances.sum(),
+                if (enough) {
+                    "informative-token-overlap"
+                } else if (typoComplete) {
+                    "bounded-token-typo"
+                } else {
+                    "insufficient-informative-token-overlap"
+                },
             )
         }
-        if (words.size <= 12 && tokens.size <= 32 && words.all { it.length in 3..48 }) {
+        if (informative.size <= 12 && tokens.size <= 32 && informative.all { it.length in 3..48 }) {
             var penalty = 0
             var plausible = true
-            for (word in words) {
+            for (word in informative) {
                 val limit = if (word.length <= 5) 1 else 2
                 val nearest = tokens.minOfOrNull { distance(word, it, limit) } ?: limit + 1
                 if (nearest > limit) {
@@ -76,7 +94,8 @@ internal class WorkSearchQuery(value: String) {
             Character.COMBINING_SPACING_MARK.toInt(),
             Character.ENCLOSING_MARK.toInt(),
         )
-        private val glue = setOf("the", "a", "an", "of", "and", "in", "on", "to", "for")
+        private val glue =
+            setOf("the", "a", "an", "of", "and", "in", "on", "to", "for", "في", "من", "على", "الي", "عن", "و")
         fun acronyms(title: String): Set<String> {
             val tokens = normalize(title).split(' ').filter(String::isNotBlank)
             if (tokens.size !in 3..12 || tokens.any { !it.matches(latinWord) }) return emptySet()
@@ -96,6 +115,7 @@ internal class WorkSearchQuery(value: String) {
         }.trim()
         private fun distance(a: String, b: String, limit: Int): Int {
             if (kotlin.math.abs(a.length - b.length) > limit || b.length > 50) return limit + 1
+            var beforePrevious = IntArray(b.length + 1)
             var previous = IntArray(b.length + 1) { it }
             var current = IntArray(b.length + 1)
             for (i in a.indices) {
@@ -107,10 +127,14 @@ internal class WorkSearchQuery(value: String) {
                         previous[j + 1] + 1,
                         previous[j] + if (a[i] == b[j]) 0 else 1,
                     )
+                    if (i > 0 && j > 0 && a[i] == b[j - 1] && a[i - 1] == b[j]) {
+                        current[j + 1] = minOf(current[j + 1], beforePrevious[j - 1] + 1)
+                    }
                     minimum = minOf(minimum, current[j + 1])
                 }
                 if (minimum > limit) return limit + 1
-                val swap = previous
+                val swap = beforePrevious
+                beforePrevious = previous
                 previous = current
                 current = swap
             }

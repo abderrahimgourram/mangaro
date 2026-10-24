@@ -106,6 +106,35 @@ class MangaSearchMetadataCacheTest {
         evidence.candidate(RankedSearchResult(source, manga.copy(id = 55124)), 0).kind shouldBe SearchWorkKind.COMIC
     }
 
+    @Test fun `early exact matches retain two identity probes for late unresolved providers`(): Unit = runBlocking {
+        val source = mockk<eu.kanade.tachiyomi.source.Source>()
+        every { source.id } returns 991234111L
+        val bases = (1..5).map { i ->
+            Manga.create().copy(id = 881000L + i, source = source.id, url = "/work/$i", title = "Actual Work $i")
+        }
+        var calls = 0
+        coEvery { source.getMangaUpdate(any(), any(), true, false) } answers {
+            calls++
+            eu.kanade.tachiyomi.source.model.SMangaUpdate(
+                firstArg<eu.kanade.tachiyomi.source.model.SManga>().apply {
+                    author = "Fixture Writer"
+                    initialized = true
+                },
+                emptyList(),
+            )
+        }
+        val db = mockk<GetManga>()
+        coEvery { db.await(any()) } answers { bases.first { it.id == firstArg<Long>() } }
+        val evidence = MangaSearchEvidence(db) { emptyList() }
+        val early = bases.take(4).map { RankedSearchResult(source, it, queryMatchRank = 0) }
+        evidence.refresh(early, allowWeakMatches = false)
+        calls shouldBe 2
+        val late = RankedSearchResult(source, bases.last(), queryMatchRank = 0)
+        evidence.refresh(listOf(late) + early, allowWeakMatches = true)
+        evidence.candidate(late, 0).author shouldBe "Fixture Writer"
+        (calls <= 4) shouldBe true
+    }
+
     @Test fun `adapter names and medium survive query reset without repeated requests`(): Unit = runBlocking {
         val network = mockk<NetworkHelper>()
         every { network.defaultUserAgentProvider() } returns "Test Agent"

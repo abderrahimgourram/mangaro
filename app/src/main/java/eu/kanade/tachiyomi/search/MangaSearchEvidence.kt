@@ -152,14 +152,9 @@ internal class MangaSearchEvidence(
         if (authoritative(known)) {
             return 2
         }
-        if (cachedMetadata(manga) != null ||
-            (
-                manga.initialized && WorkIdentityNormalizer.creator(manga.author) != null &&
-                    hasAlternativeNames(manga, known)
-                )
-        ) {
-            return 1
-        }
+        // A completed sparse response is still unknown identity, but repeating it
+        // must not starve a late edition whose details have never been checked.
+        if (cachedMetadata(manga) != null || manga.initialized) return 1
         return 0
     }
 
@@ -252,8 +247,7 @@ internal class MangaSearchEvidence(
             val allowed = synchronized(this@MangaSearchEvidence) {
                 owner == epoch && remaining > 0 &&
                     (
-                        allowWeakMatches || row.queryMatchRank == 0L || row.queryMatchRank == Long.MAX_VALUE ||
-                            remaining > 2
+                        allowWeakMatches || remaining > 2
                         ) &&
                     attempted.add(key(manga)).also { if (it) remaining-- }
             }

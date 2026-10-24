@@ -58,9 +58,7 @@ object SourceMetadataRefresh {
         fun aliases(record: JsonObject) = (record["aliases"] as? JsonArray).orEmpty()
             .mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
             .filter { it.isNotBlank() && it.length <= 512 }.take(24)
-        val sameType = prior.text("format").isNullOrBlank() || incoming.text("format").isNullOrBlank() ||
-            WorkTitleNormalizer.normalize(prior.text("format")!!) ==
-            WorkTitleNormalizer.normalize(incoming.text("format")!!)
+        val sameType = !CatalogFormatCompatibility.conflicts(prior.text("format"), incoming.text("format"))
         val oldNames = aliases(prior) + existing.title
         if (existing.source != remote.source || existing.url != remote.url || remote.initialized ||
             prior.text("source") != remote.source.toString() || incoming.text("source") != remote.source.toString() ||

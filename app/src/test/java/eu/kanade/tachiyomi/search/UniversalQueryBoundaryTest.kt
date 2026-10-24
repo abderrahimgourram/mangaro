@@ -66,6 +66,19 @@ class UniversalQueryBoundaryTest {
         DiscoveryEligibility.valid("A new work with unknown chapter count", "manga") shouldBe true
     }
 
+    @Test fun `articles and a single shared word cannot make an unrelated multiword result primary`() {
+        for ((query, title) in listOf(
+            "The Mystic River Sect" to "The Wandering Farmer",
+            "One Piece" to "One Million Warriors",
+            "البداية بعد النهاية" to "الحياة بعد المدرسة",
+        )) {
+            (rank(query, title).single().queryMatchRank ushr 32 >= 7) shouldBe true
+        }
+        (rank("Mystic River Sect", "Mystic River School").single().queryMatchRank ushr 32 < 7) shouldBe true
+        (rank("One Piece", "One Piece Strong World 0").single().queryMatchRank ushr 32 < 7) shouldBe true
+        (rank("Mystic River", "Mystic Rivre").single().queryMatchRank ushr 32 < 7) shouldBe true
+    }
+
     @Test fun `Arabic marks punctuation and Unicode normalization preserve exact relevance`() {
         (rank("البداية بعد النهاية", "البِدايةُ بعد النِّهاية").single().queryMatchRank ushr 32) shouldBe 0
     }

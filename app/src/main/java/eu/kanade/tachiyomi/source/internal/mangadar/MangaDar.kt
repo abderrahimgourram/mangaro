@@ -405,6 +405,12 @@ class MangaDar(
                 id,
                 "mangadar.detail-header.v1",
             )
+            eu.kanade.tachiyomi.source.internal.util.HtmlCatalogIdentity.retain(
+                document,
+                this,
+                baseUrl,
+                ".divide-y > div",
+            )
         }
     }
 

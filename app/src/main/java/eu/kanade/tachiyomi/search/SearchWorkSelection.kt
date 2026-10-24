@@ -130,7 +130,8 @@ internal object SearchWorkIdentity {
         else -> c.kind
     }
     internal fun conflicts(a: SearchWorkCandidate, b: SearchWorkCandidate): Boolean =
-        a.kind != b.kind || medium(a) != medium(b) || contradictory(a.format, b.format) ||
+        a.kind != b.kind || medium(a) != medium(b) ||
+            tachiyomi.domain.manga.service.CatalogFormatCompatibility.conflicts(a.format, b.format) ||
             contradictory(a.edition, b.edition) ||
             a.externalIds.keys.intersect(b.externalIds.keys).intersect(trusted).any { key ->
                 val x = a.externalIds[key]
@@ -164,7 +165,8 @@ internal object SearchWorkIdentity {
         }
         if (a.id == b.id && a.source == b.source && a.kind == b.kind) return true
         if (a.kind != b.kind || a.title.isBlank() || b.title.isBlank()) return false
-        if (contradictory(a.format, b.format) || contradictory(a.edition, b.edition) ||
+        if (tachiyomi.domain.manga.service.CatalogFormatCompatibility.conflicts(a.format, b.format) ||
+            contradictory(a.edition, b.edition) ||
             (a.year != null && b.year != null && a.year != b.year)
         ) {
             return false
