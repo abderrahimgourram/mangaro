@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.search
 
 import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.viewModelScope
 import eu.kanade.domain.source.service.SourcePreferences
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.model.FilterList
@@ -17,6 +18,7 @@ import io.mockk.mockk
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -114,7 +116,9 @@ class MangaSearchCatalogRecoveryTest {
             model.workGroups().single().identityDecision!!.verdict shouldBe WorkIdentityVerdict.LIKELY_SAME_WORK
             sources.forEach { coVerify(exactly = 1) { it.getMangaUpdate(any(), any(), true, false) } }
         } finally {
+            val closing = model.viewModelScope.coroutineContext[Job]
             store.clear()
+            withContext(Dispatchers.Default) { withTimeout(5000) { closing?.join() } }
             Dispatchers.resetMain()
         }
     }
@@ -230,7 +234,9 @@ class MangaSearchCatalogRecoveryTest {
                 it.alternatives.size shouldBe 1
             }
         } finally {
+            val closing = model.viewModelScope.coroutineContext[Job]
             store.clear()
+            withContext(Dispatchers.Default) { withTimeout(5000) { closing?.join() } }
             Dispatchers.resetMain()
         }
     }
@@ -363,7 +369,9 @@ class MangaSearchCatalogRecoveryTest {
             requests shouldBe 3
         } finally {
             release.complete(Unit)
+            val closing = model.viewModelScope.coroutineContext[Job]
             store.clear()
+            withContext(Dispatchers.Default) { withTimeout(5000) { closing?.join() } }
             CatalogWorkEvidence.replaceReviewedRegistry(empty)
             Dispatchers.resetMain()
         }

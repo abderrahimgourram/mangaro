@@ -484,7 +484,6 @@
     "domain/src/main/java/tachiyomi/domain/manga/model/MangaUpdate.kt": "d177348cf73c8db4e96a82f10dd1d454ccda47e87d991b3864bef85f2d154482",
     "domain/src/main/java/tachiyomi/domain/manga/service/ReviewedCatalogMappings.kt": "ffa86f012b53480844bc4acbb25626f91839d42f5945655c2eaec566f20a92dc",
     "domain/src/main/java/tachiyomi/domain/manga/service/ReviewedCatalogRegistry.kt": "11594058d43f43c8d596e6f468dcbe214d74514487a1ba12d7f99d8be8a9dc9f",
-    "domain/src/main/java/tachiyomi/domain/manga/service/WorkLinker.kt": "8b5fe7ed0ba68485887de78f581ae2db529db87764173b9163e1c04f62ee9bbc",
     "domain/src/main/java/tachiyomi/domain/storage/service/StorageManager.kt": "3c6daf15a945f0b47c23cf64cb06cfc1328a88a3d95aa7b88c073a84d501d083",
     "domain/src/test/java/mihon/domain/account/AccountHardeningTest.kt": "6f731f46f25ab215cc1b4355d7e00d1335d8c85d3ecc224928c1685c0792cd34",
     "domain/src/test/java/mihon/domain/account/AutomaticCloudBindingTest.kt": "7327a5846538b0a96008656660e7d47b1e8f098ad6e66e8a8445d09c79a700d6",
@@ -582,7 +581,8 @@
     "app/src/test/java/eu/kanade/tachiyomi/ui/home/CanonicalWorkPreferenceTest.kt": "Search/Home quality repair regression fixtures updated for reversible presentation policy and fully formatted under original rules.",
     "app/src/test/java/eu/kanade/tachiyomi/ui/home/CatalogPerformanceRecoveryTest.kt": "Search/Home quality repair regression fixtures updated for reversible presentation policy and fully formatted under original rules.",
     "app/src/test/java/eu/kanade/tachiyomi/ui/home/ReviewedCatalogRegistryTest.kt": "Search/Home quality repair regression fixtures updated for reversible presentation policy and fully formatted under original rules.",
-    "app/src/test/java/eu/kanade/tachiyomi/ui/home/SmartCatalogV2Test.kt": "Search/Home quality repair regression fixtures updated for reversible presentation policy and fully formatted under original rules."
+    "app/src/test/java/eu/kanade/tachiyomi/ui/home/SmartCatalogV2Test.kt": "Search/Home quality repair regression fixtures updated for reversible presentation policy and fully formatted under original rules.",
+    "domain/src/main/java/tachiyomi/domain/manga/service/WorkLinker.kt": "PR14 sampled-main-thread performance correction: normalization regex byte strings and order unchanged, compiled once; full original formatting applied, exemption permanently retired."
   },
   "schema": 1
 }

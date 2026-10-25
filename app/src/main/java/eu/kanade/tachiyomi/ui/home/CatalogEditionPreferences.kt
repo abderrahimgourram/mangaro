@@ -31,21 +31,25 @@ internal class CatalogEditionPreferences(base: PreferenceStore) {
     }
     fun selected(group: HomeDiscoveryItem): HomeDiscoveryItem? {
         val editions = members(group)
-        fun find(saved: String) = editions.firstOrNull {
-            PreferredMangaVariants.usable(it.sourceId, it.mangaId) &&
-                VerifiedCatalogIdentity.from(PreferredMangaVariants.work(it)).editionKey == saved
+        fun find(saved: String): HomeDiscoveryItem? {
+            // Empty preferences cannot match a source-qualified edition key. Avoid the
+            // repeated work/title projection for every absent current or legacy preference.
+            if (saved.isBlank()) return null
+            return editions.firstOrNull {
+                PreferredMangaVariants.usable(it.sourceId, it.mangaId) &&
+                    VerifiedCatalogIdentity.from(PreferredMangaVariants.work(it)).editionKey == saved
+            }
         }
         find(personal.getString(key(group)).get())?.let { return it }
         // A newly reviewed group may replace old standalone/provider presentation keys.
         // Read the original account's explicit preferences without migrating or rewriting them.
-        val legacy = editions.take(64).map { member ->
-            VerifiedCatalogIdentity.key(
-                listOf(
-                    VerifiedCatalogIdentity.from(
-                        CatalogWorkEvidence.withoutBundledReview(PreferredMangaVariants.work(member)),
-                    ),
-                ),
-            )
+        val legacy = editions.take(64).flatMap { member ->
+            val work = PreferredMangaVariants.work(member)
+            // A reversible merge can replace a previously reviewed group's display key too.
+            // Read both former roots without migrating preferences or changing edition identity.
+            listOf(work, CatalogWorkEvidence.withoutBundledReview(work)).distinct().map { identity ->
+                VerifiedCatalogIdentity.key(listOf(VerifiedCatalogIdentity.from(identity)))
+            }
         }.distinct().mapNotNull { find(personal.getString(key(it)).get()) }.distinctBy { it.sourceId to it.mangaId }
         return legacy.singleOrNull() // Conflicting old choices require an explicit new selection.
     }
