@@ -82,6 +82,7 @@ internal object WorkIdentityDiagnostics {
                                     reference,
                                 )
                                 put("candidateType", classification.kind.name)
+                                put("presentationState", c.presentationState.name)
                                 put("candidateTypeReason", classification.reason)
                                 val selected = groups.firstOrNull { group ->
                                     group.members.any { it.id == c.id }

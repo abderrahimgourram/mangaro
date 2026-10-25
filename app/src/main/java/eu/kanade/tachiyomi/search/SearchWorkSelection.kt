@@ -42,6 +42,8 @@ internal data class SearchWorkCandidate(
     val metadataOrigin: String = "source-result",
     val queryMatchRank: Long = Long.MAX_VALUE,
     val queryMatchReason: String = "",
+    val presentationState: tachiyomi.domain.manga.model.WorkPresentationEligibility.State =
+        tachiyomi.domain.manga.model.WorkPresentationEligibility.State.VERIFIED_WORK,
 )
 internal data class SearchWorkGroup(
     val key: String,
@@ -311,6 +313,7 @@ internal class SearchWorkSelection(private val readableFirst: Boolean = false) {
             val eligible = readable.filterNot { it.chapters.indexUncertain }.ifEmpty { readable }.ifEmpty { members }
             fun quality(c: SearchWorkCandidate) = tachiyomi.domain.manga.service.CatalogEditionEvidence(
                 indexedChapters = c.chapters.distinct,
+                indexSucceededAt = c.chapters.checkedAt,
                 readable = c.chapters.readable,
                 complete = c.chapters.complete,
                 indexUsable = c.chapters.indexUsable,

@@ -110,8 +110,23 @@ internal class MangaSearchEvidence(
             manga.title,
             identity.aliases, identity.externalIds, identity.author, identity.artist, identity.format,
             identity.edition, identity.year, priority,
-            evidence(manga).let { it.copy(readable = PreferredMangaVariants.readerUsable(manga.id) ?: it.readable) },
+            evidence(manga).let {
+                val readable = PreferredMangaVariants.readerUsable(manga.id) ?: it.readable
+                val unavailable = mihon.domain.source.health.SourceHealthMonitor.shared.health(manga.source).state ==
+                    mihon.domain.source.health.SourceHealthMonitor.State.UNAVAILABLE
+                it.copy(
+                    readable = readable,
+                    indexUsable = if (unavailable &&
+                        readable != true
+                    ) {
+                        false
+                    } else {
+                        it.indexUsable
+                    },
+                )
+            },
             catalogIdentity = VerifiedCatalogIdentity.from(identity),
+            presentationState = tachiyomi.domain.manga.model.WorkPresentationEligibility.state(manga),
             queryMatchRank = row.queryMatchRank,
             metadataOrigin = if (metadata.containsKey(key(manga)) ||
                 manga !== current
@@ -326,7 +341,7 @@ internal class MangaSearchEvidence(
         requestMappings(rows)
         if (allowNetwork) {
             val candidates = rows.mapIndexed { index, row -> candidate(row, index) }
-            val resolved = WorkIdentityResolverV2().resolve(candidates)
+            val resolved = AtlasWorkIdentityResolver(WorkIdentityResolverV2()).resolve(candidates)
             val competing = resolved.groups.values
                 .filter { it.size > 1 }.flatten().map { it.id }.toSet()
             for (row in rows.distinctBy { key(it.manga) }.sortedBy { it.queryMatchRank }.filter {

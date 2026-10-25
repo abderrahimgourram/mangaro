@@ -267,7 +267,7 @@ fun MangaroSearchScreen(
                         if (showAdditional) {
                             "إخفاء النتائج الإضافية"
                         } else {
-                            "نتائج إضافية مطابقتها غير مؤكدة (${additional.size})"
+                            "نتائج إضافية (${additional.size})"
                         },
                     )
                 }
@@ -575,7 +575,7 @@ private fun SearchMangaCard(
             }
             result.verifiedDistinctChapters?.let { count ->
                 Text(
-                    if (result.indexComplete) "$count فصل موثّق" else "$count فصل مفهرس على الأقل",
+                    if (result.indexComplete) "$count فصل" else "$count فصل متاح",
                     color = MangaroDesignSystem.TextSecondary,
                     style = MaterialTheme.typography.labelSmall,
                 )

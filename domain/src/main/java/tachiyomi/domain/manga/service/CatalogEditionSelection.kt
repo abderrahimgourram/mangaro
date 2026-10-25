@@ -19,9 +19,9 @@ object CatalogEditionSelection {
     private fun criteria(e: CatalogEditionEvidence) = listOf(
         (e.readable != false && e.indexUsable != false && !(e.complete && e.indexedChapters == 0)).compareTo(false),
         (!e.uncertain).compareTo(false),
-        (e.readable == true).compareTo(false),
         e.indexedChapters?.coerceAtLeast(0) ?: -1,
         e.complete.compareTo(false),
+        (e.readable == true).compareTo(false),
         e.sourceReliability,
     )
     fun compareQuality(a: CatalogEditionEvidence, b: CatalogEditionEvidence): Int {
@@ -35,9 +35,9 @@ object CatalogEditionSelection {
             listOf(
                 "available-index-and-reader",
                 "non-conflicting-index",
-                "reader-sample",
                 "observed-unique-chapters",
                 "complete-index",
+                "reader-sample",
                 "source-health",
             )
         return criteria(a).zip(criteria(b)).indexOfFirst { it.first != it.second }.takeIf { it >= 0 }

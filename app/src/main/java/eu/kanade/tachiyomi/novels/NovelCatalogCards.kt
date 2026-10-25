@@ -23,7 +23,7 @@ internal object NovelCatalogCards {
         val candidates = rows.map { candidate(it, catalog.evidence[it.id]) }
         val byId = candidates.associateBy { it.id }
         val established = roots.mapValues { (_, editions) -> editions.mapNotNull { byId[it.id] } }
-        val selector = SearchResultPresentationFilter()
+        val selector = SearchResultPresentationFilter(probablePresentation = true)
         val byEdition = rows.associateBy { it.id }
         val works = selector.present(selector.generation, candidates, established).orEmpty().map { group ->
             UnifiedNovelWork(group.key, group.members.mapNotNull { byEdition[it.id] }, group.winner.id)

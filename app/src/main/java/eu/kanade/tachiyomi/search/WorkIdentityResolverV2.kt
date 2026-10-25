@@ -278,6 +278,35 @@ internal class WorkIdentityResolverV2 {
             setOf(x.metadataOrigin, y.metadataOrigin, "presentation-only-not-canonical"),
         )
     }
+
+    /** Reversible card clustering only. Never authoritative for library/chapters/relationships. */
+    internal fun presentationDecision(a: Evidence, b: Evidence): WorkIdentityDecision {
+        val decision = decide(a, b)
+        if (decision.verdict != WorkIdentityVerdict.DISTINCT_OR_INSUFFICIENT ||
+            decision.reason !in setOf("missing-independent-creator-corroboration", "missing-distinctive-shared-name")
+        ) {
+            return decision
+        }
+        val x = WorkIdentityNormalizer.comparisonTitle(a.row)
+        val y = WorkIdentityNormalizer.comparisonTitle(b.row)
+        val sharedAlias = x in b.names && y in a.names &&
+            a.names.intersect(b.names).any(WorkIdentityNormalizer::distinctive)
+        if ((
+                x == y && (
+                    WorkIdentityNormalizer.distinctive(x) ||
+                        (x.length >= 6 && WorkIdentityNormalizer.specificSingleWord(x))
+                    )
+                ) || sharedAlias
+        ) {
+            return WorkIdentityDecision(
+                WorkIdentityVerdict.LIKELY_SAME_WORK,
+                "presentation-exact-name-unknown-credits",
+                setOf("reversible-ui-only-not-canonical"),
+            )
+        }
+        return decision
+    }
+
     fun resolve(
         input: List<SearchWorkCandidate>,
         established: Map<String, List<SearchWorkCandidate>>? = null,

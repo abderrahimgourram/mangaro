@@ -3,7 +3,10 @@ package eu.kanade.tachiyomi.search
 /** Query-owned presentation boundary. No network, persistent identities or account data writes.
  * V2 adds reversible, corroborated relationships to the existing authoritative identities.
  * The older title-only novel matching path is never used. */
-internal class SearchResultPresentationFilter(val generation: Long = 0) {
+internal class SearchResultPresentationFilter(
+    val generation: Long = 0,
+    private val probablePresentation: Boolean = false,
+) {
     private val selection = SearchWorkSelection(readableFirst = true)
     private val resolver = WorkIdentityResolverV2()
     private var lastCandidates: List<SearchWorkCandidate>? = null
@@ -23,9 +26,12 @@ internal class SearchResultPresentationFilter(val generation: Long = 0) {
         establishedNovelGroups: Map<String, List<SearchWorkCandidate>>? = null,
     ): List<SearchWorkGroup>? {
         if (request != generation) return null
-        val unique = candidates.distinctBy { Triple(it.kind, it.source, it.id) }
+        val unique = candidates.filter {
+            it.presentationState.displayable
+        }.distinctBy { Triple(it.kind, it.source, it.id) }
         if (lastCandidates == unique && lastEstablished == establishedNovelGroups) return selection.snapshot()
-        val resolution = resolver.resolve(unique, establishedNovelGroups, selection.snapshot())
+        val resolution = AtlasWorkIdentityResolver(resolver, presentation = probablePresentation)
+            .resolve(unique, establishedNovelGroups, selection.snapshot())
         require(resolution.groups.values.all { rows -> rows.map { it.kind }.distinct().size == 1 }) {
             "A work group must retain one content medium"
         }

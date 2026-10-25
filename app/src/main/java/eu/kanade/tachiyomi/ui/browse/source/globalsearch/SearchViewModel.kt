@@ -75,7 +75,7 @@ abstract class SearchViewModel(
     private var enrichmentGeneration = Long.MIN_VALUE
     private var preservingCardsGeneration = Long.MIN_VALUE
     private val enrichmentRevision = AtomicLong()
-    private var workSelection = SearchResultPresentationFilter(sessions.generation())
+    private var workSelection = SearchResultPresentationFilter(sessions.generation(), probablePresentation = true)
     internal fun workGroups() = workSelection.snapshot()
     private val searchEvidence = MangaSearchEvidence(getManga, chapterLookup) { expected, fresh ->
         Injekt.get<tachiyomi.domain.manga.repository.MangaRepository>().updateSourceMetadata(expected, fresh)
@@ -324,7 +324,7 @@ abstract class SearchViewModel(
         debounceJob?.cancel()
         paginationJob?.cancel()
         enrichmentJob?.cancel()
-        workSelection = SearchResultPresentationFilter(sessions.generation())
+        workSelection = SearchResultPresentationFilter(sessions.generation(), probablePresentation = true)
         searchEvidence.resetBudget()
         lastQuery = null
         val recent = if (liveSearch && !query.isNullOrBlank()) cached(cacheKey(query)) else null
@@ -438,7 +438,7 @@ abstract class SearchViewModel(
         } else {
             Long.MIN_VALUE
         }
-        workSelection = SearchResultPresentationFilter(request)
+        workSelection = SearchResultPresentationFilter(request, probablePresentation = true)
         val selector = workSelection
         if (force) sources.forEach { mihon.domain.source.health.SourceHealthMonitor.shared.requestProbe(it.id) }
         val recent = if (liveSearch && !force) cached(key) else null

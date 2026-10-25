@@ -26,7 +26,7 @@ import java.util.concurrent.ConcurrentHashMap
 internal class NovelSearchSelection(private val repository: NovelRepository, query: String = "") {
     private val interpretedQuery = WorkSearchQuery(query)
     data class Presentation(val works: List<UnifiedNovelWork>, val groups: List<SearchWorkGroup>)
-    private val selection = SearchResultPresentationFilter()
+    private val selection = SearchResultPresentationFilter(probablePresentation = true)
     fun snapshot() = selection.snapshot()
     fun restore(groups: List<SearchWorkGroup>) = selection.restore(groups)
     private val counts = ConcurrentHashMap<String, SearchChapterEvidence>()

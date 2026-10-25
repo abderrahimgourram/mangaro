@@ -74,7 +74,7 @@ class NovelSearchProjectionTest {
         state.value.works.flatMap { it.editions }.size shouldBe 2
     }
 
-    @Test fun `revoked evidence splits cached presentation without rewriting edition identities`() {
+    @Test fun `revoked canonical evidence leaves reversible presentation and preserves identities`() {
         val a = novel("novel.kolnovel")
         val b = novel("novel.cenele")
         val state = MutableStateFlow(catalog(listOf(a, b)))
@@ -86,7 +86,8 @@ class NovelSearchProjectionTest {
         restored.restore(first.groups)
         state.value = catalog(listOf(a.copy(workIdentifiers = emptyList()), b.copy(workIdentifiers = emptyList())))
         val split = NovelSearchProjection.project(state.value, listOf(a, b), restored)
-        split.works.size shouldBe 2
+        split.works.size shouldBe 1
+        state.value.works.size shouldBe 2
         split.works.flatMap { it.editions }.map { it.id }.toSet() shouldBe setOf(a.id, b.id)
     }
 

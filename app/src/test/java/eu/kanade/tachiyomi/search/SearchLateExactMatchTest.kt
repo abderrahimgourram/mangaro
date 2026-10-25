@@ -47,6 +47,7 @@ class SearchLateExactMatchTest {
                     MangasPage(
                         listOf(
                             SManga.create().apply {
+                                thumbnail_url = "https://fixture.example/verified-work.jpg"
                                 url = "/fixture/$index"
                                 title = if (index == 1) query else "Transcendence Due To A System Error"
                             },

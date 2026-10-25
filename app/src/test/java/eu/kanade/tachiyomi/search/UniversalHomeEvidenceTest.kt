@@ -136,7 +136,7 @@ class UniversalHomeEvidenceTest {
                 id = id,
                 source = (edition["sourceId"] as kotlinx.serialization.json.JsonPrimitive).content.toLong(),
                 url = (edition["url"] as kotlinx.serialization.json.JsonPrimitive).content,
-                title = "Public fixture",
+                title = "Public fixture edition $i",
             )
             return m.copy(
                 memo = ChapterListIntegrity.memo(

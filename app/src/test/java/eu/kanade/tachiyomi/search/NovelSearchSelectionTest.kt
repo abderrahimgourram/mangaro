@@ -94,12 +94,12 @@ class NovelSearchSelectionTest {
         p.evidence(b.id).complete shouldBe false
     }
 
-    @Test fun sameTitleWithoutEstablishedIdentityRemainsTwoVisibleWorks() = runTest {
+    @Test fun sameTitleWithoutCanonicalProofGroupsOnlyItsReversiblePresentation() = runTest {
         val r = repo(index(a, 84), index(b, 205))
         every { r.catalog } returns MutableStateFlow(NovelCatalogState())
         val p = NovelSearchSelection(r)
         p.cached(listOf(a, b))
-        p.groups(listOf(a, b)).size shouldBe 2
+        p.groups(listOf(a, b)).size shouldBe 1
     }
 
     @Test fun realGridProjectionUsesOneVerifiedGroupAndOpensItsActualCountWinner() = runTest {
