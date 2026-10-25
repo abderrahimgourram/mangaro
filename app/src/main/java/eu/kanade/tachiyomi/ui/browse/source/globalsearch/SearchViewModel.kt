@@ -2,6 +2,7 @@ package eu.kanade.tachiyomi.ui.browse.source.globalsearch
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.key
 import androidx.compose.runtime.produceState
 import androidx.lifecycle.viewModelScope
 import eu.kanade.domain.source.service.SourcePreferences
@@ -76,7 +77,9 @@ abstract class SearchViewModel(
     private val enrichmentRevision = AtomicLong()
     private var workSelection = SearchResultPresentationFilter(sessions.generation())
     internal fun workGroups() = workSelection.snapshot()
-    private val searchEvidence = MangaSearchEvidence(getManga, chapterLookup)
+    private val searchEvidence = MangaSearchEvidence(getManga, chapterLookup) { expected, fresh ->
+        Injekt.get<tachiyomi.domain.manga.repository.MangaRepository>().updateSourceMetadata(expected, fresh)
+    }
 
     /** Actual error/loading state remains visible; only presentation reuses same-query rows. */
     private fun projectionItems(items: Map<Source, SearchItemResult>): Map<Source, SearchItemResult> =
@@ -97,18 +100,25 @@ abstract class SearchViewModel(
         val raw = relevance.rank(projectionItems(items), order)
         if (!liveSearch) return raw
         searchEvidence.requestMappings(raw)
-        val candidates = raw.map { searchEvidence.candidate(it, order[it.source.id] ?: Int.MAX_VALUE) }
+        val candidates = raw.map {
+            relevance.enrich(searchEvidence.candidate(it, order[it.source.id] ?: Int.MAX_VALUE))
+        }
         val groups = selector.present(sessions.generation(), candidates) ?: return emptyList()
         eu.kanade.tachiyomi.search.WorkIdentityDiagnostics.observe(
             state.value.activeQuery.orEmpty(),
             candidates,
             groups,
         )
-        val routes = raw.associateBy {
-            SearchEditionKey(SearchWorkKind.COMIC, it.manga.source.toString(), searchEvidence.key(it.manga))
+        val routes = raw.zip(candidates).associate { (row, candidate) ->
+            SearchEditionKey(candidate.kind, candidate.source, candidate.id) to row
         }
+        val groupMatches = groups.associate { group -> group.key to group.members.minBy { it.queryMatchRank } }
         return WorkPresentationProjection.project(groups, routes).map { work ->
+            val match = requireNotNull(groupMatches[work.key])
             work.selected.copy(
+                queryMatchRank = match.queryMatchRank,
+                queryMatchReason = match.queryMatchReason,
+                declaredNovel = groups.first { it.key == work.key }.winner.kind == SearchWorkKind.NOVEL,
                 workKey = work.key,
                 verifiedDistinctChapters = work.chapters.distinct,
                 indexComplete = work.chapters.complete,
@@ -148,7 +158,11 @@ abstract class SearchViewModel(
             }
             val crossSourceResults = snapshot.items.values.filterIsInstance<SearchItemResult.Success>()
                 .count { it.result.isNotEmpty() } >= 2
-            searchEvidence.refresh(interleaved, allowNetwork = crossSourceResults || !snapshot.isSearching)
+            searchEvidence.refresh(
+                interleaved,
+                allowNetwork = crossSourceResults || !snapshot.isSearching,
+                allowWeakMatches = !snapshot.isSearching,
+            )
             resultMutex.withLock {
                 if (!isActive || !sessions.accepts(request) ||
                     state.value.activeQuery != snapshot.activeQuery
@@ -273,12 +287,18 @@ abstract class SearchViewModel(
 
     @Composable
     fun getManga(initialManga: Manga): androidx.compose.runtime.State<Manga> {
-        return produceState(initialValue = initialManga, initialManga.source, initialManga.url) {
-            getManga.subscribe(initialManga.url, initialManga.source)
-                .filterNotNull()
-                .collectLatest { manga ->
-                    value = manga
-                }
+        // A work keeps its LazyGrid key when its preferred edition changes.
+        // produceState keys restart the collector, but do not reset remembered
+        // state. Never display or open the previous edition while the new flow
+        // is delayed, empty or awaiting an account-scoped database emission.
+        return key(initialManga.accountToken, initialManga.id, initialManga.source, initialManga.url) {
+            produceState(initialValue = initialManga, initialManga.source, initialManga.url) {
+                getManga.subscribe(initialManga.url, initialManga.source)
+                    .filterNotNull()
+                    .collectLatest { manga ->
+                        value = manga
+                    }
+            }
         }
     }
 
@@ -689,6 +709,18 @@ abstract class SearchViewModel(
         val dialog: Dialog? = null,
         val useWorkSelection: Boolean = false,
     ) {
+        // Preserve all retrieved groups. Weak source matches remain explicitly available;
+        // they are neither identity failures nor deleted catalogue/library records.
+        val primaryRankedResults: List<RankedSearchResult> get() = rankedResults.filter {
+            !useWorkSelection || activeQuery.isNullOrBlank() || (it.queryMatchRank ushr 32) < 7
+        }
+        val additionalRankedResults: List<RankedSearchResult> get() = if (!useWorkSelection ||
+            activeQuery.isNullOrBlank()
+        ) {
+            emptyList()
+        } else {
+            rankedResults.filter { (it.queryMatchRank ushr 32) >= 7 }
+        }
         val hasMore: Boolean get() = pages.values.any { it.hasMore }
         val progress: Int = items.count { it.value !is SearchItemResult.Loading }
         val total: Int = items.size

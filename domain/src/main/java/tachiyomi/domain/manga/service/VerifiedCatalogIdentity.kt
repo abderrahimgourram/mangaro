@@ -40,7 +40,7 @@ object VerifiedCatalogIdentity {
         val ar = reviewed(a)
         val br = reviewed(b)
         if (ar != null && br != null && ar != br) return false
-        if (conflict(a.format, b.format) || conflict(a.edition, b.edition)) return false
+        if (CatalogFormatCompatibility.conflicts(a.format, b.format) || conflict(a.edition, b.edition)) return false
         if (a.source == b.source && a.route.isNotBlank() && a.route == b.route) return true
         if (a.source == b.source && !a.providerId.isNullOrBlank() && a.providerId == b.providerId) return true
         if (ar != null && ar == br) return true

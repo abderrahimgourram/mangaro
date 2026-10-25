@@ -55,10 +55,12 @@ internal object WorkIdentityDiagnostics {
         val explanations = groups.flatMap { g -> g.members.map { it.id to g.identityDecision } }.toMap()
         val resolver = WorkIdentityResolverV2()
         return buildJsonObject {
-            put("schema", 3)
+            put("schema", 4)
             put("query", safe(query))
             put("candidateCount", candidates.size)
-            put("visibleCardCount", groups.size)
+            put("groupCount", groups.size)
+            put("visibleCardCount", groups.count { g -> (g.members.minOf { it.queryMatchRank } ushr 32) < 7 })
+            put("additionalGroupCount", groups.count { g -> (g.members.minOf { it.queryMatchRank } ushr 32) >= 7 })
             put(
                 "rows",
                 buildJsonArray {
@@ -128,6 +130,7 @@ internal object WorkIdentityDiagnostics {
                                 put("uniqueChapterCount", c.chapters.distinct?.let(::JsonPrimitive) ?: JsonNull)
                                 put("indexComplete", c.chapters.complete)
                                 put("queryMatchRank", c.queryMatchRank)
+                                put("queryMatchReason", safe(c.queryMatchReason))
                                 put("readerUsable", c.chapters.readable?.let(::JsonPrimitive) ?: JsonNull)
                                 put("indexUsable", c.chapters.indexUsable?.let(::JsonPrimitive) ?: JsonNull)
                                 put("indexUncertain", c.chapters.indexUncertain)

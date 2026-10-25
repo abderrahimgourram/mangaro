@@ -17,7 +17,10 @@ internal data class PresentedSearchWork<E>(
  * Missing routes/duplicate keys are programming errors, never silently discarded editions.
  */
 internal object WorkPresentationProjection {
-    fun <E : Any> project(groups: List<SearchWorkGroup>, records: Map<SearchEditionKey, E>): List<PresentedSearchWork<E>> {
+    fun <E : Any> project(
+        groups: List<SearchWorkGroup>,
+        records: Map<SearchEditionKey, E>,
+    ): List<PresentedSearchWork<E>> {
         val workKeys = HashSet<String>(groups.size)
         return groups.map { group ->
             require(workKeys.add(group.key)) { "Duplicate work presentation key" }
@@ -32,8 +35,30 @@ internal object WorkPresentationProjection {
                 if (key == winnerKey) selected = edition
                 editions.add(edition)
             }
-            PresentedSearchWork(group.key, requireNotNull(selected) { "Representative outside work group" }, editions,
-                group.winner.chapters, group.provisional, group.identityDecision)
+            PresentedSearchWork(
+                group.key,
+                requireNotNull(selected) { "Representative outside work group" },
+                editions,
+                group.winner.chapters,
+                group.provisional,
+                group.identityDecision,
+            )
         }
     }
 }
+
+/** Adapter into the existing conflict-aware policy; recommendation membership only. */
+internal fun tachiyomi.domain.manga.service.WorkMetadata.searchCandidate(): SearchWorkCandidate = SearchWorkCandidate(
+    id = "${reference.sourceId}:${reference.mangaId}:${reference.url}", source = reference.sourceId.toString(),
+    kind = if (eu.kanade.tachiyomi.novels.NovelContentTypeClassifier.declared(listOfNotNull(format))?.type ==
+        eu.kanade.tachiyomi.novels.NovelContentType.TEXT_NOVEL
+    ) {
+        SearchWorkKind.NOVEL
+    } else {
+        SearchWorkKind.COMIC
+    },
+    title = title, aliases = aliases, externalIds = externalIds, author = author, artist = artist,
+    format = format, edition = edition, year = year,
+    catalogIdentity = tachiyomi.domain.manga.service.VerifiedCatalogIdentity.from(this),
+    metadataOrigin = "existing-public-catalogue-evidence",
+)

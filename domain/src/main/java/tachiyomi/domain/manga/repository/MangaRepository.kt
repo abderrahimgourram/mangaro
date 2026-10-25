@@ -42,6 +42,11 @@ interface MangaRepository {
 
     suspend fun setMangaCategories(mangaId: Long, categoryIds: List<Long>)
 
+    /** Optimistic, transactional public metadata refresh. Implementations without the
+     * atomic contract fail closed rather than replacing a stale full manga snapshot.
+     */
+    suspend fun updateSourceMetadata(expected: Manga, fresh: Manga): Boolean = false
+
     suspend fun update(update: MangaUpdate): Boolean
 
     suspend fun updateAll(mangaUpdates: List<MangaUpdate>): Boolean

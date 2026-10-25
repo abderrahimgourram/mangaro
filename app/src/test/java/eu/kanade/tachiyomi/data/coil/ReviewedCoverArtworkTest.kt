@@ -15,6 +15,17 @@ class ReviewedCoverArtworkTest {
     private val old = "https://mangatime.org/uploads/series/6a49e00234c268b77054833e-6907fadc0a427774.webp"
     private val current = "https://mangatime.org/uploads/series/6a49e00234c268b77054833e-176048383179db70.webp"
 
+    @Test fun `new rotating asset for the reviewed provider work is corrected without matching a title`() {
+        val rotating = "https://mangatime.org/uploads/series/6a49e00234c268b77054833e-488f62e80816d89e.webp"
+        ReviewedCoverArtwork.resolve(ReviewedCoverArtwork.MANGA_TIME, rotating) shouldBe
+            ReviewedCoverArtwork.MOUNT_HUA_OFFICIAL
+        val anotherWork = "https://mangatime.org/uploads/series/697df7f10c5d340ac1549cb4-488f62e80816d89e.webp"
+        ReviewedCoverArtwork.resolve(ReviewedCoverArtwork.MANGA_TIME, anotherWork) shouldBe anotherWork
+        val wrongHost = rotating.replace("mangatime.org", "mangatime.org.example.org")
+        ReviewedCoverArtwork.resolve(ReviewedCoverArtwork.MANGA_TIME, wrongHost) shouldBe wrongHost
+        ReviewedCoverArtwork.resolve(99, rotating) shouldBe rotating
+    }
+
     @Test fun `both observed wrong assets map to publisher supplied artwork without global title rules`() {
         ReviewedCoverArtwork.resolve(ReviewedCoverArtwork.MANGA_TIME, old) shouldBe
             ReviewedCoverArtwork.MOUNT_HUA_OFFICIAL

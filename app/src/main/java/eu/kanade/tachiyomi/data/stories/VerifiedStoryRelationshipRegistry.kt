@@ -41,6 +41,7 @@ internal fun StoryWorkEndpoint.enrolls(ref: StoryEditionRef): Boolean = editions
     val work: StoryWorkRef,
     val editions: List<StoryEditionRef>,
     val externalIds: Map<String, String> = emptyMap(),
+    val identity: ReviewedStoryIdentity? = null,
 )
 
 @Serializable internal data class StoryRelationship(
@@ -123,6 +124,9 @@ internal class VerifiedStoryRelationshipRegistry private constructor(
                 candidate.canonicalNovelKey?.takeIf { edition.format == StoryFormat.TEXT_NOVEL }?.let {
                     addAll(byWork[StoryWorkRef(StoryFormat.TEXT_NOVEL, it)].orEmpty())
                 }
+                candidate.comicMetadata?.let {
+                    addAll(records.filter { matchesReviewedIdentity(it.adaptation, candidate) })
+                }
                 candidate.providerWorkId?.let { provider ->
                     addAll(
                         records.filter { record ->
@@ -165,11 +169,45 @@ internal class VerifiedStoryRelationshipRegistry private constructor(
         ) {
             return true
         }
+        if (endpoint.work.format == StoryFormat.MANHWA &&
+            matchesReviewedIdentity(endpoint, candidate)
+        ) {
+            return true
+        }
         return (
             candidate.reviewedComicKey != null && endpoint.work.format == StoryFormat.MANHWA &&
                 endpoint.work.key == "work:${candidate.reviewedComicKey}"
             ) ||
             endpoint.externalIds.any { (authority, id) -> candidate.externalIds[authority] == id }
+    }
+
+    private fun matchesReviewedIdentity(endpoint: StoryWorkEndpoint, candidate: StoryCandidate): Boolean {
+        val comic = (candidate.destination as? StoryDestination.Comic)?.manga ?: return false
+        val work = candidate.comicMetadata ?: return false
+        if (work.reference.sourceId != comic.source || work.reference.url != comic.url ||
+            work.reference.mangaId != comic.id || work.title != comic.title
+        ) {
+            return false
+        }
+        if (endpoint.externalIds.any { (key, value) ->
+                work.externalIds[key]?.let { it != value } == true
+            }
+        ) {
+            return false
+        }
+        return endpoint.identity?.matches(work) == true
+    }
+
+    /** Names are only a cue to refresh the SAME edition; they cannot authorize a relationship. */
+    fun needsOriginMetadata(candidate: StoryCandidate): Boolean {
+        val work = candidate.comicMetadata ?: return false
+        if (!candidate.eligible || !candidate.formatCompatible || relationship(candidate) != null) return false
+        return records.any { record ->
+            record.status == StoryVerification.VERIFIED &&
+                record.adaptation.identity?.recognizesTitle(work.title) == true &&
+                relationship(record.adaptation.editions.first()) == record &&
+                ConnectedStoryResolver.compatible(record.adaptation, listOf(candidate))
+        }
     }
 
     companion object {
@@ -218,6 +256,7 @@ internal class VerifiedStoryRelationshipRegistry private constructor(
                 LocalDate.parse(record.reviewedAt)
                 require(record.evidence.size in 1..8 && record.evidence.all(::publicEvidence))
                 listOf(record.adaptation, record.original).forEach { endpoint ->
+                    endpoint.identity?.validate(endpoint.work.format)
                     require(
                         endpoint.editions.size in 1..16 && endpoint.editions.distinct().size == endpoint.editions.size,
                     )
@@ -282,9 +321,14 @@ internal class VerifiedStoryRelationshipRegistry private constructor(
                 when (uri.host to uri.rawPath) {
                     "series.naver.com" to "/novel/detail.series" -> "productNo"
                     "m.comic.naver.com" to "/webtoon/list" -> "titleId"
-                    "www.webtoons.com" to "/en/action/omniscient-reader/list" -> "title_no"
                     "navercorp.com" to "/media/pressReleasesDetail" -> "seq"
-                    else -> return false
+                    else -> if (uri.host == "www.webtoons.com" &&
+                        uri.rawPath.matches(Regex("/en/[a-z-]+/[a-z0-9-]+/list"))
+                    ) {
+                        "title_no"
+                    } else {
+                        return false
+                    }
                 }
             return query.matches(Regex("$parameter=[1-9][0-9]{0,11}"))
         }

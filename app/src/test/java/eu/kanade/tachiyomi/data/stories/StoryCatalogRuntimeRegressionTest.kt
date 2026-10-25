@@ -57,7 +57,14 @@ class StoryCatalogRuntimeRegressionTest {
             val unknown = editions.first().copy(id = "unreviewed", source = "42", catalogIdentity = null)
             SearchResultPresentationFilter().present(0, editions + unknown)!!.size shouldBe 2
             val prose = editions.first().copy(id = "novel", kind = SearchWorkKind.NOVEL, format = "novel")
-            assertThrows<IllegalArgumentException> { SearchResultPresentationFilter().present(0, editions + prose) }
+            // Mixed provider catalogues may contain both media. Acceptance requires
+            // separate complete groups, rather than rejecting the entire result batch.
+            val mixed = SearchResultPresentationFilter().present(0, editions + prose)!!
+            mixed.size shouldBe 2
+            mixed.single { it.winner.kind == SearchWorkKind.COMIC }.members.map { it.id }.toSet() shouldBe
+                editions.map { it.id }.toSet()
+            mixed.single { it.winner.kind == SearchWorkKind.COMIC }.winner.chapters.distinct shouldBe 200
+            mixed.single { it.winner.kind == SearchWorkKind.NOVEL }.members.map { it.id } shouldBe listOf(prose.id)
             eu.kanade.tachiyomi.search.SearchWorkIdentity
                 .conflicts(editions.first(), prose) shouldBe true
         }

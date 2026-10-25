@@ -177,10 +177,14 @@ internal object CatalogWorkEvidence {
         return stories.enrichComic(work.copy(reviewedWorkKey = root ?: registry.resolve(work)))
     }
 
-    fun from(manga: Manga): WorkMetadata {
+    fun from(manga: Manga): WorkMetadata = resolve(source(manga))
+
+    /** Adapter evidence only; bundled authority is re-resolved at each use. */
+    fun source(manga: Manga): WorkMetadata {
         val metadata = WorkMetadata.from(manga)
         val work =
             metadata.copy(
+                aliases = metadata.aliases + eu.kanade.tachiyomi.search.AtlasDeclaredNames.aliases(manga),
                 format =
                 metadata.format ?: eu.kanade.tachiyomi.search.AtlasDeclaredNames
                     .format(manga),
@@ -211,6 +215,6 @@ internal object CatalogWorkEvidence {
                     null
                 }
             }.getOrNull()
-        return resolve(work.copy(providerId = providerId))
+        return work.copy(providerId = providerId)
     }
 }

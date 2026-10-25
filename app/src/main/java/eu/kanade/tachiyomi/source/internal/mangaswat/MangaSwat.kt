@@ -42,15 +42,23 @@ class MangaSwat(private val customClient: OkHttpClient? = null) : HttpSource() {
     private val apiUrl get() = "$baseUrl/v2/api/v2"
     private val json = Json { ignoreUnknownKeys = true }
 
-    public override fun popularMangaRequest(page: Int): Request = GET("$apiUrl/series/?order_by=-followers_count&page=$page", headers)
+    public override fun popularMangaRequest(page: Int): Request = GET(
+        "$apiUrl/series/?order_by=-followers_count&page=$page",
+        headers,
+    )
     public override fun latestUpdatesRequest(page: Int): Request = GET("$apiUrl/series/releases/?page=$page", headers)
     public override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request = GET(
         "$apiUrl/series/".toHttpUrl().newBuilder().addQueryParameter("search", query)
-            .addQueryParameter("page", page.toString()).build().toString(), headers,
+            .addQueryParameter("page", page.toString()).build().toString(),
+        headers,
     )
     override fun getFilterList() = FilterList()
-    override suspend fun getPopularManga(page: Int) = client.newCall(popularMangaRequest(page)).awaitSuccess().use { popularMangaParse(it) }
-    override suspend fun getLatestUpdates(page: Int) = client.newCall(latestUpdatesRequest(page)).awaitSuccess().use { latestUpdatesParse(it) }
+    override suspend fun getPopularManga(
+        page: Int,
+    ) = client.newCall(popularMangaRequest(page)).awaitSuccess().use { popularMangaParse(it) }
+    override suspend fun getLatestUpdates(
+        page: Int,
+    ) = client.newCall(latestUpdatesRequest(page)).awaitSuccess().use { latestUpdatesParse(it) }
     override suspend fun getSearchManga(page: Int, query: String, filters: FilterList) =
         client.newCall(searchMangaRequest(page, query, filters)).awaitSuccess().use { searchMangaParse(it) }
     override fun popularMangaParse(response: Response) = parseCatalogue(response.body.string())
@@ -64,14 +72,19 @@ class MangaSwat(private val customClient: OkHttpClient? = null) : HttpSource() {
     } catch (e: SerializationException) {
         throw IOException("MangaSwat returned invalid JSON or a challenge page", e)
     }
-    private fun JsonObject.text(key: String): String? = this[key]?.jsonPrimitiveOrNull?.contentOrNull?.takeIf { it.isNotBlank() }
+    private fun JsonObject.text(
+        key: String,
+    ): String? = this[key]?.jsonPrimitiveOrNull?.contentOrNull?.takeIf { it.isNotBlank() }
     private fun JsonObject.requiredText(key: String): String = text(key) ?: throw IOException("MangaSwat missing $key")
-    private fun JsonObject.results() = this["results"]?.jsonArrayOrNull ?: throw IOException("MangaSwat missing results array")
+    private fun JsonObject.results() =
+        this["results"]?.jsonArrayOrNull ?: throw IOException("MangaSwat missing results array")
     private fun JsonObject.nextPage(): String? {
         if ("next" !in this) throw IOException("MangaSwat missing pagination state")
         if (this["next"] == JsonNull) return null
         val url = requiredText("next").toHttpUrl()
-        if (url.scheme != "https" || url.host !in setOf("meshmanga.com", "appswat.com") || !url.encodedPath.startsWith("/v2/api/v2/")) {
+        if (url.scheme != "https" || url.host !in setOf("meshmanga.com", "appswat.com") ||
+            !url.encodedPath.startsWith("/v2/api/v2/")
+        ) {
             throw IOException("MangaSwat invalid continuation URL")
         }
         return url.toString()
@@ -84,11 +97,16 @@ class MangaSwat(private val customClient: OkHttpClient? = null) : HttpSource() {
                 url = obj.text("id") ?: obj.requiredText("serie_id")
                 title = obj.requiredText("title")
                 thumbnail_url = obj["poster"]?.jsonObjectOrNull?.text("medium")
+                retainIdentity(obj, this)
             }
         }
         val next = root.nextPage()
         if (next != null && mangas.isEmpty()) throw IOException("MangaSwat empty continuing catalogue")
-        if (mangas.distinctBy { it.url }.size != mangas.size) throw IOException("MangaSwat duplicate catalogue identities")
+        if (mangas.distinctBy { it.url }.size !=
+            mangas.size
+        ) {
+            throw IOException("MangaSwat duplicate catalogue identities")
+        }
         return MangasPage(mangas, next != null)
     }
     override fun getMangaUrl(manga: SManga) = "$baseUrl/series/${manga.url}"
@@ -114,9 +132,25 @@ class MangaSwat(private val customClient: OkHttpClient? = null) : HttpSource() {
                 "completed" -> SManga.COMPLETED
                 else -> status
             }
+            retainIdentity(obj, this)
             initialized = true
         }
     }
+    private fun retainIdentity(obj: JsonObject, manga: SManga) {
+        // These are source-owned series fields, not chapter labels or inferred translations.
+        val names = linkedMapOf<String, String?>("title" to obj.text("title"))
+        obj.text("alternative")?.split('|')?.take(23)?.forEachIndexed { index, value ->
+            names["alternative.$index"] = value
+        }
+        manga.memo = eu.kanade.tachiyomi.search.AtlasDeclaredNames.retain(
+            manga.memo,
+            id.toString(),
+            "MangaSwat.series.public-names",
+            names,
+            obj["type"]?.jsonObjectOrNull?.text("name"),
+        )
+    }
+
     fun parseChapterBatch(body: String): ChapterBatch {
         val root = objectResponse(body)
         val chapters = root.results().map { element ->
@@ -127,8 +161,12 @@ class MangaSwat(private val customClient: OkHttpClient? = null) : HttpSource() {
             SChapter.create().apply {
                 name = obj.requiredText("chapter")
                 url = if (slug.isEmpty()) "/chapters/$id/" else "/chapters/$id/$slug/"
-                memo = buildJsonObject { put("id", id); put("slug", slug) }
-                date_upload = obj.text("created_at")?.let { runCatching { Instant.parse(it).toEpochMilli() }.getOrNull() } ?: 0L
+                memo = buildJsonObject {
+                    put("id", id)
+                    put("slug", slug)
+                }
+                date_upload =
+                    obj.text("created_at")?.let { runCatching { Instant.parse(it).toEpochMilli() }.getOrNull() } ?: 0L
             }
         }
         val count = root["count"]?.jsonPrimitiveOrNull?.intOrNull
@@ -137,41 +175,114 @@ class MangaSwat(private val customClient: OkHttpClient? = null) : HttpSource() {
     }
     data class ChapterBatch(val chapters: List<SChapter>, val next: String?, val count: Int?)
 
-    override suspend fun getMangaUpdate(manga: SManga, chapters: List<SChapter>, fetchDetails: Boolean, fetchChapters: Boolean): SMangaUpdate = withTimeoutOrNull(180_000) {
-        if (manga.url.toLongOrNull() == null) throw IOException("MangaSwat manga missing remote ID")
-        val updated = if (fetchDetails) client.newCall(GET("$apiUrl/series/${manga.url}/", headers).let { request -> if (fetchChapters) request.newBuilder().cacheControl(okhttp3.CacheControl.FORCE_NETWORK).build() else request }).awaitSuccess()
-            .use { parseDetails(it.body.string(), manga) } else manga
-        if (!fetchChapters) return@withTimeoutOrNull SMangaUpdate(updated, chapters, ChapterFetchCompleteness.DEGRADED)
-        var next: String? = "$apiUrl/chapters/?serie=${manga.url}&order_by=-order&page_size=200"
-        val visited = mutableSetOf<String>()
-        val identities = mutableSetOf<String>()
-        val all = mutableListOf<SChapter>()
-        var total: Int? = null
-        var everyCountVerified = true
-        while (next != null) {
-            if (!visited.add(next) || visited.size > 100) throw IOException("MangaSwat repeated or excessive chapter pagination")
-            val requestUrl = next.toHttpUrl()
-            if (requestUrl.queryParameter("serie") != manga.url) throw IOException("MangaSwat chapter continuation lost series identity")
-            val batch = client.newCall(GET(next, headers).let { request -> if (fetchChapters) request.newBuilder().cacheControl(okhttp3.CacheControl.FORCE_NETWORK).build() else request }).awaitSuccess().use { parseChapterBatch(it.body.string()) }
-            if (batch.count == null) everyCountVerified = false
-            if (total != null && batch.count != null && total != batch.count) throw IOException("MangaSwat chapter count changed during retrieval")
-            total = batch.count ?: total
-            if (batch.next != null && batch.chapters.isEmpty()) throw IOException("MangaSwat empty continuing chapter page")
-            batch.chapters.forEach {
-                // Remote ID is authoritative even if a page repeats it under a different slug.
-                if (!identities.add(chapterId(it))) throw IOException("MangaSwat repeated chapter identity")
-                all.add(it)
+    override suspend fun getMangaUpdate(
+        manga: SManga,
+        chapters: List<SChapter>,
+        fetchDetails: Boolean,
+        fetchChapters: Boolean,
+    ): SMangaUpdate =
+        withTimeoutOrNull(180_000) {
+            if (manga.url.toLongOrNull() == null) throw IOException("MangaSwat manga missing remote ID")
+            val updated = if (fetchDetails) {
+                client.newCall(
+                    GET("$apiUrl/series/${manga.url}/", headers).let { request ->
+                        if (fetchChapters) {
+                            request.newBuilder().cacheControl(
+                                okhttp3.CacheControl.FORCE_NETWORK,
+                            ).build()
+                        } else {
+                            request
+                        }
+                    },
+                ).awaitSuccess()
+                    .use { parseDetails(it.body.string(), manga) }
+            } else {
+                manga
             }
-            next = batch.next
-        }
-        if (total != null && total != all.size) throw IOException("MangaSwat incomplete chapters: expected $total, received ${all.size}")
-        if (all.isEmpty() && (total != 0 || !everyCountVerified)) throw IOException("MangaSwat returned unverified empty chapters")
-        SMangaUpdate(updated, all, if (everyCountVerified && total == all.size) ChapterFetchCompleteness.COMPLETE else ChapterFetchCompleteness.DEGRADED).withDeclaredChapterCount(total)
-    } ?: throw IOException("MangaSwat refresh timed out; existing chapters preserved")
-    override suspend fun getPageList(chapter: SChapter): List<Page> = client.newCall(GET("$apiUrl/chapters/${chapterId(chapter)}/", headers))
+            if (!fetchChapters) {
+                return@withTimeoutOrNull SMangaUpdate(
+                    updated,
+                    chapters,
+                    ChapterFetchCompleteness.DEGRADED,
+                )
+            }
+            var next: String? = "$apiUrl/chapters/?serie=${manga.url}&order_by=-order&page_size=200"
+            val visited = mutableSetOf<String>()
+            val identities = mutableSetOf<String>()
+            val all = mutableListOf<SChapter>()
+            var total: Int? = null
+            var everyCountVerified = true
+            while (next != null) {
+                if (!visited.add(next) ||
+                    visited.size > 100
+                ) {
+                    throw IOException("MangaSwat repeated or excessive chapter pagination")
+                }
+                val requestUrl = next.toHttpUrl()
+                if (requestUrl.queryParameter("serie") !=
+                    manga.url
+                ) {
+                    throw IOException("MangaSwat chapter continuation lost series identity")
+                }
+                val batch = client.newCall(
+                    GET(next, headers).let { request ->
+                        if (fetchChapters) {
+                            request.newBuilder().cacheControl(
+                                okhttp3.CacheControl.FORCE_NETWORK,
+                            ).build()
+                        } else {
+                            request
+                        }
+                    },
+                ).awaitSuccess().use { parseChapterBatch(it.body.string()) }
+                if (batch.count == null) everyCountVerified = false
+                if (total != null && batch.count != null &&
+                    total != batch.count
+                ) {
+                    throw IOException("MangaSwat chapter count changed during retrieval")
+                }
+                total = batch.count ?: total
+                if (batch.next != null &&
+                    batch.chapters.isEmpty()
+                ) {
+                    throw IOException("MangaSwat empty continuing chapter page")
+                }
+                batch.chapters.forEach {
+                    // Remote ID is authoritative even if a page repeats it under a different slug.
+                    if (!identities.add(chapterId(it))) throw IOException("MangaSwat repeated chapter identity")
+                    all.add(it)
+                }
+                next = batch.next
+            }
+            if (total != null &&
+                total != all.size
+            ) {
+                throw IOException("MangaSwat incomplete chapters: expected $total, received ${all.size}")
+            }
+            if (all.isEmpty() &&
+                (total != 0 || !everyCountVerified)
+            ) {
+                throw IOException("MangaSwat returned unverified empty chapters")
+            }
+            SMangaUpdate(
+                updated,
+                all,
+                if (everyCountVerified &&
+                    total == all.size
+                ) {
+                    ChapterFetchCompleteness.COMPLETE
+                } else {
+                    ChapterFetchCompleteness.DEGRADED
+                },
+            ).withDeclaredChapterCount(total)
+        } ?: throw IOException("MangaSwat refresh timed out; existing chapters preserved")
+    override suspend fun getPageList(
+        chapter: SChapter,
+    ): List<Page> = client.newCall(GET("$apiUrl/chapters/${chapterId(chapter)}/", headers))
         .awaitSuccess().use { parsePages(it.body.string()) }
     fun parsePages(body: String): List<Page> {
-        val images = objectResponse(body)["images"]?.jsonArrayOrNull ?: throw IOException("MangaSwat missing images array")
+        val images =
+            objectResponse(body)["images"]?.jsonArrayOrNull ?: throw IOException("MangaSwat missing images array")
         if (images.isEmpty()) throw IOException("MangaSwat returned no pages (possibly locked chapter)")
         val expected = objectResponse(body)["images_count"]?.jsonPrimitiveOrNull?.intOrNull
         if (expected != null && expected != images.size) throw IOException("MangaSwat incomplete page list")
