@@ -52,18 +52,21 @@ internal class WorkSearchQuery(value: String) {
             val candidateWords = tokens.filterNot { it in glue }.distinct()
             val candidateMatches = candidateWords.count { token -> informative.any { token.startsWith(it) } }
             val enough = prefixes >= minimum && candidateMatches >= (candidateWords.size * 3 + 4) / 5
+            val explainsCandidate = enough || fuzzyExplainsCandidate(candidateWords)
             val tier = when {
-                prefixes == informative.size -> 4
+                prefixes == informative.size && explainsCandidate -> 4
                 enough -> 5
-                typoComplete -> 6
+                typoComplete && explainsCandidate -> 6
                 else -> 7
             }
             return Match(
                 tier,
                 (informative.size - prefixes) * 16 + distances.sum(),
-                if (enough) {
+                if (tier == 4) {
+                    "whole-token-prefixes"
+                } else if (tier == 5) {
                     "informative-token-overlap"
-                } else if (typoComplete) {
+                } else if (tier == 6) {
                     "bounded-token-typo"
                 } else {
                     "insufficient-informative-token-overlap"
@@ -82,13 +85,31 @@ internal class WorkSearchQuery(value: String) {
                 }
                 penalty += nearest
             }
-            if (plausible) return Match(6, penalty, "bounded-token-typo")
+            if (plausible && fuzzyExplainsCandidate(tokens.filterNot { it in glue }.distinct())) {
+                return Match(6, penalty, "bounded-token-typo")
+            }
         }
         return Match(
             7,
             0,
             if (title.contains(normalized)) "internal-word-substring-only" else "source-only-no-name-match",
         )
+    }
+
+    // A few scattered prefixes/typos in a long title are weak retrieval evidence.
+    // Exact names, aliases, phrases and literal query tokens are handled above;
+    // this guard only limits fuzzy promotion, without deleting source results.
+    private fun fuzzyExplainsCandidate(candidateWords: List<String>): Boolean {
+        if (informative.size == 1) return true
+        if (informative.size > 12 || candidateWords.size > 32) return false
+        val supported = candidateWords.count { token ->
+            informative.any { word ->
+                val limit = if (word.length <= 5) 1 else 2
+                token.startsWith(word) ||
+                    (word.length in 3..48 && distance(word, token, limit) <= limit)
+            }
+        }
+        return supported >= (candidateWords.size * 3 + 4) / 5
     }
 
     companion object {

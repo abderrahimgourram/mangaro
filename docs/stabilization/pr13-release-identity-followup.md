@@ -168,3 +168,26 @@ the newly retrieved work actually has null author/artist and empty alternatives;
 no uploader or invented author is substituted. Its real application index holds
 205 distinct routes and the original native work ID, separate from reader-body
 acceptance and from identity grouping.
+
+
+## Fuzzy relevance must explain the candidate as well as the query
+
+A later frozen-corpus Release observation exposed another general relevance gap:
+a long, unrelated title satisfied every query token through scattered prefixes.
+The complete-prefix and typo branches bypassed the partial-match candidate
+coverage check, promoting that record to a primary search card. This is a query
+matching failure, separate from edition identity resolution.
+
+Fuzzy and prefix promotion now require substantial candidate-token coverage for
+multiword queries, using the existing bounded token/edit-distance limits. Exact
+names, source-declared aliases, whole phrases, literal keyword matches and useful
+single-token discovery retain their earlier behavior. Weak source records remain
+in the additional-results section; no identity is invented and no edition is
+deleted. New regressions exercise both the query matcher and the actual search
+State's primary/additional partition, with positive typo, alias and prefix
+controls. Two of the six tests failed before the correction.
+
+This newly exposed corpus case is development evidence from now on. The frozen
+corpus itself is unchanged. Its retrieval measurements must remain separate from
+unlabelled same-work accuracy; previous Release/CI results cannot validate this
+new change. Another signed Release and exact-head CI are required.
