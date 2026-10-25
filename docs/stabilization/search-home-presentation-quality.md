@@ -13,3 +13,10 @@ Home no longer recursively refreshes all sources when request-health events reco
 Changed legacy Kotlin files are formatted in full under the original rules, and their content exemptions are permanently retired. No advertising, production backend, account system, XP, version, signature, or stored reading identity is changed.
 
 Historical tests that required duplicate presentation for missing credits now assert the requested reversible grouping while checking that canonical roots and source editions remain separate. Positive transport fixtures supply explicit work-card evidence. Conflict and source-data-preservation tests are retained. Signed Release runtime results, provider limitations and frame measurements are reported separately from JVM fixtures; synthetic 15-versus-200 coverage is not a claim of a live provider reproduction.
+
+
+## PR14 focused compatibility correction
+
+Comic publication/delivery labels are projected to the COMIC comparison medium only inside reversible presentation decisions. The original candidates and CatalogIdentity records retain their source labels. The strict `SearchWorkIdentity.conflicts`, canonical format rules, verified-core assembly and persisted work IDs are unchanged. After projection, the existing full decision pipeline rechecks trusted row/catalog IDs, creators, original names, sequels and all cluster members. A proof available only through this compatible-format projection produces a LIKELY presentation relationship, never a newly verified canonical core. Compatible medium without independent same-work evidence still cannot group unrelated names.
+
+Edition quality uses a bounded 10% preference for complete observed index coverage. This is an explicit ranking tie band, not a probability or a fabricated chapter count:190 complete outranks194 partial;400 observed partial still outranks205 complete;200 healthy observed chapters outrank15. A failed reader or unusable index still loses before coverage comparison. A single scalar coverage score preserves transitive ordering, and the UI/diagnostics retain the original actual counts and completeness flags. No user-pinned edition is rewritten.

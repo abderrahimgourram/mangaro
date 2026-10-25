@@ -281,7 +281,25 @@ internal class WorkIdentityResolverV2 {
 
     /** Reversible card clustering only. Never authoritative for library/chapters/relationships. */
     internal fun presentationDecision(a: Evidence, b: Evidence): WorkIdentityDecision {
-        val decision = decide(a, b)
+        val strict = decide(a, b)
+        val decision = if (strict.reason == "kind-format-edition-or-external-id-conflict") {
+            val x = SearchWorkIdentity.presentationComparable(a.row)
+            val y = SearchWorkIdentity.presentationComparable(b.row)
+            // Re-run ALL vetoes using compatible reader media. Never waive an ID, creator,
+            // original-title, edition or group-wide conflict just because formats are compatible.
+            val compatible = if (x === a.row && y === b.row) strict else decide(a.copy(row = x), b.copy(row = y))
+            if (compatible.verdict == WorkIdentityVerdict.VERIFIED_SAME_WORK) {
+                compatible.copy(
+                    verdict = WorkIdentityVerdict.LIKELY_SAME_WORK,
+                    reason = "presentation-compatible-comic-formats-and-identity-evidence",
+                    provenance = setOf("reversible-ui-only-not-canonical"),
+                )
+            } else {
+                compatible
+            }
+        } else {
+            strict
+        }
         if (decision.verdict != WorkIdentityVerdict.DISTINCT_OR_INSUFFICIENT ||
             decision.reason !in setOf("missing-independent-creator-corroboration", "missing-distinctive-shared-name")
         ) {

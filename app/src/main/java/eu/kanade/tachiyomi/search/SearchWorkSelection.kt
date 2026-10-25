@@ -125,6 +125,30 @@ internal object SearchWorkIdentity {
         edition = c.edition,
     )
 
+    /** Temporary comparison projection only; original source/publication labels stay on every edition.
+     * Persistent identity and verified-core construction continue to use conflicts() with the original rows.
+     */
+    internal fun presentationComparable(c: SearchWorkCandidate): SearchWorkCandidate {
+        if (c.kind != SearchWorkKind.COMIC) return c
+        fun label(value: String?): String? = if (
+            tachiyomi.domain.manga.service.CatalogFormatCompatibility.describe(value).medium ==
+            tachiyomi.domain.manga.service.CatalogFormatCompatibility.ReadingMedium.COMIC
+        ) {
+            "comic"
+        } else {
+            value
+        }
+        val format = label(c.format)
+        val identity = c.catalogIdentity?.let { it.copy(format = label(it.format)) }
+        return if (format == c.format &&
+            identity == c.catalogIdentity
+        ) {
+            c
+        } else {
+            c.copy(format = format, catalogIdentity = identity)
+        }
+    }
+
     /** Veto contradictory independent evidence even in an established presentation group. */
     private fun medium(c: SearchWorkCandidate): SearchWorkKind = when (c.format?.let(::normalize)) {
         "novel", "light novel", "web novel", "ln", "wn", "رواية", "روايه" -> SearchWorkKind.NOVEL
