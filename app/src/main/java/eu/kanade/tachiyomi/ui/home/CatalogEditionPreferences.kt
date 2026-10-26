@@ -11,7 +11,7 @@ import uy.kohesive.injekt.api.get
 import java.security.MessageDigest
 
 /** Explicit manual choices only. Automatic representative scoring never writes personal preferences. */
-internal class CatalogEditionPreferences(base: PreferenceStore) {
+internal class CatalogEditionPreferences(private val base: PreferenceStore) {
     private val personal = AccountPreferenceStore(base)
     private fun key(group: HomeDiscoveryItem) = key(GroupDiscoveryItems.presentationKey(group))
     private fun key(presentation: String): String =
@@ -31,6 +31,27 @@ internal class CatalogEditionPreferences(base: PreferenceStore) {
     }
     fun selected(group: HomeDiscoveryItem): HomeDiscoveryItem? {
         val editions = members(group)
+        // A legacy preference can only select a source-qualified member of this card.
+        // Reject impossible lookups before resolving titles/registries on the UI thread.
+        // Inspect all owners conservatively: a foreign choice can only cause extra work,
+        // never supply a selection; the existing account-scoped reads below remain authoritative.
+        val savedEditions = runCatching {
+            base.getAll().asSequence().filter { "catalog_preferred_edition_" in it.key }
+                .mapNotNull { it.value as? String }.filter(String::isNotBlank).toSet()
+        }.getOrNull()
+        if (savedEditions != null && (
+                savedEditions.isEmpty() || editions.none { member ->
+                    val edition = if (member.url.isNotBlank()) {
+                        mihon.domain.community.CommunityMangaKey.fromSource(member.sourceId, member.url).value
+                    } else {
+                        "${member.sourceId}:${member.mangaId}"
+                    }
+                    edition in savedEditions
+                }
+                )
+        ) {
+            return null
+        }
         fun find(saved: String): HomeDiscoveryItem? {
             // Empty preferences cannot match a source-qualified edition key. Avoid the
             // repeated work/title projection for every absent current or legacy preference.
