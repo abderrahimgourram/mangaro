@@ -34,6 +34,7 @@ class SearchChapterVerificationRegressionTest {
     private fun manga(
         id: Long = 1,
     ) = Manga.create().copy(
+        thumbnailUrl = "https://fixture.example/verified-work.jpg",
         id = id,
         source = id,
         url = "/work/$id",
@@ -62,6 +63,7 @@ class SearchChapterVerificationRegressionTest {
         advertised: Int? = null,
     ) = SMangaUpdate(
         SManga.create().apply {
+            thumbnail_url = "https://fixture.example/verified-work.jpg"
             url =
                 m.url
             title = m.title
@@ -130,6 +132,7 @@ class SearchChapterVerificationRegressionTest {
                     requested += m.id
                     SMangaUpdate(
                         SManga.create().apply {
+                            thumbnail_url = "https://fixture.example/verified-work.jpg"
                             url = m.url
                             title = m.title
                             author = "Creator ${m.id}"
@@ -172,6 +175,7 @@ class SearchChapterVerificationRegressionTest {
                     requested += m.id
                     SMangaUpdate(
                         SManga.create().apply {
+                            thumbnail_url = "https://fixture.example/verified-work.jpg"
                             url = m.url
                             title = m.title
                             author = "Creator ${m.id}"
@@ -205,6 +209,7 @@ class SearchChapterVerificationRegressionTest {
                     requests += m.id
                     SMangaUpdate(
                         SManga.create().apply {
+                            thumbnail_url = "https://fixture.example/verified-work.jpg"
                             url = m.url
                             title = m.title
                             author = "Creator ${m.id}"

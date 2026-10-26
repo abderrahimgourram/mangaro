@@ -135,7 +135,7 @@ class HomePreviewLimitAndHandoffTest {
     }
 
     @Test
-    fun `verify same-title manga from different sources remain distinct during snapshot handoff`() {
+    fun `verify same-title visual grouping retains both source editions during snapshot handoff`() {
         val itemA =
             HomeDiscoveryItem(
                 mangaId = 81001L,
@@ -152,13 +152,12 @@ class HomePreviewLimitAndHandoffTest {
                 sourceId = 81002L,
                 sourceName = "Source B",
             )
-        // Publishing receives resolved groups. Snapshot restoration must not infer title-only links.
+        // Presentation grouping is reversible and keeps both original source-qualified records.
         val grouped = GroupDiscoveryItems.group(listOf(known(itemA, author = null), known(itemB, author = null)))
         DiscoverySnapshotStore.setSnapshot(DiscoveryCategory.LATEST, grouped)
         val retrieved = DiscoverySnapshotStore.getSnapshot(DiscoveryCategory.LATEST)
-        retrieved.size shouldBe 2
-        retrieved.map { it.mangaId }.toSet() shouldBe setOf(81001L, 81002L)
-        retrieved.all { it.alternatives.isEmpty() } shouldBe true
+        retrieved.size shouldBe 1
+        retrieved.single().availableVersions.map { it.mangaId }.toSet() shouldBe setOf(81001L, 81002L)
     }
 
     @Test

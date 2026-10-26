@@ -1,0 +1,102 @@
+{
+  "provenance": "Public source metadata captured by actual signed4ead8895 Release on emulator-5556,2026-10-25; native routes from the same synthetic emulator SQLite snapshot. No library/account/history fields. Observed groups are symptoms, not invented canonical authority.",
+  "apkSHA256": "5532f9fa5b2f5463193b7fe3334db134e1e3c540220013242698dfbbd85b7ee2",
+  "candidates": [
+    {
+      "source": "2482399499047903203",
+      "url": "return-of-the-mount-hua-sect-76#697",
+      "title": "Return of the Mount Hua Sect",
+      "aliases": [
+        "Return of the Mount Hua Sect",
+        "화산귀환[독점]   Volcano Return   Return of the Blossoming Blade"
+      ],
+      "author": null,
+      "artist": null,
+      "format": "manhwa",
+      "externalIds": {},
+      "count": 190,
+      "complete": true,
+      "observedGroup": "5b993eb757a5fca1d68a1ea1f8f010520b5511833aba905c62824e3a93f86329"
+    },
+    {
+      "source": "6058166507489091982",
+      "url": "/manga/return-of-the-mount-hua-sect",
+      "title": "Return of the Mount Hua Sect",
+      "aliases": [],
+      "author": null,
+      "artist": null,
+      "format": null,
+      "externalIds": {},
+      "count": null,
+      "complete": false,
+      "observedGroup": "5b993eb757a5fca1d68a1ea1f8f010520b5511833aba905c62824e3a93f86329"
+    },
+    {
+      "source": "3975276517041363504",
+      "url": "/manga/return-of-the-mount-hua-sect/",
+      "title": "Return of the Mount Hua Sect",
+      "aliases": [
+        "Return of the Mount Hua Sect",
+        "Return of the Blossoming Blade",
+        "화산귀환",
+        "Return of the Flowery Mountain Sect",
+        "Hwasan Gwihwan"
+      ],
+      "author": "Biga",
+      "artist": "LICO",
+      "format": "manhwa",
+      "externalIds": {},
+      "count": 194,
+      "complete": false,
+      "observedGroup": "7b6046a0be2b394e1793e371d60f550be33f3b93eb5c7ab6f245d97be93632d8"
+    },
+    {
+      "source": "7657007209499352344",
+      "url": "649313",
+      "title": "Return of the Mount Hua Sect",
+      "aliases": [
+        "Return of the Mount Hua Sect",
+        "Return of the Blossoming Blade",
+        "화산귀환"
+      ],
+      "author": "Biga",
+      "artist": null,
+      "format": "manhwa",
+      "externalIds": {},
+      "count": 193,
+      "complete": true,
+      "observedGroup": "7b6046a0be2b394e1793e371d60f550be33f3b93eb5c7ab6f245d97be93632d8"
+    },
+    {
+      "source": "215553151312092548",
+      "url": "/manhwa/return-of-the-mount-hua-sect#6a49e00234c268b77054833e",
+      "title": "عودة طائفة جبل هوا",
+      "aliases": [
+        "عودة طائفة جبل هوا",
+        "Return of the Mount Hua Sect"
+      ],
+      "author": "Biga",
+      "artist": "ARCHE; LICO",
+      "format": "manhwa",
+      "externalIds": {
+        "anilist": "132144"
+      },
+      "count": 188,
+      "complete": true,
+      "observedGroup": "7b6046a0be2b394e1793e371d60f550be33f3b93eb5c7ab6f245d97be93632d8"
+    },
+    {
+      "source": "918460697583900080",
+      "url": "/manga/return-of-the-mount-hua-sect",
+      "title": "Return of the Mount Hua Sect",
+      "aliases": [],
+      "author": null,
+      "artist": null,
+      "format": null,
+      "externalIds": {},
+      "count": null,
+      "complete": false,
+      "observedGroup": "5b993eb757a5fca1d68a1ea1f8f010520b5511833aba905c62824e3a93f86329"
+    }
+  ]
+}

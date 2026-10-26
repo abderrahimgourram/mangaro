@@ -49,6 +49,7 @@ class CatalogCandidateViewModelTest {
             MangasPage(
                 refs.mapIndexed { i, route ->
                     SManga.create().apply {
+                        thumbnail_url = "https://fixture.example/verified-work.jpg"
                         url = route
                         title = "Boundary Work $i"
                     }

@@ -155,9 +155,9 @@ class SearchResultPresentationFilterTest {
             "50 فصل مفهرس على الأقل"
     }
 
-    @Test fun knownReaderAccessWinsOverUnknownLargerIndex() {
+    @Test fun largerObservedIndexWinsWhenReaderSampleIsUnknownNotFailed() {
         val good = c("a", count = 80).copy(chapters = SearchChapterEvidence(80, true, readable = true))
-        cards(listOf(good, c("b", count = 800))).single().winner.id shouldBe "a"
+        cards(listOf(good, c("b", count = 800))).single().winner.id shouldBe "b"
     }
 
     @Test fun returnedWinnerRetainsItsRealSourceAndEditionId() {

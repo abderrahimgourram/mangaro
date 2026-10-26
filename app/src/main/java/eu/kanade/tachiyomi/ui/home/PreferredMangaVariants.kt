@@ -57,7 +57,7 @@ object PreferredMangaVariants {
         val quality = Quality(
             CatalogWorkEvidence.source(manga),
             ChapterListIntegrity.retainedComplete(manga),
-            manga.initialized && CoverUrl.valid(manga.thumbnailUrl) != null,
+            manga.initialized,
             ChapterListIntegrity.actualChapterCount(manga),
             ChapterListIntegrity.lastSuccessfulAt(manga),
             ChapterListIntegrity.catalogPublishedAt(manga),
@@ -70,7 +70,12 @@ object PreferredMangaVariants {
             val next = if (old != null && old.owner == quality.owner && old.work.reference == quality.work.reference &&
                 old.successfulAt >= quality.successfulAt
             ) {
-                old.copy(work = quality.work, metadata = quality.metadata, coverUrl = quality.coverUrl)
+                old.copy(
+                    work = quality.work,
+                    metadata = old.metadata || quality.metadata,
+                    coverUrl =
+                    quality.coverUrl ?: old.coverUrl,
+                )
             } else {
                 quality.copy(
                     discoveryObserved =
@@ -147,7 +152,9 @@ object PreferredMangaVariants {
             quality?.successfulAt ?: 0,
             readerUsable(item.mangaId),
             complete = quality?.complete == true,
-            indexUsable = currentAvailability(quality)?.indexUsable,
+            indexUsable =
+            currentAvailability(quality)?.indexUsable
+                ?: if (health(item.sourceId) == 0 && readerUsable(item.mangaId) != true) false else null,
             uncertain =
             currentAvailability(quality)?.uncertain == true,
         )
@@ -167,6 +174,7 @@ object PreferredMangaVariants {
         val b = quality(idB)?.takeIf { it.work.reference.sourceId == sourceB }
         fun quality(q: Quality?, source: Long, id: Long) = CatalogEditionEvidence(
             indexedChapters = q?.actualChapterCount,
+            indexSucceededAt = q?.successfulAt ?: 0,
             complete = q?.complete == true,
             readable = readerUsable(id),
             sourceReliability = health(source),
@@ -190,6 +198,28 @@ object PreferredMangaVariants {
         source?.lang?.takeIf(String::isNotBlank)?.let { it in preferences.enabledLanguages.get() } ?: true
     }.getOrDefault(true)
 
+    private data class RelatedIndex(
+        val revision: Long,
+        val owner: tachiyomi.core.common.util.lang.LocalAccountScope.Token,
+        val rows: Map<String, List<Quality>>,
+    )
+
+    @Volatile private var indexed: RelatedIndex? = null
+    private val indexLock = Any()
+    private fun relatedIndex(): RelatedIndex = synchronized(indexLock) {
+        val revision = changes.value
+        val owner = tachiyomi.core.common.util.lang.LocalAccountScope.capture()
+        indexed?.takeIf { it.revision == revision && it.owner == owner }?.let { return@synchronized it }
+        val policy = eu.kanade.tachiyomi.search.WorkIdentityResolverV2()
+        val rows = qualities.values.asSequence().filter {
+            it.discoveryObserved && it.owner == owner && it.actualChapterCount != null
+        }.map { it.copy(work = CatalogWorkEvidence.resolve(it.work)) }.flatMap { q ->
+            eu.kanade.tachiyomi.search.AtlasCandidateIndex.keys(policy.evidence(q.work.searchCandidate(), null), true)
+                .asSequence().map { it to q }
+        }.groupBy({ it.first }, { it.second })
+        RelatedIndex(revision, owner, rows).also { if (changes.value == revision) indexed = it }
+    }
+
     /** Only verified same-work references may expand a recommendation's alternatives.
      * No library record is changed and no network call is performed here. */
     fun related(items: List<HomeDiscoveryItem>, allowed: (Long) -> Boolean = ::sourceEnabled): List<HomeDiscoveryItem> {
@@ -197,25 +227,21 @@ object PreferredMangaVariants {
         val policy = eu.kanade.tachiyomi.search.WorkIdentityResolverV2()
         val known = items.map(::work).map { it.searchCandidate() }
         val keys = known.flatMap {
-            eu.kanade.tachiyomi.search.AtlasCandidateIndex.keys(policy.evidence(it, null))
+            eu.kanade.tachiyomi.search.AtlasCandidateIndex.keys(policy.evidence(it, null), true)
         }.toSet()
-        val eligible = qualities.values.asSequence().map { q ->
-            // Re-resolve reviewed authority: revoked identity cannot be resurrected by cache.
-            q.copy(work = CatalogWorkEvidence.resolve(q.work))
-        }.filter { q ->
-            q.discoveryObserved && q.owner == tachiyomi.core.common.util.lang.LocalAccountScope.capture() &&
-                allowed(
-                    q.work.reference.sourceId,
-                ) && q.actualChapterCount != null && eligible(q.work.reference.mangaId) &&
-                items.none { it.sourceId == q.work.reference.sourceId && it.url == q.work.reference.url }
-        }.map { it to it.work.searchCandidate() }.filter { (_, candidate) ->
-            eu.kanade.tachiyomi.search.AtlasCandidateIndex.keys(policy.evidence(candidate, null)).any { it in keys }
-        }.toList()
+        val incoming = items.mapTo(hashSetOf()) { it.sourceId to it.url }
+        val index = relatedIndex()
+        val eligible = keys.flatMap { index.rows[it].orEmpty() }.distinctBy { it.work.reference }
+            .filter { q ->
+                allowed(q.work.reference.sourceId) && eligible(q.work.reference.mangaId) &&
+                    (q.work.reference.sourceId to q.work.reference.url) !in incoming
+            }
+            .map { it to it.work.searchCandidate() }
         if (eligible.isEmpty()) return emptyList()
         // Indexed lookup only proposes candidates. The shared complete-link policy
         // still decides every group and prevents conflicting transitive bridges.
         val incomingIds = known.mapTo(hashSetOf()) { it.id }
-        val groups = eu.kanade.tachiyomi.search.SearchResultPresentationFilter()
+        val groups = eu.kanade.tachiyomi.search.SearchResultPresentationFilter(probablePresentation = true)
             .present(0, known + eligible.map { it.second }).orEmpty()
         val relatedIds = groups.filter { group -> group.members.any { it.id in incomingIds } }
             .flatMap { it.members }.mapTo(hashSetOf()) { it.id }
@@ -276,13 +302,46 @@ object PreferredMangaVariants {
     fun work(item: HomeDiscoveryItem): WorkMetadata {
         val reference = SourceWorkReference(item.sourceId, item.mangaId, item.url)
         return CatalogWorkEvidence.resolve(
-            qualities[item.mangaId]?.work?.takeIf { it.reference == reference }
+            qualities[item.mangaId]?.work?.takeIf {
+                it.reference == reference &&
+                    (
+                        tachiyomi.domain.manga.service.WorkTitleNormalizer.normalize(it.title) ==
+                            tachiyomi.domain.manga.service.WorkTitleNormalizer.normalize(item.title) ||
+                            it.aliases.any { alias ->
+                                tachiyomi.domain.manga.service.WorkTitleNormalizer.normalize(alias) ==
+                                    tachiyomi.domain.manga.service.WorkTitleNormalizer.normalize(item.title)
+                            }
+                        )
+            }
                 ?: WorkMetadata(reference, item.title),
         )
     }
+    fun displayable(item: HomeDiscoveryItem): Boolean {
+        val q = quality(item.mangaId)?.takeIf {
+            it.work.reference == SourceWorkReference(item.sourceId, item.mangaId, item.url) &&
+                (
+                    tachiyomi.domain.manga.service.WorkTitleNormalizer.normalize(it.work.title) ==
+                        tachiyomi.domain.manga.service.WorkTitleNormalizer.normalize(item.title) ||
+                        it.work.aliases.any { alias ->
+                            tachiyomi.domain.manga.service.WorkTitleNormalizer.normalize(alias) ==
+                                tachiyomi.domain.manga.service.WorkTitleNormalizer.normalize(item.title)
+                        }
+                    )
+        }
+        return tachiyomi.domain.manga.model.WorkPresentationEligibility.state(
+            item.title,
+            item.url,
+            q?.metadata == true,
+            item.coverData.url ?: q?.coverUrl,
+            q?.actualChapterCount,
+        ).displayable
+    }
     fun usable(source: Long, id: Long): Boolean = eligible(id) &&
         (
-            (quality(id)?.takeIf { it.work.reference.sourceId == source }?.actualChapterCount ?: 0) > 0 ||
+            quality(id)?.takeIf { it.work.reference.sourceId == source }?.let {
+                it.metadata || CoverUrl.valid(it.coverUrl) != null
+            } == true ||
+                (quality(id)?.takeIf { it.work.reference.sourceId == source }?.actualChapterCount ?: 0) > 0 ||
                 SourceHealthMonitor.shared.discoverable(source)
             )
 

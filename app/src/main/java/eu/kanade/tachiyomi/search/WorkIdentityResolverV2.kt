@@ -278,6 +278,56 @@ internal class WorkIdentityResolverV2 {
             setOf(x.metadataOrigin, y.metadataOrigin, "presentation-only-not-canonical"),
         )
     }
+
+    /** Reversible card clustering only. Never authoritative for library/chapters/relationships. */
+    internal fun presentationDecision(a: Evidence, b: Evidence): WorkIdentityDecision {
+        val strict = decide(a, b)
+        val decision = if (strict.reason == "kind-format-edition-or-external-id-conflict") {
+            val x = SearchWorkIdentity.presentationComparable(a.row)
+            val y = SearchWorkIdentity.presentationComparable(b.row)
+            // Re-run ALL vetoes using compatible reader media. Never waive an ID, creator,
+            // original-title, edition or group-wide conflict just because formats are compatible.
+            val compatible = if (x === a.row && y === b.row) strict else decide(a.copy(row = x), b.copy(row = y))
+            if (compatible.verdict == WorkIdentityVerdict.VERIFIED_SAME_WORK) {
+                compatible.copy(
+                    verdict = WorkIdentityVerdict.LIKELY_SAME_WORK,
+                    reason = "presentation-compatible-comic-formats-and-identity-evidence",
+                    provenance = setOf("reversible-ui-only-not-canonical"),
+                )
+            } else {
+                compatible
+            }
+        } else {
+            strict
+        }
+        if (decision.verdict != WorkIdentityVerdict.DISTINCT_OR_INSUFFICIENT ||
+            decision.reason !in setOf("missing-independent-creator-corroboration", "missing-distinctive-shared-name")
+        ) {
+            return decision
+        }
+        val x = WorkIdentityNormalizer.comparisonTitle(a.row)
+        val y = WorkIdentityNormalizer.comparisonTitle(b.row)
+        // A declared translation is directional evidence: the other provider need not
+        // repeat the translated title. Every earlier contradiction still vetoes the
+        // pair, and complete-link clustering checks every member independently.
+        val sharedAlias = (x in b.names || y in a.names) &&
+            a.names.intersect(b.names).any(WorkIdentityNormalizer::distinctive)
+        if ((
+                x == y && (
+                    WorkIdentityNormalizer.distinctive(x) ||
+                        (x.length >= 6 && WorkIdentityNormalizer.specificSingleWord(x))
+                    )
+                ) || sharedAlias
+        ) {
+            return WorkIdentityDecision(
+                WorkIdentityVerdict.LIKELY_SAME_WORK,
+                "presentation-exact-name-unknown-credits",
+                setOf("reversible-ui-only-not-canonical"),
+            )
+        }
+        return decision
+    }
+
     fun resolve(
         input: List<SearchWorkCandidate>,
         established: Map<String, List<SearchWorkCandidate>>? = null,

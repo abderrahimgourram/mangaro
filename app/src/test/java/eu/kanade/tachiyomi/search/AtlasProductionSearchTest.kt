@@ -80,6 +80,7 @@ class AtlasProductionSearchTest {
                     MangasPage(
                         List(2) {
                             SManga.create().apply {
+                                thumbnail_url = "https://fixture.example/verified-work.jpg"
                                 url = row.catalogIdentity!!.route
                                 title = row.title
                             }
@@ -184,6 +185,7 @@ class AtlasProductionSearchTest {
                 coEvery { source.getSearchManga(any(), any(), any()) } returns MangasPage(
                     editions.map { row ->
                         SManga.create().apply {
+                            thumbnail_url = "https://fixture.example/verified-work.jpg"
                             url = row.catalogIdentity!!.route
                             title = row.title
                         }
@@ -231,13 +233,14 @@ class AtlasProductionSearchTest {
                 }
             }
             final.items.keys.map { it.id }.toSet() shouldBe rows.map { it.source.toLong() }.toSet()
-            final.rankedResults.size shouldBe 3 // one original, two unreviewed side-story editions
-            val main = final.rankedResults.single { it.alternatives.size == 1 }
+            final.rankedResults.size shouldBe 2 // original and separate same-title Jasmine presentation group
+            val main = final.rankedResults.single { !it.titleIsJasmine() }
             val versions = listOf(main) + main.alternatives
             versions.map { it.manga.source to it.manga.url }.toSet() shouldBe rows.filter {
                 it.catalogIdentity?.reviewedWorkKey != null
             }.map { it.source.toLong() to it.catalogIdentity!!.route }.toSet()
-            final.rankedResults.filter { it.titleIsJasmine() }.size shouldBe 2
+            val jasmine = final.rankedResults.single { it.titleIsJasmine() }
+            (listOf(jasmine) + jasmine.alternatives).size shouldBe 2
             record("tbate", final.rankedResults, sources.map { it.id }.toSet())
             for (version in versions) {
                 val selected = versions.single { it.manga.id == version.manga.id }

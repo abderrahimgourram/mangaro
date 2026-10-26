@@ -20,7 +20,7 @@ object GroupDiscoveryItems {
     private data class ProjectionKey(
         val items: List<HomeDiscoveryItem>,
         val evidence: List<WorkMetadata>,
-        val revision: Long,
+        val quality: List<tachiyomi.domain.manga.service.CatalogEditionEvidence>,
         val health: Map<Long, SourceHealthMonitor.State>,
         val context: CatalogSelectionContext,
         val owner: LocalAccountScope.Token,
@@ -47,9 +47,17 @@ object GroupDiscoveryItems {
             item.mangaId == mangaId || item.alternatives.any { it.mangaId == mangaId }
         val matches = items.filter(::contains)
         if (matches.isEmpty()) return null
-        val keys = matches.map(::presentationKey).toSet()
-        val related = items.filter { contains(it) || presentationKey(it) in keys }
-        return group(related).firstOrNull(::contains)
+        val keys = matches.mapNotNull { it.canonicalWorkId }.toSet()
+        val related = items.filter { contains(it) || (it.canonicalWorkId != null && it.canonicalWorkId in keys) }
+        val selected = matches.first()
+        val editions = related.flatMap { listOf(it.copy(alternatives = emptyList())) + it.alternatives }
+            .distinctBy { it.sourceId to it.mangaId }
+        return selected.copy(
+            alternatives = editions.filterNot { it.sourceId == selected.sourceId && it.mangaId == selected.mangaId },
+            availableVersions = editions.map {
+                HomeSourceVersion(it.mangaId, it.sourceId, it.sourceName, it.url, it.title)
+            },
+        )
     }
 
     data class PopularProjection(val featured: HomeDiscoveryItem?, val items: List<HomeDiscoveryItem>)
@@ -71,12 +79,12 @@ object GroupDiscoveryItems {
     ): List<HomeDiscoveryItem> {
         val incoming = items.flatMap { listOf(it.copy(alternatives = emptyList())) + it.alternatives }
         val variants = (incoming + PreferredMangaVariants.related(incoming, allowed))
-            .distinctBy { it.sourceId to it.mangaId }
+            .distinctBy { it.sourceId to it.mangaId }.filter(PreferredMangaVariants::displayable)
         val evidence = variants.map(PreferredMangaVariants::work)
         val key = ProjectionKey(
             variants,
             evidence,
-            PreferredMangaVariants.changes.value,
+            variants.map(PreferredMangaVariants::evidence),
             variants.map {
                 it.sourceId
             }.distinct().associateWith {
@@ -91,7 +99,9 @@ object GroupDiscoveryItems {
         val order = evidence.mapIndexed { index, work -> work.reference to index }.toMap()
         val candidates = evidence.map { it.searchCandidate() }
         val records = candidates.zip(evidence).associate { (candidate, work) -> candidate.id to work }
-        val groups = eu.kanade.tachiyomi.search.SearchResultPresentationFilter().present(0, candidates).orEmpty()
+        val groups = eu.kanade.tachiyomi.search.SearchResultPresentationFilter(
+            probablePresentation = true,
+        ).present(0, candidates).orEmpty()
         val works = groups.map { group ->
             tachiyomi.domain.manga.service.CanonicalWork(group.key, group.members.map { records.getValue(it.id) })
         }.sortedBy { work -> work.members.minOf { order.getValue(it.reference) } }
@@ -137,9 +147,7 @@ object GroupDiscoveryItems {
         } else {
             result
         }
-        if (variants.size <= 256 &&
-            key.revision == PreferredMangaVariants.changes.value
-        ) {
+        if (variants.size <= 256) {
             projectionMemo.put(key, projection)
         }
         return projection

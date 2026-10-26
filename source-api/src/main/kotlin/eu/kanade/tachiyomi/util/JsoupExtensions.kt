@@ -22,5 +22,17 @@ fun Element.attrOrText(css: String): String {
  * @param html the body of the response. Use only if the body was read before calling this method.
  */
 fun Response.asJsoup(html: String? = null): Document {
-    return Jsoup.parse(html ?: body.string(), request.url.toString())
+    if (header("cf-mitigated")?.equals("challenge", ignoreCase = true) == true) {
+        close()
+        throw java.io.IOException("Source returned a security challenge")
+    }
+    val document = Jsoup.parse(html ?: body.string(), request.url.toString())
+    // Structural challenge evidence, never a title blacklist or a Turnstile widget alone.
+    if (document.selectFirst("form#challenge-form[action*=/cdn-cgi/]") != null &&
+        document.selectFirst("script[src*=/cdn-cgi/challenge-platform/]") != null
+    ) {
+        close()
+        throw java.io.IOException("Source returned a security challenge")
+    }
+    return document
 }

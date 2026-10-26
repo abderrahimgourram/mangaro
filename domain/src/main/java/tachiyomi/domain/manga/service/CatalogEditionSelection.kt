@@ -16,13 +16,20 @@ data class CatalogEditionEvidence(
 
 /** Shared default-edition policy for discovery and search, after identity/medium verification. */
 object CatalogEditionSelection {
+    // A complete index gets a bounded 10% coverage preference, not an invented chapter total.
+    // Thus190 complete beats194 partial, while400 observed partial still beats205 complete.
+    // One scalar score keeps comparisons transitive; published counts remain the original observations.
+    private fun coverage(e: CatalogEditionEvidence): Long = e.indexedChapters?.coerceAtLeast(0)?.toLong()
+        ?.times(if (e.complete) 110L else 100L) ?: -1L
     private fun criteria(e: CatalogEditionEvidence) = listOf(
-        (e.readable != false && e.indexUsable != false && !(e.complete && e.indexedChapters == 0)).compareTo(false),
-        (!e.uncertain).compareTo(false),
-        (e.readable == true).compareTo(false),
-        e.indexedChapters?.coerceAtLeast(0) ?: -1,
-        e.complete.compareTo(false),
-        e.sourceReliability,
+        (e.readable != false && e.indexUsable != false && !(e.complete && e.indexedChapters == 0)).compareTo(
+            false,
+        ).toLong(),
+        (!e.uncertain).compareTo(false).toLong(),
+        coverage(e),
+        e.complete.compareTo(false).toLong(),
+        (e.readable == true).compareTo(false).toLong(),
+        e.sourceReliability.toLong(),
     )
     fun compareQuality(a: CatalogEditionEvidence, b: CatalogEditionEvidence): Int {
         val x = criteria(a)
@@ -35,9 +42,9 @@ object CatalogEditionSelection {
             listOf(
                 "available-index-and-reader",
                 "non-conflicting-index",
-                "reader-sample",
-                "observed-unique-chapters",
+                "observed-count-and-index-coverage",
                 "complete-index",
+                "reader-sample",
                 "source-health",
             )
         return criteria(a).zip(criteria(b)).indexOfFirst { it.first != it.second }.takeIf { it >= 0 }

@@ -38,6 +38,7 @@ class GroupDiscoveryItemsTest {
 
     @Test fun `Home reuses the corroborated Search identity policy without rewriting editions`() {
         val a = tachiyomi.domain.manga.model.Manga.create().copy(
+            initialized = true,
             id = 9921001,
             source = 992001,
             url = "/work/alpha",
@@ -154,7 +155,7 @@ class GroupDiscoveryItemsTest {
                 sourceName = "MangaDar",
             )
 
-        val grouped = GroupDiscoveryItems.group(listOf(itemEng, itemAra))
+        val grouped = GroupDiscoveryItems.group(listOf(itemEng, itemAra).map { it.copy(url = "/work/${it.mangaId}") })
 
         grouped.size shouldBe 2
         grouped[0].title shouldBe "Solo Leveling"
@@ -180,7 +181,7 @@ class GroupDiscoveryItemsTest {
                 sourceName = "MangaDar",
             )
 
-        val grouped = GroupDiscoveryItems.group(listOf(item1, item2))
+        val grouped = GroupDiscoveryItems.group(listOf(item1, item2).map { it.copy(url = "/work/${it.mangaId}") })
 
         grouped.size shouldBe 2
     }

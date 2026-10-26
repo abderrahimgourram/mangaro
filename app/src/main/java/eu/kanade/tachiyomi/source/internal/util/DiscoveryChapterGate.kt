@@ -14,7 +14,9 @@ object DiscoveryChapterGate {
     suspend fun filter(
         mangas: List<Manga>,
         onProgress: (suspend (List<Manga>) -> Unit)? = null,
-    ): List<Manga> = mangas.filter { DiscoveryEligibility.valid(it.title, it.url) }.also {
+    ): List<Manga> = mangas.filter {
+        tachiyomi.domain.manga.model.WorkPresentationEligibility.state(it).displayable
+    }.also {
         if (it.isNotEmpty()) onProgress?.invoke(it)
     }
 }
