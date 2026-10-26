@@ -56,6 +56,15 @@ class TeamX(
         )
         .add("Referer", "$baseUrl/")
 
+    private fun Response.asTeamXDocument(): Document {
+        // A community/challenge redirect is unavailable source content, never work metadata.
+        if (request.url.scheme != "https" || request.url.host != baseUrl.toHttpUrl().host) {
+            close()
+            throw IOException("TeamX redirected outside its source; cached work data retained")
+        }
+        return asJsoup()
+    }
+
     override suspend fun getPopularManga(page: Int): MangasPage {
         val request = popularMangaRequest(page)
         val response = client.newCall(request).awaitSuccess()
@@ -67,7 +76,7 @@ class TeamX(
     }
 
     override fun popularMangaParse(response: Response): MangasPage {
-        val document = response.asJsoup()
+        val document = response.asTeamXDocument()
         return parseMangaListFromDocument(document)
     }
 
@@ -82,7 +91,7 @@ class TeamX(
     }
 
     override fun latestUpdatesParse(response: Response): MangasPage {
-        val document = response.asJsoup()
+        val document = response.asTeamXDocument()
         return parseMangaListFromDocument(document)
     }
 
@@ -103,7 +112,7 @@ class TeamX(
     }
 
     override fun searchMangaParse(response: Response): MangasPage {
-        val document = response.asJsoup()
+        val document = response.asTeamXDocument()
         return parseMangaListFromDocument(document)
     }
 
@@ -172,7 +181,7 @@ class TeamX(
             }
         }
         val response = client.newCall(request).awaitSuccess()
-        val document = response.asJsoup()
+        val document = response.asTeamXDocument()
 
         val updatedManga = if (fetchDetails) parseMangaDetails(document, manga) else manga
         val chapterResult = if (fetchChapters) {
@@ -259,7 +268,7 @@ class TeamX(
                             client.newCall(
                                 GET(baseUrl + path, headers, cache = okhttp3.CacheControl.FORCE_NETWORK),
                             ).awaitSuccess().use {
-                                it.asJsoup()
+                                it.asTeamXDocument()
                             }
                         }
                     }
@@ -400,7 +409,7 @@ class TeamX(
     }
 
     override fun pageListParse(response: Response): List<Page> {
-        val document = response.asJsoup()
+        val document = response.asTeamXDocument()
         return parsePagesFromDocument(document)
     }
 

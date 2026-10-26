@@ -428,7 +428,6 @@
     "app/src/test/java/eu/kanade/tachiyomi/source/internal/mangalek/MangaLekParserTest.kt": "25ba4c0ed48dbbae06b291a3ed4c93900c96c9b2a47b5a126a34f05aea9724aa",
     "app/src/test/java/eu/kanade/tachiyomi/source/internal/mangastarz/MangaStarzParserTest.kt": "a4b3728985cef9f2d96ff4cf8409ac7746e31ff937fff9a88077730e88236de9",
     "app/src/test/java/eu/kanade/tachiyomi/source/internal/mangatime/MangaTimeParserTest.kt": "0d38b6f793dffedcaff9415dd68f05ce08d7f0dcbbbc96cce1000ba146a57d92",
-    "app/src/test/java/eu/kanade/tachiyomi/source/internal/teamx/TeamXLiveIntegrationTest.kt": "d2977d1693d540c1faa1fdcdb2821eab52c8d15b6963605b2b8805db7360a9aa",
     "app/src/test/java/eu/kanade/tachiyomi/source/internal/teamx/TeamXParserTest.kt": "4ce05591ceed9701254456f071d70c41727c4f8bab60d5198341f7c1fffe6e85",
     "app/src/test/java/eu/kanade/tachiyomi/source/internal/util/ThreeSourceIntegrityTest.kt": "f373ea77b1912ec681d4c5bf2378fd4d44456f551f0f77551e40a7f82fde389f",
     "app/src/test/java/eu/kanade/tachiyomi/source/repair/RuleRepairEngineTest.kt": "90615b58a299b9f199fa97090f28b2138b2be9dc4675ec5f0f4cff2ab9fdad63",
@@ -582,7 +581,8 @@
     "app/src/test/java/eu/kanade/tachiyomi/ui/home/CatalogPerformanceRecoveryTest.kt": "Search/Home quality repair regression fixtures updated for reversible presentation policy and fully formatted under original rules.",
     "app/src/test/java/eu/kanade/tachiyomi/ui/home/ReviewedCatalogRegistryTest.kt": "Search/Home quality repair regression fixtures updated for reversible presentation policy and fully formatted under original rules.",
     "app/src/test/java/eu/kanade/tachiyomi/ui/home/SmartCatalogV2Test.kt": "Search/Home quality repair regression fixtures updated for reversible presentation policy and fully formatted under original rules.",
-    "domain/src/main/java/tachiyomi/domain/manga/service/WorkLinker.kt": "PR14 sampled-main-thread performance correction: normalization regex byte strings and order unchanged, compiled once; full original formatting applied, exemption permanently retired."
+    "domain/src/main/java/tachiyomi/domain/manga/service/WorkLinker.kt": "PR14 sampled-main-thread performance correction: normalization regex byte strings and order unchanged, compiled once; full original formatting applied, exemption permanently retired.",
+    "app/src/test/java/eu/kanade/tachiyomi/source/internal/teamx/TeamXLiveIntegrationTest.kt": "Release 2.5.9: tag external availability tests; full original formatting applied and exemption permanently retired."
   },
   "schema": 1
 }
