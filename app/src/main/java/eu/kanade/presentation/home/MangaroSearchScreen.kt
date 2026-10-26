@@ -173,7 +173,9 @@ fun MangaroSearchScreen(
     val focusManager = LocalFocusManager.current
     // Matched work cards retain the selected source's actual identity and route.
     val context = LocalContext.current
-    var showAdditional by rememberSaveable(state.activeQuery) { mutableStateOf(false) }
+    // Supplementary groups are an ephemeral, explicit choice for this input only.
+    // Never restore expansion for another query or after the screen/process is recreated.
+    var showAdditional by remember(query) { mutableStateOf(false) }
     val additional = state.additionalRankedResults
     val results = if (showAdditional) state.rankedResults else state.primaryRankedResults
     val mangaStarzId = 6058166507489091982L

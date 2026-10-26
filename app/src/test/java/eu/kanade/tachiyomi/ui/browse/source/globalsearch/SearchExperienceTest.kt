@@ -142,6 +142,60 @@ class SearchExperienceTest {
         return m.copy(memo = ChapterListIntegrity.memo(m, "COMPLETE", rows)) to rows
     }
 
+    @Test fun `declared translated short alias shares one final card across query relevance partitions`() = runTest(
+        dispatcher,
+    ) {
+        fun edition(titleValue: String, route: String, aliases: List<String>) = MangasPage(
+            listOf(
+                SManga.create().apply {
+                    title = titleValue
+                    url = route
+                    initialized = true
+                    memo = buildJsonObject {
+                        put(
+                            "mangaro.workIdentity",
+                            buildJsonObject {
+                                put("format", "manhua")
+                                put(
+                                    "aliases",
+                                    kotlinx.serialization.json.JsonArray(
+                                        aliases.map { kotlinx.serialization.json.JsonPrimitive(it) },
+                                    ),
+                                )
+                            },
+                        )
+                    }
+                },
+            ),
+            false,
+        )
+        val late = CompletableDeferred<Unit>()
+        val model = model(
+            source(201) { _, _ -> edition("Master of Gu", "/manga/master-of-gu/", emptyList()) },
+            source(202) { _, _ ->
+                late.await()
+                edition("سيد الغو", "/manhua/master-of-gu", listOf("master of gu"))
+            },
+        )
+        model.updateSearchQuery("master of")
+        model.search()
+        runCurrent()
+        late.complete(Unit)
+        model.finished("master of")
+        val state = withContext(Dispatchers.Default) {
+            withTimeout(5000) { model.state.first { it.rankedResults.singleOrNull()?.alternatives?.size == 1 } }
+        }
+        state.primaryRankedResults.size shouldBe 1
+        state.additionalRankedResults.size shouldBe 0
+        val displayed = state.rankedResults.single()
+        (listOf(displayed) + displayed.alternatives).map { it.manga.url }.toSet() shouldBe
+            setOf("/manga/master-of-gu/", "/manhua/master-of-gu")
+        (listOf(displayed) + displayed.alternatives).map { it.manga.id }.distinct().size shouldBe 2
+        val weak = state.copy(rankedResults = listOf(displayed.copy(queryMatchRank = 8L shl 32)))
+        weak.primaryRankedResults.size shouldBe 0
+        weak.additionalRankedResults.size shouldBe 1
+    }
+
     @Test fun `real search pipeline ranks verified SQL rows instead of maximum chapter number`() = runTest(dispatcher) {
         val a = proof(130, "/a", 84, 3333.0)
         val b = proof(131, "/b", 205, 205.0)
