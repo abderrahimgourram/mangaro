@@ -13,6 +13,8 @@ import sys
 
 ANCHOR = "bd0e8b575dd00460cf376295a9c4313f7181ea39"
 INVENTORY = "docs/stabilization/pr4-formatting-inventory.md"
+# Reviewed release-only build changes; formatter rules/targets are unchanged.
+REVIEWED_CONFIGURATION = {"app/build.gradle.kts": "36a911ea85a6ceda32c7566762906ff60cbd29a2"}
 
 
 def is_configuration(name):
@@ -62,7 +64,9 @@ def validate(root, manifest, anchor=ANCHOR, inventory=INVENTORY, configuration=N
     if set(manifest.get("configuration", {})) != configuration:
         raise ValueError("Formatter configuration coverage changed; explicit review required")
     for name, expected in manifest["configuration"].items():
-        original = git(root, "show", f"{anchor}:{name}")
+        configuration_anchor = REVIEWED_CONFIGURATION.get(name, anchor)
+        git(root, "merge-base", "--is-ancestor", configuration_anchor, "HEAD")
+        original = git(root, "show", f"{configuration_anchor}:{name}")
         if digest(original) != expected or digest(safe_path(root, name).read_bytes()) != expected:
             raise ValueError(f"Formatter configuration changed: {name}; review/invalidate baseline")
     # Nested .editorconfig files must not override the frozen rules unnoticed.
@@ -95,7 +99,9 @@ def validate(root, manifest, anchor=ANCHOR, inventory=INVENTORY, configuration=N
             raise ValueError(f"New legacy exemption forbidden: {name}")
         if name in deleted or name not in tracked:
             raise ValueError(f"Deleted/reintroduced baseline entry must be retired: {name}")
-        original = git(root, "show", f"{anchor}:{name}")
+        configuration_anchor = REVIEWED_CONFIGURATION.get(name, anchor)
+        git(root, "merge-base", "--is-ancestor", configuration_anchor, "HEAD")
+        original = git(root, "show", f"{configuration_anchor}:{name}")
         if expected != digest(original):
             raise ValueError(f"Baseline hash differs from approved source: {name}")
         path = safe_path(root, name)

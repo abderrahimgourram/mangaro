@@ -4,6 +4,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import check_baseline as policy
 
@@ -156,6 +157,20 @@ class BaselineTests(unittest.TestCase):
         (self.root / "link.kt").symlink_to(self.root / self.legacy)
         with self.assertRaisesRegex(ValueError, "Nonregular"):
             policy.safe_path(self.root, "link.kt")
+
+    def test_reviewed_snapshot_still_rejects_unreviewed_edits(self):
+        self.write("build.gradle.kts", "// reviewed release configuration\n")
+        self.commit("explicit configuration review")
+        reviewed = self.run_git("rev-parse", "HEAD").strip()
+        self.manifest["configuration"]["build.gradle.kts"] = policy.digest(
+            (self.root / "build.gradle.kts").read_bytes())
+        with patch.dict(policy.REVIEWED_CONFIGURATION, {"build.gradle.kts": reviewed}):
+            self.assertEqual([self.legacy, self.ad], self.check())
+            self.write("build.gradle.kts", "// unreviewed suppression\n")
+            self.manifest["configuration"]["build.gradle.kts"] = policy.digest(
+                (self.root / "build.gradle.kts").read_bytes())
+            with self.assertRaisesRegex(ValueError, "configuration changed"):
+                self.check()
 
 
 if __name__ == "__main__":

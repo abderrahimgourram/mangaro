@@ -3,7 +3,7 @@
   "approved_at": "2026-10-20",
   "configuration": {
     ".editorconfig": "514a16c8f5313fc58127f890f40e5e855f55bd612d7cc51880cf8c23e421dca3",
-    "app/build.gradle.kts": "652a9d9e2cf8dcd800c2e04615b1df00bbd96626c83258258c6b3fef409e0edf",
+    "app/build.gradle.kts": "89c8a1c191da36749d5d3e480f5746cdee9725bc1cd5345be8aaaaca2ce46353",
     "baseline-profile/build.gradle.kts": "cc01fc7889193df16b5bf3adaa36721b248fd16c0e3af60874339c788d2abac6",
     "build.gradle.kts": "33bf614b650eae30c1dcf8f59529129859b275e4ca886342045a0c5311d8924f",
     "core-metadata/build.gradle.kts": "861d90ed86ce537f36bfc11fa0f47079bf79c91af719fe9bbb5d305e9abd5fec",
