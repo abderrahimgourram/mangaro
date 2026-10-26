@@ -23,9 +23,110 @@ internal object WorkIdentityDiagnostics {
                 android.util.Log.d("MangaroSearchPublic", "$index:$chunk")
             }
         }
+        traceObserver = { event ->
+            event.chunked(3000).forEachIndexed { index, chunk ->
+                android.util.Log.d("MangaroIdentityTrace", "$index:$chunk")
+            }
+        }
     }
 
     @Volatile var observer: ((String) -> Unit)? = null
+
+    @Volatile var traceObserver: ((String) -> Unit)? = null
+
+    /** Actual comparison/attachment events, bounded by the resolver; public edition metadata only. */
+    fun comparison(stage: String, a: SearchWorkCandidate, b: SearchWorkCandidate, decision: WorkIdentityDecision) {
+        val sink = traceObserver ?: return
+        runCatching {
+            sink(
+                buildJsonObject {
+                    put("stage", stage)
+                    put("leftSource", publicSource(a.source))
+                    put("leftRoute", route(a.catalogIdentity?.route ?: a.id))
+                    put("rightSource", publicSource(b.source))
+                    put("rightRoute", route(b.catalogIdentity?.route ?: b.id))
+                    put("decision", decision.verdict.name)
+                    put("reason", decision.reason)
+                }.toString(),
+            )
+        }
+    }
+
+    fun groups(stage: String, groups: Map<String, List<SearchWorkCandidate>>) {
+        val sink = traceObserver ?: return
+        runCatching {
+            sink(
+                buildJsonObject {
+                    put("stage", stage)
+                    put(
+                        "groups",
+                        buildJsonArray {
+                            groups.entries.take(100).forEach { (key, members) ->
+                                add(
+                                    buildJsonObject {
+                                        put("keyDigest", digest(key))
+                                        put(
+                                            "members",
+                                            buildJsonArray {
+                                                members.take(32).forEach { c ->
+                                                    add(
+                                                        buildJsonObject {
+                                                            put("source", publicSource(c.source))
+                                                            put("route", route(c.catalogIdentity?.route ?: c.id))
+                                                        },
+                                                    )
+                                                }
+                                            },
+                                        )
+                                    },
+                                )
+                            }
+                        },
+                    )
+                }.toString(),
+            )
+        }
+    }
+
+    fun cards(rows: List<eu.kanade.tachiyomi.ui.browse.source.globalsearch.RankedSearchResult>) {
+        val sink = traceObserver ?: return
+        runCatching {
+            sink(
+                buildJsonObject {
+                    put("stage", "search-ui-projection")
+                    put(
+                        "cards",
+                        buildJsonArray {
+                            rows.take(100).forEach { row ->
+                                add(
+                                    buildJsonObject {
+                                        put("keyDigest", digest(row.workKey.orEmpty()))
+                                        put("source", row.manga.source.toString())
+                                        put("route", route(row.manga.url))
+                                        put("alternativeCount", row.alternatives.size)
+                                    },
+                                )
+                            }
+                        },
+                    )
+                }.toString(),
+            )
+        }
+    }
+
+    fun navigation(key: String?, source: String, destination: String) {
+        val sink = traceObserver ?: return
+        runCatching {
+            sink(
+                buildJsonObject {
+                    put("stage", "actual-card-click")
+                    put("keyDigest", digest(key.orEmpty()))
+                    put("source", source)
+                    put("route", route(destination))
+                }.toString(),
+            )
+        }
+    }
 
     fun observe(
         query: String,
@@ -37,6 +138,10 @@ internal object WorkIdentityDiagnostics {
     }
 
     private fun safe(value: String) = value.filterNot { it.isISOControl() }.take(512)
+    private fun publicSource(value: String) = value.takeIf { it.matches(Regex("[A-Za-z0-9_.-]{1,80}")) }
+        ?: "[redacted-source]"
+    private fun digest(value: String) = java.security.MessageDigest.getInstance("SHA-256")
+        .digest(value.toByteArray()).joinToString("") { "%02x".format(it) }
 
     private fun route(value: String): String =
         runCatching {
@@ -77,6 +182,15 @@ internal object WorkIdentityDiagnostics {
                                 put("title", safe(c.title))
                                 put("normalizedTitle", WorkIdentityNormalizer.title(c.title, c.kind))
                                 put("kind", c.kind.name)
+                                put("canonicalMedium", c.kind.name)
+                                put(
+                                    "declaredFormatMedium",
+                                    tachiyomi.domain.manga.service.CatalogFormatCompatibility.describe(
+                                        c.format,
+                                    ).medium.name,
+                                )
+                                put("cardKeyDigest", digest(byId[c.id].orEmpty()))
+                                put("cacheEditionKeyDigest", digest(c.catalogIdentity?.editionKey.orEmpty()))
                                 val reference = c.catalogIdentity?.route ?: c.id.substringAfter(':', c.id)
                                 val classification = tachiyomi.domain.manga.model.WorkCandidateClassification.classify(
                                     reference,
@@ -175,6 +289,10 @@ internal object WorkIdentityDiagnostics {
                                 val b = rows[j]
                                 if (!seen.add(setOf(a.id, b.id))) continue
                                 val d = resolver.decide(a, b)
+                                val presentation = resolver.presentationDecision(
+                                    resolver.evidence(a, null),
+                                    resolver.evidence(b, null),
+                                )
                                 budget--
                                 val ak = AtlasCandidateIndex.keys(resolver.evidence(a, null))
                                 val bk = AtlasCandidateIndex.keys(resolver.evidence(b, null))
@@ -193,6 +311,8 @@ internal object WorkIdentityDiagnostics {
                                         )
                                         put("decision", d.verdict.name)
                                         put("reason", d.reason)
+                                        put("presentationDecision", presentation.verdict.name)
+                                        put("presentationReason", presentation.reason)
                                         put("retrievableByIndex", families.isNotEmpty())
                                         put("sharedBlockingFamilies", JsonArray(families.map(::JsonPrimitive)))
                                         put(

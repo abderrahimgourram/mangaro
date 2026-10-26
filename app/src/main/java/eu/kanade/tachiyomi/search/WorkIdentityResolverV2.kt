@@ -307,7 +307,10 @@ internal class WorkIdentityResolverV2 {
         }
         val x = WorkIdentityNormalizer.comparisonTitle(a.row)
         val y = WorkIdentityNormalizer.comparisonTitle(b.row)
-        val sharedAlias = x in b.names && y in a.names &&
+        // A declared translation is directional evidence: the other provider need not
+        // repeat the translated title. Every earlier contradiction still vetoes the
+        // pair, and complete-link clustering checks every member independently.
+        val sharedAlias = (x in b.names || y in a.names) &&
             a.names.intersect(b.names).any(WorkIdentityNormalizer::distinctive)
         if ((
                 x == y && (

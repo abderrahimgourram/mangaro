@@ -494,6 +494,11 @@ fun MangaroSearchScreen(
                             onClick = {
                                 keyboard?.hide()
                                 focusManager.clearFocus()
+                                eu.kanade.tachiyomi.search.WorkIdentityDiagnostics.navigation(
+                                    initial.workKey,
+                                    manga.source.toString(),
+                                    manga.url,
+                                )
                                 onClickManga(manga)
                             },
                             onLongClick = if (initial.alternatives.isNotEmpty()) {

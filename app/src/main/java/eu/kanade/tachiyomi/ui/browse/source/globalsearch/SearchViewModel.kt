@@ -128,7 +128,7 @@ abstract class SearchViewModel(
                         it.manga.url == work.selected.manga.url
                 },
             )
-        }
+        }.also { eu.kanade.tachiyomi.search.WorkIdentityDiagnostics.cards(it) }
     }
 
     @Synchronized private fun enrichResults(request: Long = sessions.generation()) {

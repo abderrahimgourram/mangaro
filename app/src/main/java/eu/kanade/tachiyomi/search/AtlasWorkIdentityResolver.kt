@@ -51,12 +51,14 @@ internal class AtlasWorkIdentityResolver(
     private val verified = WorkIdentityVerdict.VERIFIED_SAME_WORK
     private val likely = WorkIdentityVerdict.LIKELY_SAME_WORK
     private val missing = setOf("missing-independent-creator-corroboration", "missing-distinctive-shared-name")
+    private var traceBudget = 0
 
     fun resolve(
         input: List<SearchWorkCandidate>,
         established: Map<String, List<SearchWorkCandidate>>? = null,
         previous: List<SearchWorkGroup> = emptyList(),
     ): WorkIdentityResolverV2.Resolution {
+        traceBudget = if (WorkIdentityDiagnostics.traceObserver != null) 96 else 0
         val memberships = established.orEmpty().flatMap { (key, rows) -> rows.map { it.id to key } }.toMap()
         val evidence = input.map {
             policy.evidence(it, memberships[it.id])
@@ -77,6 +79,16 @@ internal class AtlasWorkIdentityResolver(
         }
 
         val clusters = mutableListOf<MutableList<Core>>()
+        if (WorkIdentityDiagnostics.traceObserver !=
+            null
+        ) {
+            WorkIdentityDiagnostics.groups(
+                "verified-cores",
+                cores.mapIndexed { i, core ->
+                    i.toString() to core.rows.map { it.row }
+                }.toMap(),
+            )
+        }
         val index = AtlasCandidateIndex()
         val relations = mutableMapOf<Int, WorkIdentityDecision>()
         cores.forEach { core ->
@@ -158,6 +170,14 @@ internal class AtlasWorkIdentityResolver(
             groups[key] = rows
             decisions[key] = decision
         }
+        if (WorkIdentityDiagnostics.traceObserver !=
+            null
+        ) {
+            WorkIdentityDiagnostics.groups(
+                if (presentation) "presentation-clusters" else "canonical-clusters",
+                groups,
+            )
+        }
         return WorkIdentityResolverV2.Resolution(groups, decisions)
     }
 
@@ -168,6 +188,15 @@ internal class AtlasWorkIdentityResolver(
         for (x in a.signatures.values) {
             for (y in b.signatures.values) {
                 val decision = if (presentation) policy.presentationDecision(x, y) else policy.decide(x, y)
+                if (traceBudget > 0) {
+                    traceBudget--
+                    WorkIdentityDiagnostics.comparison(
+                        if (presentation) "presentation-attachment" else "canonical-attachment",
+                        x.row,
+                        y.row,
+                        decision,
+                    )
+                }
                 if (decision.verdict == insufficient && decision.reason !in missing) return decision
                 if (decision.verdict == insufficient) missingPair = true
                 if (decision.verdict == likely) corroboration = decision

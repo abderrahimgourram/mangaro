@@ -18,6 +18,11 @@ internal class SearchResultPresentationFilter(
         lastCandidates = null
         lastEstablished = null
         selection.restore(groups)
+        if (WorkIdentityDiagnostics.traceObserver !=
+            null
+        ) {
+            WorkIdentityDiagnostics.groups("cache-restore", groups.associate { it.key to it.members })
+        }
     }
 
     @Synchronized fun present(
@@ -48,6 +53,17 @@ internal class SearchResultPresentationFilter(
                 identityDecision = decision,
             )
         }.also {
+            if (WorkIdentityDiagnostics.traceObserver !=
+                null
+            ) {
+                WorkIdentityDiagnostics.groups(
+                    "final-card-groups",
+                    it.associate { group ->
+                        group.key to
+                            group.members
+                    },
+                )
+            }
             selection.restore(it)
             lastCandidates = unique
             lastEstablished = establishedNovelGroups?.mapValues { (_, rows) -> rows.toList() }
