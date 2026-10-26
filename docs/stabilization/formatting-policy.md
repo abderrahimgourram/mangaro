@@ -67,3 +67,14 @@ is required. That production guard stays intact; private keys are not copied to
 CI, no substitute key is created, and no APK is uploaded by this validation job.
 Release/publication workflows and the production signing/version settings are
 unchanged. This is release-code verification, not a signed-artifact acceptance.
+
+## Reviewed 2.5.9 configuration snapshot
+
+PR15 pins only `app/build.gradle.kts` to commit
+`36a911ea8` (the full SHA is in `REVIEWED_CONFIGURATION`). The reviewed diff changes
+2.5.9/code49 and separates tagged external TeamX health reports. It changes no
+formatter rules, targets, plugins, dependencies or signing. The validator requires
+that exact committed configuration and ancestry; manifest-hash rewriting still
+fails. All other configuration and the original legacy inventory retain the
+original anchor. A new regression proves further unreviewed edits remain rejected.
+This is an explicit release configuration review, not automatic baseline renewal.

@@ -28,7 +28,9 @@ internal class AtlasCandidateIndex {
         fun keys(e: WorkIdentityResolverV2.Evidence, presentation: Boolean = false): Set<String> = buildSet {
             if (presentation) {
                 add("ui-name:${e.row.kind}:${WorkIdentityNormalizer.comparisonTitle(e.row)}")
-                e.names.filter(WorkIdentityNormalizer::distinctive).forEach { add("ui-name:${e.row.kind}:$it") }
+                e.names.filter(WorkIdentityNormalizer::declaredPresentationName).forEach {
+                    add("ui-name:${e.row.kind}:$it")
+                }
             }
             addAll(verifiedKeys(e))
             for (name in e.names) {

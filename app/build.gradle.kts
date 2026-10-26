@@ -96,8 +96,8 @@ android {
         manifestPlaceholders["accountAuthScheme"] = "mangaro"
 
         buildConfigField("boolean", "SMARTLINK_V3_ENABLED", "true")
-        versionCode = 48
-        versionName = "2.5.6"
+        versionCode = 49
+        versionName = "2.5.9"
 
         buildConfigField("String", "COMMIT_COUNT", "\"${getLatestCommitCount()}\"")
         buildConfigField("String", "COMMIT_SHA", "\"${getLatestCommitSha()}\"")
@@ -603,5 +603,17 @@ androidComponents {
         // Only excluding in standard flavor because this breaks
         // Layout Inspector's Compose tree
         it.packaging.resources.excludes.add("META-INF/*.version")
+    }
+}
+
+// External availability is reported separately; fixture contracts remain mandatory.
+val teamxLiveOnly = providers.gradleProperty("teamxLiveOnly").orNull == "true"
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    useJUnitPlatform {
+        if (teamxLiveOnly) includeTags("teamx-live") else excludeTags("teamx-live")
+    }
+    if (teamxLiveOnly) {
+        reports.junitXml.outputLocation.set(layout.buildDirectory.dir("test-results/teamxLive"))
+        reports.html.outputLocation.set(layout.buildDirectory.dir("reports/tests/teamxLive"))
     }
 }

@@ -109,6 +109,16 @@ internal object WorkIdentityNormalizer {
     // Deliberately conservative gate, not a calibrated probability: two informative words AND a creator.
     fun distinctive(name: String) = name.split(' ').count { it !in generic && it.length >= 3 } >= 2
 
+    /** Retrieval/presentation only: a declared full alias can contain a short name token.
+     * Two informative tokens, including one long token, exclude generic or acronym-only bridges.
+     * This does not relax canonical identity, or supply an alias absent from source metadata.
+     */
+    fun declaredPresentationName(name: String): Boolean {
+        if (distinctive(name)) return true
+        val tokens = name.split(' ').filter { it !in generic && it.length >= 2 }
+        return name.length >= 8 && tokens.size >= 2 && tokens.any { it.length >= 4 }
+    }
+
     // Restore the historical exact-title + named-creator case, without its title-only path.
     // Short aliases cannot bridge different main titles or generic/placeholder names.
     fun specificSingleWord(name: String) = name.length >= 3 && ' ' !in name && name !in generic && name !in placeholders
@@ -311,7 +321,7 @@ internal class WorkIdentityResolverV2 {
         // repeat the translated title. Every earlier contradiction still vetoes the
         // pair, and complete-link clustering checks every member independently.
         val sharedAlias = (x in b.names || y in a.names) &&
-            a.names.intersect(b.names).any(WorkIdentityNormalizer::distinctive)
+            a.names.intersect(b.names).any(WorkIdentityNormalizer::declaredPresentationName)
         if ((
                 x == y && (
                     WorkIdentityNormalizer.distinctive(x) ||

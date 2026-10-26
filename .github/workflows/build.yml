@@ -138,6 +138,30 @@ jobs:
           :baseline-profile:compileBenchmarkReleaseKotlin
           -Pinclude-telemetry -Penable-updater --max-workers=2
 
+      # External provider health is explicit and non-blocking. Never count it as
+      # a fixture/contract pass; unchanged live assertions still fail normally.
+      - name: TeamX external availability (reported separately)
+        id: teamx_live
+        continue-on-error: true
+        run: ./gradlew :app:testDebugUnitTest -PteamxLiveOnly=true --max-workers=2
+
+      - name: Report TeamX availability outcome
+        if: always() && steps.teamx_live.outcome != 'skipped'
+        env:
+          TEAMX_OUTCOME: ${{ steps.teamx_live.outcome }}
+        run: |
+          echo "### External TeamX availability: $TEAMX_OUTCOME" >> "$GITHUB_STEP_SUMMARY"
+          echo "Separate external health probe; failures are NOT successful source verification. Mandatory recorded contracts run in the unit gate." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload external availability evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: teamx-availability-${{ github.sha }}
+          path: |
+            app/build/test-results/teamxLive/
+            app/build/reports/tests/teamxLive/
+
       - name: Upload mapping
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

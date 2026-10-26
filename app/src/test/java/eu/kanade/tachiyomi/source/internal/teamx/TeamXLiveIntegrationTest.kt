@@ -9,9 +9,11 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldStartWith
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
+import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 import java.util.concurrent.TimeUnit
 
+@Tag("teamx-live")
 class TeamXLiveIntegrationTest {
 
     private val client = OkHttpClient.Builder()
@@ -48,7 +50,10 @@ class TeamXLiveIntegrationTest {
         runBlocking {
             val page = teamX.getSearchManga(1, "fast", FilterList())
             page.mangas.size shouldBeGreaterThanOrEqual 1
-            val match = page.mangas.firstOrNull { it.url == "/series/fast-break" || it.title.lowercase().contains("fast break") }
+            val match = page.mangas.firstOrNull {
+                it.url == "/series/fast-break" ||
+                    it.title.lowercase().contains("fast break")
+            }
             match shouldBe match
             page.mangas.first().url shouldStartWith "/series/"
         }
@@ -85,7 +90,9 @@ class TeamXLiveIntegrationTest {
             val distinctUrls = update.chapters.map { it.url }.distinct()
             distinctUrls.size shouldBe update.chapters.size
 
-            println("TeamX Large Series Parity Result: ${update.chapters.size} chapters fetched in ${durationMs}ms across paginated pages with max 2 concurrency")
+            println(
+                "TeamX Large Series Parity Result: ${update.chapters.size} chapters fetched in ${durationMs}ms across paginated pages with max 2 concurrency",
+            )
         }
     }
 
