@@ -72,7 +72,12 @@ abstract class HtmlNovelSource(protected val http: NovelHttp) : NovelSource {
             )
         }.filter { it.title.isNotBlank() }
     }
-    protected fun text(doc: Document, selector: String, allowShortText: Boolean = false): NovelText {
+    protected fun text(
+        doc: Document,
+        selector: String,
+        allowShortText: Boolean = false,
+        allowIllustrations: Boolean = true,
+    ): NovelText {
         val content = doc.selectFirst(selector)?.clone()
             ?: throw NovelSourceFailure(
                 "هذا الفصل غير متاح حاليًا. يمكنك فتحه في الموقع.",
@@ -102,7 +107,7 @@ abstract class HtmlNovelSource(protected val http: NovelHttp) : NovelSource {
             )
                 .containsMatchIn(it.attr("style"))
         }.forEach(Element::remove)
-        return extractNovelContent(content, allowShortText)
+        return extractNovelContent(content, allowShortText, allowIllustrations)
     }
 }
 
@@ -129,7 +134,13 @@ class KolNovelSource(http: NovelHttp) : HtmlNovelSource(http) {
             a.text().takeIf {
                 it.isNotBlank()
             }?.let {
-                Novel(id, a.absUrl("href"), it, image(card.selectFirst(selector("catalogCover", ".mdthumb img"))))
+                Novel(
+                    id,
+                    a.absUrl("href"),
+                    it,
+                    image(card.selectFirst(selector("catalogCover", ".mdthumb img"))),
+                    contentFormat = NovelContentTypeClassifier.htmlFormat(card),
+                )
             }
         }.distinctBy { it.id }
         return NovelPage(entries, if (next(d)) page + 1 else null, genres = genres(d, "a[href*='/genre/']"))
@@ -169,6 +180,10 @@ class KolNovelSource(http: NovelHttp) : HtmlNovelSource(http) {
             genres = d.select(".sertogenre a, a[href*='/genre/']").map { it.text() }.distinct(),
             chapterCount = d.select(".eplister li[data-id]").size.takeIf { it > 0 },
             originalTitle = d.selectFirst(selector("originalTitle", ".alter"))?.text()?.takeIf { it.isNotBlank() },
+            contentFormat = NovelContentTypeClassifier.merge(
+                NovelContentTypeClassifier.htmlFormat(d),
+                novel.contentFormat,
+            ),
         )
     }
     override suspend fun chapters(novel: Novel, page: Int) = withContext(Dispatchers.IO) {
@@ -201,6 +216,13 @@ class CeneleSource(http: NovelHttp) : HtmlNovelSource(http) {
     override val id = "novel.cenele"
     override val name = "فضاء الروايات"
     override val baseUrl = "https://cenele.com/"
+
+    /** Work pages expose a controlled kicker; cards expose the same leading taxonomy label. Only
+     * the first exact token is evidence, and the rest of the title is never matched. */
+    private fun format(root: Element?, label: String? = null): NovelContentFormat? =
+        NovelContentTypeClassifier.htmlFormat(root) ?: root?.selectFirst(".nhv-novel-kicker")?.let {
+            NovelContentTypeClassifier.leadingTaxonomy(it.text())
+        } ?: NovelContentTypeClassifier.leadingTaxonomy(label)
     private fun cards(d: Document, page: Int): NovelPage {
         val cards = d.select(
             selector("catalogCards", ".nhv-library-card__cover, .nhv-cover, .tab-thumb a, .item-thumb a"),
@@ -213,7 +235,9 @@ class CeneleSource(http: NovelHttp) : HtmlNovelSource(http) {
             ) {
                 null
             } else {
-                Novel(id, link, title, image(image))
+                val card = a.closest("article") ?: a.parent()
+                val label = a.attr("aria-label").ifBlank { a.attr("title") }
+                Novel(id, link, title, image(image), contentFormat = format(card, label))
             }
         }.distinctBy { it.id }
         return NovelPage(cards, if (next(d)) page + 1 else null, genres = genres(d, "a[href*='/cont-genre/']"))
@@ -262,6 +286,7 @@ class CeneleSource(http: NovelHttp) : HtmlNovelSource(http) {
             )?.text()?.takeIf {
                 it.isNotBlank()
             },
+            contentFormat = NovelContentTypeClassifier.merge(format(d), novel.contentFormat),
         )
     }
     private data class ChapterContext(val config: JsonObject, val volumes: List<JsonObject>, val at: Long)

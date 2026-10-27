@@ -20,6 +20,9 @@ buildscript {
             add("classpath", "org.bouncycastle:bcutil-jdk18on:1.85") {
                 because("Keep Bouncy Castle build-time modules aligned")
             }
+            add("classpath", "com.google.guava:guava:33.7.2-jre") {
+                because("GHSA-xxph-c9ww-hj94 / CVE-2026-102554: bound deserialization allocation")
+            }
         }
     }
 }

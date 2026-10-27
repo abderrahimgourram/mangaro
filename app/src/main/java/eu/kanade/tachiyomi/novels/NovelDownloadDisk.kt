@@ -31,13 +31,25 @@ class NovelDownloadDisk(private val root: File) {
         val active = ConcurrentHashMap.newKeySet<String>()
         val activeOwners = ConcurrentHashMap.newKeySet<String>()
         val assetGuard = Any()
-        data class AssetLock(val mutex: kotlinx.coroutines.sync.Mutex = kotlinx.coroutines.sync.Mutex(), var users: Int = 0)
+        data class AssetLock(
+            val mutex: kotlinx.coroutines.sync.Mutex = kotlinx.coroutines.sync.Mutex(),
+            var users: Int = 0,
+        )
         val assetLocks = mutableMapOf<String, AssetLock>()
     }
     private val temporary get() = File(root, "temporary")
-    private fun target(editionId: String, chapterId: String) = File(File(root, "chapters/" + novelDigest(editionId)), novelDigest(chapterId) + ".json.gz")
-    @Serializable private data class StoredChapter(val editionId: String, val chapterId: String, val checksum: String, val text: NovelText,
-        val sourceContract: String? = null)
+    private fun target(editionId: String, chapterId: String) = File(
+        File(root, "chapters/" + novelDigest(editionId)),
+        novelDigest(chapterId) + ".json.gz",
+    )
+
+    @Serializable private data class StoredChapter(
+        val editionId: String,
+        val chapterId: String,
+        val checksum: String,
+        val text: NovelText,
+        val sourceContract: String? = null,
+    )
 
     fun read(editionId: String, chapterId: String): NovelText? {
         val file = target(editionId, chapterId)
@@ -59,12 +71,22 @@ class NovelDownloadDisk(private val root: File) {
             check(stored.editionId == editionId && stored.chapterId == chapterId)
             check(stored.checksum == novelDigest(json.encodeToString(stored.text)))
             var text = stored.text
-            if (editionId == "novel.cenele" || editionId.startsWith("novel.cenele:") || editionId.startsWith("novel.cenele/")) {
+            if (editionId == "novel.cenele" || editionId.startsWith("novel.cenele:") ||
+                editionId.startsWith("novel.cenele/")
+            ) {
                 text = CeneleSanitizer.sanitize(text)
             }
             val sea = editionId.startsWith(SeaNovelSource.SOURCE_ID + ":")
-            validate(text, allowShortText = sea || editionId.startsWith(MknovSource.SOURCE_ID + ":") || (editionId.startsWith(SunovelsSource.SOURCE_ID + ":") &&
-                stored.sourceContract == SunovelsSource.PARSER_VERSION), allowIllustrations = isCenele(editionId))
+            validate(
+                text,
+                allowShortText =
+                sea || editionId.startsWith(MknovSource.SOURCE_ID + ":") ||
+                    (
+                        editionId.startsWith(SunovelsSource.SOURCE_ID + ":") &&
+                            stored.sourceContract == SunovelsSource.PARSER_VERSION
+                        ),
+                allowIllustrations = true,
+            )
             if (sea) SeaNovelSource.validateText(text)
             if (editionId.startsWith(MknovSource.SOURCE_ID + ":")) MknovSource.validateText(text)
             if (editionId.startsWith(SunovelsSource.SOURCE_ID + ":")) SunovelsSource.validateText(text)
@@ -88,28 +110,61 @@ class NovelDownloadDisk(private val root: File) {
         private var committed = false
         fun commit(mayCommit: () -> Boolean) {
             check(mayCommit()) { "Novel download cancelled before commit" }
-            try { Files.move(part.toPath(), destination.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING) }
-            catch (_: AtomicMoveNotSupportedException) { Files.move(part.toPath(), destination.toPath(), StandardCopyOption.REPLACE_EXISTING) }
+            try {
+                Files.move(
+                    part.toPath(),
+                    destination.toPath(),
+                    StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING,
+                )
+            } catch (
+                _: AtomicMoveNotSupportedException,
+            ) {
+                Files.move(part.toPath(), destination.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            }
             committed = true
         }
         override fun close() {
-            try { if (!committed) rollbackImages() } finally { finishImages(); active.remove(part.absolutePath); part.delete() }
+            try {
+                if (!committed) rollbackImages()
+            } finally {
+                finishImages()
+                active.remove(part.absolutePath)
+                part.delete()
+            }
         }
     }
 
     // Serialization, compression and fsync are outside the queue state lock. Only the final
     // atomic rename is guarded with the task generation check, so pause/cancel stay responsive.
     internal fun prepare(editionId: String, chapterId: String, text: NovelText): PreparedChapter {
-        val sanitized = if (editionId == "novel.cenele" || editionId.startsWith("novel.cenele:") || editionId.startsWith("novel.cenele/")) {
+        val sanitized = if (editionId == "novel.cenele" || editionId.startsWith("novel.cenele:") ||
+            editionId.startsWith("novel.cenele/")
+        ) {
             CeneleSanitizer.sanitize(text)
-        } else text
+        } else {
+            text
+        }
         val sea = editionId.startsWith(SeaNovelSource.SOURCE_ID + ":")
-        validate(sanitized, allowShortText = sea || editionId.startsWith(MknovSource.SOURCE_ID + ":") || editionId.startsWith(SunovelsSource.SOURCE_ID + ":"), allowIllustrations = isCenele(editionId))
+        validate(
+            sanitized,
+            allowShortText =
+            sea || editionId.startsWith(MknovSource.SOURCE_ID + ":") ||
+                editionId.startsWith(SunovelsSource.SOURCE_ID + ":"),
+            allowIllustrations = true,
+        )
         if (sea) SeaNovelSource.validateText(sanitized)
         if (editionId.startsWith(MknovSource.SOURCE_ID + ":")) MknovSource.validateText(sanitized)
         if (editionId.startsWith(SunovelsSource.SOURCE_ID + ":")) SunovelsSource.validateText(sanitized)
-        val value = StoredChapter(editionId, chapterId, novelDigest(json.encodeToString(sanitized)), sanitized,
-            sourceContract = SunovelsSource.PARSER_VERSION.takeIf { editionId.startsWith(SunovelsSource.SOURCE_ID + ":") })
+        val value = StoredChapter(
+            editionId,
+            chapterId,
+            novelDigest(json.encodeToString(sanitized)),
+            sanitized,
+            sourceContract = SunovelsSource.PARSER_VERSION.takeIf {
+                editionId.startsWith(SunovelsSource.SOURCE_ID + ":")
+            },
+        )
         val bytes = json.encodeToString(value).toByteArray()
         check(bytes.size <= 8 * 1024 * 1024)
         temporary.mkdirs()
@@ -117,12 +172,20 @@ class NovelDownloadDisk(private val root: File) {
         active.add(part.absolutePath)
         try {
             FileOutputStream(part).use { file ->
-                GZIPOutputStream(file).use { gzip -> gzip.write(bytes); gzip.finish(); file.fd.sync() }
+                GZIPOutputStream(file).use { gzip ->
+                    gzip.write(bytes)
+                    gzip.finish()
+                    file.fd.sync()
+                }
             }
             val destination = target(editionId, chapterId)
             destination.parentFile!!.mkdirs()
             return PreparedChapter(part, destination)
-        } catch (e: Exception) { active.remove(part.absolutePath); part.delete(); throw e }
+        } catch (e: Exception) {
+            active.remove(part.absolutePath)
+            part.delete()
+            throw e
+        }
     }
 
     fun write(editionId: String, chapterId: String, text: NovelText, mayCommit: () -> Boolean = { true }) {
@@ -143,18 +206,26 @@ class NovelDownloadDisk(private val root: File) {
         text.blocks.filter { it.kind == NovelBlockKind.IMAGE }.all { it.imageUrl?.let(::localIllustration) != null }
 
     /** Image work stays in the existing chapter worker, outside its queue mutex. */
-    internal suspend fun prepareWithIllustrations(edition: String, chapter: String, text: NovelText,
-        fetch: suspend (String) -> ByteArray): PreparedChapter {
+    internal suspend fun prepareWithIllustrations(
+        edition: String,
+        chapter: String,
+        text: NovelText,
+        fetch: suspend (String) -> ByteArray,
+    ): PreparedChapter {
         val prepared = prepare(edition, chapter, text)
         prepared.imagesComplete = text.blocks.none { it.kind == NovelBlockKind.IMAGE && it.imageUrl == null }
         val owner = ownerKey(edition, chapter)
         val ownerIdentity = root.absolutePath + "/" + owner
         val leases = mutableListOf<Lease>()
         activeOwners.add(ownerIdentity)
-        prepared.rollbackImages = { leases.forEach { lease -> synchronized(assetGuard) {
-            val ref = forward(lease.key, owner)
-            if (lease.created && ref.readTextOrNull() == lease.token) releaseAsset(lease.key, owner)
-        } } }
+        prepared.rollbackImages = {
+            leases.forEach { lease ->
+                synchronized(assetGuard) {
+                    val ref = forward(lease.key, owner)
+                    if (lease.created && ref.readTextOrNull() == lease.token) releaseAsset(lease.key, owner)
+                }
+            }
+        }
         prepared.finishImages = { activeOwners.remove(ownerIdentity) }
         try {
             for (url in text.blocks.filter { it.kind == NovelBlockKind.IMAGE }.mapNotNull { it.imageUrl }.distinct()) {
@@ -162,16 +233,20 @@ class NovelDownloadDisk(private val root: File) {
                 require(NovelHttp.allowed(url))
                 val key = novelDigest(url)
                 val lease = synchronized(assetGuard) {
-                    val ref = forward(key, owner); val created = !ref.isFile
-                    ref.parentFile!!.mkdirs(); reverse(owner, key).parentFile!!.mkdirs()
+                    val ref = forward(key, owner)
+                    val created = !ref.isFile
+                    ref.parentFile!!.mkdirs()
+                    reverse(owner, key).parentFile!!.mkdirs()
                     val token = UUID.randomUUID().toString()
                     // A fresh lease prevents cancelled generations from releasing a newer worker's reference.
-                    ref.writeText(token); reverse(owner, key).writeText("")
+                    ref.writeText(token)
+                    reverse(owner, key).writeText("")
                     Lease(key, owner, token, created)
                 }
                 leases += lease
                 val lockKey = root.absolutePath + "/" + key
-                val entry = synchronized(assetLocks) { assetLocks.getOrPut(lockKey) { AssetLock() }.also { it.users++ } }
+                val entry =
+                    synchronized(assetLocks) { assetLocks.getOrPut(lockKey) { AssetLock() }.also { it.users++ } }
                 try {
                     entry.mutex.lock()
                     try {
@@ -180,11 +255,18 @@ class NovelDownloadDisk(private val root: File) {
                             require(bytes.size in 1..12 * 1024 * 1024)
                             val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
                             android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-                            require(bounds.outWidth in 1..20000 && bounds.outHeight in 1..20000 &&
-                                bounds.outWidth.toLong() * bounds.outHeight <= 100_000_000) { "Unsupported illustration" }
+                            require(
+                                bounds.outWidth in 1..20000 && bounds.outHeight in 1..20000 &&
+                                    bounds.outWidth.toLong() * bounds.outHeight <= 100_000_000,
+                            ) {
+                                "Unsupported illustration"
+                            }
                             val decode = android.graphics.BitmapFactory.Options().apply { inSampleSize = 1 }
-                            while (bounds.outWidth / decode.inSampleSize > 2048 || bounds.outHeight / decode.inSampleSize > 2048)
+                            while (bounds.outWidth / decode.inSampleSize > 2048 ||
+                                bounds.outHeight / decode.inSampleSize > 2048
+                            ) {
                                 decode.inSampleSize *= 2
+                            }
                             val bitmap = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, decode)
                                 ?: error("Incomplete illustration")
                             bitmap.recycle()
@@ -192,41 +274,75 @@ class NovelDownloadDisk(private val root: File) {
                             val part = File(temporary, UUID.randomUUID().toString() + ".part")
                             active.add(part.absolutePath)
                             try {
-                                FileOutputStream(part).use { it.write(bytes); it.fd.sync() }
+                                FileOutputStream(part).use {
+                                    it.write(bytes)
+                                    it.fd.sync()
+                                }
                                 kotlinx.coroutines.currentCoroutineContext().ensureActive()
                                 synchronized(assetGuard) {
                                     check(forward(key, owner).isFile) { "Illustration owner removed" }
-                                    val destination = asset(key); destination.parentFile!!.mkdirs()
-                                    try { Files.move(part.toPath(), destination.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING) }
-                                    catch (_: AtomicMoveNotSupportedException) { Files.move(part.toPath(), destination.toPath(), StandardCopyOption.REPLACE_EXISTING) }
+                                    val destination = asset(key)
+                                    destination.parentFile!!.mkdirs()
+                                    try {
+                                        Files.move(
+                                            part.toPath(),
+                                            destination.toPath(),
+                                            StandardCopyOption.ATOMIC_MOVE,
+                                            StandardCopyOption.REPLACE_EXISTING,
+                                        )
+                                    } catch (
+                                        _: AtomicMoveNotSupportedException,
+                                    ) {
+                                        Files.move(
+                                            part.toPath(),
+                                            destination.toPath(),
+                                            StandardCopyOption.REPLACE_EXISTING,
+                                        )
+                                    }
                                 }
-                            } finally { active.remove(part.absolutePath); part.delete() }
+                            } finally {
+                                active.remove(part.absolutePath)
+                                part.delete()
+                            }
                         }
-                    } finally { entry.mutex.unlock() }
-                } catch (c: kotlinx.coroutines.CancellationException) { throw c }
-                catch (e: Exception) {
+                    } finally {
+                        entry.mutex.unlock()
+                    }
+                } catch (c: kotlinx.coroutines.CancellationException) {
+                    throw c
+                } catch (e: Exception) {
                     prepared.imagesComplete = false
                     android.util.Log.w("MangaroNovels", "Chapter illustration unavailable", e)
                     // A provider barrier/rate limit must not trigger a request for every remaining image.
                     if ((e as? NovelSourceFailure)?.httpStatus in setOf(401, 403, 429)) break
+                } finally {
+                    synchronized(assetLocks) { if (--entry.users == 0) assetLocks.remove(lockKey) }
                 }
-                finally { synchronized(assetLocks) { if (--entry.users == 0) assetLocks.remove(lockKey) } }
             }
             return prepared
-        } catch (e: Exception) { prepared.close(); throw e }
+        } catch (e: Exception) {
+            prepared.close()
+            throw e
+        }
     }
     private fun File.readTextOrNull() = if (isFile) runCatching { readText() }.getOrNull() else null
+
     // Called only under assetGuard. Other chapter owners always protect shared image bytes.
     private fun releaseAsset(key: String, owner: String) {
         val ref = forward(key, owner)
         check(!ref.exists() || ref.delete())
         val back = reverse(owner, key)
         check(!back.exists() || back.delete())
-        if (ref.parentFile?.listFiles().isNullOrEmpty()) { asset(key).delete(); ref.parentFile?.delete() }
+        if (ref.parentFile?.listFiles().isNullOrEmpty()) {
+            asset(key).delete()
+            ref.parentFile?.delete()
+        }
     }
     private fun removeIllustrationOwner(owner: String) = synchronized(assetGuard) {
         val directory = File(root, "illustration-owners/$owner")
-        directory.listFiles().orEmpty().filter { it.name.matches(Regex("[a-f0-9]{64}\\.ref")) }.forEach { releaseAsset(it.name.removeSuffix(".ref"), owner) }
+        directory.listFiles().orEmpty().filter {
+            it.name.matches(Regex("[a-f0-9]{64}\\.ref"))
+        }.forEach { releaseAsset(it.name.removeSuffix(".ref"), owner) }
         directory.delete()
     }
 
@@ -235,30 +351,44 @@ class NovelDownloadDisk(private val root: File) {
         var deleted = 0
         temporary.listFiles().orEmpty().take(2000).forEach { file ->
             if (cancelled()) return deleted
-            if (file.isFile && file.name.endsWith(".part") && file.absolutePath !in active && now - file.lastModified() > 86_400_000 && file.delete()) deleted++
+            if (file.isFile && file.name.endsWith(".part") && file.absolutePath !in active &&
+                now - file.lastModified() > 86_400_000 &&
+                file.delete()
+            ) {
+                deleted++
+            }
         }
         File(root, "illustration-owners").listFiles().orEmpty().take(100).forEach { owner ->
             if (cancelled()) return deleted
-            if (!owner.name.matches(Regex("[a-f0-9]{64}_[a-f0-9]{64}")) || root.absolutePath + "/" + owner.name in activeOwners) return@forEach
-            val chapter = File(root, "chapters/${owner.name.substringBefore('_')}/${owner.name.substringAfter('_')}.json.gz")
+            if (!owner.name.matches(Regex("[a-f0-9]{64}_[a-f0-9]{64}")) ||
+                root.absolutePath + "/" + owner.name in activeOwners
+            ) {
+                return@forEach
+            }
+            val chapter =
+                File(root, "chapters/${owner.name.substringBefore('_')}/${owner.name.substringAfter('_')}.json.gz")
             val newest = owner.listFiles().orEmpty().maxOfOrNull { it.lastModified() } ?: owner.lastModified()
             if (!chapter.isFile && now - newest > 86_400_000) removeIllustrationOwner(owner.name)
         }
         return deleted
     }
-    private fun isCenele(editionId: String) = editionId == "novel.cenele" ||
-        editionId.startsWith("novel.cenele:") || editionId.startsWith("novel.cenele/")
-
     private fun validate(text: NovelText, allowShortText: Boolean = false, allowIllustrations: Boolean = false) {
-        check((allowIllustrations && text.hasReadableIllustration()) ||
-            (if (allowShortText) text.paragraphs.isNotEmpty() && text.paragraphs.any { p -> p.any(Char::isLetter) }
-            else text.paragraphs.size >= 3 && text.paragraphs.sumOf { it.length } >= 200)) { "Incomplete novel chapter" }
+        check(
+            if (allowIllustrations) {
+                text.hasReadableContent(allowShortText)
+            } else {
+                text.hasValidContent(allowShortText)
+            },
+        ) { "Incomplete novel chapter" }
         check(text.markup.isEmpty() || text.markup.size == text.paragraphs.size)
         check(text.blocks.size <= 20000)
         check(text.blocks.filter { it.kind == NovelBlockKind.IMAGE }.size <= 256)
         text.blocks.forEach { block ->
-            if (block.kind == NovelBlockKind.IMAGE) require(block.imageUrl == null || NovelHttp.allowed(block.imageUrl))
-            else require(block.paragraph != null && block.paragraph in text.paragraphs.indices)
+            if (block.kind == NovelBlockKind.IMAGE) {
+                require(block.imageUrl == null || NovelHttp.allowed(block.imageUrl))
+            } else {
+                require(block.paragraph != null && block.paragraph in text.paragraphs.indices)
+            }
         }
     }
 }

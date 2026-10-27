@@ -36,6 +36,11 @@ class PluginAndroidBase : Plugin<Project> {
         }
 
         dependencies {
+            constraints {
+                add("implementation", "com.google.guava:guava:33.7.2-android") {
+                    because("GHSA-xxph-c9ww-hj94 / CVE-2026-102554: bound deserialization allocation")
+                }
+            }
             coreLibraryDesugaring(libs.android.desugar)
         }
     }

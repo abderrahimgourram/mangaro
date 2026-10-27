@@ -87,6 +87,25 @@ internal object NovelContentTypeClassifier {
     fun eligible(novel: Novel): Boolean = classify(novel).type != NovelContentType.COMIC &&
         tachiyomi.domain.manga.model.DiscoveryEligibility.valid(novel.title, novel.url)
 
+    /** A source's controlled leading taxonomy label, e.g. Cenele's "رواية <original>" or
+     * "مانهوا <original>". Only the first token is evidence; the remainder is never matched. */
+    fun leadingTaxonomy(value: String?): NovelContentFormat? {
+        val label = value?.trim()?.split(Regex("\\s+"), limit = 2)?.firstOrNull().orEmpty()
+        if (label.isBlank()) return null
+        return declared(listOf(label), NovelFormatProvenance.SOURCE_TAXONOMY)?.takeIf {
+            it.type != NovelContentType.UNKNOWN
+        }
+    }
+
+    /** A sparse refresh or an unrecognised source-format token must not erase verified format
+     * evidence. An explicit verified revocation and a different recognised label still win. */
+    fun merge(incoming: NovelContentFormat?, previous: NovelContentFormat?): NovelContentFormat? = when {
+        incoming == null -> previous
+        incoming.type == NovelContentType.UNKNOWN && incoming.provenance != NovelFormatProvenance.VERIFIED_READER &&
+            previous != null && previous.type != NovelContentType.UNKNOWN -> previous
+        else -> incoming
+    }
+
     /** Only dedicated type/format fields, never generic 'type' (often country), genre or title. */
     fun jsonFormat(row: JsonObject): NovelContentFormat? = declared(
         listOf("content_type", "content_format", "contentType", "contentFormat", "book_format")

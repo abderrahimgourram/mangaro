@@ -78,3 +78,18 @@ that exact committed configuration and ancestry; manifest-hash rewriting still
 fails. All other configuration and the original legacy inventory retain the
 original anchor. A new regression proves further unreviewed edits remain rejected.
 This is an explicit release configuration review, not automatic baseline renewal.
+
+## Reviewed Guava security dependency snapshot
+
+The Guava security change in commit `0dfe28725` pins three build
+files to that exact commit (the full SHA is in `REVIEWED_CONFIGURATION`):
+the root `build.gradle.kts` buildscript constraint, the shared Android
+`PluginAndroidBase.kt` constraint, and the removal of the stale telemetry
+`32.0.1-android` pin. The reviewed diff only raises the vulnerable
+`32.0.0-jre`, `32.0.1-android`, and `33.4.0-jre` coordinates to
+`33.7.2-android` / `33.7.2-jre` for `GHSA-xxph-c9ww-hj94`
+(`CVE-2026-102554`). It changes no formatter rules, targets, plugins,
+source, signing or version settings. The validator still requires the
+committed bytes and ancestry; manifest-hash rewriting alone fails, and the
+existing unreviewed-edit regression remains in force. This is an explicit
+security dependency review, not automatic baseline renewal.
