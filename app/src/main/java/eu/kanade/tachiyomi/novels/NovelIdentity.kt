@@ -168,7 +168,7 @@ object NovelWorkReconciler {
                     genres = incoming.genres.ifEmpty { old.genres },
                     reliableUpdatedAt = incoming.reliableUpdatedAt ?: old.reliableUpdatedAt,
                     chapterCount = incoming.chapterCount ?: old.chapterCount,
-                    contentFormat = incoming.contentFormat ?: old.contentFormat,
+                    contentFormat = NovelContentTypeClassifier.merge(incoming.contentFormat, old.contentFormat),
                 )
             }
             if (novel == old) continue

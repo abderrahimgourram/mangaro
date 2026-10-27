@@ -110,21 +110,47 @@ class NovelContentTypePresentationTest {
         first.works.single().id shouldBe corrected.works.single().id
     }
 
-    @Test fun actualCeneleParserDoesNotTrustUnverifiedFormatAttributesOrProbeChapters() = runBlocking {
+    @Test fun actualCeneleParserUsesScopedCardTaxonomyWithoutProbingChapters() = runBlocking {
         val http = mockk<NovelHttp>()
         val html = """<html><body>
-          <article class=nhv-library-card data-content-type=novel><a class=nhv-library-card__cover href='https://cenele.com/cont/text/' title='Text'><img src='https://cenele.com/text.jpg'></a></article>
-          <article class=nhv-library-card data-content-type=manhwa><a class=nhv-library-card__cover href='https://cenele.com/cont/comic/' title='Comic'><img src='https://cenele.com/comic.jpg'></a></article>
+          <article class=nhv-library-card data-content-type=novel><a class=nhv-library-card__cover href='https://cenele.com/cont/text/' title='Text' aria-label='رواية Text'><img src='https://cenele.com/text.jpg'></a></article>
+          <article class=nhv-library-card data-content-type=manhwa><a class=nhv-library-card__cover href='https://cenele.com/cont/comic/' title='Comic' aria-label='مانهوا Comic'><img src='https://cenele.com/comic.jpg'></a></article>
+          <article class=nhv-library-card><a class=nhv-library-card__cover href='https://cenele.com/cont/unknown/' title='A manhwa adaptation is mentioned here'><img src='https://cenele.com/unknown.jpg'></a></article>
           <a rel=next href='https://cenele.com/?page=2'>Next</a></body></html>"""
         coEvery { http.get(any(), any(), any()) } returns html
         val raw = CeneleSource(http).search("fixture", 1)
-        raw.novels.size shouldBe 2
+        raw.novels.size shouldBe 3
+        raw.novels.map { it.contentFormat?.type } shouldBe
+            listOf(NovelContentType.TEXT_NOVEL, NovelContentType.COMIC, null)
         val page = NovelCatalogCards.eligiblePage(NovelCatalogState(), raw)
-        raw.novels.all { it.contentFormat == null } shouldBe true
-        page.novels.size shouldBe 2
+        page.novels.map { it.url } shouldBe listOf("https://cenele.com/cont/text/", "https://cenele.com/cont/unknown/")
         page.nextPage shouldBe 2
         coVerify(exactly = 1) { http.get(any(), any(), any()) }
         coVerify(exactly = 0) { http.post(any(), any()) }
+    }
+
+    @Test fun actualCeneleDetailsUseTheScopedKickerNotTheWorkTitle() = runBlocking {
+        val http = mockk<NovelHttp>()
+        val cases = listOf("مانهوا Anything" to NovelContentType.COMIC, "رواية Anything" to NovelContentType.TEXT_NOVEL)
+        for ((kicker, expected) in cases) {
+            coEvery {
+                http.get(any(), any(), any())
+            } returns "<html><body><div class=nhv-novel-kicker>$kicker</div>" +
+                "<h1 class=nhv-novel-title>عبد الظل</h1></body></html>"
+            val details = CeneleSource(http).details(
+                Novel("novel.cenele", "https://cenele.com/cont/fixture/", "عبد الظل"),
+            )
+            details.title shouldBe "عبد الظل"
+            details.contentFormat!!.type shouldBe expected
+        }
+        coEvery {
+            http.get(any(), any(), any())
+        } returns "<html><body><h1 class=nhv-novel-title>عبد الظل</h1></body></html>"
+        val known = NovelContentTypeClassifier.declared(listOf("مانهوا"), NovelFormatProvenance.SOURCE_TAXONOMY)
+        CeneleSource(http).details(
+            Novel("novel.cenele", "https://cenele.com/cont/fixture/", "عبد الظل", contentFormat = known),
+        ).contentFormat shouldBe known
+        coVerify(exactly = 3) { http.get(any(), any(), any()) }
     }
 
     @Test fun actualNovelSearchPresentationExcludesComicsBeforeGroupingAndKeepsTextAlternatives() {
@@ -146,7 +172,7 @@ class NovelContentTypePresentationTest {
         coVerify(exactly = 0) { repository.chapterText(any(), any()) }
     }
 
-    @Test fun actualJsonAdaptersKeepUnsupportedFormatKeysUnknownWithoutAdditionalRequests() = runBlocking {
+    @Test fun actualJsonAdaptersReadDedicatedFormatFieldsWithoutAdditionalRequests() = runBlocking {
         val http = mockk<NovelHttp>()
         coEvery {
             http.mknovPost(any(), any())
@@ -161,14 +187,15 @@ class NovelContentTypePresentationTest {
         for (source in listOf(MknovSource(http), SeaNovelSource(http))) {
             val raw = source.catalog(1, false, null)
             raw.novels.size shouldBe 2
-            raw.novels.all { it.contentFormat == null } shouldBe true
-            NovelCatalogCards.eligiblePage(NovelCatalogState(), raw).novels.size shouldBe 2
+            raw.novels.map { it.contentFormat?.type } shouldBe
+                listOf(NovelContentType.TEXT_NOVEL, NovelContentType.COMIC)
+            NovelCatalogCards.eligiblePage(NovelCatalogState(), raw).novels.single().title shouldBe "Text fixture"
         }
         coVerify(exactly = 1) { http.mknovPost("https://api.mknov.com/v1/getWorks", any()) }
         coVerify(exactly = 1) { http.get("https://seanovel.org/api/novels?sort=views", any(), any()) }
     }
 
-    @Test fun actualKolnovelCardsDoNotAssumeAnUnverifiedTypeAttributeContract() = runBlocking {
+    @Test fun actualKolnovelCardsReadOnlyDedicatedFormatFields() = runBlocking {
         val http = mockk<NovelHttp>()
         coEvery {
             http.get(any(), any(), any())
@@ -178,8 +205,9 @@ class NovelContentTypePresentationTest {
           </body></html>"""
         val page = KolNovelSource(http).catalog(1, true, null)
         page.novels.size shouldBe 2
-        page.novels.all { it.contentFormat == null } shouldBe true
-        NovelCatalogCards.eligiblePage(NovelCatalogState(), page).novels.size shouldBe 2
+        page.novels.map { it.contentFormat?.type } shouldBe
+            listOf(NovelContentType.TEXT_NOVEL, NovelContentType.COMIC)
+        NovelCatalogCards.eligiblePage(NovelCatalogState(), page).novels.single().title shouldBe "Text fixture"
         coVerify(exactly = 1) { http.get(any(), any(), any()) }
     }
 

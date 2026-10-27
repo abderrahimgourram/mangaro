@@ -92,12 +92,23 @@ class MknovSource(private val http: NovelHttp, private val nowNanos: () -> Long 
 
         private fun workUrl(id: String) = "$WEB/novel/$id"
         private fun chapterUrl(work: String, chapter: String) = "${workUrl(work)}/chapter/$chapter"
+
+        /** A duplicate-number volume row may alias the canonical row only when the source gave
+         * no conflicting title evidence. A blank requested title carries no evidence. */
+        private fun titlesCompatible(requested: String?, canonical: String?): Boolean =
+            requested.isNullOrBlank() || canonical.isNullOrBlank() ||
+                NovelIdentity.normalize(requested) == NovelIdentity.normalize(canonical)
         internal fun validateText(text: NovelText) {
             // Public indexes include legitimate short glossaries and publisher notes. They
             // retain UNKNOWN quality rather than pretending to be a full prose chapter.
-            if (text.paragraphs.sumOf { it.trim().length } < 40 ||
-                text.paragraphs.sumOf { p -> p.count(Char::isLetter) } < 20 ||
-                text.paragraphs.take(2).any { p ->
+            if (!text.hasReadableIllustration() && (
+                    text.paragraphs.sumOf { it.trim().length } < 40 ||
+                        text.paragraphs.sumOf { p -> p.count(Char::isLetter) } < 20
+                    )
+            ) {
+                fail("Empty or incomplete Mknov chapter", "MKNOV_INVALID_CONTENT")
+            }
+            if (text.paragraphs.take(2).any { p ->
                     listOf(
                         "يرجى تسجيل الدخول", "يجب تسجيل الدخول",
                         "Chapter not found", "Access denied", "لا يوجد محتوى", "هذا الفصل غير متاح",
@@ -118,7 +129,7 @@ class MknovSource(private val http: NovelHttp, private val nowNanos: () -> Long 
     private data class Cached(val root: JsonObject, val at: Long, val size: Int)
     private val snapshots = LinkedHashMap<String, Cached>(16, .75f, true)
     private val locks = Array(8) { Mutex() }
-    private data class IndexedChapter(val chapter: NovelChapter, val number: BigDecimal)
+    private data class IndexedChapter(val chapter: NovelChapter, val number: BigDecimal, val sourceTitle: String?)
     private data class IndexSnapshot(val page: ChapterPage, val bindings: Map<String, IndexedChapter>)
     private data class Membership(val bindings: Map<String, IndexedChapter>, val at: Long)
     private val membership = LinkedHashMap<String, Membership>(8, .75f, true)
@@ -229,6 +240,7 @@ class MknovSource(private val http: NovelHttp, private val nowNanos: () -> Long 
                 it.any { c -> c in 'a'..'z' || c in 'A'..'Z' }
             },
             alternativeTitles = aliases,
+            contentFormat = NovelContentTypeClassifier.jsonFormat(row),
         )
         return MknovVerifiedMetadata.enrich(novel, work, metadataResponse = "author" in row)
     }
@@ -308,20 +320,30 @@ class MknovSource(private val http: NovelHttp, private val nowNanos: () -> Long 
                 genres = fresh.genres,
                 originalTitle = fresh.originalTitle,
                 alternativeTitles = fresh.alternativeTitles,
+                contentFormat = NovelContentTypeClassifier.merge(fresh.contentFormat, novel.contentFormat),
             )
         }
     }
     private fun parseIndex(work: String, root: JsonObject): IndexSnapshot {
         val total = integer(root, "total_chapters").takeIf { it <= 100_000 } ?: fail("Mknov index exceeds bound")
-        data class Row(val data: JsonObject, val number: BigDecimal, val volume: String?, val volumeId: String?)
+        data class Row(
+            val data: JsonObject,
+            val number: BigDecimal,
+            val volume: String?,
+            val volumeId: String?,
+            val ordinal: Int,
+        )
+        var ordinal = 0
         val rows = records(root, "data").flatMap { volume ->
             val title = str(volume, "volume_title").takeIf(String::isNotBlank)
             val volumeId = if (title != null) "mknov-volume:" + integer(volume, "volume_number") else null
             records(volume, "chapters").map { data ->
                 if (serverId(data, "work_id") != work) fail("Foreign chapter in Mknov index", "MKNOV_IDENTITY")
-                Row(data, number(data, "chapter_number"), title, volumeId)
+                Row(data, number(data, "chapter_number"), title, volumeId, ordinal++)
             }
-        }.sortedWith(compareBy<Row> { it.number }.thenBy { serverId(it.data).toLong() })
+            // Equal published labels (`1.0` in two volumes) keep their exact source order; identity is
+            // the URL/ID, never a numeric sort or a de-duplication key.
+        }.sortedWith(compareBy<Row> { it.number }.thenBy { it.ordinal })
         val chapters = rows.mapIndexed { position, row ->
             val chapterId = serverId(row.data)
             val title =
@@ -343,7 +365,8 @@ class MknovSource(private val http: NovelHttp, private val nowNanos: () -> Long 
             fail("Mknov index count/identity mismatch")
         }
         val bindings = chapters.zip(rows).associate { (chapter, row) ->
-            route(chapter.url, true).second!! to IndexedChapter(chapter, row.number)
+            val sourceTitle = str(row.data, "chapter_title").takeIf(String::isNotBlank)
+            route(chapter.url, true).second!! to IndexedChapter(chapter, row.number, sourceTitle)
         }
         return IndexSnapshot(ChapterPage(chapters, declaredTotal = total, allowEmpty = total == 0), bindings)
     }
@@ -386,10 +409,23 @@ class MknovSource(private val http: NovelHttp, private val nowNanos: () -> Long 
         }
         val root = request("getChapterBatch", buildJsonObject { put("id", chapterId.toLong()) })
         val data = obj(root["data"])
-        if (serverId(data) != chapterId || number(data, "chapter_number").compareTo(expected.number) != 0 ||
+        val returnedId = serverId(data)
+        if (number(data, "chapter_number").compareTo(expected.number) != 0 ||
             (data["work_id"] != null && serverId(data, "work_id") != work)
         ) {
             fail("Mknov returned a different chapter/work binding", "MKNOV_IDENTITY")
+        }
+        if (returnedId != chapterId) {
+            // Some Mknov volumes repeat a canonical chapter under a duplicate-number alias URL.
+            // The alias is accepted only with exact source-number equality and non-conflicting
+            // title evidence; the saved route and all progress identities remain the requested ID.
+            val canonical = bindings[returnedId]
+                ?: fail("Mknov alias is not indexed in the same work", "MKNOV_IDENTITY")
+            if (!canonical.chapter.available || canonical.number.compareTo(expected.number) != 0 ||
+                !titlesCompatible(expected.sourceTitle, canonical.sourceTitle)
+            ) {
+                fail("Mknov alias has conflicting title or number evidence", "MKNOV_IDENTITY")
+            }
         }
         if (!free(data)) {
             throw NovelSourceFailure(

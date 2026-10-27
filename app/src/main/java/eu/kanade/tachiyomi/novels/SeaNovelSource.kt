@@ -4,7 +4,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.*
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import java.time.Instant
 import java.util.concurrent.TimeUnit
@@ -20,11 +27,21 @@ class SeaNovelSource(http: NovelHttp) : HtmlNovelSource(http) {
     private val sessions = LinkedHashMap<String, List<Novel>>(16, .75f, true)
 
     private fun failure(reason: String, code: String? = null): Nothing = throw NovelSourceFailure(
-        "تعذّر التحقق من بيانات بحر الروايات. أعد المحاولة أو افتح الموقع الأصلي.", reason, code = code,
+        "تعذّر التحقق من بيانات بحر الروايات. أعد المحاولة أو افتح الموقع الأصلي.",
+        reason,
+        code = code,
     )
-    private fun parse(raw: String): JsonElement = try { Json.parseToJsonElement(raw) }
-        catch (_: kotlinx.serialization.SerializationException) { failure("Invalid Sea JSON document") }
-    private fun objectValue(value: JsonElement): JsonObject = value as? JsonObject ?: failure("Sea record is not an object")
+    private fun parse(
+        raw: String,
+    ): JsonElement = try {
+        Json.parseToJsonElement(raw)
+    } catch (
+        _: kotlinx.serialization.SerializationException,
+    ) {
+        failure("Invalid Sea JSON document")
+    }
+    private fun objectValue(value: JsonElement): JsonObject =
+        value as? JsonObject ?: failure("Sea record is not an object")
     private fun string(item: JsonObject, key: String): String = (item[key] as? JsonPrimitive)
         ?.takeIf { it.isString }?.content.orEmpty()
     private fun count(item: JsonObject, key: String): Int? = (item[key] as? JsonPrimitive)
@@ -45,7 +62,12 @@ class SeaNovelSource(http: NovelHttp) : HtmlNovelSource(http) {
     private fun updated(item: JsonObject): Long? = string(item, "last_updated").takeIf { it.isNotBlank() }
         ?.let { runCatching { Instant.parse(it).toEpochMilli() }.getOrNull() }
     private fun continuation(item: JsonObject): Boolean = listOf(
-        "has_more", "hasMore", "next", "next_page", "nextPage", "next_cursor",
+        "has_more",
+        "hasMore",
+        "next",
+        "next_page",
+        "nextPage",
+        "next_cursor",
     ).any { key -> item[key]?.let { it != JsonNull && it.toString() !in setOf("false", "0", "\"\"") } == true }
 
     private fun record(item: JsonObject): Novel {
@@ -57,10 +79,17 @@ class SeaNovelSource(http: NovelHttp) : HtmlNovelSource(http) {
             (value as? JsonPrimitive)?.takeIf { it.isString }?.content ?: failure("Invalid Sea genre")
         }.filter { it.isNotBlank() }.distinct()
         val total = count(item, "chapters_count")
-        if (item["chapters_count"] != null && (total == null || total !in 0..100_000)) failure("Invalid Sea chapter total")
-        return Novel(id, novelUrl(slug), title, cover(item, slug), string(item, "description"),
+        if (item["chapters_count"] != null &&
+            (total == null || total !in 0..100_000)
+        ) {
+            failure("Invalid Sea chapter total")
+        }
+        return Novel(
+            id, novelUrl(slug), title, cover(item, slug), string(item, "description"),
             string(item, "author").takeIf { it.isNotBlank() }, string(item, "status").takeIf { it.isNotBlank() },
-            genres, total, originalTitle = original, reliableUpdatedAt = updated(item))
+            genres, total, originalTitle = original, reliableUpdatedAt = updated(item),
+            contentFormat = NovelContentTypeClassifier.jsonFormat(item),
+        )
     }
 
     /** Cache only validated records; failed JSON/identity responses never become retry inputs. */
@@ -82,9 +111,25 @@ class SeaNovelSource(http: NovelHttp) : HtmlNovelSource(http) {
             while (sessions.size > 16) sessions.remove(sessions.keys.first())
         }
     }
-    private fun result(rows: List<Novel>, page: Int, notice: String, genres: List<NovelGenre> = emptyList()): NovelPage {
+    private fun result(
+        rows: List<Novel>,
+        page: Int,
+        notice: String,
+        genres: List<NovelGenre> = emptyList(),
+    ): NovelPage {
         val start = (page - 1) * PAGE_SIZE
-        return NovelPage(rows.drop(start).take(PAGE_SIZE), if (start + PAGE_SIZE < rows.size) page + 1 else null, notice, genres)
+        return NovelPage(
+            rows.drop(start).take(PAGE_SIZE),
+            if (start + PAGE_SIZE <
+                rows.size
+            ) {
+                page + 1
+            } else {
+                null
+            },
+            notice,
+            genres,
+        )
     }
     override suspend fun catalog(page: Int, latest: Boolean, genre: String?) = withContext(Dispatchers.IO) {
         val rows = page("catalog:$latest:${genre.orEmpty()}", page) {
@@ -92,14 +137,24 @@ class SeaNovelSource(http: NovelHttp) : HtmlNovelSource(http) {
                 if (latest) values.sortedByDescending { it.reliableUpdatedAt ?: Long.MIN_VALUE } else values
             }
         }
-        result(rows, page, "الروايات ضمن لقطة فهرس المصدر المتاح؛ لا تمثل إحصاءً لكل محتوى الموقع.",
-            catalogues[false]?.novels.orEmpty().flatMap { it.genres }.distinct().map { NovelGenre(it, it) })
+        result(
+            rows,
+            page,
+            "الروايات ضمن لقطة فهرس المصدر المتاح؛ لا تمثل إحصاءً لكل محتوى الموقع.",
+            catalogues[false]?.novels.orEmpty().flatMap { it.genres }.distinct().map { NovelGenre(it, it) },
+        )
     }
     override suspend fun search(query: String, page: Int) = withContext(Dispatchers.IO) {
         val term = NovelIdentity.normalize(query)
         val rows = page("search:$term", page) {
-            catalogue(true).filter { novel -> (term.isBlank() && query.isBlank()) || (term.isNotBlank() &&
-                listOfNotNull(novel.title, novel.originalTitle, novel.author).any { NovelIdentity.normalize(it).contains(term) }) }
+            catalogue(true).filter { novel ->
+                (term.isBlank() && query.isBlank()) || (
+                    term.isNotBlank() &&
+                        listOfNotNull(novel.title, novel.originalTitle, novel.author).any {
+                            NovelIdentity.normalize(it).contains(term)
+                        }
+                    )
+            }
         }
         result(rows, page, "البحث في فهرس البحث العام للمصدر بالعنوان العربي أو الأصلي أو المؤلف.")
     }
@@ -117,10 +172,16 @@ class SeaNovelSource(http: NovelHttp) : HtmlNovelSource(http) {
         val item = detail(http.get(api(slug)), slug)
         // Metadata refresh must not replace source edition URLs/IDs or erase useful prior metadata.
         val fresh = record(item)
-        novel.copy(title = fresh.title, cover = fresh.cover, description = fresh.description.ifBlank { novel.description },
+        novel.copy(
+            title = fresh.title, cover = fresh.cover,
+            description = fresh.description.ifBlank {
+                novel.description
+            },
             author = fresh.author ?: novel.author, status = fresh.status ?: novel.status,
             genres = fresh.genres.ifEmpty { novel.genres }, chapterCount = fresh.chapterCount,
-            originalTitle = fresh.originalTitle ?: novel.originalTitle, reliableUpdatedAt = fresh.reliableUpdatedAt)
+            originalTitle = fresh.originalTitle ?: novel.originalTitle, reliableUpdatedAt = fresh.reliableUpdatedAt,
+            contentFormat = NovelContentTypeClassifier.merge(fresh.contentFormat, novel.contentFormat),
+        )
     }
     override suspend fun chapters(novel: Novel, page: Int) = withContext(Dispatchers.IO) {
         if (page != 1) failure("Sea has no supported chapter continuation")
@@ -138,11 +199,19 @@ class SeaNovelSource(http: NovelHttp) : HtmlNovelSource(http) {
             val chapterId = (ch["id"] as? JsonPrimitive)?.content?.takeIf(::validChapterId)
                 ?: failure("Invalid Sea chapter ID", "SEA_INDEX_ID_INVALID")
             val number = chapterId.toBigDecimal()
-            if (previous != null && number <= previous) failure("Duplicate or unordered Sea chapter ID", "SEA_INDEX_ID_ORDER")
+            if (previous != null &&
+                number <= previous
+            ) {
+                failure("Duplicate or unordered Sea chapter ID", "SEA_INDEX_ID_ORDER")
+            }
             previous = number
             val title = string(ch, "title").takeIf { it.isNotBlank() } ?: failure("Sea chapter title missing")
-            NovelChapter(novelUrl(slug).toHttpUrl().newBuilder().addPathSegment("chapters")
-                .addPathSegment(chapterId).build().toString(), title, index)
+            NovelChapter(
+                novelUrl(slug).toHttpUrl().newBuilder().addPathSegment("chapters")
+                    .addPathSegment(chapterId).build().toString(),
+                title,
+                index,
+            )
         }
         ChapterPage(chapters, declaredTotal = total)
     }
@@ -153,48 +222,92 @@ class SeaNovelSource(http: NovelHttp) : HtmlNovelSource(http) {
             path(chapter.url, chapter = true)
             val raw = http.get(chapter.url)
             parseChapter(raw, chapter, trace)
-        } catch (e: Exception) { trace?.failed(e); throw e }
+        } catch (e: Exception) {
+            trace?.failed(e)
+            throw e
+        }
     }
     internal fun parseChapter(raw: String, chapter: NovelChapter, trace: SeaReaderTrace? = null): NovelText {
         try {
             path(chapter.url, chapter = true)
             trace?.stage(SeaReaderStage.SOURCE_DOCUMENT)
             val document = doc(raw, chapter.url)
-            if (document.selectFirst("#challenge-form, #cf-wrapper, .challenge-running, .cf-browser-verification") != null)
-                throw NovelSourceFailure("المصدر يطلب تحققًا في الموقع الأصلي؛ لا يمكن تجاوزه داخل التطبيق.", "Sea access challenge", 403, code = "SEA_ACCESS_CHALLENGE")
+            if (document.selectFirst("#challenge-form, #cf-wrapper, .challenge-running, .cf-browser-verification") !=
+                null
+            ) {
+                throw NovelSourceFailure(
+                    "المصدر يطلب تحققًا في الموقع الأصلي؛ لا يمكن تجاوزه داخل التطبيق.",
+                    "Sea access challenge",
+                    403,
+                    code = "SEA_ACCESS_CHALLENGE",
+                )
+            }
             trace?.stage(SeaReaderStage.SOURCE_CANONICAL)
             val requested = chapter.url.toHttpUrl()
             val canonical = document.selectFirst("link[rel=canonical]")?.attr("href")
                 ?.takeIf(String::isNotBlank)?.let(requested::resolve)
             // Jsoup absUrl can discard user-info. Validate the original URL reference first.
             if (canonical == null || canonical.scheme != requested.scheme || canonical.host != requested.host ||
-                canonical.port != requested.port || canonical.username.isNotEmpty() || canonical.password.isNotEmpty() ||
+                canonical.port != requested.port || canonical.username.isNotEmpty() ||
+                canonical.password.isNotEmpty() ||
                 canonical.fragment != null || canonical.encodedQuery != requested.encodedQuery ||
-                canonical.pathSegments.dropLastWhile(String::isEmpty) != requested.pathSegments.dropLastWhile(String::isEmpty))
+                canonical.pathSegments.dropLastWhile(String::isEmpty) !=
+                requested.pathSegments.dropLastWhile(String::isEmpty)
+            ) {
                 failure("Sea chapter canonical ownership mismatch", "SEA_CANONICAL_MISMATCH")
+            }
             trace?.stage(SeaReaderStage.SOURCE_CONTAINER)
             val target = selector("text", "article.reader-content")
             val containers = document.select(target)
-            if (containers.size != 1) failure("Sea reader container missing or ambiguous", "SEA_CONTAINER_MISSING_OR_AMBIGUOUS")
+            if (containers.size !=
+                1
+            ) {
+                failure("Sea reader container missing or ambiguous", "SEA_CONTAINER_MISSING_OR_AMBIGUOUS")
+            }
             val container = containers.single()
-            trace?.container(container.select("p,div,section,blockquote,li,h1,h2,h3,h4,h5,h6,figcaption").count { it !== container })
+            trace?.container(
+                container.select("p,div,section,blockquote,li,h1,h2,h3,h4,h5,h6,figcaption").count {
+                    it !==
+                        container
+                },
+            )
             trace?.stage(SeaReaderStage.SOURCE_COMPLETENESS)
-            if (!raw.contains("</html>", ignoreCase = true)) failure("Sea reader document interrupted", "SEA_DOCUMENT_TRUNCATED")
+            if (!raw.contains(
+                    "</html>",
+                    ignoreCase = true,
+                )
+            ) {
+                failure("Sea reader document interrupted", "SEA_DOCUMENT_TRUNCATED")
+            }
             val tag = Regex.escape(container.normalName())
-            val readerClass = container.classNames().firstOrNull()?.let(Regex::escape) ?: failure("Sea reader class missing", "SEA_CONTAINER_CLASS_MISSING")
-            val opening = Regex("<$tag\\b[^>]*\\bclass\\s*=\\s*([\"'])[^\"']*\\b$readerClass\\b[^\"']*\\1[^>]*>", RegexOption.IGNORE_CASE).find(raw)
-                ?: failure("Sea reader opening missing", "SEA_CONTAINER_OPENING_MISSING")
+            val readerClass =
+                container.classNames().firstOrNull()?.let(Regex::escape)
+                    ?: failure("Sea reader class missing", "SEA_CONTAINER_CLASS_MISSING")
+            val opening =
+                Regex(
+                    "<$tag\\b[^>]*\\bclass\\s*=\\s*([\"'])[^\"']*\\b$readerClass\\b[^\"']*\\1[^>]*>",
+                    RegexOption.IGNORE_CASE,
+                ).find(raw)
+                    ?: failure("Sea reader opening missing", "SEA_CONTAINER_OPENING_MISSING")
             var depth = 1
             if (!Regex("</?$tag\\b[^>]*>", RegexOption.IGNORE_CASE).findAll(raw, opening.range.last + 1).any {
-                depth += if (it.value.startsWith("</")) -1 else 1
-                depth == 0
-            }) failure("Sea reader container interrupted", "SEA_CONTAINER_TRUNCATED")
+                    depth += if (it.value.startsWith("</")) -1 else 1
+                    depth == 0
+                }
+            ) {
+                failure("Sea reader container interrupted", "SEA_CONTAINER_TRUNCATED")
+            }
             trace?.stage(SeaReaderStage.SOURCE_ACCESS)
             val visible = document.clone()
-            visible.select("$target nav, $target button, $target [role=navigation], $target .chapter-navigation").remove()
+            visible.select(
+                "$target nav, $target button, $target [role=navigation], $target .chapter-navigation",
+            ).remove()
             val notices = visible.select("h1,h2,h3,[role=alert],.error-message,.login-message").filter { node ->
-                node.parents().plus(node).none { it.hasClass("d-none") || it.hasAttr("hidden") || it.attr("aria-hidden") == "true" ||
-                    Regex("display\\s*:\\s*none|visibility\\s*:\\s*hidden").containsMatchIn(it.attr("style")) }
+                node.parents().plus(node).none {
+                    it.hasClass("d-none") || it.hasAttr("hidden") ||
+                        it.attr("aria-hidden") == "true" ||
+                        Regex("display\\s*:\\s*none|visibility\\s*:\\s*hidden").containsMatchIn(it.attr("style"))
+                }
             }.map { it.text().trim() }
             rejectAccessNotice(notices)
             trace?.extractionStarted()
@@ -205,7 +318,10 @@ class SeaNovelSource(http: NovelHttp) : HtmlNovelSource(http) {
             trace?.accepted(content, source = true)
             trace?.stage(SeaReaderStage.SOURCE_ACCEPTED)
             return content // Preserve text, attribution and paragraph offsets; only eligibility changes.
-        } catch (e: Exception) { trace?.failed(e); throw e }
+        } catch (e: Exception) {
+            trace?.failed(e)
+            throw e
+        }
     }
 
     companion object {
@@ -213,18 +329,73 @@ class SeaNovelSource(http: NovelHttp) : HtmlNovelSource(http) {
         internal fun validateText(content: NovelText) {
             rejectAccessNotice(content.paragraphs.take(2).map(String::trim))
             val navigationWords = setOf("السابق", "التالي", "فهرس", "الفهرس", "Show", "Commits")
-            val story = content.paragraphs.filterNot { p -> p.trim().split(Regex("\\s+")).all { it in navigationWords } }
-            if (story.sumOf { it.trim().length } < 40 || story.sumOf { p -> p.count(Char::isLetter) } < 20)
-                throw NovelSourceFailure("تعذّر التحقق من بيانات بحر الروايات. أعد المحاولة أو افتح الموقع الأصلي.", "Sea reader text empty or incomplete", code = "SEA_CONTENT_INVALID")
+            val story = content.paragraphs.filterNot { p ->
+                p.trim().split(Regex("\\s+")).all { it in navigationWords }
+            }
+            val textValid = story.sumOf { it.trim().length } >= 40 && story.sumOf { p -> p.count(Char::isLetter) } >= 20
+            if (!textValid && !content.hasReadableIllustration()) {
+                throw NovelSourceFailure(
+                    "تعذّر التحقق من بيانات بحر الروايات. أعد المحاولة أو افتح الموقع الأصلي.",
+                    "Sea reader text empty or incomplete",
+                    code = "SEA_CONTENT_INVALID",
+                )
+            }
             NovelContentQuality.requireReadable(content)
         }
         private fun rejectAccessNotice(labels: List<String>) {
-            if (labels.any { label -> listOf("الفصل المطلوب مقفل", "هذا الفصل مقفل", "هذا الفصل مغلق", "Chapter is locked").any { label.startsWith(it, ignoreCase = true) } })
-                throw NovelSourceFailure("هذا الفصل مقفل في موقع بحر الروايات.", "Sea explicit source lock", 403, code = "SEA_LOCKED", sourceVerified = true)
-            if (labels.any { label -> listOf("يرجى تسجيل الدخول", "يجب تسجيل الدخول", "تسجيل الدخول لقراءة", "Please log in", "Sign in to read").any { label.startsWith(it, ignoreCase = true) } })
-                throw NovelSourceFailure("هذا الفصل يتطلب تسجيل الدخول في موقع المصدر.", "Sea source login notice", 401, code = "SEA_LOGIN")
-            if (labels.any { label -> listOf("الفصل غير موجود", "هذا الفصل غير متاح", "حدث خطأ أثناء تحميل", "تعذّر تحميل الفصل", "تعذر تحميل الفصل", "Chapter not found", "Access denied").any { label.startsWith(it, ignoreCase = true) } })
-                throw NovelSourceFailure("تعذّر التحقق من بيانات بحر الروايات. أعد المحاولة أو افتح الموقع الأصلي.", "Sea reader contains an error notice", code = "SEA_ERROR_NOTICE")
+            if (labels.any { label ->
+                    listOf("الفصل المطلوب مقفل", "هذا الفصل مقفل", "هذا الفصل مغلق", "Chapter is locked").any {
+                        label.startsWith(it, ignoreCase = true)
+                    }
+                }
+            ) {
+                throw NovelSourceFailure(
+                    "هذا الفصل مقفل في موقع بحر الروايات.",
+                    "Sea explicit source lock",
+                    403,
+                    code = "SEA_LOCKED",
+                    sourceVerified = true,
+                )
+            }
+            if (labels.any { label ->
+                    listOf(
+                        "يرجى تسجيل الدخول",
+                        "يجب تسجيل الدخول",
+                        "تسجيل الدخول لقراءة",
+                        "Please log in",
+                        "Sign in to read",
+                    ).any {
+                        label.startsWith(it, ignoreCase = true)
+                    }
+                }
+            ) {
+                throw NovelSourceFailure(
+                    "هذا الفصل يتطلب تسجيل الدخول في موقع المصدر.",
+                    "Sea source login notice",
+                    401,
+                    code = "SEA_LOGIN",
+                )
+            }
+            if (labels.any { label ->
+                    listOf(
+                        "الفصل غير موجود",
+                        "هذا الفصل غير متاح",
+                        "حدث خطأ أثناء تحميل",
+                        "تعذّر تحميل الفصل",
+                        "تعذر تحميل الفصل",
+                        "Chapter not found",
+                        "Access denied",
+                    ).any {
+                        label.startsWith(it, ignoreCase = true)
+                    }
+                }
+            ) {
+                throw NovelSourceFailure(
+                    "تعذّر التحقق من بيانات بحر الروايات. أعد المحاولة أو افتح الموقع الأصلي.",
+                    "Sea reader contains an error notice",
+                    code = "SEA_ERROR_NOTICE",
+                )
+            }
         }
 
         internal const val SOURCE_ID = "novel.seanovel"
@@ -238,15 +409,22 @@ class SeaNovelSource(http: NovelHttp) : HtmlNovelSource(http) {
             val parsed = url.toHttpUrl()
             val parts = parsed.pathSegments.dropLastWhile(String::isEmpty)
             val valid = parsed.isHttps && parsed.host == "seanovel.org" && parsed.port == 443 &&
-                parsed.username.isEmpty() && parsed.password.isEmpty() && parsed.query == null && parsed.fragment == null &&
+                parsed.username.isEmpty() && parsed.password.isEmpty() && parsed.query == null &&
+                parsed.fragment == null &&
                 parts.size == (if (chapter) 4 else 2) && parts[0] == "novels" && validSlug(parts[1]) &&
                 (!chapter || (parts[2] == "chapters" && validChapterId(parts[3])))
-            if (!valid) throw NovelSourceFailure("هذا الرابط لا ينتمي إلى رواية صالحة في بحر الروايات.", "Invalid Sea novel/chapter URL")
+            if (!valid) {
+                throw NovelSourceFailure(
+                    "هذا الرابط لا ينتمي إلى رواية صالحة في بحر الروايات.",
+                    "Invalid Sea novel/chapter URL",
+                )
+            }
             return parts[1] to if (chapter) parts[3] else null
         }
         internal fun requireOwnership(novel: Novel, chapter: NovelChapter) {
-            if (novel.sourceId != SOURCE_ID || path(novel.url, false).first != path(chapter.url, true).first)
+            if (novel.sourceId != SOURCE_ID || path(novel.url, false).first != path(chapter.url, true).first) {
                 throw NovelSourceFailure("هذا الفصل لا ينتمي إلى الرواية المحددة.", "Foreign Sea chapter edition")
+            }
         }
     }
 }
