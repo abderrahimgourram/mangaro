@@ -20,6 +20,10 @@ class BaselineTests(unittest.TestCase):
         self.config = {".editorconfig", "build.gradle.kts"}
         self.write(".editorconfig", "root = true\n")
         self.write("build.gradle.kts", "// fixed original rules\n")
+        # Production reviewed anchors do not exist in disposable fixture repos.
+        self.reviewed = patch.dict(policy.REVIEWED_CONFIGURATION, {}, clear=True)
+        self.reviewed.start()
+        self.addCleanup(self.reviewed.stop)
         self.legacy = "src/Legacy.kt"
         self.ad = "src/ads/Protected.kt"
         self.write(self.legacy, "fun broken( ){ }\n")

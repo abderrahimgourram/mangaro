@@ -5,7 +5,7 @@
     ".editorconfig": "514a16c8f5313fc58127f890f40e5e855f55bd612d7cc51880cf8c23e421dca3",
     "app/build.gradle.kts": "89c8a1c191da36749d5d3e480f5746cdee9725bc1cd5345be8aaaaca2ce46353",
     "baseline-profile/build.gradle.kts": "cc01fc7889193df16b5bf3adaa36721b248fd16c0e3af60874339c788d2abac6",
-    "build.gradle.kts": "33bf614b650eae30c1dcf8f59529129859b275e4ca886342045a0c5311d8924f",
+    "build.gradle.kts": "9953dd0775418e7c48475ec33732dfc257b6230f16728467364b6642d6b8547c",
     "core-metadata/build.gradle.kts": "861d90ed86ce537f36bfc11fa0f47079bf79c91af719fe9bbb5d305e9abd5fec",
     "core/archive/build.gradle.kts": "785e911f2064379a9934c0aeaf2774e68f8ff11add0ec82a15e6077c2b2819e8",
     "core/common/build.gradle.kts": "7cb292cf6fe048f657ceb8fea1b149dabf96ab961701cd3697f6d5538df03ba1",
@@ -15,7 +15,7 @@
     "gradle/build-logic/build.gradle.kts": "a34922cbdb1026ab67429d24d9b75858efe07c043ee82b5eaabfeea42a7cbc76",
     "gradle/build-logic/settings.gradle.kts": "1d6050d4f807f3161bc14c6c814e34a84c00e100ec20d300d31a0e2bef914249",
     "gradle/build-logic/src/main/kotlin/PluginAndroidApplication.kt": "766bef8ac74b79c05139a944e39af0150db9964b0201465693db14cea47b5de4",
-    "gradle/build-logic/src/main/kotlin/PluginAndroidBase.kt": "aeebf366f5eaa715d0aa96f72a9dee26c7bf6b7b09de1d8781fee4656487b378",
+    "gradle/build-logic/src/main/kotlin/PluginAndroidBase.kt": "3fff3e926f4145785993826f389b323c414f55d43d3ff04d87f8aa80fae2868f",
     "gradle/build-logic/src/main/kotlin/PluginAndroidLibrary.kt": "ff22a731b13f59c44cb9f5bb7bda073324dc14a55d263aa8fe8fbd1ada6f7fbd",
     "gradle/build-logic/src/main/kotlin/PluginAndroidTest.kt": "9df4efc95fbdf4edc30f25624f54eebc341775f09e122a3c527da55ecf0ed283",
     "gradle/build-logic/src/main/kotlin/PluginComposeAndroid.kt": "2b6d2433358c4ba7a4e61a8df85e26785c1e831074cf7b6f61e4217b2f31b74f",
@@ -37,7 +37,7 @@
     "settings.gradle.kts": "9c774dd7b46e9edc3394071955ce815d513d6ef59063969b77926d55df5cd67f",
     "source-api/build.gradle.kts": "016e334e310506f106783cab1434fe3f30d9748632b6e963a0d3084cf299c9cc",
     "source-local/build.gradle.kts": "73778f6bc1630f72e12e316fd7a02e742e5466bb92d1f495a057b506f7872e83",
-    "telemetry/build.gradle.kts": "9cd1d531b0d1e22f8a641fd5da196530b22992d0ff3a5b5442fda75c984bcb7c",
+    "telemetry/build.gradle.kts": "c33b9e02df8b72a2fa664d578f2a81eba0945c87be56f57f0becc2b0cb12ea57",
     "tools/security/dependency-inventory.init.gradle": "be0e359d6d2bdf11f69ce761837b047585a2d689a760659f9365fbe2828bf1c4"
   },
   "files": {
