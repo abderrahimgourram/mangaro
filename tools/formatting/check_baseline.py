@@ -15,7 +15,7 @@ ANCHOR = "bd0e8b575dd00460cf376295a9c4313f7181ea39"
 INVENTORY = "docs/stabilization/pr4-formatting-inventory.md"
 # Reviewed build changes; formatter rules/targets are unchanged.
 REVIEWED_CONFIGURATION = {
-    "app/build.gradle.kts": "36a911ea85a6ceda32c7566762906ff60cbd29a2",
+    "app/build.gradle.kts": "f61987e772434eaad770884d66a3dc422736eaa5",
     "build.gradle.kts": "0dfe28725a18c7dc2c9f3fd08c4a46e2fb84ad3a",
     "gradle/build-logic/src/main/kotlin/PluginAndroidBase.kt": "0dfe28725a18c7dc2c9f3fd08c4a46e2fb84ad3a",
     "telemetry/build.gradle.kts": "0dfe28725a18c7dc2c9f3fd08c4a46e2fb84ad3a",

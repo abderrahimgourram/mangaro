@@ -13,9 +13,10 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.domain.ui.UiPreferences
 import eu.kanade.presentation.components.AppBar
+import eu.kanade.presentation.home.MangaroUpdateHighlights
 import eu.kanade.presentation.more.LogoHeader
-import eu.kanade.presentation.sigils.SigilArtCredits
 import eu.kanade.presentation.more.settings.widget.TextPreferenceWidget
+import eu.kanade.presentation.sigils.SigilArtCredits
 import eu.kanade.presentation.util.LocalBackPress
 import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.BuildConfig
@@ -42,6 +43,11 @@ object AboutScreen : Screen() {
         val handleBack = LocalBackPress.current
         val navigator = LocalNavigator.currentOrThrow
         var artworkCredits by rememberSaveable { mutableStateOf(false) }
+        var releaseNotes by rememberSaveable { mutableStateOf(false) }
+        if (releaseNotes) {
+            MangaroUpdateHighlights(onContinue = { releaseNotes = false })
+            return
+        }
 
         Scaffold(
             topBar = { scrollBehavior ->
@@ -73,6 +79,10 @@ object AboutScreen : Screen() {
                 }
 
                 item {
+                    TextPreferenceWidget(title = "الجديد في Mangaro", onPreferenceClick = { releaseNotes = true })
+                }
+
+                item {
                     TextPreferenceWidget(
                         title = "حول تطبيق MANGARO",
                         subtitle = "تطبيق حديث وخفيف وقارئ مانوا يدعم اللغة العربية بشكل كامل.",
@@ -82,7 +92,8 @@ object AboutScreen : Screen() {
                 item {
                     TextPreferenceWidget(
                         title = "إسناد وشكر",
-                        subtitle = "تم بناء MANGARO استنادًا إلى مشروع Mihon مفتوح المصدر. نتقدم بالشكر الجزيل للمطورين الأصليين والمساهمين في Mihon وTachiyomi.",
+                        subtitle = "تم بناء MANGARO استنادًا إلى مشروع Mihon مفتوح المصدر. " +
+                            "نتقدم بالشكر الجزيل للمطورين الأصليين والمساهمين في Mihon وTachiyomi.",
                         onPreferenceClick = { uriHandler.openUri("https://github.com/mihonapp/mihon") },
                     )
                 }
@@ -90,7 +101,8 @@ object AboutScreen : Screen() {
                 item {
                     TextPreferenceWidget(
                         title = "أمان الإضافات",
-                        subtitle = "يتم تطوير الإضافات بواسطة أطراف خارجية. لا يستضيف التطبيق أو يتحقق من محتواها. استخدامك للإضافات يكون على مسؤوليتك الخاصة.",
+                        subtitle = "يتم تطوير الإضافات بواسطة أطراف خارجية. لا يستضيف التطبيق أو " +
+                            "يتحقق من محتواها. استخدامك للإضافات يكون على مسؤوليتك الخاصة.",
                     )
                 }
 
@@ -101,7 +113,9 @@ object AboutScreen : Screen() {
                     )
                 }
                 item {
-                    TextPreferenceWidget(title = "فنون الأختام والتراخيص", onPreferenceClick = { artworkCredits = true })
+                    TextPreferenceWidget(title = "فنون الأختام والتراخيص", onPreferenceClick = {
+                        artworkCredits = true
+                    })
                 }
             }
         }

@@ -15,12 +15,12 @@ import androidx.lifecycle.ProcessLifecycleOwner
 import eu.kanade.tachiyomi.BuildConfig
 import eu.kanade.tachiyomi.ui.base.activity.BaseActivity
 import eu.kanade.tachiyomi.ui.main.MainActivity
-import java.lang.ref.WeakReference
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import java.lang.ref.WeakReference
 
 /** Public version checker. Only a confirmed minimum-version requirement interrupts reading. */
 internal class MandatoryUpdateController private constructor() :
@@ -72,15 +72,24 @@ internal class MandatoryUpdateController private constructor() :
         if (!mandatory && activity !is MainActivity) return
         if (activity.isFinishing || activity.isDestroyed) return
         val builder = AlertDialog.Builder(activity)
-            .setTitle(if (mandatory) "تحديث جديد لمانجارو" else "تحديث جديد متاح")
+            .setTitle(config.releaseNotes?.title ?: "تحديث Mangaro ${config.latestVersionName}")
             .setMessage(
-                (if (mandatory) "نسخة جديدة بانتظارك، بتجربة أجمل وأداء أفضل. حدّث مانجارو لمتابعة القراءة."
-                else "يتوفر إصدار جديد من Mangaro. حدّث التطبيق للحصول على أحدث الإصلاحات والتحسينات.") +
+                config.releaseNotes?.message
+                    ?: (
+                        if (mandatory) {
+                            "نسخة جديدة بانتظارك، بتجربة أجمل وأداء أفضل. حدّث مانجارو لمتابعة القراءة."
+                        } else {
+                            "يتوفر إصدار جديد من Mangaro. حدّث التطبيق للحصول على أحدث الإصلاحات والتحسينات."
+                        }
+                        ) +
                     "\n\nالإصدار ${config.latestVersionName}",
             )
             .setPositiveButton("تحديث الآن", null)
-        if (mandatory) builder.setNeutralButton("إعادة المحاولة", null)
-        else builder.setNegativeButton("لاحقًا") { _, _ -> }
+        if (mandatory) {
+            builder.setNeutralButton("إعادة المحاولة", null)
+        } else {
+            builder.setNegativeButton("لاحقًا") { _, _ -> }
+        }
         val updateDialog = builder.create()
         updateDialog.setCancelable(!mandatory)
         updateDialog.setCanceledOnTouchOutside(!mandatory)

@@ -1,0 +1,5 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="app.manhwaar.reader.updateqa">
+    <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="36" />
+    <instrumentation android:name="app.manhwaar.reader.updateqa.UpdatePolicyProbe" android:targetPackage="app.manhwaar.reader" android:functionalTest="true" />
+    <application android:label="Mangaro isolated update QA" android:debuggable="false" />
+</manifest>

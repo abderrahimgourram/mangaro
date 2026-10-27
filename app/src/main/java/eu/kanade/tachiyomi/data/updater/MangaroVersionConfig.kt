@@ -1,11 +1,11 @@
 package eu.kanade.tachiyomi.data.updater
 
-import java.net.URI
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.intOrNull
+import java.net.URI
 
 /** Public release metadata only. Invalid metadata never establishes a mandatory update. */
 internal data class MangaroVersionConfig(
@@ -14,6 +14,7 @@ internal data class MangaroVersionConfig(
     val minSupportedVersionCode: Int,
     val forceUpdate: Boolean,
     val downloadUrl: String,
+    val releaseNotes: ReleaseNotes? = null,
 ) {
     fun requiresUpdate(installedVersionCode: Int): Boolean =
         forceUpdate && installedVersionCode < minSupportedVersionCode
@@ -34,8 +35,17 @@ internal data class MangaroVersionConfig(
                 uri.userInfo != null || uri.query != null || uri.fragment != null ||
                 !uri.path.startsWith("/abderrahimgourram/mangaro/releases/download/v$name/Mangaro-") ||
                 !uri.path.endsWith(".apk")
-            ) return null
-            MangaroVersionConfig(name, latest, minimum, force, url)
+            ) {
+                return null
+            }
+            MangaroVersionConfig(
+                name,
+                latest,
+                minimum,
+                force,
+                url,
+                ReleaseNotes.parse(json["releaseNotes"] as? JsonObject, name, latest),
+            )
         }.getOrNull()
     }
 }
