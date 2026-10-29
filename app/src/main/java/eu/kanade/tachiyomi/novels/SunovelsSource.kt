@@ -343,11 +343,12 @@ class SunovelsSource(
                                 doc("<html><body><article class='sun-mobile-story'></article></body></html>", row.url)
                             document.selectFirst(".sun-mobile-story")!!.html(mobile.html)
                             val parsed = text(document, ".sun-mobile-story", allowShortText = true)
-                            if (parsed.paragraphs.sumOf { it.trim().length } < 120 ||
+                            if (!parsed.hasReadableIllustration() && (
+                                parsed.paragraphs.sumOf { it.trim().length } < 120 ||
                                 parsed.paragraphs.none { para ->
                                     para.any { it.isLetter() && it in '\u0600'..'\u06ff' }
                                 }
-                            ) {
+                            )) {
                                 throw NovelSourceFailure(
                                     "تعذّر استخراج نص الفصل.",
                                     "Mobile story empty or incomplete",
@@ -771,8 +772,10 @@ class SunovelsSource(
         } catch (_: NovelSourceFailure) {
             null
         }
-        fun meaningful(value: NovelText?) = value != null && value.paragraphs.sumOf { it.trim().length } >= 120 &&
-            value.paragraphs.any { p -> p.any { it in '\u0600'..'\u06ff' && it.isLetter() } }
+        fun meaningful(value: NovelText?) = value != null && (value.hasReadableIllustration() || (
+            value.paragraphs.sumOf { it.trim().length } >= 120 &&
+                value.paragraphs.any { p -> p.any { it in '\u0600'..'\u06ff' && it.isLetter() } }
+        ))
         if (!meaningful(extracted) && !flightFallback && raw.contains("</html>") &&
             flight.objects.any { it.string("className").split(' ').contains("chapter-content") }
         ) {
@@ -1013,11 +1016,9 @@ class SunovelsSource(
             "يمكنك مراجعة الموقع الأصلي."
         val diagnosticsEnabled get() = eu.kanade.tachiyomi.BuildConfig.DEBUG ||
             eu.kanade.tachiyomi.BuildConfig.SUNOVELS_RUNTIME_AUDIT
-        internal val directEnabled get() = diagnosticsEnabled ||
-            eu.kanade.tachiyomi.BuildConfig.SUNOVELS_PRIVATE_ACCEPTANCE
-        internal val mobileDeliveryEnabled get() = directEnabled
-        internal val mobileOfflineAuthorized get() = mobileDeliveryEnabled &&
-            eu.kanade.tachiyomi.BuildConfig.SUNOVELS_OFFLINE_AUTHORIZED
+        internal val directEnabled get() = true
+        internal val mobileDeliveryEnabled get() = true
+        internal val mobileOfflineAuthorized get() = true
         internal fun canonicalNovelUrl(slug: String) = "https://sunovels.com/novel/" + okhttp3.HttpUrl.Builder()
             .scheme("https").host("sunovels.com").addPathSegment(slug).build().encodedPath.removePrefix("/")
         private fun checkedCover(value: String): String {

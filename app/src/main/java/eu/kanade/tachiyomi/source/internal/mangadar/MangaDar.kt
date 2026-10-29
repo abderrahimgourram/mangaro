@@ -304,10 +304,14 @@ class MangaDar(
                 if (it != updatedChapters.size) throw IOException("MangaDar chapter total mismatch")
             }
         }
+        val isComplete = fetchChapters && (
+            declaredChapterCount(document) == updatedChapters.size ||
+                (declaredChapterCount(document) == null && updatedChapters.isNotEmpty())
+            )
         return SMangaUpdate(
             updatedManga,
             updatedChapters,
-            if (fetchChapters && declaredChapterCount(document) == updatedChapters.size) {
+            if (isComplete) {
                 ChapterFetchCompleteness.COMPLETE
             } else {
                 ChapterFetchCompleteness.DEGRADED
@@ -323,7 +327,6 @@ class MangaDar(
                 it.text().trim() == "0" &&
                     it.parent()?.select("span")?.any { label -> label.text().trim() == "الفصول" } == true
             }
-        if (!emptyMessage || !zeroSummary) return explicit
         val advertised =
             document.select("script[type=application/ld+json]").mapNotNull {
                 runCatching {
@@ -334,6 +337,19 @@ class MangaDar(
                         ?.toIntOrNull()
                 }.getOrNull()
             }
+        if (!emptyMessage || !zeroSummary) {
+            if (explicit != null) return explicit
+            advertised.firstOrNull { it >= 0 }?.let { return it }
+            val headerCount = document.select("h3, div").firstNotNullOfOrNull { container ->
+                if (container.children().any { it.text().trim().contains("الفصول") } || container.ownText().trim().contains("الفصول")) {
+                    container.select("span.tabular-nums").firstNotNullOfOrNull { span ->
+                        span.text().filter { it.isDigit() }.toIntOrNull()
+                    }
+                } else null
+            }
+            if (headerCount != null) return headerCount
+            return null
+        }
         if (advertised.any {
                 it > 0
             }
@@ -374,10 +390,30 @@ class MangaDar(
             }
 
             document
-                .select("div.thumb img, div.summary_image img, meta[property=og:image]")
+                .select("div.thumb img, div.summary_image img, meta[property=og:image], meta[name=twitter:image]")
                 .firstNotNullOfOrNull {
                     HtmlMangaIntegrity.image(it, document.baseUri().ifBlank { baseUrl })
                 }?.let { thumbnail_url = it }
+
+            if (thumbnail_url.isNullOrBlank() || eu.kanade.tachiyomi.ui.home.PreferredMangaVariants.isBrokenCover(thumbnail_url)) {
+                val scriptCover = document.select("script#mdg-manga-chapters-json, script").mapNotNull { script ->
+                    runCatching {
+                        val data = script.data()
+                        if (data.contains("\"cover\"") || data.contains("cover:")) {
+                            (Json.parseToJsonElement(data) as? JsonObject)?.get("cover")?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
+                        } else null
+                    }.getOrNull()
+                }.firstOrNull()
+
+                val ldImage = scriptCover ?: document.select("script[type=application/ld+json]").firstNotNullOfOrNull { script ->
+                    runCatching {
+                        (Json.parseToJsonElement(script.data()) as? JsonObject)?.get("image")?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
+                    }.getOrNull()
+                }
+                ldImage?.let { raw ->
+                    tachiyomi.domain.manga.model.CoverUrl.valid(baseUrl.toHttpUrl().resolve(raw)?.toString())?.let { thumbnail_url = it }
+                }
+            }
 
             document
                 .selectFirst("meta[name=description]")
@@ -417,12 +453,14 @@ class MangaDar(
     fun parseChapters(document: Document): List<SChapter> {
         SourceValidationUtil.checkCloudflareOrError(document)
         val data =
-            document
-                .select("div[x-data]")
-                .map { it.attr("x-data") }
-                .firstOrNull { it.contains("rows:") }
+            document.selectFirst("script#mdg-manga-chapters-json")?.data()?.takeIf { it.contains("rows") }
+                ?: document.select("script").map { it.data() }.firstOrNull { it.contains("\"rows\":") || it.contains("rows:") }
+                ?: document
+                    .select("div[x-data]")
+                    .map { it.attr("x-data") }
+                    .firstOrNull { it.contains("rows:") }
         if (data != null) {
-            val start = data.indexOf('[', data.indexOf("rows:"))
+            val start = data.indexOf('[', data.indexOf("rows"))
             val rows = extractRows(data, start)
             val parsed =
                 Json.parseToJsonElement(rows).jsonArray.map { element ->
@@ -434,11 +472,18 @@ class MangaDar(
                     ) {
                         throw IOException("MangaDar missing remote chapter ID")
                     }
-                    val number = row[1].jsonPrimitive.content
-                    if (number.toFloatOrNull()?.takeIf { it.isFinite() && it >= 0 } ==
-                        null
-                    ) {
-                        throw IOException("MangaDar invalid chapter number")
+                    val rawNumber = row[1].jsonPrimitive.content
+                    val parsedNum = rawNumber.toFloatOrNull()?.takeIf { it.isFinite() && it >= 0 }
+                        ?: row.getOrNull(4)?.jsonPrimitive?.content?.toFloatOrNull()?.takeIf { it.isFinite() && it >= 0 }
+                        ?: Regex("\\d+(?:\\.\\d+)?").findAll(rawNumber).lastOrNull()?.value?.toFloatOrNull()?.takeIf { it.isFinite() && it >= 0 }
+                        ?: throw IOException("MangaDar invalid chapter number")
+
+                    val chapterDisplay = if (rawNumber.toFloatOrNull() != null) {
+                        rawNumber
+                    } else if (parsedNum % 1f == 0f) {
+                        parsedNum.toInt().toString()
+                    } else {
+                        parsedNum.toString()
                     }
                     val path = getRelativeUrl(row[2].jsonPrimitive.content)
                     if (!path.startsWith("/manga/") || path.trim('/').split('/').size != 3) {
@@ -446,8 +491,8 @@ class MangaDar(
                     }
                     SChapter.create().apply {
                         url = path
-                        name = "الفصل $number"
-                        chapter_number = number.toFloatOrNull() ?: -1f
+                        name = "الفصل $chapterDisplay"
+                        chapter_number = parsedNum
                         date_upload =
                             (row[3].jsonPrimitive.longOrNull ?: throw IOException("MangaDar invalid chapter date")) *
                             1000

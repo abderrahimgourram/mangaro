@@ -144,6 +144,9 @@ class MangaCoverFetcher(
             } catch (error: Exception) {
                 val recoverable = error is InvalidCoverResponse ||
                     (error is eu.kanade.tachiyomi.network.HttpException && error.code in setOf(403, 404, 410))
+                if (recoverable) {
+                    eu.kanade.tachiyomi.ui.home.PreferredMangaVariants.markBrokenCover(url)
+                }
                 if (!recoverable) throw error
                 return recoverCover() ?: throw error
             }
@@ -187,7 +190,7 @@ class MangaCoverFetcher(
         if (!allowSourceRecovery || !options.networkCachePolicy.readEnabled) return null
         val source = sourceLazy.value ?: return null
         val id = mangaId ?: return null
-        val response = eu.kanade.domain.manga.interactor.RecoverMangaCover(uy.kohesive.injekt.Injekt.get())
+        val response = eu.kanade.domain.manga.interactor.RecoverMangaCover(uy.kohesive.injekt.Injekt.get<tachiyomi.domain.manga.repository.MangaRepository>())
             .await(source, id, url) ?: return null
         try {
             val manga = uy.kohesive.injekt.Injekt.get<tachiyomi.domain.manga.repository.MangaRepository>().getMangaById(

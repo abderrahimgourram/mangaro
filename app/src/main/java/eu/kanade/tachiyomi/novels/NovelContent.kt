@@ -54,8 +54,14 @@ internal fun extractNovelContent(
         RegexOption.IGNORE_CASE,
     ).find(element.attr("style"))?.groupValues?.get(1)?.toIntOrNull()?.takeIf { it in 1..20000 }
     fun resolve(element: Element, value: String): String? {
-        val raw = value.trim().split(Regex("\\s+"), limit = 2).first().trim()
-        if (raw.isBlank() || raw.startsWith("data:", ignoreCase = true) || raw.startsWith("#")) return null
+        val trimmed = value.trim().split(Regex("\\s+"), limit = 2).first().trim()
+        if (trimmed.isBlank() || trimmed.startsWith("data:", ignoreCase = true) || trimmed.startsWith("#")) return null
+        val raw = if (trimmed.startsWith("//")) {
+            val scheme = element.baseUri().toHttpUrlOrNull()?.scheme ?: "https"
+            "$scheme:$trimmed"
+        } else {
+            trimmed
+        }
         return element.baseUri().toHttpUrlOrNull()?.resolve(raw)?.toString()
             ?: raw.takeIf { it.startsWith("https://") || it.startsWith("http://") }
     }
@@ -90,8 +96,9 @@ internal fun extractNovelContent(
             RegexOption.IGNORE_CASE,
         )
         val candidates = listOfNotNull(responsive, container, element).distinct().flatMap { source ->
-            listOf("data-src", "data-lazy-src", "data-original", "data-original-src", "src").map { source.absUrl(it) } +
-                listOf("data-srcset", "srcset").flatMap { srcset(source, it) }
+            listOf("data-src", "data-lazy-src", "data-original", "data-original-src", "src").mapNotNull { attr ->
+                source.absUrl(attr).takeIf { it.isNotBlank() } ?: resolve(source, source.attr(attr))
+            } + listOf("data-srcset", "srcset").flatMap { srcset(source, it) }
         }.map(String::trim).filter(String::isNotBlank)
             .filterNot { documentUrl(it) || notAnImage.containsMatchIn(it) }
         val url = candidates.firstOrNull(NovelHttp::allowed)

@@ -12,6 +12,9 @@ import tachiyomi.core.common.util.system.ImageUtil
 import tachiyomi.domain.manga.model.CoverUrl
 import tachiyomi.domain.manga.model.MangaUpdate
 import tachiyomi.domain.manga.repository.MangaRepository
+import tachiyomi.domain.source.service.SourceManager
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.get
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Clock
@@ -19,6 +22,7 @@ import kotlin.time.Clock
 /** One source-scoped details refresh and image verification; no chapter or state writes. */
 class RecoverMangaCover(
     private val repository: MangaRepository,
+    private val sourceManager: SourceManager? = runCatching { Injekt.get<SourceManager>() }.getOrNull(),
     private val isImage: (Response) -> Boolean = { ImageUtil.findImageType(it.peekBody(512).byteStream()) != null },
 ) {
     suspend fun await(source: HttpSource, mangaId: Long, failedUrl: String?): Response? = locks.getOrPut(mangaId) { Mutex() }.withLock {
@@ -26,6 +30,7 @@ class RecoverMangaCover(
             val manga = repository.getMangaById(mangaId)
             if (manga.source != source.id) return@withTimeout null
             var replacement = CoverUrl.valid(manga.thumbnailUrl)?.takeUnless { it == failedUrl }
+            var candidateSource = source
             if (replacement == null) {
                 // Deduplicate simultaneous failures and bound repeated requests on permanently bad covers.
                 val now = System.nanoTime() / 1_000_000
@@ -34,9 +39,23 @@ class RecoverMangaCover(
                 val update = source.getMangaUpdate(manga.toSManga(), emptyList(), true, false)
                 if (update.manga.url != manga.url) throw IOException("Cover details identity mismatch")
                 replacement = CoverUrl.valid(update.manga.thumbnail_url)?.takeUnless { it == failedUrl }
+                if (replacement == null) {
+                    val duplicates = runCatching { repository.getDuplicateLibraryManga(mangaId, manga.title) }.getOrDefault(emptyList())
+                    for (dup in duplicates) {
+                        val candidateUrl = CoverUrl.valid(dup.manga.thumbnailUrl)?.takeUnless { it == failedUrl }
+                        if (candidateUrl != null) {
+                            val altSource = sourceManager?.get(dup.manga.source) as? HttpSource
+                            if (altSource != null) {
+                                candidateSource = altSource
+                                replacement = candidateUrl
+                                break
+                            }
+                        }
+                    }
+                }
             }
             val url = replacement ?: return@withTimeout null
-            val response = source.client.newCall(GET(url, source.headers)).awaitSuccess()
+            val response = candidateSource.client.newCall(GET(url, candidateSource.headers)).awaitSuccess()
             try {
                 if (!isImage(response)) throw IOException("Replacement cover is not an image")
                 if (!repository.update(MangaUpdate(mangaId, thumbnailUrl = url, coverLastModified = Clock.System.now().toEpochMilliseconds()))) {

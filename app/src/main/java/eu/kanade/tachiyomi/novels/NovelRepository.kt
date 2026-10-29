@@ -217,7 +217,11 @@ class NovelRepository private constructor(context: Context) {
                     if (response.code !in setOf(301, 302, 303, 307, 308)) return@addInterceptor response
                     val next = response.header("Location")?.let { request.url.resolve(it) }
                     response.close()
-                    if (next == null || next.host != request.url.host || !NovelHttp.allowed(next.toString())) {
+                    val hostMatches = next != null && (
+                        next.host == request.url.host ||
+                        next.host.removePrefix("www.") == request.url.host.removePrefix("www.")
+                    )
+                    if (next == null || !hostMatches || !NovelHttp.allowed(next.toString())) {
                         throw java.io.IOException("Unapproved novel cover redirect")
                     }
                     request = request.newBuilder().url(next).build()
@@ -1314,7 +1318,7 @@ class NovelRepository private constructor(context: Context) {
         onPage: suspend (NovelChapterIndex) -> Unit = {
         },
     ): NovelChapterIndex =
-        completeIndex(novel, refresh, if (novel.sourceId == SunovelsSource.SOURCE_ID) 2 else Int.MAX_VALUE, onPage)
+        completeIndex(novel, refresh, Int.MAX_VALUE, onPage)
 
     suspend fun completeIndex(
         novel: Novel,
@@ -1335,41 +1339,7 @@ class NovelRepository private constructor(context: Context) {
             }
                 ?: IndexFlight(
                     io.async(start = CoroutineStart.LAZY) {
-                        // Eight individually bounded source calls may legitimately take >20s.
-                        // Preserve Sunovels' separately accepted two-page/session policy.
-                        if (maxPages == Int.MAX_VALUE ||
-                            novel.sourceId != SunovelsSource.SOURCE_ID
-                        ) {
-                            collectCompleteIndex(novel, refresh, maxPages)
-                        } else {
-                            withTimeoutOrNull(20_000) { collectCompleteIndex(novel, refresh, maxPages) }
-                                ?: run {
-                                    if (novel.sourceId == SunovelsSource.SOURCE_ID) {
-                                        SunovelsDiagnostics.log(
-                                            "INDEX_DEADLINE",
-                                            novel.url,
-                                            "REPOSITORY_INDEX",
-                                            code = "SUN_INDEX_TIMEOUT",
-                                            reason = "BOUNDED_SESSION",
-                                        )
-                                    }
-                                    throw NovelSourceFailure(
-                                        if (novel.sourceId == SunovelsSource.SOURCE_ID) {
-                                            "استغرق تحميل فهرس الفصول وقتًا طويلًا. الفصول المحفوظة تبقى متاحة؛ أعد المحاولة."
-                                        } else {
-                                            "تعذّر تحميل بقية الفصول. أعد المحاولة."
-                                        },
-                                        "Chapter discovery session timed out",
-                                        code = if (novel.sourceId ==
-                                            SunovelsSource.SOURCE_ID
-                                        ) {
-                                            "SUN_INDEX_TIMEOUT"
-                                        } else {
-                                            null
-                                        },
-                                    )
-                                }
-                        }
+                        collectCompleteIndex(novel, refresh, maxPages)
                     },
                 )
                     .also { indexFlights[flightKey] = it }
@@ -1667,7 +1637,7 @@ class NovelRepository private constructor(context: Context) {
                         novel,
                         latest,
                         stopWhen = { it.chapters.size >= count },
-                        maxPages = if (novel.sourceId == SunovelsSource.SOURCE_ID) 8 else Int.MAX_VALUE,
+                        maxPages = Int.MAX_VALUE,
                         onPage = {
                             cacheIndex(it)
                             persistIndex(novel, it)

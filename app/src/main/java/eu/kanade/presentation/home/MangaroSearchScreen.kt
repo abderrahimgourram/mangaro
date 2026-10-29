@@ -175,7 +175,7 @@ fun MangaroSearchScreen(
     val context = LocalContext.current
     // Supplementary groups are an ephemeral, explicit choice for this input only.
     // Never restore expansion for another query or after the screen/process is recreated.
-    var showAdditional by remember(query) { mutableStateOf(false) }
+    var showAdditional by remember(query) { mutableStateOf(true) }
     val additional = state.additionalRankedResults
     val results = if (showAdditional) state.rankedResults else state.primaryRankedResults
     val mangaStarzId = 6058166507489091982L
@@ -262,17 +262,6 @@ fun MangaroSearchScreen(
                     color = Color(0xFF9E95AC),
                     style = MaterialTheme.typography.labelMedium,
                 )
-            }
-            if (hasSearch && currentResults && additional.isNotEmpty()) {
-                TextButton(onClick = { showAdditional = !showAdditional }, modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        if (showAdditional) {
-                            "إخفاء النتائج الإضافية"
-                        } else {
-                            "نتائج إضافية (${additional.size})"
-                        },
-                    )
-                }
             }
             Box(Modifier.fillMaxWidth().height(2.dp)) {
                 if (loading) {
@@ -552,6 +541,11 @@ private fun SearchMangaCard(
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
 ) {
+    val directUrl = manga.thumbnailUrl?.takeIf { it.isNotBlank() && !eu.kanade.tachiyomi.ui.home.PreferredMangaVariants.isBrokenCover(it) }
+        ?: result.manga.thumbnailUrl?.takeIf { it.isNotBlank() && !eu.kanade.tachiyomi.ui.home.PreferredMangaVariants.isBrokenCover(it) }
+        ?: result.alternatives.firstNotNullOfOrNull { it.manga.thumbnailUrl?.takeIf { u -> u.isNotBlank() && !eu.kanade.tachiyomi.ui.home.PreferredMangaVariants.isBrokenCover(u) } }
+        ?: manga.thumbnailUrl
+    val coverManga = if (directUrl != manga.thumbnailUrl && directUrl != null) manga.copy(thumbnailUrl = directUrl) else manga
     eu.kanade.presentation.components.MangaroWorkCard(
         title = manga.title,
         onClick = onClick,
@@ -559,7 +553,7 @@ private fun SearchMangaCard(
         modifier = Modifier.fillMaxWidth(),
         cover = { coverModifier ->
             Box(coverModifier.clip(MangaroDesignSystem.ShapeCover)) {
-                MangaCover.Book(data = manga.asMangaCover(), modifier = Modifier.fillMaxSize(), contentDescription = "")
+                MangaCover.Book(data = coverManga.asMangaCover(), modifier = Modifier.fillMaxSize(), contentDescription = "")
                 if (manga.favorite) {
                     Surface(
                         Modifier.align(Alignment.TopEnd).padding(6.dp),

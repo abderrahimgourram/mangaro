@@ -40,7 +40,11 @@ import mihon.domain.account.*
 import tachiyomi.domain.manga.interactor.GetLibraryManga
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.manga.model.asMangaCover
+import app.cash.sqldelight.async.coroutines.awaitAsList
 import tachiyomi.core.common.util.lang.WesternDigits
+import tachiyomi.data.Database
+import tachiyomi.data.accountOperation
+import tachiyomi.data.manga.MangaMapper
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
@@ -62,6 +66,9 @@ internal fun ProfileShowcaseControls(profile: MangaroProfile, account: AccountFo
     val novelRepo = remember(context) { NovelRepository.get(context) }
     var snapshot by remember(profile.userId) { mutableStateOf<ProfileShowcaseRepository.Snapshot?>(null) }
     var local by remember(profile.userId) { mutableStateOf<Map<String, Manga>>(emptyMap()) }
+    var localMangaList by remember(profile.userId) { mutableStateOf<List<Manga>>(emptyList()) }
+    var byTitle by remember(profile.userId) { mutableStateOf<Map<String, Manga>>(emptyMap()) }
+    var byNormalized by remember(profile.userId) { mutableStateOf<Map<String, Manga>>(emptyMap()) }
     var localNovels by remember(profile.userId) { mutableStateOf<Map<String, Novel>>(emptyMap()) }
     var metadata by remember(profile.userId) { mutableStateOf<Map<String, ProfileShowcaseRepository.Favorite>>(emptyMap()) }
     var error by remember(profile.userId) { mutableStateOf<String?>(null) }
@@ -79,8 +86,19 @@ internal fun ProfileShowcaseControls(profile: MangaroProfile, account: AccountFo
 
     LaunchedEffect(profile.userId, retry) {
         try {
-            val mangaMap = withContext(Dispatchers.Default) { Injekt.get<GetLibraryManga>().await().associate { ProfileShowcaseRepository.key(it.manga) to it.manga } }
+            val allLocalManga = withContext(Dispatchers.IO) {
+                try {
+                    val database = Injekt.get<Database>()
+                    database.accountOperation { database.mangasQueries.getAllManga(MangaMapper::mapManga).awaitAsList() }
+                } catch (_: Exception) {
+                    Injekt.get<GetLibraryManga>().await().map { it.manga }
+                }
+            }
+            val mangaMap = allLocalManga.associateBy { ProfileShowcaseRepository.key(it) }
             local = mangaMap
+            localMangaList = allLocalManga
+            byTitle = allLocalManga.associateBy { it.title.trim().lowercase() }
+            byNormalized = allLocalManga.associateBy { tachiyomi.domain.manga.service.WorkTitleNormalizer.normalize(it.title) }
             novelRepo.awaitLocal()
             val novelMap = withContext(Dispatchers.Default) { novelRepo.library.value.associate { ProfileShowcaseRepository.key(it.novel) to it.novel } }
             localNovels = novelMap
@@ -99,7 +117,55 @@ internal fun ProfileShowcaseControls(profile: MangaroProfile, account: AccountFo
         catch (_: Exception) { error = "تعذّر تحميل مكتبتك العامة" }
     }
 
-    fun cover(key: String): Any? = local[key]?.asMangaCover() ?: localNovels[key]?.cover ?: metadata[key]?.cover_path?.let { snapshot?.covers?.get(it) }
+    fun findMatchingLocalManga(title: String): Manga? {
+        if (title.isBlank()) return null
+        val cleanRaw = title.trim().lowercase()
+        byTitle[cleanRaw]?.let { return it }
+        val norm = tachiyomi.domain.manga.service.WorkTitleNormalizer.normalize(title)
+        if (norm.isNotBlank()) {
+            byNormalized[norm]?.let { return it }
+        }
+        val stripped = title.replace(Regex("(?i)\\s*\\((?:مترجم|مترجمة|translated|translation|مانجا|رواية|ملون)\\)\\s*$"), "").trim()
+        val normStripped = tachiyomi.domain.manga.service.WorkTitleNormalizer.normalize(stripped)
+        if (normStripped.isNotBlank() && normStripped != norm) {
+            byNormalized[normStripped]?.let { return it }
+        }
+        for (m in localMangaList) {
+            val mTitleNorm = tachiyomi.domain.manga.service.WorkTitleNormalizer.normalize(m.title)
+            val mStrippedNorm = tachiyomi.domain.manga.service.WorkTitleNormalizer.normalize(
+                m.title.replace(Regex("(?i)\\s*\\((?:مترجم|مترجمة|translated|translation|مانجا|رواية|ملون)\\)\\s*$"), "").trim(),
+            )
+            if (mTitleNorm == norm || mStrippedNorm == norm || mTitleNorm == normStripped || mStrippedNorm == normStripped) {
+                return m
+            }
+            val aliases = eu.kanade.tachiyomi.search.AtlasDeclaredNames.aliases(m)
+            for (alias in aliases) {
+                val aNorm = tachiyomi.domain.manga.service.WorkTitleNormalizer.normalize(alias)
+                if (aNorm == norm || aNorm == normStripped) {
+                    return m
+                }
+            }
+        }
+        return null
+    }
+
+    fun cover(key: String): Any? {
+        val direct = local[key]?.asMangaCover()
+        if (direct != null) return direct
+        val directNovel = localNovels[key]?.cover
+        if (directNovel != null) return directNovel
+        val meta = metadata[key]
+        if (meta != null) {
+            val match = findMatchingLocalManga(meta.title)
+            if (match != null) return match.asMangaCover()
+        }
+        val path = meta?.cover_path
+        if (!path.isNullOrBlank()) {
+            if (path.startsWith("http://") || path.startsWith("https://")) return path
+            snapshot?.covers?.get(path)?.let { return it }
+        }
+        return null
+    }
 
     val choices = remember(local, localNovels, search) {
         val mangaChoices = local.map { (key, manga) -> ShowcaseChoice(key, manga.title, manga.asMangaCover(), isNovel = false) }
@@ -139,7 +205,9 @@ internal fun ProfileShowcaseControls(profile: MangaroProfile, account: AccountFo
                     val item = snapshot?.favorites?.firstOrNull { it.manga_key == key }
                     if (item != null && navigator != null && navigationGate.tryStart()) scope.launch {
                         try {
-                            val manga = local[key] ?: PublicFavoriteResolver().resolve(key, item.title)
+                            val manga = local[key]
+                                ?: findMatchingLocalManga(item.title)
+                                ?: PublicFavoriteResolver().resolve(key, item.title)
                             val novel = localNovels[key]
                             if ((account.session.value as? AccountSession.Authenticated)?.profile?.userId == profile.userId) {
                                 if (manga != null) navigator.push(MangaScreen(manga.id))

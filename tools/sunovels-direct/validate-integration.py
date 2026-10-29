@@ -7,7 +7,7 @@ assert 'if (!SunovelsSource.directEnabled && SunovelsGatewayConfig.enabled)' in 
 assert 'internal val directEnabled get() = diagnosticsEnabled || eu.kanade.tachiyomi.BuildConfig.SUNOVELS_PRIVATE_ACCEPTANCE' in source
 assert 'buildConfigField("boolean", "SUNOVELS_RUNTIME_AUDIT", "false")' in build
 for line in ['buildConfigField("boolean", "SUNOVELS_GATEWAY_ENABLED", "false")','buildConfigField("boolean", "SUNOVELS_GATEWAY_REVIEWED", "false")']:assert line in build
-assert 'repository.completeIndex(edition, refresh = restartSunIndex, maxPages = 2' in ui
+assert 'repository.continueIndex(edition, refresh = shouldRefresh, onPage = onPage)' in ui
 assert 'restartSunIndex = false; retryEditionId' in ui
 assert 'source(novel.sourceId).chapter(' in repo and 'disk.read(novel.id, chapter.id)' in repo
 assert 'prepareReaderChapter(novel, chapter, manualRetry = retryRequested)' in (root/'app/src/main/java/eu/kanade/presentation/novels/SunovelsReaderEntry.kt').read_text()

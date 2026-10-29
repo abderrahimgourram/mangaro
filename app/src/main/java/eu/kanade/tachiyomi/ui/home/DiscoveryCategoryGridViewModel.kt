@@ -215,7 +215,7 @@ class DiscoveryCategoryGridViewModel(
                     CatalogPerformance.measure("category.source") { getSourceDiscovery(source, category, page = nextPage) }
                 }
             }
-            val mangas = networkToLocalManga(result.items.take(12).map { it.toDomainManga() })
+            val mangas = networkToLocalManga(result.items.take(36).map { it.toDomainManga() })
                 .let { eu.kanade.tachiyomi.source.internal.util.DiscoveryChapterGate.filter(it) }
             PreferredMangaVariants.rememberAll(mangas)
             result to mangas.map { manga -> HomeDiscoveryItem(manga.id, manga.title, manga.asMangaCover(), source.id, source.name, manga.url) }

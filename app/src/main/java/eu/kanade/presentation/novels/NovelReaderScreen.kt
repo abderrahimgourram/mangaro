@@ -425,12 +425,19 @@ class NovelReaderScreen(private val novel: Novel, private val initialChapter: No
                                 if (block.kind == NovelBlockKind.IMAGE) {
                                     Box(Modifier.padding(horizontal=appearance.margin.dp)) { NovelIllustration(repository, block, offline, gold) }
                                 } else {
-                                    val value = paragraphs[block.paragraph!!]
-                                    Text(value, modifier = Modifier.padding(horizontal=appearance.margin.dp), color = ink, style = when (block.kind) {
-                                        NovelBlockKind.HEADING -> paragraphStyle.copy(fontWeight = FontWeight.Bold)
-                                        NovelBlockKind.CAPTION -> paragraphStyle.copy(fontSize = (appearance.fontSize * .8f).sp)
-                                        else -> paragraphStyle
-                                    })
+                                    val paragraphIndex = block.paragraph
+                                    val value = if (paragraphIndex != null && paragraphIndex in paragraphs.indices) {
+                                        paragraphs[paragraphIndex]
+                                    } else {
+                                        AnnotatedString("")
+                                    }
+                                    if (value.isNotBlank()) {
+                                        Text(value, modifier = Modifier.padding(horizontal=appearance.margin.dp), color = ink, style = when (block.kind) {
+                                            NovelBlockKind.HEADING -> paragraphStyle.copy(fontWeight = FontWeight.Bold)
+                                            NovelBlockKind.CAPTION -> paragraphStyle.copy(fontSize = (appearance.fontSize * .8f).sp)
+                                            else -> paragraphStyle
+                                        })
+                                    }
                                 }
                             }
                         }

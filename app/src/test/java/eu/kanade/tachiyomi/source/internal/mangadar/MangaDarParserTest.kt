@@ -171,4 +171,71 @@ class MangaDarParserTest {
         mangaDar.popularMangaRequest(2).url.encodedPath shouldBe "/manga/page/2/"
     }
 
+    @Test
+    fun `parseChapters extracts rows from script tag with id mdg-manga-chapters-json`() {
+        val html = """
+            <h1>Auto Hunting With My Clones</h1>
+            <script type="application/json" id="mdg-manga-chapters-json">
+            {"rows":[[208337,"176","https://mangadar.com/manga/auto-hunting-with-my-clones/176/",1793234556,176],[208304,"175","https://mangadar.com/manga/auto-hunting-with-my-clones/175/",1793234400,175]],"read":[],"i18n":{"chapter":"الفصل"}}
+            </script>
+        """.trimIndent()
+        val chapters = mangaDar.parseChapters(Jsoup.parse(html))
+        chapters.size shouldBe 2
+        chapters[0].name shouldBe "الفصل 176"
+        chapters[0].chapter_number shouldBe 176.0f
+        chapters[0].url shouldBe "/manga/auto-hunting-with-my-clones/176/"
+        chapters[0].memo["mangadar.id"]!!.jsonPrimitive.content shouldBe "208337"
+        chapters[1].name shouldBe "الفصل 175"
+        chapters[1].chapter_number shouldBe 175.0f
+    }
+
+    @Test
+    fun `declaredChapterCount detects count from ld+json and header tabular-nums`() {
+        val ldJson = """
+            <script type="application/ld+json">{"@context":"https://schema.org","@type":"ComicSeries","numberOfEpisodes":129}</script>
+        """.trimIndent()
+        mangaDar.declaredChapterCount(Jsoup.parse(ldJson)) shouldBe 129
+
+        val headerHtml = """
+            <div><h3>الفصول <span class="tabular-nums">(129)</span></h3></div>
+        """.trimIndent()
+        mangaDar.declaredChapterCount(Jsoup.parse(headerHtml)) shouldBe 129
+    }
+
+    @Test
+    fun `parseChapters handles slug chapter numbers using element 4`() {
+        val html = """
+            <h1>What's Our Hero Doing?</h1>
+            <script type="application/json" id="mdg-manga-chapters-json">
+            {"rows":[[207551,"x-whats-our-hero-doing-chapter-0","https://mangadar.com/manga/whats-our-hero-doing/0/",1793229475,0]],"read":[],"i18n":{"chapter":"الفصل"}}
+            </script>
+        """.trimIndent()
+        val chapters = mangaDar.parseChapters(Jsoup.parse(html))
+        chapters.size shouldBe 1
+        chapters[0].name shouldBe "الفصل 0"
+        chapters[0].chapter_number shouldBe 0f
+        chapters[0].url shouldBe "/manga/whats-our-hero-doing/0/"
+    }
+
+    @Test
+    fun `parseMangaDetails falls back to ld+json image when thumb img is absent`() {
+        val html = """
+            <main>
+                <h1>What's Our Hero Doing?</h1>
+                <div class="thumb"></div>
+                <div class="description"><p>Some description</p></div>
+                <span class="status">مكتمل</span>
+            </main>
+            <script type="application/ld+json">{"@context":"https://schema.org","@type":"ComicSeries","image":"https://mangadar.com/storage/covers/hero.jpg"}</script>
+            <div class="chapter-card"><a href="/manga/hero/1/">الفصل 1</a></div>
+        """.trimIndent()
+        val manga = eu.kanade.tachiyomi.source.model.SManga.create().apply {
+            url = "/manga/whats-our-hero-doing/"
+            title = "What's Our Hero Doing?"
+        }
+        val parsed = mangaDar.parseMangaDetails(Jsoup.parse(html, "https://mangadar.com/manga/whats-our-hero-doing/"), manga)
+        parsed.thumbnail_url shouldBe "https://mangadar.com/storage/covers/hero.jpg"
+        parsed.status shouldBe eu.kanade.tachiyomi.source.model.SManga.COMPLETED
+    }
 }
+

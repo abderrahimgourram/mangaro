@@ -462,7 +462,7 @@ class HomeViewModel(
                                             result.hasNextPage
                                     }
                                 }
-                                val local = networkToLocalManga(result.items.take(12).map { it.toDomainManga() })
+                                val local = networkToLocalManga(result.items.take(36).map { it.toDomainManga() })
                                 fun cards(mangas: List<Manga>): List<HomeDiscoveryItem> {
                                     PreferredMangaVariants.rememberAll(mangas)
                                     return mangas.map { manga ->
@@ -480,7 +480,7 @@ class HomeViewModel(
                                     val pending =
                                         tachiyomi.domain.manga.model.WorkPresentationEligibility.state(manga) ==
                                             tachiyomi.domain.manga.model.WorkPresentationEligibility.State.PENDING
-                                    if (!pending || category != DiscoveryCategory.POPULAR ||
+                                    if (!pending || (category != DiscoveryCategory.POPULAR && category != DiscoveryCategory.COMPLETED) ||
                                         !metadataAttempted.add("${manga.source}:${manga.url}") ||
                                         metadataBudget.getAndDecrement() <= 0
                                     ) {

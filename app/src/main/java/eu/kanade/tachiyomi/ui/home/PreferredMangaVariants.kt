@@ -40,6 +40,9 @@ object PreferredMangaVariants {
 
     private val invalid = ConcurrentHashMap.newKeySet<Long>()
     fun eligible(id: Long): Boolean = id !in invalid
+    private val brokenCovers = ConcurrentHashMap.newKeySet<String>()
+    fun markBrokenCover(url: String?) { if (!url.isNullOrBlank()) brokenCovers.add(url) }
+    fun isBrokenCover(url: String?): Boolean = !url.isNullOrBlank() && url in brokenCovers
     private val readers = ConcurrentHashMap<Long, Pair<Boolean, Long>>()
     fun remember(manga: Manga) {
         if (rememberQuality(manga)) changes.update { it + 1 }
@@ -183,6 +186,11 @@ object PreferredMangaVariants {
         )
         val compared = CatalogEditionSelection.compareQuality(quality(a, sourceA, idA), quality(b, sourceB, idB))
         if (compared != 0) return compared
+        val aHasCover = !coverA.isNullOrBlank() && !isBrokenCover(coverA)
+        val bHasCover = !coverB.isNullOrBlank() && !isBrokenCover(coverB)
+        if (aHasCover != bHasCover) {
+            return if (aHasCover) 1 else -1
+        }
         return compareValuesBy(
             sourceB.toString() to (b?.work?.reference?.url ?: idB.toString()),
             sourceA.toString() to (a?.work?.reference?.url ?: idA.toString()),

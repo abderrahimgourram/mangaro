@@ -119,7 +119,15 @@ object GroupDiscoveryItems {
             val winner =
                 eligible.maxWithOrNull { a, b -> PreferredMangaVariants.compare(a, b, context) }
                     ?: return@mapNotNull null
+            val healthyCover = if (!winner.coverData.url.isNullOrBlank() && !PreferredMangaVariants.isBrokenCover(winner.coverData.url)) {
+                winner.coverData
+            } else {
+                eligible.firstOrNull { !it.coverData.url.isNullOrBlank() && !PreferredMangaVariants.isBrokenCover(it.coverData.url) }?.coverData
+                    ?: members.firstOrNull { !it.coverData.url.isNullOrBlank() }?.coverData
+                    ?: winner.coverData
+            }
             val aggregate = winner.copy(
+                coverData = healthyCover,
                 canonicalWorkId = work.id,
                 actualChapterCount = PreferredMangaVariants.actualChapterCount(winner),
                 chapterPublishedAt = eligible.mapNotNull {

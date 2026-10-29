@@ -1130,22 +1130,12 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
                     try {
                         gate.withPermit {
                             val onPage: suspend (NovelChapterIndex) -> Unit = { partial ->
-                                if (edition.sourceId != SunovelsSource.SOURCE_ID) {
-                                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
-                                        if (request == indexEpoch) indexes = indexes + (edition.id to partial)
-                                    }
-                                } // Sunovels uses the authoritative repository observer above, including reader proof.
+                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
+                                    if (request == indexEpoch) indexes = indexes + (edition.id to partial)
+                                }
                             }
-                            if (edition.sourceId == SunovelsSource.SOURCE_ID) {
-                                repository.completeIndex(
-                                    edition,
-                                    refresh = restartSunIndex,
-                                    maxPages = 2,
-                                    onPage = onPage,
-                                )
-                            } else {
-                                repository.continueIndex(edition, refresh = retry > 0, onPage = onPage)
-                            }
+                            val shouldRefresh = if (edition.sourceId == SunovelsSource.SOURCE_ID) restartSunIndex else retry > 0
+                            repository.continueIndex(edition, refresh = shouldRefresh, onPage = onPage)
                         }
                     } catch (c: CancellationException) {
                         throw c

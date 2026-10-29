@@ -606,7 +606,7 @@ internal object CeneleSanitizer {
         val newBlocks = text.blocks.mapNotNull { block ->
             val mappedParagraphIndex = paragraphIndexMap[block.paragraph]
             if (mappedParagraphIndex != null || block.kind == NovelBlockKind.IMAGE) {
-                block.copy(paragraph = mappedParagraphIndex ?: 0)
+                block.copy(paragraph = if (block.kind == NovelBlockKind.IMAGE) null else mappedParagraphIndex)
             } else {
                 null
             }
