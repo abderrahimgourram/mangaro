@@ -223,6 +223,7 @@ class SupabaseAccountAuth internal constructor(
     }
 
     /** Exact route + pending encrypted PKCE verifier; never accepts implicit tokens from arbitrary links. */
+    @OptIn(io.github.jan.supabase.annotations.SupabaseInternal::class)
     fun handleCallback(uri: Uri): Boolean {
         if (uri.scheme != redirectScheme || uri.host != "auth" || !uri.path.isNullOrEmpty() || uri.port != -1 || uri.userInfo != null) return false
         scope.launch {
@@ -236,27 +237,41 @@ class SupabaseAccountAuth internal constructor(
                         errors.value = "رابط تسجيل الدخول غير صالح أو انتهت صلاحيته"
                         return@attempt
                     }
-                    val oauthError = uri.getQueryParameter("error")
+                    val fragment = uri.fragment?.takeIf { it.isNotBlank() }
+                    val fragmentParts = fragment?.split("&")?.mapNotNull { part ->
+                        val kv = part.split("=", limit = 2)
+                        if (kv.isNotEmpty() && kv[0].isNotBlank()) kv[0] to kv.getOrElse(1) { "" } else null
+                    }?.toMap() ?: emptyMap()
+
+                    val oauthError = uri.getQueryParameter("error") ?: fragmentParts["error"]
                     if (oauthError != null) {
                         credentials.deleteCodeVerifier()
                         if (oauthError != "access_denied") errors.value = "تعذّر تسجيل الدخول باستخدام Google"
                         return@attempt
                     }
-                    val code = uri.getQueryParameters("code").singleOrNull()?.takeIf { it.isNotBlank() }
-                    if (code == null || uri.fragment != null) {
+                    val code = uri.getQueryParameter("code")?.takeIf { it.isNotBlank() }
+                        ?: uri.getQueryParameters("code").singleOrNull()?.takeIf { it.isNotBlank() }
+                        ?: fragmentParts["code"]?.takeIf { it.isNotBlank() }
+
+                    if (code == null) {
                         credentials.deleteCodeVerifier()
                         errors.value = "رابط تسجيل الدخول غير صالح"
                         return@attempt
                     }
                     val completed = CompletableDeferred<Unit>()
-                    client.handleDeeplinks(Intent(Intent.ACTION_VIEW, uri),
-                        onSessionSuccess = { completed.complete(Unit) },
-                        onError = { completed.completeExceptionally(it) })
                     try {
+                        val cleanUri = Uri.parse("$redirectScheme://auth?code=$code")
+                        client.handleDeeplinks(
+                            Intent(Intent.ACTION_VIEW, cleanUri),
+                            onSessionSuccess = { completed.complete(Unit) },
+                            onError = { completed.completeExceptionally(it) },
+                        )
                         if (withTimeoutOrNull(20_000) { completed.await(); true } == null) {
                             errors.value = "تعذّر إكمال تسجيل الدخول، حاول مجددًا"
                         }
-                    } finally { credentials.deleteCodeVerifier() }
+                    } finally {
+                        credentials.deleteCodeVerifier()
+                    }
                 }
             }
         }

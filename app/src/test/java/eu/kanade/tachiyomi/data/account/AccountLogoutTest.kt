@@ -341,4 +341,45 @@ class AccountLogoutTest {
             directory.deleteRecursively()
         }
     }
+
+    @Test fun `callback with trailing browser hash is accepted and invalid routes are rejected`() = runBlocking {
+        mockkStatic(android.net.Uri::class)
+        every { android.net.Uri.parse(any()) } answers {
+            val raw = firstArg<String>()
+            val u = mockk<android.net.Uri>(relaxed = true)
+            val base = raw.substringBefore('#')
+            val javaUri = java.net.URI.create(base)
+            val frag = if (raw.contains('#')) raw.substringAfter('#') else null
+            val queryParams = javaUri.query?.split("&")?.mapNotNull {
+                val s = it.split("=", limit = 2)
+                if (s.isNotEmpty() && s[0].isNotBlank()) s[0] to s.getOrElse(1) { "" } else null
+            }?.groupBy({ it.first }, { it.second }) ?: emptyMap()
+
+            every { u.scheme } returns javaUri.scheme
+            every { u.host } returns javaUri.host
+            every { u.path } returns javaUri.path.takeIf { it.isNotEmpty() && it != "/" }
+            every { u.port } returns javaUri.port
+            every { u.userInfo } returns javaUri.userInfo
+            every { u.fragment } returns frag
+            every { u.getQueryParameter(any()) } answers { queryParams[firstArg<String>()]?.firstOrNull() }
+            every { u.getQueryParameters(any()) } answers { queryParams[firstArg<String>()].orEmpty() }
+            every { u.toString() } returns raw
+            u
+        }
+        try {
+            Fixture().use { f ->
+                coEvery { f.storage.loadCodeVerifier() } returns null
+                f.guest()
+                // Wrong host / scheme rejected synchronously
+                assertFalse(f.adapter.handleCallback(android.net.Uri.parse("https://example.com/callback")))
+                assertFalse(f.adapter.handleCallback(android.net.Uri.parse("mangaro://other")))
+                // Trailing hash or browser artifacts are routed to deeplink exchange
+                assertTrue(f.adapter.handleCallback(android.net.Uri.parse("mangaro://auth?code=fixture-code#")))
+                assertTrue(f.adapter.handleCallback(android.net.Uri.parse("mangaro://auth?code=fixture-code#_=_")))
+            }
+        } finally {
+            unmockkStatic(android.net.Uri::class)
+        }
+    }
 }
+
