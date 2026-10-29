@@ -321,11 +321,14 @@ internal class WorkIdentityResolverV2 {
         // repeat the translated title. Every earlier contradiction still vetoes the
         // pair, and complete-link clustering checks every member independently.
         val sharedAlias = (x in b.names || y in a.names) &&
-            a.names.intersect(b.names).any(WorkIdentityNormalizer::declaredPresentationName)
+            a.names.intersect(b.names).any {
+                WorkIdentityNormalizer.declaredPresentationName(it) ||
+                    (it.length >= 4 && WorkIdentityNormalizer.specificSingleWord(it))
+            }
         if ((
                 x == y && (
                     WorkIdentityNormalizer.distinctive(x) ||
-                        (x.length >= 6 && WorkIdentityNormalizer.specificSingleWord(x))
+                        (x.length >= 4 && WorkIdentityNormalizer.specificSingleWord(x))
                     )
                 ) || sharedAlias
         ) {

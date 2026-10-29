@@ -51,7 +51,7 @@ internal object NovelCatalogCards {
             }.toMap(),
             n.author?.let(NovelIdentity::searchAuthorKey), priority = priority,
             chapters = SearchChapterEvidence(
-                distinct = evidence?.availableCount?.takeIf { evidence.complete || it > 0 },
+                distinct = evidence?.availableCount?.takeIf { evidence.complete || it > 0 } ?: n.chapterCount?.takeIf { it > 0 },
                 complete = evidence?.complete == true,
                 readable = evidence?.accessWorks,
                 checkedAt =

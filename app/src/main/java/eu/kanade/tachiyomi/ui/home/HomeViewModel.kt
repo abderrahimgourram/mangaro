@@ -473,6 +473,7 @@ class HomeViewModel(
                                             source.id,
                                             source.name,
                                             manga.url,
+                                            actualChapterCount = tachiyomi.domain.chapter.service.ChapterListIntegrity.actualChapterCount(manga),
                                         )
                                     }
                                 }
@@ -686,6 +687,7 @@ class HomeViewModel(
                                     sourceId = source.id,
                                     sourceName = source.name,
                                     url = manga.url,
+                                    actualChapterCount = tachiyomi.domain.chapter.service.ChapterListIntegrity.actualChapterCount(manga),
                                 )
                             },
                         )

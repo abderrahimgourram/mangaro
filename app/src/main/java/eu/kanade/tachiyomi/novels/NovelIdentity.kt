@@ -220,7 +220,7 @@ object NovelWorkReconciler {
         fun quality(n: Novel): tachiyomi.domain.manga.service.CatalogEditionEvidence {
             val value = evidence[n.id]
             return tachiyomi.domain.manga.service.CatalogEditionEvidence(
-                indexedChapters = value?.availableCount?.takeIf { value.complete || it > 0 },
+                indexedChapters = value?.availableCount?.takeIf { value.complete || it > 0 } ?: n.chapterCount?.takeIf { it > 0 },
                 complete = value?.complete == true,
                 readable = value?.accessWorks,
             )

@@ -138,7 +138,8 @@ internal class MangaSearchEvidence(
         )
     }
     private fun evidence(manga: Manga): SearchChapterEvidence {
-        val retained = counts[key(manga)] ?: cachedChapters(manga)
+        val cached = cachedChapters(manga)
+        val retained = counts[key(manga)]?.takeIf { it.distinct != null } ?: cached
         return chapterVerifier.cached(manga)?.let { SearchChapterVerifier.merge(retained, it) } ?: retained
     }
 
@@ -207,11 +208,21 @@ internal class MangaSearchEvidence(
             ensureActive()
             // The current record is authoritative; don't resurrect removed external IDs from an older memo.
             val proof = if (ChapterListIntegrity.proof(manga) == null) {
-                SearchChapterEvidence()
+                val actual = ChapterListIntegrity.actualChapterCount(manga)
+                if (actual != null && actual > 0) {
+                    SearchChapterEvidence(actual, complete = ChapterListIntegrity.retainedComplete(manga))
+                } else {
+                    SearchChapterEvidence()
+                }
             } else {
                 val chapters = getChapters(manga.id)
                 if (!ChapterListIntegrity.retainedVerifiedRows(manga, chapters)) {
-                    SearchChapterEvidence()
+                    val actual = ChapterListIntegrity.actualChapterCount(manga)
+                    if (actual != null && actual > 0) {
+                        SearchChapterEvidence(actual, complete = ChapterListIntegrity.retainedComplete(manga))
+                    } else {
+                        SearchChapterEvidence()
+                    }
                 } else {
                     SearchChapterEvidence(
                         ChapterListIntegrity.uniqueIndexedCount(chapters, manga.source),

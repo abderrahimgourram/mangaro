@@ -149,7 +149,7 @@ object PreferredMangaVariants {
                 SourceWorkReference(item.sourceId, item.mangaId, item.url)
         }
         return CatalogEditionEvidence(
-            quality?.actualChapterCount,
+            quality?.actualChapterCount ?: item.actualChapterCount,
             quality?.publishedAt,
             health(item.sourceId),
             quality?.successfulAt ?: 0,
@@ -176,7 +176,7 @@ object PreferredMangaVariants {
         val a = quality(idA)?.takeIf { it.work.reference.sourceId == sourceA }
         val b = quality(idB)?.takeIf { it.work.reference.sourceId == sourceB }
         fun quality(q: Quality?, source: Long, id: Long) = CatalogEditionEvidence(
-            indexedChapters = q?.actualChapterCount,
+            indexedChapters = q?.actualChapterCount ?: qualities[id]?.actualChapterCount,
             indexSucceededAt = q?.successfulAt ?: 0,
             complete = q?.complete == true,
             readable = readerUsable(id),
@@ -220,7 +220,7 @@ object PreferredMangaVariants {
         indexed?.takeIf { it.revision == revision && it.owner == owner }?.let { return@synchronized it }
         val policy = eu.kanade.tachiyomi.search.WorkIdentityResolverV2()
         val rows = qualities.values.asSequence().filter {
-            it.discoveryObserved && it.owner == owner && it.actualChapterCount != null
+            it.discoveryObserved && it.owner == owner
         }.map { it.copy(work = CatalogWorkEvidence.resolve(it.work)) }.flatMap { q ->
             eu.kanade.tachiyomi.search.AtlasCandidateIndex.keys(policy.evidence(q.work.searchCandidate(), null), true)
                 .asSequence().map { it to q }
@@ -306,7 +306,7 @@ object PreferredMangaVariants {
 
     fun actualChapterCount(item: HomeDiscoveryItem): Int? = quality(item.mangaId)?.takeIf {
         it.work.reference == SourceWorkReference(item.sourceId, item.mangaId, item.url)
-    }?.actualChapterCount
+    }?.actualChapterCount ?: item.actualChapterCount
     fun work(item: HomeDiscoveryItem): WorkMetadata {
         val reference = SourceWorkReference(item.sourceId, item.mangaId, item.url)
         return CatalogWorkEvidence.resolve(

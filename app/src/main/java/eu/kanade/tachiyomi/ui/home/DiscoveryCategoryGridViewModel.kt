@@ -218,7 +218,7 @@ class DiscoveryCategoryGridViewModel(
             val mangas = networkToLocalManga(result.items.take(36).map { it.toDomainManga() })
                 .let { eu.kanade.tachiyomi.source.internal.util.DiscoveryChapterGate.filter(it) }
             PreferredMangaVariants.rememberAll(mangas)
-            result to mangas.map { manga -> HomeDiscoveryItem(manga.id, manga.title, manga.asMangaCover(), source.id, source.name, manga.url) }
+            result to mangas.map { manga -> HomeDiscoveryItem(manga.id, manga.title, manga.asMangaCover(), source.id, source.name, manga.url, actualChapterCount = tachiyomi.domain.chapter.service.ChapterListIntegrity.actualChapterCount(manga)) }
         }, publish = { source, (result, cards) ->
             publication.withLock {
                 currentCoroutineContext().ensureActive()
