@@ -59,9 +59,10 @@ class NovelSourceTest {
     @Test fun kolNovelStarlessThemeParsesDetailsAndStreamsAjaxChaptersInChronologicalOrder() = runBlocking<Unit> {
         val seriesHtml = """
             <!DOCTYPE html><html><head>
-            <meta property="og:image" content="https://kolnovel.com/wp-content/uploads/cover.jpg" />
+            <meta property="og:image" content="https://kolnovel.com/wp-content/uploads/site-logo.jpg" />
             </head><body>
             <div data-kol-series-id="38916" data-kol-volume-nonce="0e6189f25a"></div>
+            <div class="kol-series-editorial__cover"><img src="https://kolnovel.com/wp-content/uploads/cover.jpg" /></div>
             <h1 class="kol-series-editorial__title">القس المجنون</h1>
             <span class="kol-series-editorial__synopsis-summary-copy">قصة الشرير فانغ يوان</span>
             <div class="kol-series-editorial__actions"><a class="kol-ui-link" href="https://kolnovel.com/writer/gu-zhen-ren/">Gu Zhen Ren</a></div>
@@ -104,6 +105,7 @@ class NovelSourceTest {
         details.author shouldBe "Gu Zhen Ren"
         details.status shouldBe "مكتملة"
         details.chapterCount shouldBe 2
+        details.cover shouldBe "https://kolnovel.com/wp-content/uploads/cover.jpg"
 
         // Page 1 should stream Volume 1 (chronologically first)
         val p1 = source.chapters(novel, 1)

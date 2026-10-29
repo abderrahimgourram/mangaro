@@ -120,7 +120,7 @@ internal fun hasNextNovelPage(doc: Document): Boolean = doc.selectFirst(
 
 class KolNovelSource(http: NovelHttp) : HtmlNovelSource(http) {
     companion object {
-        internal const val INDEX_PARSER_VERSION = "kol-starless-ajax-v3"
+        internal const val INDEX_PARSER_VERSION = "kol-starless-ajax-v4"
     }
     override val id = "novel.kolnovel"
     override val name = "ملوك الروايات"
@@ -138,24 +138,27 @@ class KolNovelSource(http: NovelHttp) : HtmlNovelSource(http) {
     private val planMutex = Mutex()
 
     private fun cards(d: Document, page: Int): NovelPage {
-        val entries = d.select(selector("catalogCards", "article.kol-series-archive__item, article.maindet")).mapNotNull { card ->
-            val a = card.selectFirst(selector("catalogTitle", "h3[itemprop=headline] a, .mdinfo h2 a, h2 a")) ?: return@mapNotNull null
+        val cardElements = d.select("article.kol-series-archive__item")
+            .ifEmpty { d.select(selector("catalogCards", "article.maindet")) }
+        val entries = cardElements.mapNotNull { card ->
+            val a = card.selectFirst("h3[itemprop=headline] a, h3 a, h2 a")
+                ?: card.selectFirst(selector("catalogTitle", ".mdinfo h2 a, h2 a"))
+                ?: return@mapNotNull null
             if (!NovelHttp.allowed(a.absUrl("href")) ||
                 a.absUrl("href").toHttpUrl().host != baseUrl.toHttpUrl().host
             ) {
                 return@mapNotNull null
             }
-            a.text().takeIf {
-                it.isNotBlank()
-            }?.let {
-                Novel(
-                    id,
-                    a.absUrl("href"),
-                    it,
-                    image(card.selectFirst(selector("catalogCover", ".kol-series-archive__cover img, .mdthumb img, img"))),
-                    contentFormat = NovelContentTypeClassifier.htmlFormat(card),
-                )
-            }
+            val title = a.text().takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val coverImg = card.selectFirst(".kol-series-archive__cover img")
+                ?: card.selectFirst(selector("catalogCover", ".mdthumb img, img"))
+            Novel(
+                id,
+                a.absUrl("href"),
+                title,
+                image(coverImg),
+                contentFormat = NovelContentTypeClassifier.htmlFormat(card),
+            )
         }.distinctBy { it.id }
         return NovelPage(entries, if (next(d)) page + 1 else null, genres = genres(d, "a[href*='/genre/']"))
     }
@@ -178,15 +181,19 @@ class KolNovelSource(http: NovelHttp) : HtmlNovelSource(http) {
     override suspend fun details(novel: Novel) = withContext(Dispatchers.IO) {
         val d = doc(http.get(novel.url, cache = true), novel.url)
         eu.kanade.tachiyomi.source.internal.util.HtmlWorkCandidateValidation.requireWork(d)
+        val extractedCover = image(d.selectFirst(".kol-series-editorial__cover img"))
+            ?: image(d.selectFirst(".kol-ui-cover img"))
+            ?: image(d.selectFirst(selector("detailsCover", ".sertothumb img")))
+            ?: novel.cover?.takeIf { !it.contains("بدون-اسم96") && !it.contains("kol-brand-logo") }
         novel.copy(
-            title = d.selectFirst(selector("detailsTitle", "h1.kol-series-editorial__title, h1.entry-title"))?.text() ?: novel.title,
-            cover =
-            image(d.selectFirst(selector("detailsCover", ".kol-series-editorial__cover img, .sertothumb img")))
-                ?: image(d.selectFirst("meta[property=og:image]"))
-                ?: novel.cover,
-            description = d.selectFirst(
-                selector("description", ".kol-series-editorial__synopsis-summary-copy, .sersys[itemprop=description]"),
-            )?.wholeText()?.trim().orEmpty(),
+            title = d.selectFirst("h1.kol-series-editorial__title")?.text()
+                ?: d.selectFirst(selector("detailsTitle", "h1.entry-title"))?.text()
+                ?: novel.title,
+            cover = extractedCover,
+            description = d.selectFirst(".kol-series-editorial__synopsis-summary-copy")?.wholeText()?.trim()
+                ?: d.selectFirst(
+                    selector("description", ".sersys[itemprop=description]"),
+                )?.wholeText()?.trim().orEmpty(),
             author = d.selectFirst(".kol-series-editorial__actions a[href*='/writer/'], a[href*='/writer/'], [itemprop=author]")
                 ?.text()?.takeIf { it.isNotBlank() },
             status = d.selectFirst(".kol-series-editorial__status, .sertostat, .status")?.text()?.takeIf { it.isNotBlank() },
@@ -197,7 +204,8 @@ class KolNovelSource(http: NovelHttp) : HtmlNovelSource(http) {
                 ?: d.select(".kol-series-editorial__volume-count").sumOf {
                     it.text().filter(Char::isDigit).toIntOrNull() ?: 0
                 }.takeIf { it > 0 },
-            originalTitle = d.selectFirst(selector("originalTitle", ".kol-series-editorial__original-title, .alter"))?.text()?.takeIf { it.isNotBlank() },
+            originalTitle = d.selectFirst(".kol-series-editorial__original-title")?.text()?.takeIf { it.isNotBlank() }
+                ?: d.selectFirst(selector("originalTitle", ".alter"))?.text()?.takeIf { it.isNotBlank() },
             contentFormat = NovelContentTypeClassifier.merge(
                 NovelContentTypeClassifier.htmlFormat(d),
                 novel.contentFormat,

@@ -460,15 +460,11 @@ fun MangaroSearchScreen(
                                 }
                             }
                         }
-                    } else if (failed) {
+                    } else if (failed && !currentResults) {
                         item(key = "searchNotice", span = { GridItemSpan(maxLineSpan) }) {
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    if (currentResults) {
-                                        "بعض النتائج غير متاحة حاليًا"
-                                    } else {
-                                        "تعذّر تحديث النتائج، نحتفظ بالبحث السابق"
-                                    },
+                                    "تعذّر تحديث النتائج، نحتفظ بالبحث السابق",
                                     Modifier.weight(1f),
                                     color = Color(0xFF9E95AC),
                                     style = MaterialTheme.typography.bodySmall,
