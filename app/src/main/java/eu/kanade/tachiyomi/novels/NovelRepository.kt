@@ -305,7 +305,11 @@ class NovelRepository private constructor(context: Context) {
                                 file.openRead().use {
                                     it.readBytes().decodeToString()
                                 },
-                            ).map { if (it.favorite) it.copy(saved = true) else it }
+                            ).map { item ->
+                                val clean = cleanNovelCover(item.novel.cover)
+                                val cleanedNovel = if (clean != item.novel.cover) item.novel.copy(cover = clean) else item.novel
+                                if (item.favorite) item.copy(novel = cleanedNovel, saved = true) else item.copy(novel = cleanedNovel)
+                            }
                     }
                 }
                     .onFailure {
@@ -329,8 +333,18 @@ class NovelRepository private constructor(context: Context) {
                         }
                     }.getOrNull()
                         ?: NovelCatalogState()
+                val cleanedOld = old.copy(
+                    works = old.works.map { w ->
+                        w.copy(
+                            editions = w.editions.map { ed ->
+                                val clean = cleanNovelCover(ed.cover)
+                                if (clean != ed.cover) ed.copy(cover = clean) else ed
+                            },
+                        )
+                    },
+                )
                 val migrated = NovelWorkReconciler.ingest(
-                    old,
+                    cleanedOld,
                     mutableLibrary.value.map {
                         it.novel
                     },
@@ -402,7 +416,31 @@ class NovelRepository private constructor(context: Context) {
                     ) {
                         source(novel.sourceId).details(novel)
                     }.also {
-                        ingest(listOf(it))
+                        val updated = cleanNovelCover(it.cover)?.let { clean ->
+                            if (clean != it.cover) it.copy(cover = clean) else it
+                        } ?: it.copy(cover = null)
+                        ingest(listOf(updated))
+                        if (updated.cover != null) {
+                            var libraryChanged = false
+                            val nextLibrary = mutableLibrary.value.map { item ->
+                                if (item.novel.id == updated.id && item.novel.cover != updated.cover) {
+                                    libraryChanged = true
+                                    item.copy(novel = item.novel.copy(cover = updated.cover))
+                                } else {
+                                    item
+                                }
+                            }
+                            if (libraryChanged) {
+                                mutableLibrary.value = nextLibrary
+                                io.launch {
+                                    runCatching {
+                                        catalogLock.withLock {
+                                            write(file, json.encodeToString(nextLibrary))
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         if (novel.sourceId ==
                             SunovelsSource.SOURCE_ID
                         ) {

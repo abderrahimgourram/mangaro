@@ -148,12 +148,14 @@ object NovelWorkReconciler {
             val old = previous?.editions?.firstOrNull { it.id == incoming.id }
             // A small catalogue card must never erase details learned from the actual work page.
             val novel = if (old == null) {
-                incoming
+                val clean = cleanNovelCover(incoming.cover)
+                if (clean != incoming.cover) incoming.copy(cover = clean) else incoming
             } else {
                 incoming.copy(
                     author = incoming.author?.takeIf { it.isNotBlank() } ?: old.author,
                     description = incoming.description.ifBlank { old.description },
-                    cover = incoming.cover ?: old.cover, status = incoming.status ?: old.status,
+                    cover = cleanNovelCover(incoming.cover) ?: cleanNovelCover(old.cover),
+                    status = incoming.status ?: old.status,
                     originalTitle =
                     incoming.originalTitle
                         ?: if (incoming.sourceId ==

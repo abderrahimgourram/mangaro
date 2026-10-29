@@ -2,6 +2,17 @@ package eu.kanade.tachiyomi.novels
 
 import kotlinx.serialization.Serializable
 
+/** Checks whether a novel cover URL is empty or points to a brand logo/placeholder instead of an actual novel cover. */
+fun isInvalidNovelCover(url: String?): Boolean {
+    if (url.isNullOrBlank()) return true
+    if (url.contains("بدون-اسم96")) return true
+    if (url.contains("kol-brand-logo")) return true
+    if (url.contains("placeholder")) return true
+    return false
+}
+
+fun cleanNovelCover(url: String?): String? = url?.takeUnless(::isInvalidNovelCover)
+
 /** No manga IDs, account state, XP, or image-reader models enter this subsystem. */
 @Serializable
 data class Novel(val sourceId: String, val url: String, val title: String, val cover: String? = null,

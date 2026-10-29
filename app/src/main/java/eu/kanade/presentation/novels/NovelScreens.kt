@@ -101,6 +101,7 @@ import eu.kanade.tachiyomi.focus.FocusSurface
 import eu.kanade.tachiyomi.focus.FocusTarget
 import eu.kanade.tachiyomi.novels.Novel
 import eu.kanade.tachiyomi.novels.NovelCatalogCards
+import eu.kanade.tachiyomi.novels.cleanNovelCover
 import eu.kanade.tachiyomi.novels.NovelChapter
 import eu.kanade.tachiyomi.novels.NovelChapterGroup
 import eu.kanade.tachiyomi.novels.NovelChapterGroupBuilder
@@ -190,7 +191,20 @@ internal fun NovelShell(
 @Composable
 internal fun NovelCover(novel: Novel, modifier: Modifier) {
     val context = LocalContext.current
-    val loader = NovelRepository.get(context).covers
+    val repository = remember(context) { NovelRepository.get(context) }
+    val catalog by repository.catalog.collectAsState()
+    val cleanCover = remember(novel.cover) { cleanNovelCover(novel.cover) }
+    val effectiveCover = remember(cleanCover, catalog, novel.id) {
+        cleanCover ?: catalog.work(novel.id)?.editions?.firstNotNullOfOrNull { cleanNovelCover(it.cover) }
+    }
+    LaunchedEffect(novel.id, effectiveCover) {
+        if (effectiveCover == null && (novel.sourceId == "novel.kolnovel" || novel.sourceId == "novel.mknov")) {
+            try {
+                repository.detail(novel)
+            } catch (_: Exception) {}
+        }
+    }
+    val loader = repository.covers
     val owner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     val density = androidx.compose.ui.platform.LocalDensity.current
     val view = androidx.compose.ui.platform.LocalView.current
@@ -199,8 +213,8 @@ internal fun NovelCover(novel: Novel, modifier: Modifier) {
         android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
         1f,
     ) > 0f
-    var animation by remember(novel.cover) { mutableStateOf<android.graphics.drawable.Animatable?>(null) }
-    var visible by remember(novel.cover) { mutableStateOf(false) }
+    var animation by remember(effectiveCover) { mutableStateOf<android.graphics.drawable.Animatable?>(null) }
+    var visible by remember(effectiveCover) { mutableStateOf(false) }
     DisposableEffect(owner, animation, motion, visible) {
         val current = animation
         fun update() {
@@ -231,8 +245,8 @@ internal fun NovelCover(novel: Novel, modifier: Modifier) {
         Icon(Icons.Outlined.MenuBook, null, Modifier.size(40.dp), tint = Design.GoldPrimary.copy(alpha = .5f))
         val width = with(density) { maxWidth.toPx() }.toInt().coerceIn(1, 960)
         val height = with(density) { maxHeight.toPx() }.toInt().coerceIn(1, 1280)
-        val request = remember(novel.cover, width, height, motion, context) {
-            novel.cover?.let { url ->
+        val request = remember(effectiveCover, width, height, motion, context) {
+            effectiveCover?.let { url ->
                 coil3.request.ImageRequest.Builder(context).data(url)
                     .size(width, height).diskCacheKey(url).memoryCacheKey("$url|motion=$motion")
                     .apply { if (!motion) decoderFactory(coil3.decode.BitmapFactoryDecoder.Factory()) }.build()

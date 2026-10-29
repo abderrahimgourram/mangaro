@@ -40,7 +40,7 @@ abstract class HtmlNovelSource(protected val http: NovelHttp) : NovelSource {
         }.build().toString()
     protected fun image(element: Element?): String? = element?.let { el ->
         listOf("data-src", "src", "content").firstNotNullOfOrNull { attr ->
-            el.absUrl(attr).takeIf { it.startsWith("https://") && !it.contains("placeholder") }
+            el.absUrl(attr).takeIf { it.startsWith("https://") && !isInvalidNovelCover(it) }
         }
     }
     protected fun next(doc: Document): Boolean = hasNextNovelPage(doc)
@@ -184,7 +184,7 @@ class KolNovelSource(http: NovelHttp) : HtmlNovelSource(http) {
         val extractedCover = image(d.selectFirst(".kol-series-editorial__cover img"))
             ?: image(d.selectFirst(".kol-ui-cover img"))
             ?: image(d.selectFirst(selector("detailsCover", ".sertothumb img")))
-            ?: novel.cover?.takeIf { !it.contains("بدون-اسم96") && !it.contains("kol-brand-logo") }
+            ?: cleanNovelCover(novel.cover)
         novel.copy(
             title = d.selectFirst("h1.kol-series-editorial__title")?.text()
                 ?: d.selectFirst(selector("detailsTitle", "h1.entry-title"))?.text()
