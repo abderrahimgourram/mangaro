@@ -417,12 +417,13 @@ class MknovSource(private val http: NovelHttp, private val nowNanos: () -> Long 
         }
         if (returnedId != chapterId) {
             // Some Mknov volumes repeat a canonical chapter under a duplicate-number alias URL.
-            // The alias is accepted only with exact source-number equality and non-conflicting
-            // title evidence; the saved route and all progress identities remain the requested ID.
+            // The alias is accepted only with exact source-number equality and either zero/glossary
+            // numbering or non-conflicting title evidence; the saved route and all progress identities
+            // remain the requested ID.
             val canonical = bindings[returnedId]
                 ?: fail("Mknov alias is not indexed in the same work", "MKNOV_IDENTITY")
             if (!canonical.chapter.available || canonical.number.compareTo(expected.number) != 0 ||
-                !titlesCompatible(expected.sourceTitle, canonical.sourceTitle)
+                (expected.number.signum() != 0 && !titlesCompatible(expected.sourceTitle, canonical.sourceTitle))
             ) {
                 fail("Mknov alias has conflicting title or number evidence", "MKNOV_IDENTITY")
             }

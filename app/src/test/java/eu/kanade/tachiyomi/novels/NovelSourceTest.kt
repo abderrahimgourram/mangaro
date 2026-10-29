@@ -6,6 +6,11 @@ import kotlinx.serialization.json.*
 import org.jsoup.Jsoup
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Protocol
+import okhttp3.Response
+import okhttp3.ResponseBody.Companion.toResponseBody
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -50,6 +55,71 @@ class NovelSourceTest {
         val settings=NovelReaderSettings(fontSize=24f,theme="sepia")
         Json.decodeFromString<NovelReaderSettings>(Json.encodeToString(NovelReaderSettings.serializer(),settings)) shouldBe settings
     }
+
+    @Test fun kolNovelStarlessThemeParsesDetailsAndStreamsAjaxChaptersInChronologicalOrder() = runBlocking<Unit> {
+        val seriesHtml = """
+            <!DOCTYPE html><html><head>
+            <meta property="og:image" content="https://kolnovel.com/wp-content/uploads/cover.jpg" />
+            </head><body>
+            <div data-kol-series-id="38916" data-kol-volume-nonce="0e6189f25a"></div>
+            <h1 class="kol-series-editorial__title">القس المجنون</h1>
+            <span class="kol-series-editorial__synopsis-summary-copy">قصة الشرير فانغ يوان</span>
+            <div class="kol-series-editorial__actions"><a class="kol-ui-link" href="https://kolnovel.com/writer/gu-zhen-ren/">Gu Zhen Ren</a></div>
+            <span class="kol-series-editorial__status">مكتملة</span>
+            <dl class="kol-series-editorial__quick-facts"><div><dt>الفصول</dt><dd>2</dd></div></dl>
+            <details class="kol-series-editorial__volume" data-kol-chapter-volume="المجلد الثاني" data-kol-volume-page="0">
+                <summary><span class="kol-series-editorial__volume-title">المجلد الثاني</span><span class="kol-series-editorial__volume-count">1 فصل</span></summary>
+            </details>
+            <details class="kol-series-editorial__volume" data-kol-chapter-volume="المجلد الأول" data-kol-volume-page="0">
+                <summary><span class="kol-series-editorial__volume-title">المجلد الأول</span><span class="kol-series-editorial__volume-count">1 فصل</span></summary>
+            </details>
+            </body></html>
+        """.trimIndent()
+
+        val ajaxVol1 = """
+            {"success": true, "data": {"page": 1, "pages": 1, "total": 1, "html": "<li class=\"kol-series-chapter\" data-chapter-id=\"1001\"><a class=\"kol-series-chapter__link\" href=\"https://kolnovel.com/ch-1/\"><span class=\"kol-series-chapter__number\">فصل 1</span><span class=\"kol-series-chapter__title-copy\">البداية</span></a></li>"}}
+        """.trimIndent()
+
+        val ajaxVol2 = """
+            {"success": true, "data": {"page": 1, "pages": 1, "total": 1, "html": "<li class=\"kol-series-chapter\" data-chapter-id=\"1002\"><a class=\"kol-series-chapter__link\" href=\"https://kolnovel.com/ch-2/\"><span class=\"kol-series-chapter__number\">فصل 2</span><span class=\"kol-series-chapter__title-copy\">الاستمرار</span></a></li>"}}
+        """.trimIndent()
+
+        val client = OkHttpClient.Builder().addInterceptor { chain ->
+            val requestUrl = chain.request().url
+            val urlString = requestUrl.toString()
+            val volume = requestUrl.queryParameter("volume")
+            val body = when {
+                urlString.contains("admin-ajax.php") && volume == "المجلد الأول" -> ajaxVol1
+                urlString.contains("admin-ajax.php") && volume == "المجلد الثاني" -> ajaxVol2
+                else -> seriesHtml
+            }
+            Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1).code(200).message("OK")
+                .body(body.toResponseBody("text/html; charset=utf-8".toMediaType())).build()
+        }.build()
+
+        val source = KolNovelSource(NovelHttp(client))
+        val novel = Novel(source.id, "https://kolnovel.com/series/reverend-insanity/", "القس المجنون")
+        val details = source.details(novel)
+        details.title shouldBe "القس المجنون"
+        details.author shouldBe "Gu Zhen Ren"
+        details.status shouldBe "مكتملة"
+        details.chapterCount shouldBe 2
+
+        // Page 1 should stream Volume 1 (chronologically first)
+        val p1 = source.chapters(novel, 1)
+        p1.chapters.size shouldBe 1
+        p1.chapters.first().title shouldBe "فصل 1 : البداية"
+        p1.chapters.first().url shouldBe "https://kolnovel.com/ch-1/"
+        p1.nextPage shouldBe 2
+
+        // Page 2 should stream Volume 2
+        val p2 = source.chapters(novel, 2)
+        p2.chapters.size shouldBe 1
+        p2.chapters.first().title shouldBe "فصل 2 : الاستمرار"
+        p2.chapters.first().url shouldBe "https://kolnovel.com/ch-2/"
+        p2.nextPage shouldBe null
+    }
+
     @Test fun flightDataIsParsedAsJsonAndNeverExecuted() {
         val payload="1:[\"x\",{\"href\":\"/novel/book\",\"children\":[{\"src\":\"/uploads/book.webp\"}]}]\n"
         val encoded=Json.encodeToString(JsonArray.serializer(),buildJsonArray {add(1);add(payload)})

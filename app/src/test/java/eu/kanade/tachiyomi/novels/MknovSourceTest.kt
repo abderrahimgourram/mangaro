@@ -535,6 +535,30 @@ class MknovSourceTest {
         h.calls.last().body["id"]!!.jsonPrimitive.long shouldBe 247343L
     }
 
+    @Test fun zeroNumberedPrequelOrGlossaryChapterAliasesAreAcceptedRegardlessOfTitleDifference() = runBlocking<Unit> {
+        val index = indexJson(
+            volumeJson(
+                "معلومات",
+                0,
+                listOf(
+                    chapterRow(41602, work = 108, number = "0.0", title = "1 : عوالم الزراعة"),
+                    chapterRow(41603, work = 108, number = "0.0", title = "2 : الأرواح القتالية"),
+                ),
+            ),
+        )
+        val h = Harness { endpoint, _ ->
+            when (endpoint) {
+                "getChaptersByWorkId" -> index
+                "getChapterBatch" -> bodyJson(41602, work = 108, number = "0.0", title = "1 : عوالم الزراعة")
+                else -> error("Unexpected $endpoint")
+            }
+        }
+        val chapter = NovelChapter("https://mknov.com/novel/108/chapter/41603", "2 : الأرواح القتالية", 1)
+        val text = h.source.chapter(chapter)
+        text.paragraphs.size shouldBe 3
+        chapter.id shouldBe "https://mknov.com/novel/108/chapter/41603"
+    }
+
     @Test fun aliasWithConflictingTitleOrMissingCanonicalRowIsRejected() {
         val index = indexJson(
             volumeJson(null, 0, listOf(chapterRow(81249, number = "1.0", title = "عنوان أساسي"))),
