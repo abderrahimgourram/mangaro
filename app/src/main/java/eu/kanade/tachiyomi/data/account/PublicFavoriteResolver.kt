@@ -17,8 +17,11 @@ import uy.kohesive.injekt.api.get
 internal class PublicFavoriteResolver {
     suspend fun resolve(key: String, title: String): Manga? = withContext(Dispatchers.IO) {
         val repository = Injekt.get<MangaRepository>()
+        val cleanTitle = title.replace(Regex("[.…]+$"), "").trim()
+        val cleanNorm = tachiyomi.domain.manga.service.WorkTitleNormalizer.normalize(cleanTitle)
+
         (repository.getFavorites() + repository.getReadMangaNotInLibrary()).firstOrNull { ProfileShowcaseRepository.key(it) == key }?.let { return@withContext it }
-        // Existing CatalogueSource search is used only on an explicit tap, never per showcase card.
+        // Existing CatalogueSource search is used only on an explicit tap or missing showcase cover.
         withTimeoutOrNull(25_000) {
             val slots = Semaphore(3)
             coroutineScope {
@@ -28,8 +31,12 @@ internal class PublicFavoriteResolver {
                     val found = slots.withPermit {
                         try {
                             withTimeoutOrNull(8_000) {
-                                source.getSearchManga(1, title, source.getFilterList()).mangas.map { it.toDomainManga(source.id) }
-                                    .firstOrNull { ProfileShowcaseRepository.key(it) == key }
+                                val results = source.getSearchManga(1, cleanTitle, source.getFilterList()).mangas.map { it.toDomainManga(source.id) }
+                                results.firstOrNull { ProfileShowcaseRepository.key(it) == key }
+                                    ?: results.firstOrNull {
+                                        val candNorm = tachiyomi.domain.manga.service.WorkTitleNormalizer.normalize(it.title)
+                                        candNorm == cleanNorm || (cleanNorm.length >= 4 && (candNorm.startsWith(cleanNorm) || cleanNorm.startsWith(candNorm)))
+                                    }
                             }
                         } catch (cancelled: CancellationException) { throw cancelled }
                         catch (_: Exception) { null }

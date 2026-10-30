@@ -122,18 +122,38 @@ class SupabaseAccountAuth internal constructor(
         profileRecovery?.cancel()
         profileRecoveryOwner = owner
         profileRecovery = scope.launch {
-            for (wait in listOf(2_000L, 5_000L, 15_000L)) {
+            for (wait in listOf(1_500L, 4_000L, 8_000L)) {
                 kotlinx.coroutines.delay(wait)
                 val recovered = mutations.withLock {
                     val user = client.auth.currentUserOrNull()?.takeIf { it.id == owner } ?: return@launch
                     try {
-                        withTimeoutOrNull(12_000) { loadProfile(user); true } == true
+                        withTimeoutOrNull(8_000) { loadProfile(user); true } == true
                     } catch (cancelled: CancellationException) { throw cancelled }
                     catch (_: Exception) { false }
                 }
                 if (recovered) return@launch
             }
-            // UI retains the error and an explicit retry; local data remains usable.
+            mutations.withLock {
+                if (session.value == AccountSession.Loading) {
+                    val user = client.auth.currentUserOrNull()?.takeIf { it.id == owner }
+                    if (user != null) {
+                        val fallback = MangaroProfile(
+                            userId = user.id,
+                            email = user.email,
+                            displayName = user.email?.substringBefore('@'),
+                            username = null,
+                            avatarUrl = null,
+                            xp = 0,
+                            level = 1,
+                            role = AccountRole.USER,
+                        )
+                        session.value = AccountSession.Authenticated(fallback)
+                        errors.value = "تعذّر مزامنة كامل الملف الشخصي، يمكنك متابعة القراءة أو إعادة المحاولة"
+                    } else {
+                        publishGuest()
+                    }
+                }
+            }
         }
     }
 
@@ -201,11 +221,19 @@ class SupabaseAccountAuth internal constructor(
 
     internal class SessionChangedException : IllegalStateException()
     /** Existing auth mutex prevents a queued social write running as a newly signed-in account. */
-    internal suspend fun <T> withSession(userId: String, action: suspend () -> T): T = mutations.withLock {
-        if ((session.value as? AccountSession.Authenticated)?.profile?.userId != userId || client.auth.currentUserOrNull()?.id != userId) {
-            throw SessionChangedException()
+    internal suspend fun <T> withSession(userId: String, action: suspend () -> T): T {
+        mutations.withLock {
+            if ((session.value as? AccountSession.Authenticated)?.profile?.userId != userId || client.auth.currentUserOrNull()?.id != userId) {
+                throw SessionChangedException()
+            }
         }
-        action()
+        val result = action()
+        mutations.withLock {
+            if ((session.value as? AccountSession.Authenticated)?.profile?.userId != userId || client.auth.currentUserOrNull()?.id != userId) {
+                throw SessionChangedException()
+            }
+        }
+        return result
     }
 
     override suspend fun signInWithGoogle(): AccountOperation = mutations.withLock {
@@ -227,52 +255,49 @@ class SupabaseAccountAuth internal constructor(
     fun handleCallback(uri: Uri): Boolean {
         if (uri.scheme != redirectScheme || uri.host != "auth" || !uri.path.isNullOrEmpty() || uri.port != -1 || uri.userInfo != null) return false
         scope.launch {
-            mutations.withLock {
-                attempt {
-                    if (withTimeoutOrNull(15_000) { client.auth.awaitInitialization(); true } == null) {
-                        errors.value = "تعذّر استعادة الحساب، حاول تسجيل الدخول مجددًا"
-                        return@attempt
-                    }
-                    if (credentials.loadCodeVerifier() == null) {
-                        errors.value = "رابط تسجيل الدخول غير صالح أو انتهت صلاحيته"
-                        return@attempt
-                    }
-                    val fragment = uri.fragment?.takeIf { it.isNotBlank() }
-                    val fragmentParts = fragment?.split("&")?.mapNotNull { part ->
-                        val kv = part.split("=", limit = 2)
-                        if (kv.isNotEmpty() && kv[0].isNotBlank()) kv[0] to kv.getOrElse(1) { "" } else null
-                    }?.toMap() ?: emptyMap()
+            val hasVerifier = mutations.withLock { credentials.loadCodeVerifier() != null }
+            if (!hasVerifier) {
+                errors.value = "رابط تسجيل الدخول غير صالح أو انتهت صلاحيته"
+                return@launch
+            }
+            val fragment = uri.fragment?.takeIf { it.isNotBlank() }
+            val fragmentParts = fragment?.split("&")?.mapNotNull { part ->
+                val kv = part.split("=", limit = 2)
+                if (kv.isNotEmpty() && kv[0].isNotBlank()) kv[0] to kv.getOrElse(1) { "" } else null
+            }?.toMap() ?: emptyMap()
 
-                    val oauthError = uri.getQueryParameter("error") ?: fragmentParts["error"]
-                    if (oauthError != null) {
-                        credentials.deleteCodeVerifier()
-                        if (oauthError != "access_denied") errors.value = "تعذّر تسجيل الدخول باستخدام Google"
-                        return@attempt
-                    }
-                    val code = uri.getQueryParameter("code")?.takeIf { it.isNotBlank() }
-                        ?: uri.getQueryParameters("code").singleOrNull()?.takeIf { it.isNotBlank() }
-                        ?: fragmentParts["code"]?.takeIf { it.isNotBlank() }
+            val oauthError = uri.getQueryParameter("error") ?: fragmentParts["error"]
+            if (oauthError != null) {
+                mutations.withLock { credentials.deleteCodeVerifier() }
+                if (oauthError != "access_denied") errors.value = "تعذّر تسجيل الدخول باستخدام Google"
+                return@launch
+            }
+            val code = uri.getQueryParameter("code")?.takeIf { it.isNotBlank() }
+                ?: uri.getQueryParameters("code").singleOrNull()?.takeIf { it.isNotBlank() }
+                ?: fragmentParts["code"]?.takeIf { it.isNotBlank() }
 
-                    if (code == null) {
-                        credentials.deleteCodeVerifier()
-                        errors.value = "رابط تسجيل الدخول غير صالح"
-                        return@attempt
-                    }
-                    val completed = CompletableDeferred<Unit>()
-                    try {
-                        val cleanUri = Uri.parse("$redirectScheme://auth?code=$code")
-                        client.handleDeeplinks(
-                            Intent(Intent.ACTION_VIEW, cleanUri),
-                            onSessionSuccess = { completed.complete(Unit) },
-                            onError = { completed.completeExceptionally(it) },
-                        )
-                        if (withTimeoutOrNull(20_000) { completed.await(); true } == null) {
-                            errors.value = "تعذّر إكمال تسجيل الدخول، حاول مجددًا"
-                        }
-                    } finally {
-                        credentials.deleteCodeVerifier()
-                    }
+            if (code == null) {
+                mutations.withLock { credentials.deleteCodeVerifier() }
+                errors.value = "رابط تسجيل الدخول غير صالح"
+                return@launch
+            }
+            val completed = CompletableDeferred<Unit>()
+            try {
+                val cleanUri = Uri.parse("$redirectScheme://auth?code=$code")
+                client.handleDeeplinks(
+                    Intent(Intent.ACTION_VIEW, cleanUri),
+                    onSessionSuccess = { completed.complete(Unit) },
+                    onError = { completed.completeExceptionally(it) },
+                )
+                if (withTimeoutOrNull(20_000) { completed.await(); true } == null) {
+                    errors.value = "تعذّر إكمال تسجيل الدخول، حاول مجددًا"
                 }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                errors.value = "تعذّر إكمال تسجيل الدخول، حاول مجددًا"
+            } finally {
+                mutations.withLock { credentials.deleteCodeVerifier() }
             }
         }
         return true
@@ -290,7 +315,7 @@ class SupabaseAccountAuth internal constructor(
                     errors.value = null
                     var revoked = false
                     try {
-                        withTimeoutOrNull(12_000) { client.auth.signOut(); revoked = true }
+                        withTimeoutOrNull(2_500L) { client.auth.signOut(); revoked = true }
                     } catch (_: Exception) {
                         // Network failure is not proof of server-side revocation. Local
                         // logout still uses the supported SDK cleanup below.

@@ -70,6 +70,7 @@ internal fun ProfileShowcaseControls(profile: MangaroProfile, account: AccountFo
     var byTitle by remember(profile.userId) { mutableStateOf<Map<String, Manga>>(emptyMap()) }
     var byNormalized by remember(profile.userId) { mutableStateOf<Map<String, Manga>>(emptyMap()) }
     var localNovels by remember(profile.userId) { mutableStateOf<Map<String, Novel>>(emptyMap()) }
+    var resolvedCovers by remember(profile.userId) { mutableStateOf<Map<String, Any>>(emptyMap()) }
     var metadata by remember(profile.userId) { mutableStateOf<Map<String, ProfileShowcaseRepository.Favorite>>(emptyMap()) }
     var error by remember(profile.userId) { mutableStateOf<String?>(null) }
     var open by remember(profile.userId) { mutableStateOf(false) }
@@ -83,39 +84,6 @@ internal fun ProfileShowcaseControls(profile: MangaroProfile, account: AccountFo
     var search by remember(profile.userId) { mutableStateOf("") }
     val slots = ProfileIdentity.favoriteSlots(profile.level, profile.role)
     val accent = rankAccent(profile.level)
-
-    LaunchedEffect(profile.userId, retry) {
-        try {
-            val allLocalManga = withContext(Dispatchers.IO) {
-                try {
-                    val database = Injekt.get<Database>()
-                    database.accountOperation { database.mangasQueries.getAllManga(MangaMapper::mapManga).awaitAsList() }
-                } catch (_: Exception) {
-                    Injekt.get<GetLibraryManga>().await().map { it.manga }
-                }
-            }
-            val mangaMap = allLocalManga.associateBy { ProfileShowcaseRepository.key(it) }
-            local = mangaMap
-            localMangaList = allLocalManga
-            byTitle = allLocalManga.associateBy { it.title.trim().lowercase() }
-            byNormalized = allLocalManga.associateBy { tachiyomi.domain.manga.service.WorkTitleNormalizer.normalize(it.title) }
-            novelRepo.awaitLocal()
-            val novelMap = withContext(Dispatchers.Default) { novelRepo.library.value.associate { ProfileShowcaseRepository.key(it.novel) to it.novel } }
-            localNovels = novelMap
-            val loadedSnapshot = repository.load(profile.userId)
-            snapshot = loadedSnapshot
-
-            val mangaMeta = mangaMap.mapValues { (key, manga) -> ProfileShowcaseRepository.Favorite(key, manga.title.take(300), is_novel = false) }
-            val novelMeta = mutableMapOf<String, ProfileShowcaseRepository.Favorite>()
-            for ((key, novel) in novelMap) {
-                val count = novelRepo.indexSnapshot(novel)?.chapters?.size?.takeIf { it > 0 }
-                novelMeta[key] = ProfileShowcaseRepository.Favorite(key, novel.title.take(300), is_novel = true, chapter_count = count)
-            }
-            metadata = mangaMeta + novelMeta + loadedSnapshot.favorites.associateBy { it.manga_key }
-            error = null
-        } catch (cancelled: CancellationException) { throw cancelled }
-        catch (_: Exception) { error = "تعذّر تحميل مكتبتك العامة" }
-    }
 
     fun findMatchingLocalManga(title: String): Manga? {
         if (title.isBlank()) return null
@@ -146,7 +114,96 @@ internal fun ProfileShowcaseControls(profile: MangaroProfile, account: AccountFo
                 }
             }
         }
+        // Prefix matching for truncated titles (e.g. "Revenge of the Iron-Blooded ...")
+        val cleanPrefix = tachiyomi.domain.manga.service.WorkTitleNormalizer.normalize(
+            title.replace(Regex("[.…]+$"), "").trim()
+        )
+        if (cleanPrefix.length >= 4) {
+            for (m in localMangaList) {
+                val mTitleNorm = tachiyomi.domain.manga.service.WorkTitleNormalizer.normalize(m.title)
+                if (mTitleNorm.startsWith(cleanPrefix) || cleanPrefix.startsWith(mTitleNorm)) {
+                    return m
+                }
+            }
+        }
         return null
+    }
+
+    fun findMatchingLocalNovel(title: String): Novel? {
+        if (title.isBlank()) return null
+        val cleanRaw = title.trim().lowercase()
+        val norm = tachiyomi.domain.manga.service.WorkTitleNormalizer.normalize(title)
+        val cleanPrefix = tachiyomi.domain.manga.service.WorkTitleNormalizer.normalize(
+            title.replace(Regex("[.…]+$"), "").trim()
+        )
+        for (n in localNovels.values) {
+            if (n.title.trim().lowercase() == cleanRaw) return n
+            val nNorm = tachiyomi.domain.manga.service.WorkTitleNormalizer.normalize(n.title)
+            if (nNorm == norm) return n
+            if (cleanPrefix.length >= 4 && (nNorm.startsWith(cleanPrefix) || cleanPrefix.startsWith(nNorm))) {
+                return n
+            }
+        }
+        return null
+    }
+
+    LaunchedEffect(profile.userId, retry) {
+        try {
+            val allLocalManga = withContext(Dispatchers.IO) {
+                try {
+                    val database = Injekt.get<Database>()
+                    database.accountOperation { database.mangasQueries.getAllManga(MangaMapper::mapManga).awaitAsList() }
+                } catch (_: Exception) {
+                    Injekt.get<GetLibraryManga>().await().map { it.manga }
+                }
+            }
+            val mangaMap = allLocalManga.associateBy { ProfileShowcaseRepository.key(it) }
+            local = mangaMap
+            localMangaList = allLocalManga
+            byTitle = allLocalManga.associateBy { it.title.trim().lowercase() }
+            byNormalized = allLocalManga.associateBy { tachiyomi.domain.manga.service.WorkTitleNormalizer.normalize(it.title) }
+            novelRepo.awaitLocal()
+            val allNovels = withContext(Dispatchers.Default) {
+                val libNovels = novelRepo.library.value.map { it.novel }
+                val catNovels = novelRepo.catalog.value.works.flatMap { it.editions }
+                (libNovels + catNovels).distinctBy { it.id }
+            }
+            val novelMap = withContext(Dispatchers.Default) { allNovels.associateBy { ProfileShowcaseRepository.key(it) } }
+            localNovels = novelMap
+            val loadedSnapshot = repository.load(profile.userId)
+            snapshot = loadedSnapshot
+
+            val mangaMeta = mangaMap.mapValues { (key, manga) -> ProfileShowcaseRepository.Favorite(key, manga.title.take(300), is_novel = false) }
+            val novelMeta = mutableMapOf<String, ProfileShowcaseRepository.Favorite>()
+            for ((key, novel) in novelMap) {
+                val count = novelRepo.indexSnapshot(novel)?.chapters?.size?.takeIf { it > 0 }
+                novelMeta[key] = ProfileShowcaseRepository.Favorite(key, novel.title.take(300), is_novel = true, chapter_count = count)
+            }
+            metadata = mangaMeta + novelMeta + loadedSnapshot.favorites.associateBy { it.manga_key }
+            error = null
+
+            // Asynchronously resolve missing covers for imported cloud favorites
+            for (fav in loadedSnapshot.favorites) {
+                val hasLocalCover = local[fav.manga_key] != null ||
+                    localNovels[fav.manga_key] != null ||
+                    findMatchingLocalManga(fav.title) != null ||
+                    findMatchingLocalNovel(fav.title) != null
+                val hasRemoteCover = !fav.cover_path.isNullOrBlank() && loadedSnapshot.covers.containsKey(fav.cover_path)
+
+                if (!hasLocalCover && !hasRemoteCover) {
+                    scope.launch(Dispatchers.IO) {
+                        try {
+                            val candidate = PublicFavoriteResolver().resolve(fav.manga_key, fav.title)
+                            if (candidate != null) {
+                                val coverObj = candidate.asMangaCover()
+                                resolvedCovers = resolvedCovers + (fav.manga_key to coverObj)
+                            }
+                        } catch (_: Exception) {}
+                    }
+                }
+            }
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { error = "تعذّر تحميل مكتبتك العامة" }
     }
 
     fun cover(key: String): Any? {
@@ -158,12 +215,15 @@ internal fun ProfileShowcaseControls(profile: MangaroProfile, account: AccountFo
         if (meta != null) {
             val match = findMatchingLocalManga(meta.title)
             if (match != null) return match.asMangaCover()
+            val matchNovel = findMatchingLocalNovel(meta.title)
+            if (matchNovel != null) return matchNovel.cover
         }
         val path = meta?.cover_path
         if (!path.isNullOrBlank()) {
             if (path.startsWith("http://") || path.startsWith("https://")) return path
             snapshot?.covers?.get(path)?.let { return it }
         }
+        resolvedCovers[key]?.let { return it }
         return null
     }
 

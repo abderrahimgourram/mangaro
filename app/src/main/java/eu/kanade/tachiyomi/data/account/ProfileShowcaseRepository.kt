@@ -76,13 +76,17 @@ class ProfileShowcaseRepository(private val account: AccountFoundation) {
                         val bytes = cover(context, coverData)
                         if (bytes != null) {
                             val destination = "$user/${favorite.manga_key}.webp"
-                            withTimeoutOrNull(15_000) {
-                                auth.withSession(user) {
-                                    auth.communityClient.storage.from("showcase-covers")
-                                        .upload(destination, bytes) { upsert = true; contentType = ContentType.parse("image/webp") }
-                                }
-                            } ?: error("Cover upload timed out")
-                            destination
+                            val uploaded = try {
+                                withTimeoutOrNull(15_000) {
+                                    auth.withSession(user) {
+                                        auth.communityClient.storage.from("showcase-covers")
+                                            .upload(destination, bytes) { upsert = true; contentType = ContentType.parse("image/webp") }
+                                    }
+                                    true
+                                } ?: false
+                            } catch (cancelled: CancellationException) { throw cancelled }
+                            catch (_: Exception) { false }
+                            if (uploaded) destination else null
                         } else null
                     } else null
                 } else null
@@ -126,11 +130,15 @@ class ProfileShowcaseRepository(private val account: AccountFoundation) {
         val loader = if (data is String && (data.contains("novel") || data.contains("ceneles") || data.contains("sunovels") || data.contains("seanovel"))) {
             NovelRepository.get(context).covers
         } else context.imageLoader
-        val image = withTimeoutOrNull(5_000) { loader.execute(ImageRequest.Builder(context).data(data).size(320, 480).allowHardware(false).build()).image }
+        val image = withTimeoutOrNull(8_000) { loader.execute(ImageRequest.Builder(context).data(data).size(320, 480).allowHardware(false).build()).image }
         image?.asDrawable(context.resources)?.toBitmap(320, 480)?.let { bitmap ->
             ByteArrayOutputStream().use { stream ->
-                @Suppress("DEPRECATION")
-                bitmap.compress(Bitmap.CompressFormat.WEBP, 72, stream)
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                    bitmap.compress(Bitmap.CompressFormat.WEBP_LOSSY, 75, stream)
+                } else {
+                    @Suppress("DEPRECATION")
+                    bitmap.compress(Bitmap.CompressFormat.WEBP, 75, stream)
+                }
                 stream.toByteArray().takeIf { it.size <= 262144 }
             }
         }
