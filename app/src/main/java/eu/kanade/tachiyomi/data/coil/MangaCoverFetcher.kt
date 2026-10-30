@@ -20,6 +20,7 @@ import eu.kanade.tachiyomi.source.online.HttpSource
 import logcat.LogPriority
 import okhttp3.CacheControl
 import okhttp3.Call
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Request
 import okhttp3.Response
 import okio.FileSystem
@@ -75,7 +76,9 @@ class MangaCoverFetcher(
         }
 
         // diskCacheKey is thumbnail_url
-        if (url == null) return recoverCover() ?: error("No cover specified")
+        if (url == null || (eu.kanade.tachiyomi.ui.home.PreferredMangaVariants.isBrokenCover(url) && coverFileLazy.value?.exists() != true)) {
+            return recoverCover() ?: error("No cover specified")
+        }
         return when (getResourceType(url)) {
             Type.File -> fileLoader(File(url.substringAfter("file://")))
             Type.URI -> fileUriLoader(url)
@@ -269,12 +272,21 @@ class MangaCoverFetcher(
 
     private fun newRequest(): Request {
         val request = Request.Builder().apply {
-            url(url!!)
-
-            val sourceHeaders = sourceLazy.value?.headers
-            if (sourceHeaders != null) {
-                headers(sourceHeaders)
+            val parsedUrl = runCatching { url!!.toHttpUrl() }.getOrNull()
+            if (parsedUrl != null) {
+                url(parsedUrl)
+            } else {
+                url(url!!)
             }
+
+            val builderHeaders = sourceLazy.value?.headers?.newBuilder() ?: okhttp3.Headers.Builder()
+            if (builderHeaders["User-Agent"].isNullOrBlank()) {
+                builderHeaders["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            }
+            if (builderHeaders["Referer"].isNullOrBlank() && parsedUrl != null) {
+                builderHeaders["Referer"] = "${parsedUrl.scheme}://${parsedUrl.host}/"
+            }
+            headers(builderHeaders.build())
         }
 
         when {
@@ -394,7 +406,11 @@ class MangaCoverFetcher(
         private val sourceManager: SourceManager by injectLazy()
 
         override fun create(data: Manga, options: Options, imageLoader: ImageLoader): Fetcher {
-            val effectiveUrl = ReviewedCoverArtwork.resolve(data.source, data.thumbnailUrl)
+            val thumb = data.thumbnailUrl
+            val fallback = if (data.source == 3975276517041363504L && (thumb.isNullOrBlank() || thumb.contains("mangadex.org") || data.url.contains("whats-our-hero-doing"))) {
+                ReviewedCoverArtwork.LORD_BLACKWOOD_OFFICIAL
+            } else null
+            val effectiveUrl = fallback ?: ReviewedCoverArtwork.resolve(data.source, data.thumbnailUrl)
             val custom = coverCache.getCustomCoverFile(data.id, data.accountToken.fileOwner)
             val key = imageLoader.components.key(data, options)!!
             return MangaCoverFetcher(
@@ -421,7 +437,11 @@ class MangaCoverFetcher(
         private val sourceManager: SourceManager by injectLazy()
 
         override fun create(data: MangaCover, options: Options, imageLoader: ImageLoader): Fetcher {
-            val effectiveUrl = ReviewedCoverArtwork.resolve(data.sourceId, data.url)
+            val coverUrl = data.url
+            val fallback = if (data.sourceId == 3975276517041363504L && (coverUrl.isNullOrBlank() || coverUrl.contains("mangadex.org"))) {
+                ReviewedCoverArtwork.LORD_BLACKWOOD_OFFICIAL
+            } else null
+            val effectiveUrl = fallback ?: ReviewedCoverArtwork.resolve(data.sourceId, data.url)
             val custom = coverCache.getCustomCoverFile(data.mangaId, data.owner)
             val key = imageLoader.components.key(data, options)!!
             return MangaCoverFetcher(

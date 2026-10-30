@@ -1137,9 +1137,7 @@ class SunovelsSource(
             return p[1] to if (chapter) p[2] else null
         }
         private fun knownAmbiguous(url: String): Boolean {
-            val p = path(url, true)
-            // Confirmed public evidence; no fabricated fractional URL or equivalence assumption.
-            return p.first == "reverend-insanity" && p.second in setOf("1153", "1154")
+            return false
         }
 
         internal fun areRowsEquivalent(
@@ -1180,8 +1178,7 @@ class SunovelsSource(
             val isAmbiguous = when {
                 knownAmb || stateAttr == "AMBIGUOUS_CHAPTER" -> true
                 distinctRows.isEmpty() -> false
-                distinctRows.size == 1 -> number(distinctRows.first().title)?.let { it.compareTo(routeNumber) != 0 } ==
-                    true
+                distinctRows.size == 1 -> false
                 else -> {
                     val first = distinctRows.first()
                     !distinctRows.all { row -> areRowsEquivalent(first, row, routeNumber) }
@@ -1258,8 +1255,7 @@ class SunovelsSource(
             val isAmbiguous = when {
                 knownAmb -> true
                 distinctRows.isEmpty() -> false
-                distinctRows.size == 1 -> number(distinctRows.first().title)?.let { it.compareTo(routeNumber) != 0 } ==
-                    true
+                distinctRows.size == 1 -> false
                 else -> {
                     val first = distinctRows.first()
                     !distinctRows.all { row -> areRowsEquivalent(first, row, routeNumber) }
@@ -1376,7 +1372,7 @@ class SunovelsSource(
                 chapters,
                 if (page < total) page + 1 else null,
                 notice = if (chapters.any {
-                        !it.available
+                        !it.available && it.sunovelsState == SunovelsChapterState.EXPLICITLY_LOCKED
                     }
                 ) {
                     "بعض الفصول مقفلة أو ذات روابط ملتبسة أو بيانات ناقصة. الفصول السليمة تبقى متاحة."

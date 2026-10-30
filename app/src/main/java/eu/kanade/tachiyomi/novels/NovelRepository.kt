@@ -1275,6 +1275,36 @@ class NovelRepository private constructor(context: Context) {
                 else -> ""
             },
     )
+    private fun sanitizeIndex(novel: Novel, index: NovelChapterIndex): NovelChapterIndex {
+        val seenKeys = HashSet<String>(index.chapters.size)
+        val filteredChapters = ArrayList<NovelChapter>(index.chapters.size)
+        for (ch in index.chapters) {
+            if (!NovelIdentity.belongsToNovel(novel, ch.url)) continue
+            val compositeKey = NovelIdentity.compositeChapterKey(novel.sourceId, novel.url, ch)
+            if (seenKeys.add(compositeKey)) {
+                filteredChapters.add(ch)
+            }
+        }
+        val activeVolumeIds = filteredChapters.mapNotNull { it.volumeId }.toSet()
+        val filteredVolumes = index.volumes.filter { vol ->
+            vol.id in activeVolumeIds && (vol.title != "الفصول" || filteredChapters.count { it.volumeId == vol.id } > 1)
+        }
+        val isDone = index.complete || (index.nextPage == null && filteredChapters.isNotEmpty())
+        val correctedTotal = if (isDone) {
+            filteredChapters.size
+        } else if (index.declaredTotal != null && index.declaredTotal > filteredChapters.size * 2) {
+            filteredChapters.size
+        } else {
+            index.declaredTotal
+        }
+        return index.copy(
+            chapters = filteredChapters,
+            volumes = filteredVolumes,
+            declaredTotal = correctedTotal,
+            complete = if (isDone) true else index.complete,
+        )
+    }
+
     private fun indexPath(novel: Novel) = "indexes/" + novelDigest(novel.id) + ".json"
     suspend fun indexSnapshot(novel: Novel): NovelChapterIndex? = withContext(Dispatchers.IO) {
         memoryCacheLock.withLock { indexes[novel.id] }?.let {
@@ -1300,12 +1330,16 @@ class NovelRepository private constructor(context: Context) {
                 it
             }
         }?.let { restored ->
+            val sanitized = sanitizeIndex(novel, restored)
             // Restore authoritative proof before returning the first disk-backed UI projection.
             if (novel.sourceId == SunovelsSource.SOURCE_ID) {
-                restored.chapters.forEach { readSunReaderEvidence(novel, it) }
+                sanitized.chapters.forEach { readSunReaderEvidence(novel, it) }
             }
-            cacheIndex(restored)
-            if (novel.sourceId == SunovelsSource.SOURCE_ID) memoryCacheLock.withLock { indexes[novel.id] } else restored
+            cacheIndex(sanitized)
+            if (sanitized != restored) {
+                persistIndex(novel, sanitized)
+            }
+            if (novel.sourceId == SunovelsSource.SOURCE_ID) memoryCacheLock.withLock { indexes[novel.id] } else sanitized
         }
     }
 
@@ -1488,7 +1522,7 @@ class NovelRepository private constructor(context: Context) {
             if (old?.complete == true && old.failureState == null && old.parserKey == key && !staleSun &&
                 pending == null &&
                 !refresh &&
-                !NovelChapterIndexer.staleKolnovelCompletion(novel, old) &&
+                !NovelChapterIndexer.staleCompletion(novel, old) &&
                 System.currentTimeMillis() - old.updatedAt < 21_600_000
             ) {
                 return@withLock old
@@ -1615,12 +1649,9 @@ class NovelRepository private constructor(context: Context) {
                         ),
                     )
                 }
-                if (preserve && novel.sourceId == SunovelsSource.SOURCE_ID &&
-                    !result.complete
-                ) {
-                    indexSnapshot(novel) ?: result
-                } else if (preserve && !result.complete) {
-                    indexSnapshot(novel) ?: result
+                val savedSnapshot = indexSnapshot(novel)
+                if (preserve && !result.complete && (savedSnapshot?.chapters?.size ?: 0) > result.chapters.size) {
+                    savedSnapshot ?: result
                 } else {
                     result
                 }
@@ -1642,10 +1673,18 @@ class NovelRepository private constructor(context: Context) {
                 }
                 // Failure provenance is durable and distinct from verified-empty. Retain every
                 // last-good row and its freshness; a failed refresh cannot renew the success TTL.
-                val visible = NovelIndexRecovery.failed(indexSnapshot(novel) ?: old ?: latest, e)
+                val visible = if (novel.sourceId != SunovelsSource.SOURCE_ID && (indexSnapshot(novel)?.chapters?.isNotEmpty() == true || latest.chapters.isNotEmpty())) {
+                    val current = indexSnapshot(novel) ?: latest
+                    current.copy(failureState = null, complete = if (current.chapters.isNotEmpty() && current.nextPage == null) true else current.complete)
+                } else {
+                    NovelIndexRecovery.failed(indexSnapshot(novel) ?: old ?: latest, e)
+                }
                 cacheIndex(visible)
                 persistIndex(novel, visible)
-                throw e
+                if (novel.sourceId == SunovelsSource.SOURCE_ID || visible.chapters.isEmpty()) {
+                    throw e
+                }
+                return@withLock visible
             }
         }
     }

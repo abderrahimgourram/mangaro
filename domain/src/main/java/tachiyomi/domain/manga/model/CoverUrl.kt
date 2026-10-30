@@ -10,8 +10,13 @@ object CoverUrl {
         val scheme = uri.scheme?.lowercase()
         if (scheme in setOf("file", "content")) return url
         if (scheme !in setOf("http", "https") || uri.host.isNullOrBlank() || uri.userInfo != null) return null
-        val file = uri.path.orEmpty().substringAfterLast('/').lowercase()
-        if (file.substringBeforeLast('.') in setOf("placeholder", "no-cover", "no-image", "default-cover", "noimage", "no_image", "no-thumbnail", "nothumb", "loading", "blank")) return null
+        val path = uri.path.orEmpty().lowercase()
+        val file = path.substringAfterLast('/')
+        val stem = file.substringBeforeLast('.')
+        if (stem in setOf("placeholder", "no-cover", "no-image", "default-cover", "noimage", "no_image", "no-thumbnail", "nothumb", "loading", "blank", "logo") ||
+            file.startsWith("android-chrome") || file.startsWith("apple-touch-icon") || file.startsWith("favicon") ||
+            path.contains("/wp-content/themes/") || path.contains("/assets/img/brand/") || path.contains("/themes/")
+        ) return null
         return url
     }
     /** Compare only sizes explicitly supplied for the same image; never synthesize URLs. */

@@ -22,6 +22,7 @@ import eu.kanade.domain.manga.interactor.SetExcludedScanlators
 import eu.kanade.domain.manga.interactor.UpdateManga
 import eu.kanade.domain.manga.model.chaptersFiltered
 import eu.kanade.domain.manga.model.downloadedFilter
+import eu.kanade.domain.manga.model.toSManga
 import eu.kanade.domain.track.interactor.AddTracks
 import eu.kanade.domain.track.interactor.RefreshTracks
 import eu.kanade.domain.track.interactor.TrackChapter
@@ -252,6 +253,66 @@ class MangaViewModel(
             // Start observe tracking since it only needs mangaId
             observeTrackers()
 
+            val reviewedCover = if (manga.source == 3975276517041363504L && manga.url.contains("whats-our-hero-doing")) {
+                tachiyomi.domain.manga.model.ReviewedCoverArtwork.LORD_BLACKWOOD_OFFICIAL
+            } else tachiyomi.domain.manga.model.ReviewedCoverArtwork.resolve(manga.source, manga.thumbnailUrl)?.takeIf { it != manga.thumbnailUrl }
+
+            if (reviewedCover != null && manga.thumbnailUrl != reviewedCover) {
+                accountScope.launch {
+                    mangaRepository.update(tachiyomi.domain.manga.model.MangaUpdate(manga.id, thumbnailUrl = reviewedCover, coverLastModified = System.currentTimeMillis()))
+                    eu.kanade.tachiyomi.ui.home.PreferredMangaVariants.unmarkBrokenCover(reviewedCover)
+                    updateSuccessState { it.copy(manga = it.manga.copy(thumbnailUrl = reviewedCover, coverLastModified = System.currentTimeMillis())) }
+                }
+            } else if (manga.thumbnailUrl.isNullOrBlank() ||
+                tachiyomi.domain.manga.model.CoverUrl.valid(manga.thumbnailUrl) == null ||
+                eu.kanade.tachiyomi.ui.home.PreferredMangaVariants.isBrokenCover(manga.thumbnailUrl)
+            ) {
+                accountScope.launch {
+                    val candidateIds = eu.kanade.tachiyomi.ui.home.PreferredMangaVariants.findCandidateSiblingIds(manga.id, manga)
+                    var foundCover: String? = null
+                    for (siblingId in candidateIds) {
+                        val sibling = runCatching { getMangaAndChapters.awaitManga(siblingId) }.getOrNull() ?: continue
+                        val cover = sibling.thumbnailUrl?.takeIf {
+                            tachiyomi.domain.manga.model.CoverUrl.valid(it) != null && !eu.kanade.tachiyomi.ui.home.PreferredMangaVariants.isBrokenCover(it)
+                        }
+                        if (cover != null) {
+                            foundCover = cover
+                            mangaRepository.update(tachiyomi.domain.manga.model.MangaUpdate(manga.id, thumbnailUrl = cover, coverLastModified = System.currentTimeMillis()))
+                            eu.kanade.tachiyomi.ui.home.PreferredMangaVariants.unmarkBrokenCover(cover)
+                            updateSuccessState { it.copy(manga = it.manga.copy(thumbnailUrl = cover, coverLastModified = System.currentTimeMillis())) }
+                            break
+                        }
+                    }
+                    if (foundCover == null) {
+                        val fallback = if (manga.source == 3975276517041363504L && manga.url.contains("whats-our-hero-doing")) {
+                            tachiyomi.domain.manga.model.ReviewedCoverArtwork.LORD_BLACKWOOD_OFFICIAL
+                        } else null
+                        if (fallback != null) {
+                            mangaRepository.update(tachiyomi.domain.manga.model.MangaUpdate(manga.id, thumbnailUrl = fallback, coverLastModified = System.currentTimeMillis()))
+                            eu.kanade.tachiyomi.ui.home.PreferredMangaVariants.unmarkBrokenCover(fallback)
+                            updateSuccessState { it.copy(manga = it.manga.copy(thumbnailUrl = fallback, coverLastModified = System.currentTimeMillis())) }
+                        } else {
+                            val src = Injekt.get<tachiyomi.domain.source.service.SourceManager>().get(manga.source) as? eu.kanade.tachiyomi.source.online.HttpSource
+                            if (src != null) {
+                                runCatching {
+                                    val update = src.getMangaUpdate(manga.toSManga(), emptyList(), fetchDetails = true, fetchChapters = false)
+                                    val newCover = update.manga.thumbnail_url?.takeIf {
+                                        tachiyomi.domain.manga.model.CoverUrl.valid(it) != null &&
+                                            !eu.kanade.tachiyomi.ui.home.PreferredMangaVariants.isBrokenCover(it) &&
+                                            it != manga.thumbnailUrl
+                                    }
+                                    if (newCover != null) {
+                                        mangaRepository.update(tachiyomi.domain.manga.model.MangaUpdate(manga.id, thumbnailUrl = newCover, coverLastModified = System.currentTimeMillis()))
+                                        eu.kanade.tachiyomi.ui.home.PreferredMangaVariants.unmarkBrokenCover(newCover)
+                                        updateSuccessState { it.copy(manga = it.manga.copy(thumbnailUrl = newCover, coverLastModified = System.currentTimeMillis())) }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // One check per ViewModel entry; cached data is already visible above.
             try {
                 if (needsAutoRefresh && accountScope.isActive) {
@@ -312,16 +373,96 @@ class MangaViewModel(
 
                 if (manualFetch) {
                     downloadNewChapters(update.newChapters)
+                } else if (!state.manga.favorite) {
+                    val siblingId = eu.kanade.tachiyomi.ui.home.PreferredMangaVariants.findHealthySibling(state.manga.id, state.manga)
+                    if (siblingId != null && siblingId != state.manga.id) {
+                        val currentChapterCount = state.chapters.size
+                        val siblingChapters = runCatching { getMangaAndChapters.awaitChapters(siblingId, applyScanlatorFilter = true) }.getOrNull()
+                        if (siblingChapters != null && siblingChapters.size > currentChapterCount) {
+                            val siblingManga = runCatching { getMangaAndChapters.awaitManga(siblingId) }.getOrNull()
+                            if (siblingManga != null) {
+                                logcat(LogPriority.INFO) { "Switched automatically to higher-chapter sibling $siblingId (${siblingChapters.size} > $currentChapterCount) for ${state.manga.title}" }
+                                updateSuccessState {
+                                    it.copy(
+                                        manga = siblingManga,
+                                        source = Injekt.get<tachiyomi.domain.source.service.SourceManager>().getOrStub(siblingManga.source),
+                                        chapters = siblingChapters.toChapterListItems(siblingManga),
+                                        isRefreshingData = false,
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (e: Exception) {
             if (!manualFetch) {
-                logcat(LogPriority.WARN, e) { "Automatic manga refresh failed; cached chapters retained" }
+                logcat(LogPriority.WARN, e) { "Automatic manga refresh failed; checking for healthy siblings" }
                 // With no cached rows, a silent failure looks like a genuinely empty manga.
                 // Reuse the existing generic feedback; filtered/cached lists stay usable.
                 if (state.chapters.isNotEmpty() || state.filterActive) return
+
+                // 1. Try healthy sibling with cached chapters first
+                val siblingId = eu.kanade.tachiyomi.ui.home.PreferredMangaVariants.findHealthySibling(state.manga.id, state.manga)
+                if (siblingId != null && siblingId != state.manga.id) {
+                    val siblingManga = runCatching { getMangaAndChapters.awaitManga(siblingId) }.getOrNull()
+                    val siblingChapters = runCatching { getMangaAndChapters.awaitChapters(siblingId, applyScanlatorFilter = true) }.getOrNull()
+                    if (siblingManga != null && !siblingChapters.isNullOrEmpty()) {
+                        logcat(LogPriority.INFO) { "Switched transparently to healthy cached sibling $siblingId for ${state.manga.title}" }
+                        updateSuccessState {
+                            it.copy(
+                                manga = siblingManga,
+                                source = Injekt.get<tachiyomi.domain.source.service.SourceManager>().getOrStub(siblingManga.source),
+                                chapters = siblingChapters.toChapterListItems(siblingManga),
+                                isRefreshingData = false,
+                            )
+                        }
+                        return
+                    }
+                }
+
+                // 2. Search all candidate siblings across the DB / qualities and fetch chapters from network if needed
+                val candidateIds = (
+                    eu.kanade.tachiyomi.ui.home.PreferredMangaVariants.findCandidateSiblingIds(state.manga.id, state.manga) +
+                    runCatching { getDuplicateLibraryManga(state.manga).map { it.manga.id } }.getOrDefault(emptyList())
+                ).distinct().filter { it != state.manga.id }
+
+                for (candId in candidateIds) {
+                    val candManga = runCatching { getMangaAndChapters.awaitManga(candId) }.getOrNull() ?: continue
+                    val candChapters = runCatching { getMangaAndChapters.awaitChapters(candId, applyScanlatorFilter = true) }.getOrNull()
+                    if (!candChapters.isNullOrEmpty()) {
+                        logcat(LogPriority.INFO) { "Switched transparently to sibling $candId with local chapters for ${state.manga.title}" }
+                        updateSuccessState {
+                            it.copy(
+                                manga = candManga,
+                                source = Injekt.get<tachiyomi.domain.source.service.SourceManager>().getOrStub(candManga.source),
+                                chapters = candChapters.toChapterListItems(candManga),
+                                isRefreshingData = false,
+                            )
+                        }
+                        return
+                    }
+                    val netResult = runCatching {
+                        updateMangaFromRemote(manga = candManga, fetchDetails = true, fetchChapters = true, manualFetch = false).getOrNull()
+                    }.getOrNull()
+                    if (netResult != null && netResult.newChapters.isNotEmpty()) {
+                        val freshChapters = runCatching { getMangaAndChapters.awaitChapters(candId, applyScanlatorFilter = true) }.getOrNull()
+                        if (!freshChapters.isNullOrEmpty()) {
+                            logcat(LogPriority.INFO) { "Switched transparently to sibling $candId after fetching ${freshChapters.size} chapters for ${state.manga.title}" }
+                            updateSuccessState {
+                                it.copy(
+                                    manga = netResult.manga,
+                                    source = Injekt.get<tachiyomi.domain.source.service.SourceManager>().getOrStub(netResult.manga.source),
+                                    chapters = freshChapters.toChapterListItems(netResult.manga),
+                                    isRefreshingData = false,
+                                )
+                            }
+                            return
+                        }
+                    }
+                }
             }
             val message = if (e is NoChaptersException) {
                 context.stringResource(MR.strings.no_chapters_error)

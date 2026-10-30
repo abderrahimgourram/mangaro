@@ -252,7 +252,12 @@ class UpdateMangaFromRemote(
                 null
             }
 
+        val incomingCover = remoteManga.thumbnail_url?.takeIf { tachiyomi.domain.manga.model.CoverUrl.valid(it) != null }
+        if (incomingCover != null) {
+            eu.kanade.tachiyomi.ui.home.PreferredMangaVariants.unmarkBrokenCover(incomingCover)
+        }
         val thumbnailUrl = tachiyomi.domain.manga.model.CoverUrl.best(localManga.thumbnailUrl, remoteManga.thumbnail_url)
+            ?: incomingCover
         val coverLastModified = when {
             // Never refresh covers if the url is empty to avoid "losing" existing covers
             thumbnailUrl == null -> null

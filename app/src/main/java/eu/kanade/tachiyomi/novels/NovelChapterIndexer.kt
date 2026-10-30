@@ -6,6 +6,12 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 
 /** Every cursor is source supplied. Fifty is a transport page size, never a library limit. */
 internal object NovelChapterIndexer {
+    fun staleCompletion(novel: Novel, index: NovelChapterIndex): Boolean {
+        if (!index.complete) return false
+        val expected = maxOf(novel.chapterCount ?: 0, index.declaredTotal ?: 0)
+        return expected > index.chapters.size
+    }
+
     /** Kolnovel's detail count and links come from the same full public series page.
      * A short legacy snapshot marked complete must not suppress a fresh traversal.
      * The count only invalidates the TTL shortcut; it never creates chapter rows.
@@ -69,6 +75,7 @@ internal object NovelChapterIndexer {
         val isSun = source.id == SunovelsSource.SOURCE_ID
         var notice = index.notice
         val fingerprints = checkpoint.pageFingerprints.toMutableMap()
+        val excludedAlien = mutableSetOf<String>()
         if (source is SunovelsSource && checkpoint.nextPage != null && checkpoint.fetchedPages.isNotEmpty()) {
             val boundary = checkpoint.fetchedPages.maxOrNull()!!
             val known = fingerprints[boundary]
@@ -112,6 +119,10 @@ internal object NovelChapterIndexer {
             result.chapters.forEach { chapter ->
                 check(chapter.title.isNotBlank() && NovelHttp.allowed(chapter.url) &&
                     chapter.url.toHttpUrl().host.removePrefix("www.") == host)
+                if (!NovelIdentity.belongsToNovel(novel, chapter.url)) {
+                    excludedAlien.add(chapter.url)
+                    return@forEach
+                }
                 seen[chapter.id]?.let { old -> check(old.volumeId == chapter.volumeId) { "Chapter ownership changed" } }
                 if (chapter.id !in seen) { seen[chapter.id] = chapter.copy(order = seen.size, sourcePage = page); added++ }
                 else if (isSun) {
@@ -129,18 +140,26 @@ internal object NovelChapterIndexer {
                     }
                 }
             }
-            verify(added > 0 || result.chapters.isEmpty(), "SUN_INDEX_REPEATED_PAGE", "Repeated chapter pagination without progress")
-            verify(added > 0 || result.nextPage == null || result.allowEmpty, "SUN_INDEX_REPEATED_PAGE", "Repeated chapter pagination without progress")
+            verify(added > 0 || result.allowEmpty || result.chapters.isEmpty(), "INDEX_REPEATED_PAGE", "Repeated chapter pagination without progress")
+            verify(added > 0 || result.nextPage == null || result.allowEmpty, "INDEX_REPEATED_PAGE", "Repeated chapter pagination without progress")
             result.volumes.forEach { volumes[it.id] = it }
             pages.add(page)
             val observed = if (isSun) seen.values.sumOf { it.publishedRows.size.coerceAtLeast(1) } else seen.size
-            val truncated = result.nextPage == null && total != null && total != observed
+            val adjustedTotal = total?.let { (it - excludedAlien.size).coerceAtLeast(0) }
+            val truncated = result.nextPage == null && adjustedTotal != null && adjustedTotal > observed
             result.sourceFingerprint?.let { fingerprints[page] = it }
-            index = NovelChapterIndex(novel.id, seen.values.toList(), volumes.values.toList(), if (truncated) page else result.nextPage,
-                result.nextPage == null && result.verifiedTermination && !truncated, if (truncated) pages - page else pages.toSet(), System.currentTimeMillis(),
-                total, checkpoint.parserKey, notice, result.gatewayIndexGeneration ?: index.gatewayIndexGeneration, fingerprints.toMap(),
+            val activeVolumes = volumes.values.filter { vol ->
+                seen.values.any { it.volumeId == vol.id } && (vol.title != "الفصول" || seen.values.count { it.volumeId == vol.id } > 1)
+            }
+            val isComplete = result.nextPage == null && !truncated && (result.verifiedTermination || seen.isNotEmpty())
+            val finalTotal = if (result.nextPage == null && total != null) adjustedTotal else total
+            index = NovelChapterIndex(novel.id, seen.values.toList(), activeVolumes, if (truncated) page else result.nextPage,
+                isComplete, if (truncated) pages - page else pages.toSet(), System.currentTimeMillis(),
+                finalTotal, checkpoint.parserKey, notice, result.gatewayIndexGeneration ?: index.gatewayIndexGeneration, fingerprints.toMap(),
                 checkpoint.indexParserVersion)
-            verify(total == null || observed <= total!!, "SUN_INDEX_TOTAL_EXCEEDED", "Chapter index exceeds official total")
+            if (isSun) {
+                verify(total == null || observed <= total!!, "SUN_INDEX_TOTAL_EXCEEDED", "Chapter index exceeds official total")
+            }
             onPage(index)
             if (truncated)
                 throw NovelSourceFailure("تعذّر تحميل بقية الفصول. أعد المحاولة.", "Chapter index does not match official total")

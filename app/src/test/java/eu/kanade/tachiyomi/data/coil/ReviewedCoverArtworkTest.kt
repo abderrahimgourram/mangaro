@@ -40,6 +40,28 @@ class ReviewedCoverArtworkTest {
         ReviewedCoverArtwork.resolve(ReviewedCoverArtwork.MANGA_TIME, null) shouldBe null
     }
 
+    @Test fun `mangadar lord blackwood cover maps to official ridi artwork`() {
+        ReviewedCoverArtwork.resolve(
+            ReviewedCoverArtwork.MANGA_DAR,
+            "https://img.ridicdn.net/cover/4158001245/xxlarge",
+        ) shouldBe ReviewedCoverArtwork.LORD_BLACKWOOD_OFFICIAL
+
+        ReviewedCoverArtwork.resolve(
+            ReviewedCoverArtwork.MANGA_DAR,
+            "https://uploads.mangadex.org/covers/a64020f9-c628-4807-8cd5-1d9cbced35e2/bae617c8-2dbe-469b-a0b2-694e6fb3dd8c.jpg.512.jpg",
+        ) shouldBe ReviewedCoverArtwork.LORD_BLACKWOOD_OFFICIAL
+
+        ReviewedCoverArtwork.resolve(
+            ReviewedCoverArtwork.MANGA_DAR,
+            "/manga/whats-our-hero-doing/",
+        ) shouldBe ReviewedCoverArtwork.LORD_BLACKWOOD_OFFICIAL
+
+        ReviewedCoverArtwork.resolve(
+            ReviewedCoverArtwork.MANGA_DAR,
+            "https://mangadar.com/uploads/other-manga.jpg",
+        ) shouldBe "https://mangadar.com/uploads/other-manga.jpg"
+    }
+
     @Test fun `domain and cover projection use same corrected cache key and cannot reuse old incorrect entry`() {
         val absent = mockk<File> { every { exists() } returns false }
         val cache = mockk<CoverCache> { every { getCustomCoverFile(any(), any()) } returns absent }

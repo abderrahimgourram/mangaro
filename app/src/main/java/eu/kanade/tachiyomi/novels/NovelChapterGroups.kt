@@ -6,8 +6,10 @@ data class NovelChapterGroup(val id: String, val title: String?, val chapters: L
 fun novelChapterGroups(index: NovelChapterIndex, descending: Boolean = false): List<NovelChapterGroup> {
     val volumes = index.volumes.associateBy { it.id }
     val unique = index.chapters.distinctBy { it.id }
-    val sections = if (unique.any { it.volumeId != null || it.volume != null }) unique.groupBy { it.volumeId ?: it.volume?.let { name -> "name:" + name } ?: "ungrouped" }.map { (id, chapters) ->
+    val sections = if (unique.any { it.volumeId != null || it.volume != null }) unique.groupBy { it.volumeId ?: it.volume?.let { name -> "name:" + name } ?: "ungrouped" }.mapNotNull { (id, chapters) ->
+        if (chapters.isEmpty()) return@mapNotNull null
         val name = volumes[id]?.title ?: chapters.firstOrNull()?.volume
+        if (name == "الفصول" && chapters.size <= 1) return@mapNotNull null
         NovelChapterGroup(id, name, chapters, name != null, volumes[id]?.declaredCount)
     } else listOf(NovelChapterGroup("chapters", null, unique, false))
     return if (descending) sections.reversed().map { it.copy(chapters = it.chapters.reversed()) } else sections
@@ -38,13 +40,15 @@ class NovelChapterGroupBuilder {
         val volumes = index.volumes.associateBy { it.id }
         val prior = ascending.associateBy { it.id }
         val hasVolumes = sections.keys.any { it != "ungrouped" }
-        val next = sections.map { (key, chapters) ->
+        val next = sections.mapNotNull { (key, chapters) ->
+            if (chapters.isEmpty()) return@mapNotNull null
             val id = if (hasVolumes) key else "chapters"
             val title = volumes[key]?.title ?: chapters.firstOrNull()?.volume
+            if (title == "الفصول" && chapters.size <= 1) return@mapNotNull null
             val cached = prior[id]
             if (key !in changed && cached?.title == title && cached?.declaredCount == volumes[key]?.declaredCount) cached
             else NovelChapterGroup(id, title, chapters.toList(), title != null, volumes[key]?.declaredCount)
-        }.filterNotNull()
+        }
         if (next != ascending) {
             ascending = next
             reversed = emptyList()

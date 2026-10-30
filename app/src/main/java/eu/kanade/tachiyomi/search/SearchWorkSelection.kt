@@ -344,11 +344,19 @@ internal class SearchWorkSelection(private val readableFirst: Boolean = false) {
                 uncertain = c.chapters.indexUncertain,
             )
             val ranked = eligible.sortedWith { a, b ->
-                val compared = tachiyomi.domain.manga.service.CatalogEditionSelection.compareQuality(
-                    quality(b),
-                    quality(a),
-                )
-                if (compared != 0) compared else compareValuesBy(a, b, { it.source }, { it.id })
+                val countA = a.chapters.distinct ?: -1
+                val countB = b.chapters.distinct ?: -1
+                val healthyA = a.chapters.readable != false && a.chapters.indexUsable != false && !a.chapters.indexUncertain
+                val healthyB = b.chapters.readable != false && b.chapters.indexUsable != false && !b.chapters.indexUncertain
+                if (healthyA && healthyB && countA > 0 && countB > 0 && countA != countB) {
+                    countB.compareTo(countA)
+                } else {
+                    val compared = tachiyomi.domain.manga.service.CatalogEditionSelection.compareQuality(
+                        quality(b),
+                        quality(a),
+                    )
+                    if (compared != 0) compared else compareValuesBy(a, b, { it.source }, { it.id })
+                }
             }
             val best = ranked.first()
             // Same evidence has the same default everywhere. Do not pin an early source

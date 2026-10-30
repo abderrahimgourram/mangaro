@@ -128,6 +128,7 @@ class KolNovelSource(http: NovelHttp) : HtmlNovelSource(http) {
 
     private data class KolTask(val volume: String, val volumeTitle: String?, val volumeId: String?, val page: Int)
     private data class KolPlan(
+        val novelUrl: String,
         val seriesId: String,
         val nonce: String,
         val totalDeclared: Int,
@@ -201,7 +202,7 @@ class KolNovelSource(http: NovelHttp) : HtmlNovelSource(http) {
             chapterCount = d.select(".eplister li[data-id]").size.takeIf { it > 0 }
                 ?: d.selectFirst(".kol-series-editorial__quick-facts dt:contains(الفصول) + dd")
                     ?.text()?.filter(Char::isDigit)?.toIntOrNull()
-                ?: d.select(".kol-series-editorial__volume-count").sumOf {
+                ?: d.select("details.kol-series-editorial__volume:not([data-kol-chapter-volume='__kol_all__']) .kol-series-editorial__volume-count").sumOf {
                     it.text().filter(Char::isDigit).toIntOrNull() ?: 0
                 }.takeIf { it > 0 },
             originalTitle = d.selectFirst(".kol-series-editorial__original-title")?.text()?.takeIf { it.isNotBlank() }
@@ -221,7 +222,24 @@ class KolNovelSource(http: NovelHttp) : HtmlNovelSource(http) {
             ?: Regex("""data-kol-volume-nonce=["']([a-zA-Z0-9]+)["']""").find(d.html())?.groupValues?.get(1)
             ?: throw NovelSourceFailure("تعذّر قراءة رمز التحقق من ملوك الروايات.", "Missing data-kol-volume-nonce")
 
-        val volumeElements = d.select("details.kol-series-editorial__volume")
+        val allVolumeElements = d.select("details.kol-series-editorial__volume")
+        val hasSpecificVolumes = allVolumeElements.any {
+            val volArg = it.attr("data-kol-chapter-volume")
+            volArg.isNotBlank() && volArg != "__kol_all__"
+        }
+        val volumeElements = if (hasSpecificVolumes) {
+            allVolumeElements.filter {
+                val volArg = it.attr("data-kol-chapter-volume")
+                val title = it.selectFirst(".kol-series-editorial__volume-title")?.text().orEmpty()
+                volArg.isNotBlank() && volArg != "__kol_all__" && title != "كل الفصول"
+            }
+        } else {
+            allVolumeElements.filter {
+                val title = it.selectFirst(".kol-series-editorial__volume-title")?.text().orEmpty()
+                title != "كل الفصول" || allVolumeElements.size == 1
+            }
+        }
+
         data class VolEntry(val volumeArg: String, val volumeTitle: String?, val volumeId: String?, val count: Int, val pages: Int)
         val rawEntries = if (volumeElements.isNotEmpty()) {
             volumeElements.mapIndexed { idx, el ->
@@ -242,9 +260,10 @@ class KolNovelSource(http: NovelHttp) : HtmlNovelSource(http) {
 
         // Reverse to maintain chronological order: oldest volume first
         val chronological = rawEntries.reversed()
-        val totalDeclared = chronological.sumOf { it.count }.takeIf { it > 0 }
-            ?: d.selectFirst(".kol-series-editorial__quick-facts dt:contains(الفصول) + dd")
-                ?.text()?.filter(Char::isDigit)?.toIntOrNull()
+        val declaredFromQuickFacts = d.selectFirst(".kol-series-editorial__quick-facts dt:contains(الفصول) + dd")
+            ?.text()?.filter(Char::isDigit)?.toIntOrNull()
+        val totalDeclared = declaredFromQuickFacts?.takeIf { it > 0 }
+            ?: chronological.sumOf { it.count }.takeIf { it > 0 }
             ?: 0
 
         val tasks = mutableListOf<KolTask>()
@@ -261,7 +280,7 @@ class KolNovelSource(http: NovelHttp) : HtmlNovelSource(http) {
             } else null
         }
 
-        KolPlan(seriesId, nonce, totalDeclared, novelVolumes, tasks).also {
+        KolPlan(novelUrl, seriesId, nonce, totalDeclared, novelVolumes, tasks).also {
             plans[novelUrl] = it
             while (plans.size > 16) {
                 plans.remove(plans.keys.first())
@@ -298,6 +317,7 @@ class KolNovelSource(http: NovelHttp) : HtmlNovelSource(http) {
             val href = a.absUrl("href").ifBlank { a.attr("href") }
             val fullUrl = if (href.startsWith("http")) href else baseUrl.toHttpUrl().resolve(href)?.toString() ?: href
             if (fullUrl.isBlank() || !NovelHttp.allowed(fullUrl)) return@mapNotNull null
+            if (!NovelIdentity.belongsToNovel(Novel(id, plan.novelUrl, ""), fullUrl)) return@mapNotNull null
             val numSpan = li.selectFirst(".kol-series-chapter__number")?.text()?.trim().orEmpty()
             val titleSpan = li.selectFirst(".kol-series-chapter__title-copy, .kol-series-chapter__title")?.text()?.trim().orEmpty()
             val title = when {
@@ -363,7 +383,7 @@ class KolNovelSource(http: NovelHttp) : HtmlNovelSource(http) {
         )
     }
     override suspend fun chapter(chapter: NovelChapter) = withContext(Dispatchers.IO) {
-        text(doc(http.get(chapter.url), chapter.url), selector("text", "#kol_content, #content, .kol-reader-content"))
+        text(doc(http.get(chapter.url), chapter.url), selector("text", "#kol_content, [data-kol-reader-content], .epcontent.entry-content, .kol-reader-content, #content"))
     }
 }
 

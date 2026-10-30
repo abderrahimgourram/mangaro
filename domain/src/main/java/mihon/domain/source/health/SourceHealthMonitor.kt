@@ -63,9 +63,17 @@ class SourceHealthMonitor(private val clock: () -> Long = System::currentTimeMil
             if (e.started) failure(id, false)
             throw e
         } catch (e: Exception) {
-            // Locked/unsupported content is a valid per-manga outcome, not source failure.
+            // Locked/unsupported content, missing chapters or per-manga integrity issues are valid per-manga outcomes, not source failure.
             val message = e.message.orEmpty().lowercase()
-            if (!message.contains("locked") && !message.contains("not supported") && !message.contains("no chapters")) {
+            val isPerMangaOutcome = message.contains("locked") ||
+                message.contains("not supported") ||
+                message.contains("no chapters") ||
+                message.contains("stored chapters preserved") ||
+                message.contains("chapter index unavailable") ||
+                message.contains("advertised episodes") ||
+                message.contains("chapter total mismatch") ||
+                message.contains("returned 0 chapters")
+            if (!isPerMangaOutcome) {
                 val transient = e is java.net.SocketTimeoutException || e is java.net.UnknownHostException || e is java.net.ConnectException
                 failure(id, !transient)
             }

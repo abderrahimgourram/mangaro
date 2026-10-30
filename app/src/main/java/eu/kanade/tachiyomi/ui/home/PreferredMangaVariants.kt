@@ -42,7 +42,16 @@ object PreferredMangaVariants {
     fun eligible(id: Long): Boolean = id !in invalid
     private val brokenCovers = ConcurrentHashMap.newKeySet<String>()
     fun markBrokenCover(url: String?) { if (!url.isNullOrBlank()) brokenCovers.add(url) }
-    fun isBrokenCover(url: String?): Boolean = !url.isNullOrBlank() && url in brokenCovers
+    fun unmarkBrokenCover(url: String?) { if (!url.isNullOrBlank()) brokenCovers.remove(url) }
+    fun isBrokenCover(url: String?): Boolean {
+        if (url.isNullOrBlank()) return true
+        if (url in brokenCovers) return true
+        val lower = url.lowercase()
+        return lower.contains("android-chrome") || lower.contains("favicon") ||
+            lower.contains("logo.png") || lower.contains("logo.svg") ||
+            lower.contains("/themes/") || lower.contains("/assets/img/brand/") ||
+            lower.contains("placeholder") || lower.contains("default-cover")
+    }
     private val readers = ConcurrentHashMap<Long, Pair<Boolean, Long>>()
     fun remember(manga: Manga) {
         if (rememberQuality(manga)) changes.update { it + 1 }
@@ -361,5 +370,65 @@ object PreferredMangaVariants {
                 usable(it.source, it.id) && tachiyomi.domain.manga.model.DiscoveryEligibility.valid(it.title, it.url)
             }.maxWithOrNull { a, b -> compare(a.source, a.id, a.thumbnailUrl, b.source, b.id, b.thumbnailUrl) }?.id
         }.toSet()
+    }
+
+    fun findHealthySibling(mangaId: Long, fallbackManga: Manga? = null): Long? {
+        val currentQuality = quality(mangaId)
+        val currentWork = currentQuality?.let { CatalogWorkEvidence.resolve(it.work) }
+            ?: fallbackManga?.let { CatalogWorkEvidence.from(it) }
+            ?: return null
+        val currentNormalized = tachiyomi.domain.manga.service.WorkTitleNormalizer.normalize(currentWork.title)
+
+        return qualities.values.asSequence()
+            .filter { it.work.reference.mangaId != mangaId && it.work.reference.mangaId > 0 }
+            .filter { eligible(it.work.reference.mangaId) && health(it.work.reference.sourceId) > 0 }
+            .filter { (it.actualChapterCount ?: 0) > 0 }
+            .filter { q ->
+                val resolved = CatalogWorkEvidence.resolve(q.work)
+                if (currentWork.reviewedWorkKey != null && resolved.reviewedWorkKey != null) {
+                    currentWork.reviewedWorkKey == resolved.reviewedWorkKey
+                } else {
+                    val candidateNormalized = tachiyomi.domain.manga.service.WorkTitleNormalizer.normalize(resolved.title)
+                    candidateNormalized == currentNormalized ||
+                        resolved.aliases.any { tachiyomi.domain.manga.service.WorkTitleNormalizer.normalize(it) == currentNormalized } ||
+                        currentWork.aliases.any { tachiyomi.domain.manga.service.WorkTitleNormalizer.normalize(it) == candidateNormalized }
+                }
+            }
+            .maxWithOrNull(
+                compareBy<Quality> { it.actualChapterCount ?: 0 }
+                    .thenBy { health(it.work.reference.sourceId) }
+                    .thenByDescending { it.successfulAt }
+            )?.work?.reference?.mangaId
+    }
+
+    fun findCandidateSiblingIds(mangaId: Long, fallbackManga: Manga? = null): List<Long> {
+        val currentQuality = quality(mangaId)
+        val currentWork = currentQuality?.let { CatalogWorkEvidence.resolve(it.work) }
+            ?: fallbackManga?.let { CatalogWorkEvidence.from(it) }
+            ?: return emptyList()
+        val currentNormalized = tachiyomi.domain.manga.service.WorkTitleNormalizer.normalize(currentWork.title)
+
+        return qualities.values.asSequence()
+            .filter { it.work.reference.mangaId != mangaId && it.work.reference.mangaId > 0 }
+            .filter { eligible(it.work.reference.mangaId) && health(it.work.reference.sourceId) > 0 }
+            .filter { q ->
+                val resolved = CatalogWorkEvidence.resolve(q.work)
+                if (currentWork.reviewedWorkKey != null && resolved.reviewedWorkKey != null) {
+                    currentWork.reviewedWorkKey == resolved.reviewedWorkKey
+                } else {
+                    val candidateNormalized = tachiyomi.domain.manga.service.WorkTitleNormalizer.normalize(resolved.title)
+                    candidateNormalized == currentNormalized ||
+                        resolved.aliases.any { tachiyomi.domain.manga.service.WorkTitleNormalizer.normalize(it) == currentNormalized } ||
+                        currentWork.aliases.any { tachiyomi.domain.manga.service.WorkTitleNormalizer.normalize(it) == candidateNormalized }
+                }
+            }
+            .sortedWith(
+                compareByDescending<Quality> { it.actualChapterCount ?: 0 }
+                    .thenBy { health(it.work.reference.sourceId) }
+                    .thenByDescending { it.successfulAt }
+            )
+            .map { it.work.reference.mangaId }
+            .distinct()
+            .toList()
     }
 }

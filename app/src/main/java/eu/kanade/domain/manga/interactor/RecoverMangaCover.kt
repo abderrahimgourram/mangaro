@@ -29,22 +29,38 @@ class RecoverMangaCover(
         withTimeout(30_000) {
             val manga = repository.getMangaById(mangaId)
             if (manga.source != source.id) return@withTimeout null
-            var replacement = CoverUrl.valid(manga.thumbnailUrl)?.takeUnless { it == failedUrl }
+            var replacement = if (manga.source == 3975276517041363504L && manga.url.contains("whats-our-hero-doing")) {
+                tachiyomi.domain.manga.model.ReviewedCoverArtwork.LORD_BLACKWOOD_OFFICIAL
+            } else {
+                CoverUrl.valid(manga.thumbnailUrl)?.takeUnless {
+                    it == failedUrl || eu.kanade.tachiyomi.ui.home.PreferredMangaVariants.isBrokenCover(it)
+                }
+            }
             var candidateSource = source
             if (replacement == null) {
                 // Deduplicate simultaneous failures and bound repeated requests on permanently bad covers.
                 val now = System.nanoTime() / 1_000_000
                 if (attempts[mangaId]?.let { now - it in 0 until 60_000L } == true) return@withTimeout null
                 attempts[mangaId] = now
-                val update = source.getMangaUpdate(manga.toSManga(), emptyList(), true, false)
-                if (update.manga.url != manga.url) throw IOException("Cover details identity mismatch")
-                replacement = CoverUrl.valid(update.manga.thumbnail_url)?.takeUnless { it == failedUrl }
+                val update = runCatching { source.getMangaUpdate(manga.toSManga(), emptyList(), true, false) }.getOrNull()
+                if (update != null && update.manga.url == manga.url) {
+                    replacement = CoverUrl.valid(update.manga.thumbnail_url)?.takeUnless {
+                        it == failedUrl || eu.kanade.tachiyomi.ui.home.PreferredMangaVariants.isBrokenCover(it)
+                    }
+                }
                 if (replacement == null) {
-                    val duplicates = runCatching { repository.getDuplicateLibraryManga(mangaId, manga.title) }.getOrDefault(emptyList())
-                    for (dup in duplicates) {
-                        val candidateUrl = CoverUrl.valid(dup.manga.thumbnailUrl)?.takeUnless { it == failedUrl }
+                    val candidateIds = (
+                        eu.kanade.tachiyomi.ui.home.PreferredMangaVariants.findCandidateSiblingIds(mangaId, manga) +
+                        runCatching { repository.getDuplicateLibraryManga(mangaId, manga.title).map { it.manga.id } }.getOrDefault(emptyList())
+                    ).distinct().filter { it != mangaId }
+
+                    for (candId in candidateIds) {
+                        val candManga = runCatching { repository.getMangaById(candId) }.getOrNull() ?: continue
+                        val candidateUrl = CoverUrl.valid(candManga.thumbnailUrl)?.takeUnless {
+                            it == failedUrl || eu.kanade.tachiyomi.ui.home.PreferredMangaVariants.isBrokenCover(it)
+                        }
                         if (candidateUrl != null) {
-                            val altSource = sourceManager?.get(dup.manga.source) as? HttpSource
+                            val altSource = sourceManager?.get(candManga.source) as? HttpSource
                             if (altSource != null) {
                                 candidateSource = altSource
                                 replacement = candidateUrl
@@ -55,12 +71,22 @@ class RecoverMangaCover(
                 }
             }
             val url = replacement ?: return@withTimeout null
-            val response = candidateSource.client.newCall(GET(url, candidateSource.headers)).awaitSuccess()
+            val reqHeaders = candidateSource.headers.newBuilder().apply {
+                if (get("User-Agent").isNullOrBlank()) {
+                    set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                }
+                if (get("Referer").isNullOrBlank()) {
+                    set("Referer", "${candidateSource.baseUrl}/")
+                }
+            }.build()
+            val response = candidateSource.client.newCall(GET(url, reqHeaders)).awaitSuccess()
             try {
                 if (!isImage(response)) throw IOException("Replacement cover is not an image")
                 if (!repository.update(MangaUpdate(mangaId, thumbnailUrl = url, coverLastModified = Clock.System.now().toEpochMilliseconds()))) {
                     throw IOException("Cover update failed")
                 }
+                eu.kanade.tachiyomi.ui.home.PreferredMangaVariants.unmarkBrokenCover(url)
+                attempts.remove(mangaId)
                 response
             } catch (e: Exception) { response.close(); throw e }
         }

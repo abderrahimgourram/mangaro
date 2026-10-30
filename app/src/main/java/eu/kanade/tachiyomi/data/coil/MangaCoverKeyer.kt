@@ -19,7 +19,12 @@ class MangaKeyer(
                 data.accountToken.fileOwner,
             )};${data.id};${data.coverLastModified}"
         } else {
-            "${ReviewedCoverArtwork.resolve(data.source, data.thumbnailUrl)};${data.coverLastModified}"
+            val thumb = data.thumbnailUrl
+            val fallback = if (data.source == 3975276517041363504L && (thumb.isNullOrBlank() || thumb.contains("mangadex.org") || data.url.contains("whats-our-hero-doing"))) {
+                ReviewedCoverArtwork.LORD_BLACKWOOD_OFFICIAL
+            } else null
+            val resolved = fallback ?: ReviewedCoverArtwork.resolve(data.source, data.thumbnailUrl)
+            "$resolved;${data.coverLastModified}"
         }
     }
 }
@@ -33,7 +38,12 @@ class MangaCoverKeyer(
                 data.owner,
             )};${data.mangaId};${data.lastModified}"
         } else {
-            "${ReviewedCoverArtwork.resolve(data.sourceId, data.url)};${data.lastModified}"
+            val coverUrl = data.url
+            val fallback = if (data.sourceId == 3975276517041363504L && (coverUrl.isNullOrBlank() || coverUrl.contains("mangadex.org"))) {
+                ReviewedCoverArtwork.LORD_BLACKWOOD_OFFICIAL
+            } else null
+            val resolved = fallback ?: ReviewedCoverArtwork.resolve(data.sourceId, data.url)
+            "$resolved;${data.lastModified}"
         }
     }
 }

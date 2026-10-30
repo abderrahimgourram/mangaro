@@ -9,9 +9,26 @@ import java.io.IOException
 /** Used by MangaLek, MangaDar and Hijala only. Explicit server counts, never inferred gaps. */
 object HtmlMangaIntegrity {
     fun image(element: Element?, base: String): String? = element?.let { img ->
-        listOf("data-src", "data-lazy-src", "data-original", "src", "content").firstNotNullOfOrNull { attr ->
+        listOf("data-src", "data-lazy-src", "data-original", "src", "srcset", "content").firstNotNullOfOrNull { attr ->
+            if (!img.hasAttr(attr)) return@firstNotNullOfOrNull null
             val value = img.attr(attr).trim()
-            if (value.isBlank()) null else CoverUrl.valid(base.toHttpUrlOrNull()?.resolve(value)?.toString())
+            if (value.isBlank()) return@firstNotNullOfOrNull null
+            val candidate = if (attr == "srcset") {
+                val urls = value.split(",")
+                    .map { it.trim().split(Regex("\\s+")).firstOrNull().orEmpty() }
+                    .filter { it.isNotBlank() }
+                urls.firstOrNull { !it.contains("-210x300") && !it.contains("-300x420") && !it.contains("-150x") }
+                    ?: urls.lastOrNull().orEmpty()
+            } else {
+                value
+            }
+            if (candidate.isBlank()) null
+            else {
+                val resolved = img.absUrl(attr).takeIf { it.isNotBlank() && it.startsWith("http") }
+                    ?: base.toHttpUrlOrNull()?.resolve(candidate)?.toString()
+                    ?: candidate
+                CoverUrl.valid(resolved)
+            }
         }
     }
     fun count(document: Document): Int? {

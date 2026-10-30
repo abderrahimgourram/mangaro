@@ -176,9 +176,10 @@ internal class SearchChapterVerifier(private val now: () -> Long = System::curre
                     indexUncertain = fresh.indexUncertain,
                 )
             }
-            if (!fresh.complete && retained.complete && (retained.distinct ?: -1) >= fresh.distinct) {
+            if (!fresh.complete && (retained.distinct ?: -1) >= fresh.distinct) {
                 return retained.copy(
                     readable = fresh.readable ?: retained.readable,
+                    indexUsable = fresh.indexUsable ?: retained.indexUsable,
                     indexUncertain = fresh.indexUncertain,
                 )
             }

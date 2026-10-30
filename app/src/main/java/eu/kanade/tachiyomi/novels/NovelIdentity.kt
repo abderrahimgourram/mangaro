@@ -1,6 +1,8 @@
 package eu.kanade.tachiyomi.novels
 
 import kotlinx.serialization.Serializable
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import java.net.URLDecoder
 import java.text.Normalizer
 import java.util.Locale
 import java.util.UUID
@@ -100,6 +102,110 @@ object NovelIdentity {
     }
 
     fun initialWorkId(editionId: String): String = "novel.work." + UUID.nameUUIDFromBytes(editionId.toByteArray())
+
+    fun belongsToNovel(novel: Novel, chapterUrl: String): Boolean {
+        if (!NovelHttp.allowed(chapterUrl)) return false
+        val novelUri = novel.url.toHttpUrlOrNull() ?: return false
+        val chapterUri = chapterUrl.toHttpUrlOrNull() ?: return false
+        val novelHost = novelUri.host.removePrefix("www.")
+        val chapterHost = chapterUri.host.removePrefix("www.")
+        if (novelHost != chapterHost) return false
+
+        return when (novel.sourceId) {
+            "novel.mknov" -> {
+                val novelWorkId = novelUri.pathSegments.dropWhile { it != "work" && it != "novel" }.getOrNull(1)?.trim()
+                val chapterWorkId = chapterUri.pathSegments.dropWhile { it != "work" && it != "novel" }.getOrNull(1)?.trim()
+                if (novelWorkId != null && chapterWorkId != null) {
+                    novelWorkId == chapterWorkId
+                } else {
+                    true
+                }
+            }
+            "novel.sunovels" -> {
+                val novelSlug = novelUri.pathSegments.dropWhile { it != "novel" }.getOrNull(1)?.trim()
+                val chapterSlug = chapterUri.pathSegments.dropWhile { it != "novel" }.getOrNull(1)?.trim()
+                if (novelSlug != null && chapterSlug != null) {
+                    novelSlug.equals(chapterSlug, ignoreCase = true)
+                } else {
+                    true
+                }
+            }
+            "novel.cenele" -> {
+                val novelSlug = novelUri.pathSegments.dropWhile { it != "cont" }.getOrNull(1)?.trim()
+                val chapterSlug = chapterUri.pathSegments.dropWhile { it != "cont" }.getOrNull(1)?.trim()
+                if (novelSlug != null && chapterSlug != null) {
+                    novelSlug.equals(chapterSlug, ignoreCase = true)
+                } else {
+                    true
+                }
+            }
+            "novel.seanovel" -> {
+                val novelSlug = novelUri.pathSegments.dropWhile { it != "novels" }.getOrNull(1)?.trim()
+                val chapterSlug = chapterUri.pathSegments.dropWhile { it != "novels" }.getOrNull(1)?.trim()
+                if (novelSlug != null && chapterSlug != null) {
+                    novelSlug.equals(chapterSlug, ignoreCase = true)
+                } else {
+                    true
+                }
+            }
+            "novel.kolnovel" -> {
+                val novelSlug = novelUri.pathSegments.dropWhile { it.isBlank() || it == "series" }.firstOrNull()?.trim()
+                    ?: return true
+                val decodedNovelSlug = try {
+                    URLDecoder.decode(novelSlug, "UTF-8").trim()
+                } catch (_: Exception) { novelSlug }
+
+                val chapterSeriesSlug = chapterUri.pathSegments.dropWhile { it != "series" }.getOrNull(1)?.trim()
+                if (chapterSeriesSlug != null) {
+                    val decodedChapterSeriesSlug = try {
+                        URLDecoder.decode(chapterSeriesSlug, "UTF-8").trim()
+                    } catch (_: Exception) { chapterSeriesSlug }
+                    return chapterSeriesSlug.equals(novelSlug, ignoreCase = true) ||
+                        decodedChapterSeriesSlug.equals(decodedNovelSlug, ignoreCase = true)
+                }
+
+                val chapterPath = chapterUri.encodedPath
+                val decodedChapterPath = try {
+                    URLDecoder.decode(chapterPath, "UTF-8")
+                } catch (_: Exception) { chapterPath }
+
+                if (chapterPath.contains(novelSlug, ignoreCase = true) ||
+                    decodedChapterPath.contains(decodedNovelSlug, ignoreCase = true)
+                ) {
+                    return true
+                }
+
+                // Explicit alien series filter to reject foreign novel chapters (e.g. the-legeandeary-mechaenic-kol)
+                val alienSlugs = setOf(
+                    "the-legeandeary-mechaenic-kol",
+                    "the-legendary-mechanic",
+                )
+                if (alienSlugs.any { chapterPath.contains(it, ignoreCase = true) || decodedChapterPath.contains(it, ignoreCase = true) }) {
+                    if (!novelSlug.contains("mechaenic", ignoreCase = true) && !novelSlug.contains("mechanic", ignoreCase = true)) {
+                        return false
+                    }
+                }
+                true
+            }
+            else -> {
+                true
+            }
+        }
+    }
+
+    fun compositeChapterKey(sourceId: String, novelUrl: String, chapter: NovelChapter): String {
+        val novelUri = novelUrl.toHttpUrlOrNull()
+        val novelPath = novelUri?.encodedPath?.trim('/') ?: novelUrl
+        val chapterUri = chapter.url.toHttpUrlOrNull()
+        val chapterKey = chapterUri?.encodedPath?.trim('/') ?: chapter.url
+        return "$sourceId|$novelPath|$chapterKey"
+    }
+
+    fun preferred(
+        editions: List<Novel>,
+        evidence: Map<String, NovelEditionEvidence>,
+        indexes: Map<String, NovelChapterIndex> = emptyMap(),
+    ): Novel = NovelWorkReconciler.preferred(editions, evidence, indexes)
 }
 
 @Serializable
@@ -213,20 +319,29 @@ object NovelWorkReconciler {
         return state.copy(works = works.sortedBy { it.id }, aliases = aliases)
     }
 
-    fun preferred(editions: List<Novel>, evidence: Map<String, NovelEditionEvidence>): Novel = editions.sortedWith {
-            a,
-            b,
-        ->
-        fun quality(n: Novel): tachiyomi.domain.manga.service.CatalogEditionEvidence {
-            val value = evidence[n.id]
-            return tachiyomi.domain.manga.service.CatalogEditionEvidence(
-                indexedChapters = value?.availableCount?.takeIf { value.complete || it > 0 } ?: n.chapterCount?.takeIf { it > 0 },
-                complete = value?.complete == true,
-                readable = value?.accessWorks,
-            )
+    fun preferred(
+        editions: List<Novel>,
+        evidence: Map<String, NovelEditionEvidence>,
+        indexes: Map<String, NovelChapterIndex> = emptyMap(),
+    ): Novel = editions.sortedWith { a, b ->
+        val countA = maxOf(indexes[a.id]?.chapters?.size ?: 0, evidence[a.id]?.availableCount ?: 0, a.chapterCount ?: 0)
+        val countB = maxOf(indexes[b.id]?.chapters?.size ?: 0, evidence[b.id]?.availableCount ?: 0, b.chapterCount ?: 0)
+        val healthA = evidence[a.id]?.accessWorks != false
+        val healthB = evidence[b.id]?.accessWorks != false
+        if (healthA && healthB && countA > 0 && countB > 0 && countA != countB) {
+            countB.compareTo(countA)
+        } else {
+            fun quality(n: Novel): tachiyomi.domain.manga.service.CatalogEditionEvidence {
+                val value = evidence[n.id]
+                return tachiyomi.domain.manga.service.CatalogEditionEvidence(
+                    indexedChapters = maxOf(indexes[n.id]?.chapters?.size ?: 0, value?.availableCount ?: 0, n.chapterCount ?: 0).takeIf { it > 0 },
+                    complete = value?.complete == true || indexes[n.id]?.complete == true,
+                    readable = value?.accessWorks,
+                )
+            }
+            val compared = tachiyomi.domain.manga.service.CatalogEditionSelection.compareQuality(quality(b), quality(a))
+            if (compared != 0) compared else a.id.compareTo(b.id)
         }
-        val compared = tachiyomi.domain.manga.service.CatalogEditionSelection.compareQuality(quality(b), quality(a))
-        if (compared != 0) compared else a.id.compareTo(b.id)
     }.first()
 
     fun withEvidence(state: NovelCatalogState, editionId: String, value: NovelEditionEvidence): NovelCatalogState {

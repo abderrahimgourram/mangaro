@@ -106,6 +106,7 @@ import eu.kanade.tachiyomi.novels.NovelChapter
 import eu.kanade.tachiyomi.novels.NovelChapterGroup
 import eu.kanade.tachiyomi.novels.NovelChapterGroupBuilder
 import eu.kanade.tachiyomi.novels.NovelChapterIndex
+import eu.kanade.tachiyomi.novels.NovelChapterIndexer
 import eu.kanade.tachiyomi.novels.NovelDownloadState
 import eu.kanade.tachiyomi.novels.NovelGenre
 import eu.kanade.tachiyomi.novels.NovelGenres
@@ -1077,6 +1078,7 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
         val scope = rememberCoroutineScope()
         val downloadAdGate = rememberNovelDownloadAdGate()
         var selectedId by rememberSaveable { mutableStateOf<String?>(initial.id) }
+        var userManuallySelectedEdition by rememberSaveable { mutableStateOf(false) }
         val novel = work.editions.firstOrNull { it.id == selectedId } ?: work.primary
         FocusSurface(FocusTarget(FocusContext.NOVEL_DETAILS, novel.sourceId, novel.id))
         val saved = library.any { entry -> entry.saved && work.editions.any { it.id == entry.novel.id } }
@@ -1125,6 +1127,26 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
                 }
             }
         }
+        LaunchedEffect(work.editions.map { it.id }, catalog.evidence, indexes) {
+            if (!userManuallySelectedEdition && work.editions.size > 1) {
+                val candidate = NovelIdentity.preferred(work.editions, catalog.evidence, indexes)
+                if (candidate.id != selectedId) {
+                    val currentCount = maxOf(
+                        indexes[selectedId]?.chapters?.size ?: 0,
+                        catalog.evidence[selectedId]?.availableCount ?: 0,
+                        work.editions.firstOrNull { it.id == selectedId }?.chapterCount ?: 0,
+                    )
+                    val candCount = maxOf(
+                        indexes[candidate.id]?.chapters?.size ?: 0,
+                        catalog.evidence[candidate.id]?.availableCount ?: 0,
+                        candidate.chapterCount ?: 0,
+                    )
+                    if (candCount > currentCount) {
+                        selectedId = candidate.id
+                    }
+                }
+            }
+        }
         LaunchedEffect(work.editions.map { it.id }, novel.id, retry) {
             val request = ++indexEpoch
             val retryTarget = retryEditionId?.takeIf { it == novel.id }
@@ -1148,7 +1170,8 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
                                     if (request == indexEpoch) indexes = indexes + (edition.id to partial)
                                 }
                             }
-                            val shouldRefresh = if (edition.sourceId == SunovelsSource.SOURCE_ID) restartSunIndex else retry > 0
+                            val isStaleCompletion = repository.indexSnapshot(edition)?.let { NovelChapterIndexer.staleCompletion(edition, it) } == true
+                            val shouldRefresh = if (edition.sourceId == SunovelsSource.SOURCE_ID) restartSunIndex else (retry > 0 || isStaleCompletion)
                             repository.continueIndex(edition, refresh = shouldRefresh, onPage = onPage)
                         }
                     } catch (c: CancellationException) {
@@ -1272,6 +1295,7 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
             }
         }
         fun chooseEdition(target: Novel) {
+            userManuallySelectedEdition = true
             if (resume != null && resume.novel.id != target.id) {
                 switchChapter = null
                 switching = target
@@ -1560,7 +1584,7 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
                         }
                     }
                 }
-                if (indexErrors[novel.id] != null && novel.id !in busy) {
+                if (indexErrors[novel.id] != null && novel.id !in busy && (!index.complete && index.chapters.isEmpty())) {
                     item(key = "index-recovery") {
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(
@@ -1922,6 +1946,7 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
                 confirmButton = {
                     TextButton(onClick = {
                         selectedId = target.id
+                        userManuallySelectedEdition = true
                         selected = emptySet()
                         editionsOpen = false
                         switching =

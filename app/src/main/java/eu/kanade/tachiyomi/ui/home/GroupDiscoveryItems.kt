@@ -119,12 +119,31 @@ object GroupDiscoveryItems {
             val winner =
                 eligible.maxWithOrNull { a, b -> PreferredMangaVariants.compare(a, b, context) }
                     ?: return@mapNotNull null
-            val healthyCover = if (!winner.coverData.url.isNullOrBlank() && !PreferredMangaVariants.isBrokenCover(winner.coverData.url)) {
-                winner.coverData
+            val fallbackCover = if (winner.sourceId == 3975276517041363504L && winner.url.contains("whats-our-hero-doing")) {
+                tachiyomi.domain.manga.model.ReviewedCoverArtwork.LORD_BLACKWOOD_OFFICIAL
+            } else null
+            val healthyCover = if (fallbackCover != null) {
+                winner.coverData.copy(url = fallbackCover)
+            } else if (!winner.coverData.url.isNullOrBlank() &&
+                tachiyomi.domain.manga.model.CoverUrl.valid(winner.coverData.url) != null &&
+                !PreferredMangaVariants.isBrokenCover(winner.coverData.url)) {
+                val resolved = tachiyomi.domain.manga.model.ReviewedCoverArtwork.resolve(winner.coverData.sourceId, winner.coverData.url)
+                if (resolved != winner.coverData.url) winner.coverData.copy(url = resolved) else winner.coverData
             } else {
-                eligible.firstOrNull { !it.coverData.url.isNullOrBlank() && !PreferredMangaVariants.isBrokenCover(it.coverData.url) }?.coverData
-                    ?: members.firstOrNull { !it.coverData.url.isNullOrBlank() }?.coverData
-                    ?: winner.coverData
+                val candidate = (eligible + members).firstOrNull {
+                    !it.coverData.url.isNullOrBlank() &&
+                        tachiyomi.domain.manga.model.CoverUrl.valid(it.coverData.url) != null &&
+                        !PreferredMangaVariants.isBrokenCover(it.coverData.url)
+                }
+                if (candidate != null) {
+                    val resolved = tachiyomi.domain.manga.model.ReviewedCoverArtwork.resolve(candidate.coverData.sourceId, candidate.coverData.url)
+                    winner.coverData.copy(
+                        url = resolved ?: candidate.coverData.url,
+                        sourceId = candidate.coverData.sourceId,
+                    )
+                } else {
+                    winner.coverData
+                }
             }
             val aggregate = winner.copy(
                 coverData = healthyCover,

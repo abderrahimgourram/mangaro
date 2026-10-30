@@ -237,5 +237,57 @@ class MangaDarParserTest {
         parsed.thumbnail_url shouldBe "https://mangadar.com/storage/covers/hero.jpg"
         parsed.status shouldBe eu.kanade.tachiyomi.source.model.SManga.COMPLETED
     }
+
+    @Test
+    fun `parseMangaDetails extracts picture img cover over stale og image`() {
+        val html = """
+            <main x-data="{ chapters: [] }">
+                <meta property="og:image" content="https://mangadar.com/wp-content/uploads/2026/10/cover-dead-96a6bc58.webp" />
+                <div class="relative w-[180px] aspect-[2/3] rounded-lg">
+                    <picture class="block w-full h-full">
+                        <source type="image/webp" srcset="https://mangadar.com/wp-content/uploads/2026/10/live-cover.webp 419w">
+                        <img src="https://mangadar.com/wp-content/uploads/2026/10/live-cover.webp" class="w-full h-full object-cover" />
+                    </picture>
+                </div>
+                <h1>How a Former Pro</h1>
+                <div class="description"><p>Story</p></div>
+                <div class="chapter-card"><a href="/manga/how-a-former-pro/1/">الفصل 1</a></div>
+            </main>
+        """.trimIndent()
+        val manga = eu.kanade.tachiyomi.source.model.SManga.create().apply {
+            url = "/manga/how-a-former-pro/"
+            title = "How a Former Pro"
+        }
+        val parsed = mangaDar.parseMangaDetails(Jsoup.parse(html, "https://mangadar.com/manga/how-a-former-pro/"), manga)
+        parsed.thumbnail_url shouldBe "https://mangadar.com/wp-content/uploads/2026/10/live-cover.webp"
+    }
+
+    @Test
+    fun `parseMangaDetails ignores favicon android-chrome in og image and extracts real script cover`() {
+        val html = """
+            <main x-data="{ chapters: [] }">
+                <meta property="og:image" content="https://mangadar.com/wp-content/uploads/2026/10/android-chrome-512x512-1-150x150.png" />
+                <script id="mdg-manga-chapters-json">
+                    {"cover":"https://mangadar.com/wp-content/uploads/2026/10/real-artwork-1234.webp","rows":[]}
+                </script>
+                <h1>Nineteen Twenty One</h1>
+                <div class="description"><p>Story</p></div>
+                <div class="chapter-card"><a href="/manga/nineteen-twenty-one/1/">الفصل 1</a></div>
+            </main>
+        """.trimIndent()
+        val manga = eu.kanade.tachiyomi.source.model.SManga.create().apply {
+            url = "/manga/nineteen-twenty-one/"
+            title = "Nineteen Twenty One"
+        }
+        val parsed = mangaDar.parseMangaDetails(Jsoup.parse(html, "https://mangadar.com/manga/nineteen-twenty-one/"), manga)
+        parsed.thumbnail_url shouldBe "https://mangadar.com/wp-content/uploads/2026/10/real-artwork-1234.webp"
+    }
+
+    @Test
+    fun `CoverUrl rejects android-chrome favicon and theme logos`() {
+        tachiyomi.domain.manga.model.CoverUrl.valid("https://mangadar.com/wp-content/uploads/2026/10/android-chrome-512x512.png") shouldBe null
+        tachiyomi.domain.manga.model.CoverUrl.valid("https://mangadar.com/wp-content/themes/MangaDar/assets/img/brand/logo.svg") shouldBe null
+        tachiyomi.domain.manga.model.CoverUrl.valid("https://mangadar.com/wp-content/uploads/2026/10/real-artwork.webp") shouldBe "https://mangadar.com/wp-content/uploads/2026/10/real-artwork.webp"
+    }
 }
 
