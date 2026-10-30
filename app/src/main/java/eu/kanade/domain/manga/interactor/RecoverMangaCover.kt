@@ -30,7 +30,7 @@ class RecoverMangaCover(
             val manga = repository.getMangaById(mangaId)
             if (manga.source != source.id) return@withTimeout null
             var replacement = if (manga.source == 3975276517041363504L && manga.url.contains("whats-our-hero-doing")) {
-                tachiyomi.domain.manga.model.ReviewedCoverArtwork.LORD_BLACKWOOD_OFFICIAL
+                tachiyomi.domain.manga.model.ReviewedCoverArtwork.WHATS_OUR_HERO_DOING_OFFICIAL
             } else {
                 CoverUrl.valid(manga.thumbnailUrl)?.takeUnless {
                     it == failedUrl || eu.kanade.tachiyomi.ui.home.PreferredMangaVariants.isBrokenCover(it)
@@ -76,7 +76,10 @@ class RecoverMangaCover(
                     set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
                 }
                 if (get("Referer").isNullOrBlank()) {
-                    set("Referer", "${candidateSource.baseUrl}/")
+                    val base = runCatching { candidateSource.baseUrl }.getOrNull()
+                    if (!base.isNullOrBlank()) {
+                        set("Referer", "$base/")
+                    }
                 }
             }.build()
             val response = candidateSource.client.newCall(GET(url, reqHeaders)).awaitSuccess()

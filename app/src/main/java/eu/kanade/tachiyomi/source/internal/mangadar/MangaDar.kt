@@ -496,7 +496,13 @@ class MangaDar(
                     } else {
                         parsedNum.toString()
                     }
-                    val path = getRelativeUrl(row[2].jsonPrimitive.content)
+                    val rawPath = getRelativeUrl(row[2].jsonPrimitive.content)
+                    val path = if (rawPath.contains("/x-") || rawPath.contains("-chapter-")) {
+                        val baseMangaPath = rawPath.trimEnd('/').substringBeforeLast('/')
+                        "$baseMangaPath/$chapterDisplay/"
+                    } else {
+                        rawPath
+                    }
                     if (!path.startsWith("/manga/") || path.trim('/').split('/').size < 2) {
                         throw IOException("MangaDar invalid chapter URL")
                     }
@@ -602,7 +608,7 @@ class MangaDar(
     internal fun fallbackCoverForSlug(path: String): String? {
         val slug = path.trim('/').substringAfterLast('/')
         return when (slug) {
-            "whats-our-hero-doing" -> tachiyomi.domain.manga.model.ReviewedCoverArtwork.LORD_BLACKWOOD_OFFICIAL
+            "whats-our-hero-doing" -> tachiyomi.domain.manga.model.ReviewedCoverArtwork.WHATS_OUR_HERO_DOING_OFFICIAL
             else -> null
         }
     }

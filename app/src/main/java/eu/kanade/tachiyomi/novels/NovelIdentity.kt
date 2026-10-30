@@ -155,24 +155,18 @@ object NovelIdentity {
                     URLDecoder.decode(novelSlug, "UTF-8").trim()
                 } catch (_: Exception) { novelSlug }
 
-                val chapterSeriesSlug = chapterUri.pathSegments.dropWhile { it != "series" }.getOrNull(1)?.trim()
-                if (chapterSeriesSlug != null) {
-                    val decodedChapterSeriesSlug = try {
-                        URLDecoder.decode(chapterSeriesSlug, "UTF-8").trim()
-                    } catch (_: Exception) { chapterSeriesSlug }
-                    return chapterSeriesSlug.equals(novelSlug, ignoreCase = true) ||
-                        decodedChapterSeriesSlug.equals(decodedNovelSlug, ignoreCase = true)
-                }
-
                 val chapterPath = chapterUri.encodedPath
                 val decodedChapterPath = try {
                     URLDecoder.decode(chapterPath, "UTF-8")
                 } catch (_: Exception) { chapterPath }
 
-                if (chapterPath.contains(novelSlug, ignoreCase = true) ||
-                    decodedChapterPath.contains(decodedNovelSlug, ignoreCase = true)
-                ) {
-                    return true
+                val chSeriesIndex = chapterUri.pathSegments.indexOf("series")
+                val chapterSeriesSlug = if (chSeriesIndex >= 0) chapterUri.pathSegments.getOrNull(chSeriesIndex + 1)?.trim() else null
+                if (!chapterSeriesSlug.isNullOrBlank()) {
+                    val decodedChapterSeriesSlug = try { URLDecoder.decode(chapterSeriesSlug, "UTF-8").trim() } catch (_: Exception) { chapterSeriesSlug }
+                    if (!novelSlug.equals(chapterSeriesSlug, ignoreCase = true) && !decodedNovelSlug.equals(decodedChapterSeriesSlug, ignoreCase = true)) {
+                        return false
+                    }
                 }
 
                 // Explicit alien series filter to reject foreign novel chapters (e.g. the-legeandeary-mechaenic-kol)
@@ -249,6 +243,9 @@ object NovelWorkReconciler {
         val keys = HashMap<String, Set<String>>()
         fun keysFor(novel: Novel) = keys.getOrPut(novel.id) { NovelIdentity.matchingKeys(novel) }
         for (candidate in novels) {
+            if (tachiyomi.domain.manga.model.DiscoveryEligibility.isDummyWork(candidate.title, candidate.description, candidate.chapterCount)) {
+                continue
+            }
             val incoming = SunovelsSource.cleanMetadata(candidate)
             val previous = works.firstOrNull { w -> w.editions.any { it.id == incoming.id } }
             val old = previous?.editions?.firstOrNull { it.id == incoming.id }
@@ -324,8 +321,13 @@ object NovelWorkReconciler {
         evidence: Map<String, NovelEditionEvidence>,
         indexes: Map<String, NovelChapterIndex> = emptyMap(),
     ): Novel = editions.sortedWith { a, b ->
-        val countA = maxOf(indexes[a.id]?.chapters?.size ?: 0, evidence[a.id]?.availableCount ?: 0, a.chapterCount ?: 0)
-        val countB = maxOf(indexes[b.id]?.chapters?.size ?: 0, evidence[b.id]?.availableCount ?: 0, b.chapterCount ?: 0)
+        fun count(n: Novel): Int {
+            return indexes[n.id]?.chapters?.size?.takeIf { it > 0 }
+                ?: evidence[n.id]?.availableCount?.takeIf { evidence[n.id]?.complete == true || it > 0 }
+                ?: n.chapterCount ?: 0
+        }
+        val countA = count(a)
+        val countB = count(b)
         val healthA = evidence[a.id]?.accessWorks != false
         val healthB = evidence[b.id]?.accessWorks != false
         if (healthA && healthB && countA > 0 && countB > 0 && countA != countB) {
@@ -334,7 +336,7 @@ object NovelWorkReconciler {
             fun quality(n: Novel): tachiyomi.domain.manga.service.CatalogEditionEvidence {
                 val value = evidence[n.id]
                 return tachiyomi.domain.manga.service.CatalogEditionEvidence(
-                    indexedChapters = maxOf(indexes[n.id]?.chapters?.size ?: 0, value?.availableCount ?: 0, n.chapterCount ?: 0).takeIf { it > 0 },
+                    indexedChapters = count(n).takeIf { it > 0 },
                     complete = value?.complete == true || indexes[n.id]?.complete == true,
                     readable = value?.accessWorks,
                 )

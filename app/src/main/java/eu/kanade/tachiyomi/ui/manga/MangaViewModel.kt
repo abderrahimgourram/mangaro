@@ -254,7 +254,7 @@ class MangaViewModel(
             observeTrackers()
 
             val reviewedCover = if (manga.source == 3975276517041363504L && manga.url.contains("whats-our-hero-doing")) {
-                tachiyomi.domain.manga.model.ReviewedCoverArtwork.LORD_BLACKWOOD_OFFICIAL
+                tachiyomi.domain.manga.model.ReviewedCoverArtwork.WHATS_OUR_HERO_DOING_OFFICIAL
             } else tachiyomi.domain.manga.model.ReviewedCoverArtwork.resolve(manga.source, manga.thumbnailUrl)?.takeIf { it != manga.thumbnailUrl }
 
             if (reviewedCover != null && manga.thumbnailUrl != reviewedCover) {
@@ -285,7 +285,7 @@ class MangaViewModel(
                     }
                     if (foundCover == null) {
                         val fallback = if (manga.source == 3975276517041363504L && manga.url.contains("whats-our-hero-doing")) {
-                            tachiyomi.domain.manga.model.ReviewedCoverArtwork.LORD_BLACKWOOD_OFFICIAL
+                            tachiyomi.domain.manga.model.ReviewedCoverArtwork.WHATS_OUR_HERO_DOING_OFFICIAL
                         } else null
                         if (fallback != null) {
                             mangaRepository.update(tachiyomi.domain.manga.model.MangaUpdate(manga.id, thumbnailUrl = fallback, coverLastModified = System.currentTimeMillis()))

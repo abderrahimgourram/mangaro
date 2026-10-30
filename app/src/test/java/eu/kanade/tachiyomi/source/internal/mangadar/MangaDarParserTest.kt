@@ -207,7 +207,7 @@ class MangaDarParserTest {
         val html = """
             <h1>What's Our Hero Doing?</h1>
             <script type="application/json" id="mdg-manga-chapters-json">
-            {"rows":[[207551,"x-whats-our-hero-doing-chapter-0","https://mangadar.com/manga/whats-our-hero-doing/0/",1793229475,0]],"read":[],"i18n":{"chapter":"الفصل"}}
+            {"rows":[[207551,"x-whats-our-hero-doing-chapter-0","https://mangadar.com/manga/whats-our-hero-doing/x-whats-our-hero-doing-chapter-0/",1793229475,0]],"read":[],"i18n":{"chapter":"الفصل"}}
             </script>
         """.trimIndent()
         val chapters = mangaDar.parseChapters(Jsoup.parse(html))

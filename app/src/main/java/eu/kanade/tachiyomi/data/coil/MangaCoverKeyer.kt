@@ -20,8 +20,8 @@ class MangaKeyer(
             )};${data.id};${data.coverLastModified}"
         } else {
             val thumb = data.thumbnailUrl
-            val fallback = if (data.source == 3975276517041363504L && (thumb.isNullOrBlank() || thumb.contains("mangadex.org") || data.url.contains("whats-our-hero-doing"))) {
-                ReviewedCoverArtwork.LORD_BLACKWOOD_OFFICIAL
+            val fallback = if (data.source == 3975276517041363504L && data.url.contains("whats-our-hero-doing")) {
+                ReviewedCoverArtwork.WHATS_OUR_HERO_DOING_OFFICIAL
             } else null
             val resolved = fallback ?: ReviewedCoverArtwork.resolve(data.source, data.thumbnailUrl)
             "$resolved;${data.coverLastModified}"

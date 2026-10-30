@@ -120,7 +120,7 @@ object GroupDiscoveryItems {
                 eligible.maxWithOrNull { a, b -> PreferredMangaVariants.compare(a, b, context) }
                     ?: return@mapNotNull null
             val fallbackCover = if (winner.sourceId == 3975276517041363504L && winner.url.contains("whats-our-hero-doing")) {
-                tachiyomi.domain.manga.model.ReviewedCoverArtwork.LORD_BLACKWOOD_OFFICIAL
+                tachiyomi.domain.manga.model.ReviewedCoverArtwork.WHATS_OUR_HERO_DOING_OFFICIAL
             } else null
             val healthyCover = if (fallbackCover != null) {
                 winner.coverData.copy(url = fallbackCover)

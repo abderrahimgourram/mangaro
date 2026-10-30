@@ -25,9 +25,9 @@ object CatalogEditionSelection {
         (e.readable != false && e.indexUsable != false && !(e.complete && e.indexedChapters == 0)).compareTo(
             false,
         ).toLong(),
-        (!e.uncertain).compareTo(false).toLong(),
         coverage(e),
         e.complete.compareTo(false).toLong(),
+        (!e.uncertain).compareTo(false).toLong(),
         (e.readable == true).compareTo(false).toLong(),
         e.sourceReliability.toLong(),
     )
@@ -41,9 +41,9 @@ object CatalogEditionSelection {
         val names =
             listOf(
                 "available-index-and-reader",
-                "non-conflicting-index",
                 "observed-count-and-index-coverage",
                 "complete-index",
+                "non-conflicting-index",
                 "reader-sample",
                 "source-health",
             )

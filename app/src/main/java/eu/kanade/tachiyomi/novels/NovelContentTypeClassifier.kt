@@ -85,7 +85,7 @@ internal object NovelContentTypeClassifier {
     }
 
     fun eligible(novel: Novel): Boolean = classify(novel).type != NovelContentType.COMIC &&
-        tachiyomi.domain.manga.model.DiscoveryEligibility.valid(novel.title, novel.url)
+        tachiyomi.domain.manga.model.DiscoveryEligibility.valid(novel.title, novel.url, novel.description, novel.chapterCount)
 
     /** A source's controlled leading taxonomy label, e.g. Cenele's "رواية <original>" or
      * "مانهوا <original>". Only the first token is evidence; the remainder is never matched. */

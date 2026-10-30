@@ -101,7 +101,9 @@ internal class NovelSearchSelection(private val repository: NovelRepository, que
                 val distinct = listed.count { it.available }
                 val full = index.complete && index.nextPage == null && index.fetchedPages.isNotEmpty() &&
                     (index.declaredTotal == null || index.declaredTotal == listed.size)
-                val totalCount = maxOf(distinct, n.chapterCount ?: 0, index.declaredTotal ?: 0)
+                val totalCount = distinct.takeIf { full || it > 0 }
+                    ?: (index.declaredTotal ?: 0).takeIf { it > 0 }
+                    ?: (n.chapterCount ?: 0)
                 val distinctCount = totalCount.takeIf { full || it > 0 }
                 SearchChapterEvidence(
                     distinctCount,

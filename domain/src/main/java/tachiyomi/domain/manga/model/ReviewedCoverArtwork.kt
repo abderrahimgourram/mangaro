@@ -14,6 +14,8 @@ object ReviewedCoverArtwork {
     const val MANGA_DAR = 3975276517041363504L
     const val LORD_BLACKWOOD_OFFICIAL =
         "https://img.ridicdn.net/cover/4158001245/xxlarge"
+    const val WHATS_OUR_HERO_DOING_OFFICIAL =
+        "https://uploads.mangadex.org/covers/a64020f9-c628-4807-8cd5-1d9cbced35e2/d43e59cc-0f16-4092-9c00-5b9668209d1b.jpg"
     const val EVIDENCE = "https://m.comic.naver.com/webtoon/list?titleId=769209"
     const val REVIEWED_AT = "2026-10-23"
     private val reviewedSeries = mapOf("6a49e00234c268b77054833e" to MOUNT_HUA_OFFICIAL)
@@ -22,11 +24,13 @@ object ReviewedCoverArtwork {
     fun resolve(sourceId: Long, url: String?): String? {
         if (url == null) return null
         if (sourceId == MANGA_DAR) {
-            if (url.contains("4158001245") ||
-                url.contains("a64020f9-c628-4807-8cd5-1d9cbced35e2") ||
+            if (url.contains("4158001245")) {
+                return LORD_BLACKWOOD_OFFICIAL
+            }
+            if (url.contains("a64020f9-c628-4807-8cd5-1d9cbced35e2") ||
                 url.contains("whats-our-hero-doing")
             ) {
-                return LORD_BLACKWOOD_OFFICIAL
+                return WHATS_OUR_HERO_DOING_OFFICIAL
             }
             return url
         }

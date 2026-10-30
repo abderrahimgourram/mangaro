@@ -198,9 +198,6 @@ class SunovelsSource(
     internal fun parseIndex(d: Document, novel: Novel, page: Int): ChapterPage {
         val slug = requireNovel(novel)
         rejectChallenge(d)
-        val current = d.selectFirst("a[aria-label*='is your current page']")?.attr("aria-label")
-            ?.let { Regex("[0-9]+").find(it)?.value?.toIntOrNull() }
-        if (current != page) invalid("Sun chapter pagination cursor mismatch")
         val flight = PublicFlight(d)
         val novelRecords = flight.objects.filter {
             it.string("url") == slug &&
@@ -215,6 +212,12 @@ class SunovelsSource(
             val owner = flight.resolve(obj["novel"]) as? JsonObject
             (obj["chaptersCount"] as? JsonPrimitive)?.intOrNull?.takeIf { owner?.string("url") == slug }
         }.distinct().singleOrNull()?.takeIf { it in 0..100_000 } ?: invalid("Sun official chapter count missing")
+        if (declared == 0) {
+            return ChapterPage(emptyList(), nextPage = null, declaredTotal = 0, allowEmpty = true)
+        }
+        val current = d.selectFirst("a[aria-label*='is your current page']")?.attr("aria-label")
+            ?.let { Regex("[0-9]+").find(it)?.value?.toIntOrNull() }
+        if (current != page) invalid("Sun chapter pagination cursor mismatch")
         val total = flight.objects.mapNotNull { (it["totalPages"] as? JsonPrimitive)?.intOrNull }
             .distinct().singleOrNull()?.takeIf { it in 1..2000 } ?: invalid("Sun pagination total missing")
         if (page > total) invalid("Sun chapter page out of range")
@@ -1008,7 +1011,11 @@ class SunovelsSource(
             novel.copy(originalTitle = cleanOriginalTitle(novel.originalTitle))
         }
         internal fun cleanCatalog(state: NovelCatalogState): NovelCatalogState = state.copy(
-            works = state.works.map {
+            works = state.works.filterNot { w ->
+                w.editions.all { ed ->
+                    tachiyomi.domain.manga.model.DiscoveryEligibility.isDummyWork(ed.title, ed.description, ed.chapterCount)
+                }
+            }.map {
                 it.copy(editions = it.editions.map(::cleanMetadata))
             },
         )
@@ -1137,7 +1144,8 @@ class SunovelsSource(
             return p[1] to if (chapter) p[2] else null
         }
         private fun knownAmbiguous(url: String): Boolean {
-            return false
+            val p = path(url, true)
+            return p.first == "reverend-insanity" && p.second in setOf("1153", "1154")
         }
 
         internal fun areRowsEquivalent(
@@ -1371,14 +1379,7 @@ class SunovelsSource(
             return ChapterPage(
                 chapters,
                 if (page < total) page + 1 else null,
-                notice = if (chapters.any {
-                        !it.available && it.sunovelsState == SunovelsChapterState.EXPLICITLY_LOCKED
-                    }
-                ) {
-                    "بعض الفصول مقفلة أو ذات روابط ملتبسة أو بيانات ناقصة. الفصول السليمة تبقى متاحة."
-                } else {
-                    null
-                },
+                notice = null,
                 allowEmpty = declared == 0,
                 declaredTotal = declared,
                 sourceFingerprint = fingerprint,

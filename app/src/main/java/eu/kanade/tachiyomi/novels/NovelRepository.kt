@@ -1289,7 +1289,7 @@ class NovelRepository private constructor(context: Context) {
         val filteredVolumes = index.volumes.filter { vol ->
             vol.id in activeVolumeIds && (vol.title != "الفصول" || filteredChapters.count { it.volumeId == vol.id } > 1)
         }
-        val isDone = index.complete || (index.nextPage == null && filteredChapters.isNotEmpty())
+        val isDone = index.complete || (index.nextPage == null && (filteredChapters.isNotEmpty() || index.declaredTotal == 0))
         val correctedTotal = if (isDone) {
             filteredChapters.size
         } else if (index.declaredTotal != null && index.declaredTotal > filteredChapters.size * 2) {
@@ -2279,12 +2279,12 @@ class NovelRepository private constructor(context: Context) {
                             fetchTrace?.stage(SeaReaderStage.REPOSITORY_ACCEPTED)
                             memoryCacheLock.withLock {
                                 texts[key] = result
-                                while (texts.size > 2 ||
+                                while (texts.size > 16 ||
                                     texts.values.sumOf { v ->
                                         v.paragraphs.sumOf { it.length } + v.markup.sumOf { it.length } +
                                             v.blocks.sumOf { (it.imageUrl?.length ?: 0) + it.alt.length }
                                     } >
-                                    1_000_000
+                                    5_000_000
                                 ) {
                                     texts.remove(texts.keys.first())
                                 }

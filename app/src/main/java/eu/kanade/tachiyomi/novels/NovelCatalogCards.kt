@@ -51,7 +51,8 @@ internal object NovelCatalogCards {
             }.toMap(),
             n.author?.let(NovelIdentity::searchAuthorKey), priority = priority,
             chapters = run {
-                val distinctCount = maxOf(evidence?.availableCount ?: 0, n.chapterCount ?: 0).takeIf { it > 0 }
+                val distinctCount = evidence?.availableCount?.takeIf { evidence.complete || it > 0 }
+                    ?: n.chapterCount?.takeIf { it > 0 }
                 SearchChapterEvidence(
                     distinct = distinctCount,
                     complete = evidence?.complete == true && distinctCount != null,

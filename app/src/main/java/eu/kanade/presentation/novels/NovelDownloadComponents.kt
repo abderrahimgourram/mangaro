@@ -36,8 +36,17 @@ import kotlinx.coroutines.launch
 
 internal fun chapterCountLabel(loaded: Int, reportedTotal: Int?, loading: Boolean): String {
     val total = reportedTotal?.takeIf { it >= loaded && it > 0 }
+    if (loaded == 0) {
+        return if (loading) "جارٍ استكمال الفصول..." else "لا توجد فصول منشورة بعد"
+    }
     val count = if (total != null) numeric(loaded) + " من " + numeric(total) + " فصلًا" else numeric(loaded) + " فصلًا متاحًا"
-    return count + if (loading) " · جارٍ الاستكمال" else " · القائمة غير مكتملة"
+    return if (loading) {
+        "$count · جارٍ الاستكمال"
+    } else if (total != null && loaded < total) {
+        "$count · القائمة غير مكتملة"
+    } else {
+        count
+    }
 }
 internal fun downloadLabel(state: NovelDownloadState?) = when (state) {
     NovelDownloadState.DONE -> "متاح دون إنترنت"

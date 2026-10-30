@@ -1077,9 +1077,14 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
         val storageError by repository.storageError.collectAsState()
         val scope = rememberCoroutineScope()
         val downloadAdGate = rememberNovelDownloadAdGate()
-        var selectedId by rememberSaveable { mutableStateOf<String?>(initial.id) }
+        var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
         var userManuallySelectedEdition by rememberSaveable { mutableStateOf(false) }
-        val novel = work.editions.firstOrNull { it.id == selectedId } ?: work.primary
+        var indexes by remember { mutableStateOf(emptyMap<String, NovelChapterIndex>()) }
+        val preferredEdition = remember(work, catalog.evidence, indexes) {
+            NovelIdentity.preferred(work.editions, catalog.evidence, indexes)
+        }
+        val novel = (if (selectedId != null) work.editions.firstOrNull { it.id == selectedId } else null)
+            ?: preferredEdition
         FocusSurface(FocusTarget(FocusContext.NOVEL_DETAILS, novel.sourceId, novel.id))
         val saved = library.any { entry -> entry.saved && work.editions.any { it.id == entry.novel.id } }
         val resume = library.filter { entry ->
@@ -1087,7 +1092,6 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
         }.maxByOrNull { it.position!!.updatedAt }
         var indexErrors by remember { mutableStateOf(emptyMap<String, String>()) }
         var indexEpoch by remember { mutableIntStateOf(0) }
-        var indexes by remember { mutableStateOf(emptyMap<String, NovelChapterIndex>()) }
         var busy by remember { mutableStateOf(emptySet<String>()) }
         var error by remember { mutableStateOf<String?>(null) }
         var readerOpening by remember { mutableStateOf(false) }
@@ -1371,7 +1375,7 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
                             }
                             if (index.complete) {
                                 Text(
-                                    numeric(index.chapters.size) + " فصلًا",
+                                    if (index.chapters.isEmpty()) "لا توجد فصول منشورة بعد" else numeric(index.chapters.size) + " فصلًا",
                                     color = Design.GoldPrimary,
                                     style = MaterialTheme.typography.labelLarge,
                                 )
@@ -1617,7 +1621,7 @@ class NovelDetailsScreen(private val initial: Novel) : Screen() {
                 if (index.complete && novel.id !in busy && indexErrors[novel.id] == null) {
                     item(key = "index-ready") {
                         Text(
-                            "تم تحميل الفصول المتاحة",
+                            if (index.chapters.isEmpty()) "لا توجد فصول منشورة بعد" else "تم تحميل الفصول المتاحة",
                             color = Design.LavenderPrimary,
                             style = MaterialTheme.typography.labelSmall,
                         )
