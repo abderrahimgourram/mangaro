@@ -78,10 +78,6 @@ if(downloadAd){
     const ua = (navigator.userAgent || '').toLowerCase();
     const isAndroid = platform === 'android' || /android/.test(ua);
 
-    if (/V2357A|PD2357|V2357|VIVO/i.test(model) || /v2357a|pd2357|v2357/i.test(ua)) {
-      if (variants.arm64) return { key: 'arm64', variant: variants.arm64 };
-    }
-
     if (!arch) {
       if (/aarch64|arm64|armv8/.test(ua)) {
         arch = 'arm';
@@ -103,14 +99,8 @@ if(downloadAd){
     if (arch === 'x86' && bitness === '64' && variants.x86_64) return { key: 'x86_64', variant: variants.x86_64 };
     if (arch === 'x86' && bitness === '32' && variants.x86) return { key: 'x86', variant: variants.x86 };
 
-    if (isAndroid) {
-      const isX86 = /x86|i686|i386/.test(ua) || arch === 'x86';
-      const is32BitLegacy = /armv7l|armeabi/.test(ua) || (arch === 'arm' && bitness === '32');
-      if (!isX86 && !is32BitLegacy && variants.arm64) {
-        return { key: 'arm64', variant: variants.arm64 };
-      }
-    }
-
+    // Unknown/reduced browser architecture is not proof of a 64-bit Android ABI.
+    // Keep manual selection and use the compatible Universal package otherwise.
     return { key: 'universal', variant: variants.universal || selectedVariant };
   }
 

@@ -1,7 +1,18 @@
 {
-  "latestVersionName": "2.0.3",
-  "latestVersionCode": 21,
-  "minSupportedVersionCode": 21,
+  "latestVersionName": "2.5.11",
+  "latestVersionCode": 51,
+  "minSupportedVersionCode": 51,
   "forceUpdate": true,
-  "downloadUrl": "https://github.com/abderrahimgourram/mangaro/releases/download/v2.0.3/Mangaro-release.apk"
+  "downloadUrl": "https://github.com/abderrahimgourram/mangaro/releases/download/v2.5.11/Mangaro-Universal.apk",
+  "releaseNotes": {
+    "versionName": "2.5.11",
+    "versionCode": 51,
+    "items": [
+      "تفعيل نظام الإشعارات الهادئ والأنيق (إشعارات الردود على التعليقات وإشعارات التنزيلات فقط).",
+      "اختيار الطبعة ذات الفصول الأكثر تلقائيًا في البحث وتفاصيل الأعمال.",
+      "إصلاح فهارس الروايات الطويلة وجلب جميع الفصول كاملة دون انقطاع.",
+      "إصلاح أغلفة الأعمال وحل مشكلة فتح القارئ في قسم الأعمال المكتملة.",
+      "تحسين شامل في سرعة استجابة التطبيق واستقرار الذاكرة والأداء."
+    ]
+  }
 }

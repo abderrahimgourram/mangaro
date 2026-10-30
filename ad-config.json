@@ -1,5 +1,13 @@
 {
   "enabled": true,
   "displayAdUrl": "https://mangaro-web.vercel.app/ad-slot",
-  "smartLink": "https://asiafilm.org/4/71f2337020da186c3958a071da292bec"
+  "smartLink": "https://asiafilm.org/4/71f2337020da186c3958a071da292bec",
+  "inmobi": {
+    "schemaVersion": 1,
+    "accountId": "2437b98e2f6b45789a828a2faad3d0eb",
+    "downloadPlacementId": 10000837491,
+    "videoAdsOnly": false,
+    "cmpPCode": ""
+  },
+  "novelPlacementsApproved": true
 }

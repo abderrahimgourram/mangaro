@@ -1,0 +1,3 @@
+
+# Preserve the supplied seller file, including its CRLF first record.
+app-ads.txt whitespace=cr-at-eol
