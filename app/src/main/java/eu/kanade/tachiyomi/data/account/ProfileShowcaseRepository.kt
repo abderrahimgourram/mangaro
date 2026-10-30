@@ -17,6 +17,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import logcat.LogPriority
+import logcat.logcat
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 import mihon.domain.account.AccountFoundation
@@ -48,11 +50,28 @@ class ProfileShowcaseRepository(private val account: AccountFoundation) {
             val favorites = auth.communityClient.from("public_favorites").select { filter { eq("user_id", user) } }.decodeList<Favorite>().sortedBy { it.sort_order }
             val paths = favorites.mapNotNull { it.cover_path }
             val covers = try {
-                if (paths.isEmpty()) emptyMap() else auth.communityClient.storage.from("showcase-covers").createSignedUrls(
-                    Duration.parse("2h"), paths)
-                    .filter { it.error == null }.associate { it.path to it.signedURL }
+                if (paths.isEmpty()) emptyMap() else {
+                    val signedList = auth.communityClient.storage.from("showcase-covers").createSignedUrls(
+                        Duration.parse("2h"), paths)
+                    val map = mutableMapOf<String, String>()
+                    for (signed in signedList) {
+                        if (signed.error == null) {
+                            val raw = signed.path
+                            val clean = raw.trim().removePrefix("/")
+                            val file = clean.substringAfterLast("/")
+                            map[raw] = signed.signedURL
+                            map[clean] = signed.signedURL
+                            map["/$clean"] = signed.signedURL
+                            map[file] = signed.signedURL
+                        }
+                    }
+                    map
+                }
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { emptyMap() }
+            catch (e: Exception) {
+                android.util.Log.w("ProfileShowcase", "Failed to create signed URLs for showcase covers: $paths", e)
+                emptyMap()
+            }
             Snapshot(enabled, favorites, covers)
         } } ?: error("Showcase load timed out")
     }

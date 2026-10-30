@@ -565,7 +565,11 @@ class SupabaseAccountAuth internal constructor(
                         }
                     }
                     install(Postgrest)
-                    install(Storage)
+                    install(Storage) {
+                        resumable {
+                            cache = io.github.jan.supabase.storage.resumable.MemoryResumableCache()
+                        }
+                    }
                 }
                 SupabaseAccountAuth(client, storage)
             } catch (_: Exception) { GuestAccountAuth() }

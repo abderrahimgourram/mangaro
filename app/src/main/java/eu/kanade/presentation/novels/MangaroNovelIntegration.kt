@@ -83,6 +83,19 @@ fun HomeNovelShelf() {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     var loading by remember { mutableStateOf(false) }
     var retry by remember { mutableIntStateOf(0) }
+
+    // Seed local persistent discovery cache immediately on initial composition
+    LaunchedEffect(Unit) {
+        if (repository.catalog.value.works.isEmpty()) {
+            withContext(Dispatchers.IO) {
+                val cached = repository.activeSources.flatMap { source ->
+                    repository.discoverySnapshot(source, "", 1, null)?.novels.orEmpty()
+                }
+                if (cached.isNotEmpty()) repository.ingest(cached)
+            }
+        }
+    }
+
     LaunchedEffect(lifecycle, retry) {
         // Optional discovery starts after a rendered frame and stops when Home is no longer visible.
         withFrameNanos { }
@@ -109,7 +122,19 @@ fun HomeNovelShelf() {
                         }
                     } }
                 }
-            } finally { loading = false; if (currentCoroutineContext().isActive) settled = true }
+            } finally {
+                loading = false
+                if (currentCoroutineContext().isActive) {
+                    settled = true
+                    // Graceful automatic retry in background if shelf remained empty
+                    if (repository.catalog.value.works.isEmpty() && retry < 2) {
+                        launch {
+                            kotlinx.coroutines.delay(5_000)
+                            if (repository.catalog.value.works.isEmpty()) retry++
+                        }
+                    }
+                }
+            }
         }
     }
     Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
@@ -131,10 +156,49 @@ fun HomeNovelShelf() {
                     )
                 }
             }
-        } else if (loading) {
-            LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 16.dp), color = Design.LavenderPrimary)
         } else {
-            TextButton(onClick = { retry++ }, modifier = Modifier.padding(horizontal = 12.dp)) { Text("حاول تحميل الروايات مجددًا") }
+            NovelCardSkeletonRow()
+        }
+    }
+}
+
+@Composable
+private fun NovelCardSkeletonRow() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        repeat(4) {
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = Design.SurfaceDark,
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0x28A78BFA)),
+                modifier = Modifier.width(104.dp),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(5.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(2f / 3f)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Design.SurfaceHigh),
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(0.75f)
+                            .height(12.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(Design.SurfaceHigh),
+                    )
+                }
+            }
         }
     }
 }

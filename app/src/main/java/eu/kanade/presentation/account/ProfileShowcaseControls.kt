@@ -188,15 +188,24 @@ internal fun ProfileShowcaseControls(profile: MangaroProfile, account: AccountFo
                     localNovels[fav.manga_key] != null ||
                     findMatchingLocalManga(fav.title) != null ||
                     findMatchingLocalNovel(fav.title) != null
-                val hasRemoteCover = !fav.cover_path.isNullOrBlank() && loadedSnapshot.covers.containsKey(fav.cover_path)
 
-                if (!hasLocalCover && !hasRemoteCover) {
+                if (!hasLocalCover) {
                     scope.launch(Dispatchers.IO) {
                         try {
-                            val candidate = PublicFavoriteResolver().resolve(fav.manga_key, fav.title)
-                            if (candidate != null) {
-                                val coverObj = candidate.asMangaCover()
-                                resolvedCovers = resolvedCovers + (fav.manga_key to coverObj)
+                            if (fav.is_novel) {
+                                val candidate = novelRepo.catalog.value.works.firstOrNull {
+                                    ProfileShowcaseRepository.key(it.primary) == fav.manga_key ||
+                                        tachiyomi.domain.manga.service.WorkTitleNormalizer.normalize(it.primary.title) ==
+                                        tachiyomi.domain.manga.service.WorkTitleNormalizer.normalize(fav.title)
+                                }?.primary
+                                if (candidate?.cover != null) {
+                                    resolvedCovers = resolvedCovers + (fav.manga_key to candidate.cover!!)
+                                }
+                            } else {
+                                val candidate = PublicFavoriteResolver().resolve(fav.manga_key, fav.title)
+                                if (candidate != null) {
+                                    resolvedCovers = resolvedCovers + (fav.manga_key to candidate.asMangaCover())
+                                }
                             }
                         } catch (_: Exception) {}
                     }
@@ -204,6 +213,19 @@ internal fun ProfileShowcaseControls(profile: MangaroProfile, account: AccountFo
             }
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) { error = "تعذّر تحميل مكتبتك العامة" }
+    }
+
+    fun findRemoteCover(path: String?): String? {
+        if (path.isNullOrBlank()) return null
+        if (path.startsWith("http://") || path.startsWith("https://")) return path
+        val covers = snapshot?.covers ?: return null
+        val clean = path.trim().removePrefix("/")
+        val file = clean.substringAfterLast("/")
+        return covers[path]
+            ?: covers[clean]
+            ?: covers["/$clean"]
+            ?: covers[file]
+            ?: covers.entries.firstOrNull { it.key.endsWith(file) }?.value
     }
 
     fun cover(key: String): Any? {
@@ -218,11 +240,8 @@ internal fun ProfileShowcaseControls(profile: MangaroProfile, account: AccountFo
             val matchNovel = findMatchingLocalNovel(meta.title)
             if (matchNovel != null) return matchNovel.cover
         }
-        val path = meta?.cover_path
-        if (!path.isNullOrBlank()) {
-            if (path.startsWith("http://") || path.startsWith("https://")) return path
-            snapshot?.covers?.get(path)?.let { return it }
-        }
+        val remote = findRemoteCover(meta?.cover_path)
+        if (remote != null) return remote
         resolvedCovers[key]?.let { return it }
         return null
     }
