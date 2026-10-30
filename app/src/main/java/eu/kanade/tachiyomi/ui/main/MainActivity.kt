@@ -78,6 +78,7 @@ import eu.kanade.presentation.components.AppStateBanners
 import eu.kanade.presentation.components.DownloadedOnlyBannerBackgroundColor
 import eu.kanade.presentation.components.IncognitoModeBannerBackgroundColor
 import eu.kanade.presentation.components.IndexingBannerBackgroundColor
+import eu.kanade.presentation.home.MangaroNotificationPermissionPrompt
 import eu.kanade.presentation.home.MangaroUpdateHighlights
 import eu.kanade.presentation.more.settings.screen.data.RestoreBackupScreen
 import eu.kanade.presentation.util.AssistContentScreen
@@ -194,6 +195,14 @@ class MainActivity : BaseActivity() {
             var startupReady by remember { mutableStateOf(false) }
             val app = application as eu.kanade.tachiyomi.App
             var showUpdateHighlights by remember(localInitialized) { mutableStateOf(localInitialized && app.updateHighlights.pendingVersion.get() > 0) }
+            var showNotificationPrompt by remember(localInitialized) {
+                mutableStateOf(
+                    localInitialized &&
+                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                        !preferences.notificationPromptHandled.get() &&
+                        checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED,
+                )
+            }
             var initializationError by remember { mutableStateOf(false) }
             var startupAttempt by remember { mutableStateOf(0) }
             val view = LocalView.current
@@ -368,7 +377,14 @@ class MainActivity : BaseActivity() {
                         onContinue = {
                             app.updateHighlights.acknowledge()
                             showUpdateHighlights = false
-                        }
+                        },
+                    )
+                } else if (localInitialized && showNotificationPrompt) {
+                    MangaroNotificationPermissionPrompt(
+                        preferences = preferences,
+                        onDismiss = {
+                            showNotificationPrompt = false
+                        },
                     )
                 }
                 if (initializationError) {

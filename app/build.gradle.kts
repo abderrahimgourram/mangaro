@@ -96,8 +96,8 @@ android {
         manifestPlaceholders["accountAuthScheme"] = "mangaro"
 
         buildConfigField("boolean", "SMARTLINK_V3_ENABLED", "true")
-        versionCode = 50
-        versionName = "2.5.10"
+        versionCode = 51
+        versionName = "2.5.11"
 
         buildConfigField("String", "COMMIT_COUNT", "\"${getLatestCommitCount()}\"")
         buildConfigField("String", "COMMIT_SHA", "\"${getLatestCommitSha()}\"")

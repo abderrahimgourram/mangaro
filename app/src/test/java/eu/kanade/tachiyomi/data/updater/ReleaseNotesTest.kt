@@ -50,5 +50,6 @@ class ReleaseNotesTest {
             it.items.first() shouldBe "تحسين البحث وتقليل تكرار الأعمال."
         }
         catalog.first { it.versionCode == 50 }.versionName shouldBe "2.5.10"
+        catalog.first { it.versionCode == 51 }.versionName shouldBe "2.5.11"
     }
 }

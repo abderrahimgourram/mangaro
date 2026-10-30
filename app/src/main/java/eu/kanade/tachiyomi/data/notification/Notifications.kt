@@ -44,6 +44,14 @@ object Notifications {
     const val ID_DOWNLOADS_COMPLETE = -203
 
     /**
+     * Notification channel and ids used for comment replies.
+     */
+    private const val GROUP_COMMUNITY = "group_community"
+    const val CHANNEL_REPLIES = "replies_channel"
+    const val ID_REPLIES = -801
+    const val GROUP_REPLIES = "eu.kanade.tachiyomi.REPLIES"
+
+    /**
      * Notification channel and ids used by the library updater and discovery.
      */
     const val CHANNEL_NEW_CHAPTERS = "new_chapters_channel"
@@ -123,6 +131,9 @@ object Notifications {
                 buildNotificationChannelGroup(GROUP_APK_UPDATES) {
                     setName(context.stringResource(MR.strings.label_recent_updates))
                 },
+                buildNotificationChannelGroup(GROUP_COMMUNITY) {
+                    setName("المجتمع والتعليقات")
+                },
             ),
         )
 
@@ -147,6 +158,10 @@ object Notifications {
                 buildNotificationChannel(CHANNEL_NEW_WORKS, IMPORTANCE_DEFAULT) {
                     setName("أعمال جديدة")
                     setGroup(GROUP_LIBRARY)
+                },
+                buildNotificationChannel(CHANNEL_REPLIES, IMPORTANCE_DEFAULT) {
+                    setName("الردود على التعليقات")
+                    setGroup(GROUP_COMMUNITY)
                 },
                 buildNotificationChannel(CHANNEL_DOWNLOADER_PROGRESS, IMPORTANCE_LOW) {
                     setName(context.stringResource(MR.strings.channel_progress))

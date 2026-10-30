@@ -114,7 +114,7 @@ fun MangaroNotificationPermissionPrompt(
                         }
 
                         Text(
-                            text = "خلّك على اطلاع بكل جديد",
+                            text = "ابقَ على اطلاع بما يهمك",
                             style = MaterialTheme.typography.titleLarge.copy(
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White,
@@ -124,7 +124,7 @@ fun MangaroNotificationPermissionPrompt(
                         )
 
                         Text(
-                            text = "فعّل الإشعارات عشان توصلك تنبيهات الأعمال الجديدة والردود على تعليقاتك، وما يفوتك شيء يهمك.",
+                            text = "تصلك تنبيهات فورية عند الرد على تعليقاتك في المجتمع، وإشعار هادئ عند اكتمال تنزيلاتك للقراءة دون إنترنت.",
                             style = MaterialTheme.typography.bodyMedium.copy(
                                 color = Color(0xFFD3C5E5),
                                 lineHeight = 22.sp,
@@ -139,12 +139,12 @@ fun MangaroNotificationPermissionPrompt(
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             NotificationFeatureRow(
-                                icon = Icons.Outlined.AutoAwesome,
-                                text = "تنبيهات الفصول الجديدة والتنزيلات",
+                                icon = Icons.Outlined.ChatBubbleOutline,
+                                text = "تنبيهات الردود على تعليقاتك في المجتمع",
                             )
                             NotificationFeatureRow(
-                                icon = Icons.Outlined.ChatBubbleOutline,
-                                text = "الردود تظهر في المركز عند فتح التطبيق",
+                                icon = Icons.Outlined.AutoAwesome,
+                                text = "إشعار هادئ عند اكتمال تنزيل الفصول",
                             )
                         }
 
