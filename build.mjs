@@ -27,16 +27,17 @@ function structuredData(route,canonical){
 }
 
 let smartLink='https://asiafilm.org/4/71f2337020da186c3958a071da292bec';
-try {
-  const adConfig=JSON.parse(fs.readFileSync('ad-config.json','utf8'));
-  if(adConfig.smartLink)smartLink=adConfig.smartLink;
-} catch {}
 if(process.env.SMARTLINK_URL){
   try {
     const url=new URL(process.env.SMARTLINK_URL);
     if(['http:','https:'].includes(url.protocol)&&!url.username&&!url.password)smartLink=url.href;
   } catch {}
 }
+try {
+  const adConfig=JSON.parse(fs.readFileSync('ad-config.json','utf8'));
+  if(adConfig.smartLink)smartLink=adConfig.smartLink;
+} catch {}
+
 
 const configScript=`<script>window.MANGARO_CONFIG=${JSON.stringify({smartLink,variants:release.variants,defaultSha:release.sha256,defaultBytes:release.bytes})};</script>`;
 const cta=(small=false)=>`<a class="btn ${small?'small':''}" href="/download">تحميل مانجارو <span aria-hidden="true">↓</span></a>`;
