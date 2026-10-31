@@ -17,7 +17,9 @@ import eu.kanade.tachiyomi.util.system.NetworkState
 import eu.kanade.tachiyomi.util.system.activeNetworkState
 import eu.kanade.tachiyomi.util.system.networkStateFlow
 import eu.kanade.tachiyomi.util.system.notificationBuilder
+import eu.kanade.tachiyomi.util.system.notify
 import eu.kanade.tachiyomi.util.system.setForegroundSafely
+import android.graphics.BitmapFactory
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.combine
@@ -117,8 +119,39 @@ class DownloadJob(context: Context, workerParams: WorkerParameters) : CoroutineW
             }
         }
         val notification = launch {
-            novels?.tasks?.debounce(1000)?.collect { tasks ->
-                if (tasks.any { it.state == NovelDownloadState.RUNNING || it.state == NovelDownloadState.PENDING }) setForegroundSafely()
+            novels?.tasks?.collect { tasks ->
+                val activeTask = tasks.firstOrNull { it.state == NovelDownloadState.RUNNING }
+                    ?: tasks.firstOrNull { it.state == NovelDownloadState.PENDING }
+                if (activeTask != null) {
+                    val activeNovel = activeTask.novel
+                    val novelTasks = tasks.filter { it.novel.id == activeNovel.id }
+                    val done = novelTasks.count { it.state == NovelDownloadState.DONE }
+                    val pending = novelTasks.count { it.state in setOf(NovelDownloadState.PENDING, NovelDownloadState.RUNNING) }
+                    val total = novelTasks.size
+                    val otherPendingNovels = tasks.filter { it.state in setOf(NovelDownloadState.PENDING, NovelDownloadState.RUNNING) && it.novel.id != activeNovel.id }
+                        .map { it.novel.id }.distinct().size
+
+                    val hideContent = Injekt.get<eu.kanade.tachiyomi.core.security.SecurityPreferences>().hideNotificationContent.get()
+                    val title = if (hideContent) "التنزيلات" else activeNovel.title
+                    val text = if (otherPendingNovels > 0) {
+                        "تم تحميل $done من $total فصلًا (المتبقي $pending) · +$otherPendingNovels في الانتظار"
+                    } else {
+                        "تم تحميل $done من $total فصلًا (المتبقي $pending)"
+                    }
+                    applicationContext.notify(
+                        Notifications.ID_DOWNLOAD_CHAPTER_PROGRESS,
+                        Notifications.CHANNEL_DOWNLOADER_PROGRESS,
+                    ) {
+                        setContentTitle(title)
+                        setContentText(text)
+                        setSmallIcon(android.R.drawable.stat_sys_download)
+                        setLargeIcon(BitmapFactory.decodeResource(applicationContext.resources, R.mipmap.ic_launcher))
+                        setProgress(total, done, false)
+                        setOngoing(true)
+                        setOnlyAlertOnce(true)
+                        setContentIntent(NotificationHandler.openDownloadManagerPendingActivity(applicationContext))
+                    }
+                }
             }
         }
         try {

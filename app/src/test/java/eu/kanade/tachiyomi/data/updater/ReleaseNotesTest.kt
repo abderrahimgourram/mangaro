@@ -51,5 +51,6 @@ class ReleaseNotesTest {
         }
         catalog.first { it.versionCode == 50 }.versionName shouldBe "2.5.10"
         catalog.first { it.versionCode == 51 }.versionName shouldBe "2.5.11"
+        catalog.first { it.versionCode == 52 }.versionName shouldBe "2.5.12"
     }
 }

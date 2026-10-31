@@ -14,7 +14,7 @@ class ReaderAdActionTest {
         val token = Account.Token("fixture-a", 1)
         val states = MutableStateFlow(Account.State(token))
         assertEquals(token, awaitReaderAdAccount(SmartLinkController.owner(token), states))
-        assertEquals("https://uplcm.com/4/11968619", AdsterraSmartLinkConfig.SMARTLINK_URL)
+        assertEquals("https://asiafilm.org/4/71f2337020da186c3958a071da292bec", AdsterraSmartLinkConfig.SMARTLINK_URL)
         assertEquals(AdsterraSmartLinkConfig.SMARTLINK_URL, SmartLinkConfiguration.URL)
     }
 

@@ -7,6 +7,13 @@ import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import androidx.work.*
 import eu.kanade.tachiyomi.data.download.DownloadNotifier
+import eu.kanade.tachiyomi.data.notification.Notifications
+import eu.kanade.tachiyomi.data.notification.NotificationHandler
+import eu.kanade.tachiyomi.util.system.notify
+import eu.kanade.tachiyomi.R
+import android.graphics.BitmapFactory
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.get
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -117,7 +124,29 @@ class NovelDownloadQueue(private val app: Context, private val repository: Novel
             } finally { db.endTransaction() }
             publish()
         }
-        if (tasks.value.any { it.state == NovelDownloadState.PENDING }) schedule(append = true)
+        if (tasks.value.any { it.state == NovelDownloadState.PENDING }) {
+            val novelTasks = tasks.value.filter { it.novel.id == novel.id }
+            val done = novelTasks.count { it.state == NovelDownloadState.DONE }
+            val pendingCount = novelTasks.count { it.state in setOf(NovelDownloadState.PENDING, NovelDownloadState.RUNNING) }
+            val total = novelTasks.size
+            val hideContent = Injekt.get<eu.kanade.tachiyomi.core.security.SecurityPreferences>().hideNotificationContent.get()
+            val notifTitle = if (hideContent) "التنزيلات" else novel.title
+            val notifText = "تم تحميل $done من $total فصلًا (المتبقي $pendingCount)"
+            app.notify(
+                Notifications.ID_DOWNLOAD_CHAPTER_PROGRESS,
+                Notifications.CHANNEL_DOWNLOADER_PROGRESS,
+            ) {
+                setContentTitle(notifTitle)
+                setContentText(notifText)
+                setSmallIcon(android.R.drawable.stat_sys_download)
+                setLargeIcon(BitmapFactory.decodeResource(app.resources, R.mipmap.ic_launcher))
+                setProgress(total, done, false)
+                setOngoing(true)
+                setOnlyAlertOnce(true)
+                setContentIntent(NotificationHandler.openDownloadManagerPendingActivity(app))
+            }
+            schedule(append = true)
+        }
         eu.kanade.tachiyomi.data.cache.StorageMaintenanceJob.schedule(app)
     }
     suspend fun control(editionId: String, action: NovelDownloadState, chapterId: String? = null) = withContext(Dispatchers.IO) {
@@ -313,7 +342,11 @@ class NovelDownloadQueue(private val app: Context, private val repository: Novel
             }
         }
         lanes.joinAll()
-        tasks.value.any { it.state == NovelDownloadState.PENDING }
+        val stillPending = tasks.value.any { it.state == NovelDownloadState.PENDING }
+        if (!stillPending) {
+            DownloadNotifier(app).onComplete()
+        }
+        stillPending
     }
     }
     }
